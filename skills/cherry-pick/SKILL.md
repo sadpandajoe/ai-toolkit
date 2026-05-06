@@ -102,7 +102,7 @@ The orchestrator may not mark a cherry `Applied` without this report. If the sub
 
 **7b. Correctness validation — main thread.**
 
-Conflict-marker scan, build, type-check, targeted tests. Build failures are loud and don't need a fresh context — the main thread handles them.
+Conflict-marker scan, **pre-commit on changed files**, build, type-check, targeted tests. Pre-commit is mandatory — conflict resolution often re-indents lines past length limits, and pre-commit is what CI runs. If pre-commit auto-fixes or you make manual fixes, `git commit --amend --no-edit` before pushing. Do not push, then amend, then force-push.
 
 → Full procedure (subagent contract, LLM audit, validation order, status labels, dependency manifest rule): [references/validate.md](references/validate.md)
 

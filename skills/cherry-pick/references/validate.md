@@ -92,8 +92,9 @@ Runs only after the scope-leak subagent returns `CLEAN`. Build/test failures are
 
 At minimum:
 1. Confirm no conflict markers.
-2. Run the smallest relevant build or type-check.
-3. Run targeted tests covering the changed area.
+2. **Run pre-commit on changed files** (see "Pre-Commit Gate" below). Mandatory — this is what CI runs, and conflict resolution often re-indents lines past length limits.
+3. Run the smallest relevant build or type-check.
+4. Run targeted tests covering the changed area.
 
 For config-only changes (YAML, JSON, feature flags) where there is no build or test to run, validate by parsing the file programmatically and verifying the intended effect (load YAML and assert the expected keys/values are present).
 
@@ -101,6 +102,29 @@ Run broader validation when:
 - the cherry-pick touched shared infrastructure
 - the target branch differs materially from the source branch
 - the targeted checks fail to provide confidence
+
+## Pre-Commit Gate
+
+Run pre-commit on the changed files **after** the cherry-pick commit exists and **before** pushing. This is the single consistent rule for both clean applies and conflicted applies — clean applies have no `--continue` step to hook into.
+
+```bash
+pre-commit run --files <changed-file-1> <changed-file-2>
+# or, if pre-commit isn't the repo's tool, use the equivalent CI lint/format command
+```
+
+**If pre-commit auto-fixes files** (ruff-format, end-of-files, trailing whitespace, etc.):
+```bash
+git add <fixed-files>
+git commit --amend --no-edit
+```
+
+**If pre-commit reports manual-fix errors** (line length, lint rules without fixers): edit the file, then amend as above.
+
+**Re-run pre-commit after amend** until it passes on the changed files.
+
+**Pre-existing failures on unrelated files** (warnings on files the cherry-pick didn't touch) are out of scope — note them in the validation summary but do not attempt to fix them within the cherry-pick.
+
+The amend stays local since the push step is gated on validation passing. Do not push, then amend, then force-push, when amending pre-push would have worked.
 
 ## Minimum Validation Bar
 

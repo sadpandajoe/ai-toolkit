@@ -78,6 +78,18 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 ---
 
+## Conflict resolution adds indent levels and trips line-length lint
+
+**Symptom:** Cherry-pick applies and tests pass locally, but pre-commit / CI fails with `E501 Line too long` on lines that were fine on the source branch.
+
+**Why:** When the target nests the affected code one level deeper than the source (e.g., target wraps `sync_wrapper` in an `else:` block that source doesn't have), the cherry-picked lines arrive with extra indentation. Comments and string literals near the 88/100-char limit on source go over on target. `git cherry-pick` doesn't reformat, and a clean `pytest` says nothing about lint.
+
+**Do instead:** Run pre-commit on the changed files as part of step 7b validation, **before push**. Fix any failures (auto-fixers via `git add` + `--amend`, manual fixes via edit + `--amend`). Don't push first and force-push later — amend pre-push when CI hasn't run yet.
+
+**First seen:** PR #39798 cherry-pick to 6.0-release — comment block landed at indent 20 (vs source indent 16), two lines over 88 chars, surfaced only when CI ran.
+
+---
+
 ## Validation status overstated as "Tested" when only build ran
 
 **Symptom:** Execution table says `Tested` for a cherry-pick where only the build passed; targeted tests existed but weren't executed.
