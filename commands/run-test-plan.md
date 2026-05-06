@@ -52,25 +52,24 @@
 
 5. **Capture Evidence**
 
-   Record Playwright video for every UI scenario. One video per logical flow.
-   Use `recordVideo: { dir: 'qa-evidence/videos/', size: { width: 1280, height: 720 } }` when launching the Playwright browser context.
-   Name files descriptively: `sc-<id>-<scenario>.webm` or `<scenario>.webm`.
+   For UI scenarios, drive the browser via Playwright MCP and record the run as a single video artifact via macOS `screencapture` — follow the canonical recipe in [skills/qa/references/browser-recording.md](../skills/qa/references/browser-recording.md). One recording per logical flow, saved under `~/qa-recordings/<source-id>-<short-name>-<UTC-timestamp>.mov`. Real Chrome with the real OS cursor — no `recordVideo`, no synthetic-cursor scaffolding.
+
    Supplement with console logs or API output only when video alone doesn't explain a failure.
 
 6. **Report Findings**
 
-   Post a narrative report using the QA Verification template from [skills/shortcut/references/report.md](../skills/shortcut/references/report.md).
+   Body shape, tone, and evidence rules come from [skills/qa/references/write-report.md](../skills/qa/references/write-report.md). Destination-specific upload + post mechanics live in the matching reference (e.g. [skills/shortcut/references/report.md](../skills/shortcut/references/report.md) for Shortcut). For attaching the recording, follow the size-limit guidance in [skills/qa/references/browser-recording.md](../skills/qa/references/browser-recording.md).
 
    **If a Shortcut story is known** (provided as input, or from PROJECT.md):
-   - Upload video evidence to the story
+   - Upload the recording to the story via the Shortcut `/files` endpoint
    - Post the report as a story comment
 
    **If a GitHub PR is known** (provided as input):
-   - Upload video evidence to the story if one is linked, otherwise note local paths
+   - Attach the recording inline if it fits under GitHub's size limit (transcode to MP4 if needed); otherwise note the local path
    - Post the report as a PR comment
 
    **Otherwise**:
-   - Display the report locally using the same template, with video file paths
+   - Display the report locally using the same template, with the recording path
 
    Do not auto-file bugs or auto-route into `/fix-bug`.
 

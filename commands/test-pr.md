@@ -4,9 +4,9 @@
 @{{TOOLKIT_DIR}}/rules/preset-environments.md
 
 > **When**: You want to manually verify a PR's changes work correctly in a running local app.
-> **Produces**: Scenario-by-scenario pass/fail results with screenshot evidence.
+> **Produces**: Scenario-by-scenario pass/fail results with screenshot + video evidence.
 
-Uses Playwright MCP to drive a real browser. Project-agnostic — works for any web app on localhost.
+Uses Playwright MCP to drive a real browser **and records the run as a video artifact** by default (see [skills/qa/references/browser-recording.md](../skills/qa/references/browser-recording.md)). Project-agnostic — works for any web app on localhost or stg.
 
 ## Usage
 
@@ -17,6 +17,10 @@ Uses Playwright MCP to drive a real browser. Project-agnostic — works for any 
 /test-pr <pr-number> --url http://localhost:3000   # explicit app URL
 /test-pr <pr-number> --checkout                    # check out PR branch first
 /test-pr <pr-number> --smoke                       # 3 scenarios max, fast
+/test-pr <pr-number> --post                        # after run, ask where to post the report
+/test-pr <pr-number> --post sc-12345               # post directly to a Shortcut story
+/test-pr <pr-number> --post pr                     # post directly as a comment on the PR
+/test-pr <pr-number> --no-record                   # skip the video recording (rare)
 ```
 
 ## Prerequisite
@@ -89,12 +93,14 @@ This produces 3–7 focused scenarios. With `--smoke`, cap at 3 regardless of im
 
 Show the scenario list to the user before executing. If they want to adjust (add, remove, or reword scenarios), accept changes before proceeding.
 
-### 6. Execute via Playwright MCP
+### 6. Execute via Playwright MCP (with recording)
+
+Follow [skills/qa/references/browser-recording.md](../skills/qa/references/browser-recording.md) for the canonical recipe — start `screencapture -v -V <duration>` in the background **before** the first scenario, drive the browser via Playwright MCP, kill the recording on completion, and surface the file path. Skip the recording only if `--no-record` was passed.
 
 For each scenario in order:
 
 1. Navigate to the relevant page at the app URL from step 3
-2. Perform the described actions using Playwright MCP
+2. Perform the described actions using Playwright MCP (`mcp__plugin_playwright_playwright__browser_*`)
 3. Take a screenshot at the primary verification point (name it `scenario-<N>-<short-name>.png`)
 4. Check console for errors: `browser_console_messages`
 5. Record the outcome: **PASS**, **FAIL**, or **BLOCKED**
@@ -108,15 +114,22 @@ For each scenario in order:
 
 **On BLOCKED**: Note what prerequisite was missing (auth, data, feature flag). Move on.
 
-Do not run scenarios in parallel — sequential execution keeps evidence clean.
+Do not run scenarios in parallel — sequential execution keeps evidence clean and the recording linear.
 
 ### 7. Report
 
-The template below is for **in-terminal output only**.
+The template below is for **in-terminal output only**. Always include the recording file path in the `Evidence` line.
 
-If the user asks to post results to a Shortcut story, GitHub PR/issue comment, or any other shared external destination, do not adapt this template. Instead:
+If `--post` was passed (or the user asks afterward to post results to a Shortcut story, GitHub PR/issue comment, or any other shared external destination), do not adapt this terminal template. Instead:
 - Read [skills/qa/references/write-report.md](../skills/qa/references/write-report.md) for canonical body shape (single-flow vs multi-scenario), tone (narrative not technical), and evidence rules. Load the matching template / example from `qa/references/write-report/` only when actually drafting.
 - Read the destination-specific reference for upload + post mechanics: [skills/shortcut/references/report.md](../skills/shortcut/references/report.md) for Shortcut, or the equivalent for other destinations.
+- Attach the recording from `~/qa-recordings/`. For GitHub PR comments, follow the size-limit guidance in [skills/qa/references/browser-recording.md](../skills/qa/references/browser-recording.md) (transcode to MP4 if >10 MB).
+
+`--post` argument forms:
+- `--post` (no value) → after the run, ask the user where to post (Shortcut story id, `pr`, both, or skip)
+- `--post sc-12345` → post directly to that Shortcut story
+- `--post pr` → post directly as a comment on the PR under test
+- `--post sc-12345 --post pr` → post to both
 
 The terminal template below specifies a tabular grid that's appropriate for in-conversation summaries only — never paste it into an external comment.
 
@@ -138,6 +151,10 @@ Impact: CORE / STANDARD / PERIPHERAL
 
 ### Summary
 - <N> passed, <N> failed, <N> blocked of <N> total
+
+### Evidence
+- Recording: ~/qa-recordings/<file>.mov (<size>)
+- Screenshots: scenario-1-*.png, scenario-2-*.png, ...
 
 ### Failures
 [For each FAIL — omit section if none:]
