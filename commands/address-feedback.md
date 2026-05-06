@@ -75,7 +75,7 @@ Address fixes by priority:
 **TDD for behavioral changes**: write a test first (RED), then fix (GREEN).
 **Direct fix for cosmetic/pattern-following**: fix directly, existing tests cover it.
 
-Commit fixes: `fix: address PR feedback — [summary]`
+Stage your changes. Defer the commit shape to the **Commit Strategy** section below — fixup-into-originating is the default for in-PR corrections.
 
 ### 4. Review Gate
 
@@ -102,23 +102,39 @@ Thanks for the suggestion. Keeping the current approach — it follows existing 
 Good question — auth is handled by middleware upstream. The changes here operate after auth validation.
 ```
 
-### 6. Push + Post
+### 6. Commit Strategy
 
-**Reply strategy — inline first, quote-reply fallback:**
+When the fix corrects code introduced by an earlier commit on the same un-merged feature branch, fold the fix into that commit using fixup+autosquash — not a fresh follow-up commit. Bug + fix in one commit means rollback ties them together.
 
-1. **Inline reply** (preferred): Use the review comment's reply endpoint. This threads the response directly under the reviewer's comment.
+| Scenario | Action |
+|----------|--------|
+| Fix corrects a prior in-PR commit on this branch (single originating commit clear) | `git commit --fixup=<originating-sha>` + `git rebase --autosquash <base>` + `git push --force-with-lease` |
+| Fix spans multiple originating commits on this branch | Fixup against the earliest affected commit, or surface to the user for guidance |
+| Fix is genuinely additive (new test, new behavior beyond what the original commit covered) | New commit + push |
+| Branch is shared / re-reviews requested mid-flight | New commit + push — don't rewrite history while reviewers are looking |
+
+**Force-push safety**: only permitted on the current feature branch under `--force-with-lease`. Never on main/master or shared branches.
+
+**Mechanics**: see `commands/fix-ci.md` § "Amend mechanics" for the autosquash pattern and the pre-commit-hook ordering caveat.
+
+### 7. Push + Post
+
+**Reply strategy — code-anchored or direct code questions only:**
+
+1. **Inline reply** for line-anchored review comments (has a `path` + `line` + comment `id`). Threads directly under the reviewer's comment:
    ```bash
    gh api repos/<owner>/<repo>/pulls/comments/<comment-id>/replies \
      -f body="<response>"
    ```
-2. **Quote reply** (fallback only): Use this only when the comment has no `id` (e.g., a top-level PR body comment, not a line comment). Quote the relevant snippet so context is clear:
+2. **No reply** for top-level PR-review body summaries or meta commentary. The new commit + commit message speak for the change; the reviewer sees the diff on next pass. Don't quote-reply on review bodies — it creates noise and (when `gh` is authed as a teammate) appears under the wrong identity.
+3. **Quoted reply on a top-level comment** is appropriate ONLY when the comment asks a direct code question. Quote the snippet so context is clear:
    ```bash
-   gh pr comment <number> --body "> <quoted text>\n\n<response>"
+   gh pr comment <number> --body "> <quoted question>\n\n<answer>"
    ```
-3. **Never** post a bare new comment without quoting or threading — it loses the reviewer's context.
+4. **Identity check before posting**: `gh` posts as the authenticated user. If `gh auth status` shows a team member, the comment will appear under their name on the timeline — surface and confirm with the user before any post.
 
 ```bash
-git push
+git push  # or git push --force-with-lease per Commit Strategy
 ```
 
 **All-mechanical fixes** (typo, config, lint, formatting): Push and post replies automatically. No confirmation needed.
@@ -143,7 +159,7 @@ Proceed on confirmation.
 
 **Leave human threads open**: Post the "Fixed in `<sha>`" reply but do not resolve. Human reviewers verify themselves.
 
-### 7. Summary
+### 8. Summary
 
 ```markdown
 ## Address-Feedback Complete
