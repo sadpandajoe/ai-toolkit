@@ -13,7 +13,7 @@
 /address-feedback <pr-number-or-url> --auto
 ```
 
-`--auto` skips triage/posting confirmations where verification is clean. It does not authorize commit, amend, rebase, push, or force-push by itself.
+`--auto` skips triage/posting confirmations entirely (no per-step prompts). Without `--auto`, the default flow still creates new commits, pushes them to the current PR branch, posts replies to bot threads, and resolves eligible bot threads — but pauses for amend/rebase/force-push, human-thread wording, and final approval/request-changes. `--auto` removes those pauses for bot/posting work only; it does NOT authorize amend, rebase, or force-push.
 
 ## Routing
 
@@ -56,8 +56,8 @@ For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` imm
 - Pause after triage unless `--auto` was passed.
 - Run `/verify` or equivalent pre-flight checks before `/review-code`, and record the result in the Review Gate.
 - Use the Review Gate skip/micro-fix exceptions only when `rules/review-gate.md` allows them; otherwise run `/review-code` after substantive fixes.
-- Stop before posting when `--draft` was passed, a discussion needs user wording, verification failed, the fix is not visible on the PR branch, or push/post safety is unclear.
-- Stop before commit, amend, rebase, push, force-push, GitHub posting, or thread resolution unless the user explicitly authorized that boundary or the command flag clearly grants it.
+- Default action: create a new commit on the current PR branch, push it, post replies to bot threads, and resolve eligible bot threads once the underlying fix is verified.
+- Pause for explicit user confirmation when any of these apply: `--draft` was passed, a human-thread reply needs user wording, verification failed, the fix is not yet visible on the PR branch, the next git step would amend/rebase/force-push, the push target is ambiguous (not the current PR branch, or tracks an unexpected remote), or the next action would approve / request changes on the PR.
 - Run the PII scrub from `feedback/references/reply-resolve.md` over every drafted reply, top-level comment, and commit message before posting or pushing. Strip customer names, internal ticket IDs (Shortcut/Linear/Jira), internal URLs, reporter identity, and credentials.
 
 ## Summary Contract

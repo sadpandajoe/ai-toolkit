@@ -24,7 +24,7 @@
 - Run local verification before review, and emit a Review Gate block whenever repo-tracked files changed.
 - Update PROJECT.md at standard-path boundaries. Two updates are **hard gates with confirmation blocks** on every path: initial-triage entry before path branching (step 3 tail), Completed entry before the chat summary (step 9 head).
 - The main thread owns `CI_FIX.md` and PROJECT.md. Subagents return compact handoffs; they do not update durable state directly.
-- Do not commit, amend, rebase, push, or force-push unless the user explicitly authorized that git boundary for this run.
+- When verification is STRONG and the fix is approved, create a new commit on the current feature branch and push it as part of the fix flow. Pause for amend, rebase, or force-push, and when the push target is ambiguous (not the current feature branch, or tracks an unexpected remote). PARTIAL/WEAK verification and standard-path holds stay non-committing — present the diagnosis and stop.
 - For STANDARD or expensive CI work, checkpoint/clear after `CI_FIX.md` or PROJECT.md captures classification/grouping, after Action Gate/RCA decisions, after local verification, and after `/review-code` when commit recommendation work remains.
 
 ## Happy Paths
@@ -91,7 +91,7 @@ For zero-logic diffs, apply the skip rule from `rules/review-gate.md`. For true 
 
 Use the commit recommendation strategy in [skills/debug/references/ci-fix-orchestration.md](../skills/debug/references/ci-fix-orchestration.md).
 
-Do not commit standard-path or PARTIAL/WEAK fixes automatically. Do not commit, amend, rebase, push, or force-push any fix unless the user explicitly authorized that git boundary for this run. Present the diagnosis, verification gap, and recommended next action.
+Do not commit standard-path or PARTIAL/WEAK fixes automatically. For STRONG-verified trivial/moderate fixes with a clean Review Gate, create a new commit on the current feature branch and push it. Pause for amend, rebase, or force-push, and when the push target is ambiguous. For PARTIAL/WEAK or standard-path holds, present the diagnosis, verification gap, and recommended next action without committing.
 
 ### 9. Summary + Metrics
 

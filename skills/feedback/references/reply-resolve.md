@@ -64,14 +64,21 @@ If `gh` is authenticated as a teammate or automation account that could surprise
 - Human reviewer threads stay open. Post the reply and let the reviewer resolve or re-review.
 - Never resolve ambiguous or discussion threads unless the user explicitly asks.
 
-## Push + Post Gate
+## Push + Post Defaults
 
-Do not push, post GitHub replies, approve/request changes, or resolve threads unless the user explicitly authorized that boundary or a command flag clearly grants it.
+Default behavior: push new commits on the current PR branch, post replies to bot threads, and resolve eligible bot threads once the underlying fix is verified. Approve / request-changes always confirms with the user.
 
-Boundary meanings:
+Pause for explicit confirmation when:
+- a human-thread reply needs user wording
+- the next git step would amend, rebase, or force-push history
+- the push target is ambiguous (not the current PR branch, or tracks an unexpected remote)
+- the next action would approve or request changes on the PR
+- verification failed or the fix is not yet on the PR branch
+
+Flag meanings:
 - `--draft`: never post or resolve; return reply drafts and resolution recommendations only.
-- `--auto`: may skip posting confirmation for already-verified replies, but does not authorize commit, amend, rebase, push, or force-push by itself.
-- No flag: prepare replies and ask before posting or resolving.
+- `--auto`: skip the per-step posting confirmation for verified bot threads and the push announcement. Does NOT authorize amend, rebase, or force-push.
+- No flag: push the new commit, then announce the post/resolve plan in one block and proceed unless the user objects.
 
 Replies that claim a fix was made should only be posted after the fix is visible on the PR branch, or after the user explicitly asks to post draft wording before pushing.
 
