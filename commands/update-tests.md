@@ -134,4 +134,21 @@
 - Favor replacing low-signal tests over adding redundant ones
 - Write the failing test first when feasible; if blocked, document why before changing the suite
 - `/review-code` is an internal phase here, not the expected next top-level user step
-- TRIVIAL runs (single tiny test fix) skip the PROJECT.md hard gates; MODERATE runs update PROJECT.md once at the end; STANDARD/expensive runs follow the hard-gate cadence in the Command Contract.
+- Every run writes at least a one-line `## Tests Updated` entry to PROJECT.md before the chat summary so `/clear` or `/archive-project-file` after `/update-tests` does not lose the record. TRIVIAL/MODERATE runs satisfy this with a single end-of-run entry; STANDARD/expensive runs follow the hard-gate cadence in the Command Contract.
+
+  Minimum entry shape for TRIVIAL/MODERATE:
+
+  ```markdown
+  ## Tests Updated
+  Files: [list]
+  Change: [one-liner — what behavior changed or got covered]
+  Verification: [strength label]
+  Commit: [SHA or "no commit"]
+  ```
+
+  Emit before the chat summary:
+
+  ```markdown
+  ## PROJECT.md Updated — Tests Updated
+  Files recorded: [count]
+  ```

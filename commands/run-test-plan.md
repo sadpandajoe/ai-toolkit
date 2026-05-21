@@ -25,6 +25,24 @@
   - After step 6 (report): `## Test Plan Reported` (where posted: Shortcut story link, PR comment, or local only).
 - These writes are **hard gates before any `/checkpoint --clear`** on STANDARD/expensive runs — chat-only scenario state is unrecoverable after clear.
 - The plan matrix and per-scenario evidence paths must land in PROJECT.md before clear regardless of whether the run is reactive or proactive checkpoint.
+- **Every run** (including TRIVIAL/MODERATE) writes at least a `## Test Plan Results` entry to PROJECT.md before the chat summary so `/clear` or `/archive-project-file` after `/run-test-plan` does not lose the QA record. TRIVIAL/MODERATE runs may fold plan + results + report into a single end-of-run entry; STANDARD/expensive runs follow the per-phase cadence above.
+
+  Minimum entry shape for TRIVIAL/MODERATE:
+
+  ```markdown
+  ## Test Plan Results
+  Source: [plan path / Shortcut / PR / area]
+  Scenarios: [N run, N passed, N failed, N blocked, N skipped]
+  Evidence: [recording path or "none"]
+  Reported: [link or "local only"]
+  ```
+
+  Emit before the chat summary:
+
+  ```markdown
+  ## PROJECT.md Updated — Test Plan Results
+  Scenarios recorded: [count]
+  ```
 
 ## Steps
 

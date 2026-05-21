@@ -40,13 +40,33 @@ The main thread owns PR identity, app URL, scenario selection, evidence paths, p
 
 ## PROJECT.md Discipline
 
+**Every run** writes at least one entry to PROJECT.md before the chat summary, so `/clear` or `/archive-project-file` immediately after `/test-pr` does not lose the QA record.
+
 For STANDARD or expensive runs (CORE impact, broad scenario set, repeated re-validation), follow `rules/context-management.md` and write durable state to PROJECT.md at each phase boundary before `/checkpoint --clear`:
 
 - After scenario selection: `## Test-PR Scenarios` (PR identity, app URL, impact tier, scenario list).
 - After execution: `## Test-PR Results` (per-scenario result, evidence paths, recording path).
 - After posting: `## Test-PR Posted` (Shortcut/PR comment link or "local only").
 
-These writes are **hard gates before any `/checkpoint --clear`** on STANDARD/expensive runs. Smoke runs (`--smoke`) typically stay TRIVIAL/MODERATE and skip the hard gates.
+These writes are **hard gates before any `/checkpoint --clear`** on STANDARD/expensive runs.
+
+For TRIVIAL/MODERATE runs (including `--smoke`), a single `## Test-PR Results` entry at completion is the minimum:
+
+```markdown
+## Test-PR Results — PR #[number]
+App: [url]
+Impact: [tier]
+Scenarios: [N run, N passed, N failed]
+Evidence: [recording path or "none"]
+Posted: [link or "local only"]
+```
+
+Emit before the chat summary:
+
+```markdown
+## PROJECT.md Updated — Test-PR Results
+PR #[number] recorded
+```
 
 ## Gates
 
@@ -58,6 +78,8 @@ These writes are **hard gates before any `/checkpoint --clear`** on STANDARD/exp
 - Stop before posting unless `--post` was passed and evidence paths are available.
 
 ## Summary Contract
+
+Do not emit the chat summary until the `## PROJECT.md Updated — Test-PR Results` confirmation block has been emitted.
 
 End with:
 

@@ -77,4 +77,20 @@
 - Favor the smallest set of high-signal tests over broad test quantity
 - `/review-code` is an internal phase here, not the expected next top-level user step
 - Stop before committing unless the user explicitly requested commit/push behavior.
-- TRIVIAL runs (one or two tests) skip the PROJECT.md hard gates; MODERATE runs update PROJECT.md once at the end; STANDARD/expensive runs follow the hard-gate cadence in the Command Contract.
+- Every run writes at least a one-line `## Tests Created` entry to PROJECT.md before the chat summary so `/clear` or `/archive-project-file` after `/create-tests` does not lose the record. TRIVIAL/MODERATE runs satisfy this with a single end-of-run entry; STANDARD/expensive runs follow the hard-gate cadence in the Command Contract.
+
+  Minimum entry shape for TRIVIAL/MODERATE:
+
+  ```markdown
+  ## Tests Created
+  Files: [list]
+  Behaviors covered: [one-liner]
+  Verification: [strength label]
+  ```
+
+  Emit before the chat summary:
+
+  ```markdown
+  ## PROJECT.md Updated — Tests Created
+  Files recorded: [count]
+  ```

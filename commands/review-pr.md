@@ -29,6 +29,7 @@ Use `--draft` to show the review locally without posting. Use `--auto` to skip c
 - Post only clean, user-confirmed finding text to GitHub.
 - For batch reviews, keep the main thread as a thin orchestrator and use compact per-PR handoffs.
 - For batch reviews of 4+ PRs, follow `rules/context-management.md`: after each wave of 3 PRs, the main thread must append a `## Review-PR Batch Wave N` block to PROJECT.md (per-PR recommendation, posted status, top finding, residual risk), then `/checkpoint --clear` before launching the next wave. This is a hard gate — without the PROJECT.md write, the per-PR posting state is lost on clear.
+- For every reviewed PR (single or batch), append a `## PR Review — #N` entry to PROJECT.md before the chat summary. This is a hard gate so `/clear` or `/archive-project-file` immediately after `/review-pr` does not lose the review record.
 
 ## Steps
 
@@ -65,7 +66,31 @@ Respect:
 - clean Standard reviews: confirm before approving unless `--auto`
 - findings: post only user-confirmed finding descriptions
 
-### 4. Summary
+### 4. PROJECT.md Update (Hard Gate)
+
+Before emitting the chat summary, append a `## PR Review — #N` entry per reviewed PR to PROJECT.md:
+
+```markdown
+## PR Review — #[number]
+Verdict: [approve / request-changes / comment]
+Top finding: [one-liner, or "none"]
+Severity counts: [critical N, major N, minor N, nit N]
+Posted: [yes / draft / no — reason]
+Residual risk: [one-liner, or "none"]
+```
+
+Batch waves already write `## Review-PR Batch Wave N`; the per-PR entries can be folded into that wave block instead of duplicated.
+
+Emit before the chat summary:
+
+```markdown
+## PROJECT.md Updated — PR Review(s)
+PRs recorded: [#numbers]
+```
+
+### 5. Summary
+
+Do not emit the chat summary until the `## PROJECT.md Updated — PR Review(s)` block has been emitted.
 
 Emit the summary from [skills/review/references/pr-posting.md](../skills/review/references/pr-posting.md).
 
@@ -78,6 +103,7 @@ Emit the summary from [skills/review/references/pr-posting.md](../skills/review/
 - [ ] All findings tagged by severity
 - [ ] Recommendation determined before posting
 - [ ] Posting action respects `--draft`, `--auto`, and user-confirmation boundaries
+- [ ] PROJECT.md `## PR Review — #N` entry written for every reviewed PR before summary
 - [ ] Summary emitted
 
 ## Notes
