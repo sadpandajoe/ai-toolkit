@@ -97,11 +97,26 @@ If no template, use this default structure:
 - **Move implementation detail tables / file inventories below the rationale**, not above. Tables of "what's in this PR" are useful to maintainers but bury the answer to "why does this PR exist".
 - **Strip planning artefacts** — "skeleton commit", "first set of tests", "stubs that throw" — once the PR has grown past that phase. The body should reflect the PR's *current* state, not its development history.
 
-### 5. Present for Review
+### 5. PII Scrub
+
+Before showing the PR to the user, re-read the drafted title and body and remove anything that should not appear on a public surface. The PR text is permanent — edits after the fact don't remove it from git history, mirrors, or search indexes.
+
+Strip or paraphrase:
+- **Customer or workspace names** — say "a customer" or describe the configuration ("dashboards with `hideTab: true`") instead.
+- **Internal ticket IDs** — Shortcut (`sc-XXXXX`), Linear, Jira, internal issue tracker IDs. These belong in PROJECT.md, the local commit footer, or an internal channel, not in the public PR body.
+- **Internal URLs** — links to Shortcut/Linear/Jira tickets, internal dashboards, staging workspaces, customer-specific Superset/Preset instances.
+- **Reporter identity** — never name the customer, support engineer, or internal user who reported the bug.
+- **Credentials and connection strings** — even in test plans (use placeholders).
+
+Public repo PR bodies, PR titles, and commit messages are all in scope. If the repo is a private/internal monorepo, the rule still applies for customer-identifying data — assume the audience is broader than the current team.
+
+If you find PII, rewrite it generically and re-run the title/body tightness checks on the result before continuing.
+
+### 6. Present for Review
 
 Show the generated title and body to the user. Wait for confirmation or edits.
 
-### 6. Create PR
+### 7. Create PR
 
 ```bash
 gh pr create --title "..." --body "..." [--draft] [--base ...]
@@ -109,7 +124,7 @@ gh pr create --title "..." --body "..." [--draft] [--base ...]
 
 Return the PR URL.
 
-### 7. Summary
+### 8. Summary
 
 ```markdown
 ## Create-PR Complete

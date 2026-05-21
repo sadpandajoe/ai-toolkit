@@ -26,6 +26,19 @@ Discuss:
 Good question. This would change the API contract for existing callers; should we make that behavior change in this PR or open a follow-up?
 ```
 
+## PII Scrub
+
+Before posting any reply, top-level comment, or commit message, re-read the text and strip anything that does not belong on a public surface. Posted comments and pushed commits are permanent — edits after the fact don't remove them from git history, mirrors, notification emails, or search indexes.
+
+Remove or paraphrase:
+- **Customer or workspace names** — describe the configuration ("dashboards with `hideTab: true`") rather than naming the customer.
+- **Internal ticket IDs** — Shortcut (`sc-XXXXX`), Linear, Jira. Keep these in PROJECT.md or a local commit footer, not in the public reply.
+- **Internal URLs** — Shortcut/Linear/Jira links, staging workspaces, customer-specific instances.
+- **Reporter identity** — the customer, support engineer, or internal user who filed the bug.
+- **Credentials and connection strings** — even in repro snippets, use placeholders.
+
+If you find PII, rewrite it generically and re-check the reply still answers the reviewer's question before posting.
+
 ## Posting Rules
 
 1. Inline reply for line-anchored review comments with a path, line, and comment id:

@@ -58,6 +58,7 @@ For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` imm
 - Use the Review Gate skip/micro-fix exceptions only when `rules/review-gate.md` allows them; otherwise run `/review-code` after substantive fixes.
 - Stop before posting when `--draft` was passed, a discussion needs user wording, verification failed, the fix is not visible on the PR branch, or push/post safety is unclear.
 - Stop before commit, amend, rebase, push, force-push, GitHub posting, or thread resolution unless the user explicitly authorized that boundary or the command flag clearly grants it.
+- Run the PII scrub from `feedback/references/reply-resolve.md` over every drafted reply, top-level comment, and commit message before posting or pushing. Strip customer names, internal ticket IDs (Shortcut/Linear/Jira), internal URLs, reporter identity, and credentials.
 
 ## Summary Contract
 
