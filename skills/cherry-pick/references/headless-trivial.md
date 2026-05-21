@@ -31,7 +31,7 @@ The worker may not report `Result: Applied` unless scope-audit evidence is prese
 - per-hunk audit verdict summary
 - final `LEAK / CLEAN / ESCALATE` recommendation
 
-Headless success is a candidate result, not final shared-branch success. The orchestrator must apply the worker's resulting commit or patch onto the live target branch in planned order, rerun the mandatory scope audit and minimum assigned validation on that live branch, then perform any authorized push itself.
+Headless success is a candidate result, not final shared-branch success. The orchestrator must apply the worker's resulting commit or patch onto the live target branch in planned order, rerun the mandatory scope audit and minimum assigned validation on that live branch, then perform any authorized push itself and emit the `## Push Boundary — <pr-or-sha>` block (see SKILL.md step 8) **before** dispatching the next headless worker.
 
 ## Status Block
 

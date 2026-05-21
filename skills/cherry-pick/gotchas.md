@@ -96,7 +96,7 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 **Why:** `git push` happening once per batch is the natural rhythm when you're orchestrating a tight loop ("apply, validate, next, …, done, push"). When push has been authorized, the per-cherry push directive is easy to skim past because it sits as a trailing note after the validate references rather than as a numbered phase, and the Batch Flow section doesn't restate it.
 
-**Do instead:** Step 8 is a numbered push boundary. If push is authorized, it runs **per cherry, before starting the next dependent one**. If push is not authorized, stop with `Push: pending authorization`. Only batch pushes when the user explicitly requests it (e.g., to reduce CI cost) — confirm first.
+**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must emit a `## Push Boundary — <pr-or-sha>` confirmation block (see SKILL.md step 8) before any subsequent work runs. If push is authorized, it runs **per cherry, before starting the next dependent one**. If push is not authorized, stop with `Status: pending-authorization`. Only batch pushes when the user explicitly requests it (e.g., to reduce CI cost) — confirm first.
 
 **First seen:** 4-PR batch into 6.0-release, 2026-05-06. Pushed once at the end; user flagged it.
 

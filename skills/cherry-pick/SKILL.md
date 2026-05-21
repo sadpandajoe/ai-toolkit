@@ -125,6 +125,18 @@ When push is not authorized, stop before publishing and record `Push: pending au
 
 The only exception is when the user explicitly asks for batched push (e.g., to reduce CI cost). In that case, confirm before deferring and record the batched-push decision.
 
+**Hard gate — per-cherry push boundary.** After step 7 passes and before any subsequent work runs (next cherry's investigate/apply, final report, checkpoint, or PR creation), the orchestrator must emit this confirmation block verbatim for *this* cherry:
+
+```markdown
+## Push Boundary — <pr-or-source-sha>
+Local SHA: <sha after validate/amend>
+Status: pushed | pending-authorization | deferred-by-user
+Remote SHA: <sha visible on remote after push> | n/a
+Reason (if not pushed): <one line>
+```
+
+If `Status: pushed`, the `git push` for this cherry has already happened — not queued, not deferred. If `Status: pending-authorization` or `deferred-by-user`, the orchestrator must also stop dependent follow-ups until the user clears the boundary. Do not start the next dependent cherry's worker without this block in chat for the previous cherry. This is the only structural defense against falling into the "apply, validate, next, …, done, push" rhythm that batches authorized pushes (see gotchas.md, "Authorized push batched at end instead of per-cherry").
+
 ## Batch Cherry-Pick Flow
 
 When multiple PRs/SHAs are provided, the main agent acts as a **thin orchestrator**. It owns ordering, dependency tracking, user decisions, checkpoint boundaries, and final synthesis. It must not accumulate raw per-cherry context.
@@ -210,6 +222,7 @@ No full diffs or long logs unless blocked. If a blocked handoff needs raw eviden
    - If a worker returns a prepared commit, branch, or patch from an isolated context, the orchestrator must replay it onto the current live target branch in planned order.
    - After replay, rerun the mandatory scope-leak audit and the minimum assigned validation on the live target branch before marking the row `Applied` or pushing.
    - Worker validation is useful evidence, but it is stale once fan-in happens; live-branch replay validation is the gate.
+   - **Hard gate before dispatching the next cherry:** the `## Push Boundary — <pr-or-sha>` block from step 8 must already be emitted in chat for the cherry that just finished. No "I'll batch the pushes at the end" path — that violates the boundary. If push is `pending-authorization` or `deferred-by-user`, stop dependent dispatch and surface to the user; only continue to *independent* picks (per the sequence plan's independence islands).
 4. **Status tracking** — record results in the execution table or `CHERRY_PICK.md`. If one fails, do NOT continue with subsequent dependent picks. Independent picks may continue.
 5. **Escalation** — surface escalations to the user, relay answers back.
 6. **Final report** — collect results and produce the document phase output. Include pushed cherries and any cherries waiting on push authorization; the report summarizes, it does not silently publish.
