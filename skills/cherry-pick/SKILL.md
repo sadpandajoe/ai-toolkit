@@ -41,7 +41,7 @@ For non-trivial or expensive cherry-picks, follow `rules/context-management.md`:
 
 ## Single Cherry-Pick Flow
 
-Each cherry-pick runs all validation phases. No validation phase may be skipped — the diff audit in step 7 is the only defense against scope leak (see gotchas.md). Step 8 is a publish boundary: run it only when `--push` or explicit user authorization grants push permission.
+Each cherry-pick runs all validation phases. No validation phase may be skipped — the diff audit in step 7 is the only defense against scope leak (see gotchas.md). Step 7c runs only when the cherry terminates as `Blocked` or `Rejected`; it surfaces the upstream PRs that would unstick the row before the final report. Step 8 is a publish boundary: run it only when `--push` or explicit user authorization grants push permission.
 
 ### 1. Investigate (heavy effort)
 
@@ -110,6 +110,16 @@ The orchestrator may not mark a cherry `Applied` without this report. If the sub
 Conflict-marker scan, **pre-commit on changed files**, build, type-check, targeted tests. Pre-commit is mandatory — conflict resolution often re-indents lines past length limits, and pre-commit is what CI runs. If pre-commit auto-fixes or you make manual fixes, `git commit --amend --no-edit` before pushing. Do not push, then amend, then force-push.
 
 → Full procedure (subagent contract, LLM audit, validation order, status labels, dependency manifest rule): [references/validate.md](references/validate.md)
+
+### 7c. Unblock Discovery (Blocked / Rejected only)
+
+When a cherry terminates as `Blocked` or `Rejected` for reasons that look like "target is missing something" (modify/delete, prerequisite commits flagged in investigate, target-side architecture missing), spawn a discovery subagent before moving to the final report. Its only job is to name the upstream PRs/commits that would unstick this cherry — it does **not** investigate, gate, plan, or apply them.
+
+Skip when the rejection is intrinsic (reject-category API rewrite, dependency-bump PR, build-system change). Record "no unblock path" on the row and continue.
+
+Mode is inform-only: surface candidates in the final report under "What to do next" so the user decides whether to add them to the run. Auto-picking is a future extension (`--auto-unblock`).
+
+→ Full subagent contract, output block, future-auto-unblock notes: [references/unblock-discovery.md](references/unblock-discovery.md)
 
 ### 8. Push Recommendation / Authorized Push
 
@@ -209,6 +219,7 @@ Each per-cherry or per-wave subagent returns only:
 - commands run
 - residual risk
 - dependency implications for later rows
+- unblock candidates (only when result is `Blocked` or `Rejected` and step 7c ran): ordered list of upstream PRs/SHAs that would unstick this row, or `none` with one-line reason
 
 No full diffs or long logs unless blocked. If a blocked handoff needs raw evidence, put file paths or the shortest decisive excerpt in the manifest.
 

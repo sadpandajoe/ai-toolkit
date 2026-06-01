@@ -50,3 +50,4 @@ Next action:
 - Commands run:
 - Residual risk:
 - Dependency implications:
+- Unblock candidates (Blocked/Rejected only):
