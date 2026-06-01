@@ -28,10 +28,12 @@ The command owns the visible gates and sequence. Each step loads only the refere
 - For STANDARD work, run plan-review iteration on `PLAN.md` via `skills/planning/references/iterate-review.md` after `PLAN.md Written` and before implementation; require the reviewer threshold and cold-read Go documented in that helper.
 - Run `/verify` or equivalent pre-flight checks before `/review-code`, and record the result in the Review Gate.
 - Do not commit without an added or updated regression test unless the gap is explicitly accepted.
+- Default action when verification is STRONG, a regression test was added or updated (or the gap was explicitly accepted by the user), and the Review Gate is clean: create a new commit on the current feature branch and push it as part of the fix flow. The TDD regression test is the verification gate that makes auto-push safe — without it, pause. Pause for amend, rebase, force-push, ambiguous push target (not the current feature branch, or tracks an unexpected remote), PARTIAL/WEAK verification, or any STANDARD-path hold (RCA review, plan review, per-slice gates).
 - Only the main thread writes PROJECT.md or `PLAN.md`. Subagents return handoffs; the orchestrator updates durable state.
 - For STANDARD or expensive bug work, follow `rules/context-management.md`: checkpoint/clear after RCA review accepts, after `PLAN.md` is written, after plan review accepts, after implementation, and after code review fixes when QA/PR work remains.
 - For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` immediately after the Complexity Gate.
 - **`## Slice N Complete` PROJECT.md write is a hard gate** before every per-slice checkpoint/clear on the STANDARD path. Block shape matches `commands/create-feature.md` step 8. No clear without the entry.
+- **`## Bug Fix Complete` PROJECT.md write is a hard gate** before the chat summary on every path. TRIVIAL/MODERATE single-shot runs need this so `/clear` or `/archive-project-file` after `/fix-bug` does not lose the result. STANDARD runs that ended with a per-slice entry must still emit the rollup before the summary. See the end-of-workflow section below.
 
 ## Planning Phase Boundary
 
@@ -95,3 +97,33 @@ Use the happy paths and path rules as the primary flow. Use this table as a phas
 For multiple plausible causes, use bounded investigation lanes only when they save context or real time. Do not start the next lane wave while a current lane has unresolved blockers, conflicting evidence, or a user decision.
 
 If the existing fix status is `FIXED_UPSTREAM`, route to `/cherry-pick`. If it is `FIX_PENDING_PR`, stop and surface adopt/monitor/supersede choices.
+
+## End-of-Workflow PROJECT.md Update (Hard Gate)
+
+Before emitting the chat summary, append a `## Bug Fix Complete` entry to PROJECT.md so the durable record survives `/clear` or `/archive-project-file`. Required on every path — TRIVIAL/MODERATE single-shot runs included.
+
+Minimum entry shape:
+
+```markdown
+## Bug Fix Complete
+Bug: [one-line description or ticket]
+Root cause: [one-liner]
+Files changed: [list]
+Regression test: [added / updated / accepted gap with reason]
+Verification: [strength label]
+Review Gate: [status]
+QA: [pass / fail / skipped — reason] (if applicable)
+Residual risk: [one-liner, or "none"]
+Commit: [SHA or "no commit"]
+```
+
+For STANDARD runs that already wrote per-slice `## Slice N Complete` entries, this rollup summarizes the run; it does not replace those entries.
+
+Emit before the chat summary:
+
+```markdown
+## PROJECT.md Updated — Bug Fix Complete
+Entry recorded
+```
+
+Do not emit the chat summary until the `## PROJECT.md Updated — Bug Fix Complete` confirmation block has been emitted.

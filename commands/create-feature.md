@@ -31,6 +31,7 @@ The command owns the visible gates and sequence. Each step loads only the refere
 - For STANDARD work, follow `rules/context-management.md`: checkpoint/clear after `PLAN.md` is written, after plan review/action gate accepts, after each implementation slice or wave, and after code review fixes when validation/PR work remains.
 - For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` immediately after the Complexity Gate.
 - **`## Slice N Complete` PROJECT.md write is a hard gate** before every per-slice checkpoint/clear on the STANDARD path. No clear without the entry.
+- **`## Feature Complete` PROJECT.md write is a hard gate** before the chat summary on every path. TRIVIAL/MODERATE single-shot runs need this so `/clear` or `/archive-project-file` after `/create-feature` does not lose the result. STANDARD runs that ended with a per-slice entry must still emit the rollup before the summary. See the end-of-workflow section below.
 
 ## Planning Phase Boundary
 
@@ -129,3 +130,33 @@ Use the happy paths and path rules as the primary flow. Use this table as a phas
 - **Standard**: use the planning phase for exploration/design only; write `PLAN.md`; run plan review and action gate; then implement in slices.
 
 For 3+ independent slices, treat the work as STANDARD with workstreams and keep the main thread as a thin orchestrator. `PLAN.md` owns the slice table, dependencies, entrance/exit criteria, and acceptance checks. PROJECT.md records only the active slice/wave and next action. Load `rules/orchestration.md` only when deciding subagent batch size, workstream fan-in, or reasoning effort.
+
+## End-of-Workflow PROJECT.md Update (Hard Gate)
+
+Before emitting the chat summary, append a `## Feature Complete` entry to PROJECT.md so the durable record survives `/clear` or `/archive-project-file`. Required on every path — TRIVIAL/MODERATE single-shot runs included.
+
+Minimum entry shape:
+
+```markdown
+## Feature Complete
+Feature: [one-line description or ticket]
+Slices delivered: [count, or "single-shot"]
+Files changed: [summary or count]
+Tests added/updated: [list or count]
+Verification: [strength label]
+Review Gate: [status]
+Feature validation: [pass / fail / skipped — reason] (if applicable)
+Residual risk: [one-liner, or "none"]
+PR: [URL or "no PR yet"]
+```
+
+For STANDARD runs that already wrote per-slice `## Slice N Complete` entries, this rollup summarizes the run; it does not replace those entries.
+
+Emit before the chat summary:
+
+```markdown
+## PROJECT.md Updated — Feature Complete
+Entry recorded
+```
+
+Do not emit the chat summary until the `## PROJECT.md Updated — Feature Complete` confirmation block has been emitted.
