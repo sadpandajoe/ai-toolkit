@@ -9,6 +9,7 @@
 - **TDD and YAGNI** — test first, build only what's needed now
 - **End-to-end commands own their internal loops** — planning, review, and validation sub-phases should continue automatically until threshold or blocker; do not surface subcommands as the next user step unless the user explicitly chose them
 - **Update PROJECT.md before completing any workflow** — every command or ad-hoc work session that produces results must write current status, what was done, and remaining items to PROJECT.md before finishing. The formal plan lives in PLAN.md during the workflow; it persists in place after completion until the user explicitly cleans up via `/archive-project-file`. Workflows do not auto-delete files.
+- **Write through symlinks via the resolved real path** — Claude Code's Write/Edit refuses to write through a symlink (`Refusing to write through symlink: ...`). When PROJECT.md, PLAN.md, or any toolkit-managed file is a symlink (common in `.claudette`/worktree-shared-state setups), first resolve it (`readlink -f <path>`), then Read and Write/Edit the resolved real path. Reads work through symlinks unchanged.
 - **Checkpoint when context is deep** — see `rules/context-management.md` for thresholds and protocol
 - **Rules evolve from usage** — see `rules/rule-maintenance.md` for how to strengthen, update, or extract rules
 

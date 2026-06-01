@@ -22,6 +22,8 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
    - If found: Read completely
    - If not found anywhere: Ask if user wants to create one using `PROJECT_TEMPLATE.md`
 
+   **If PROJECT.md is a symlink, resolve it before writing.** Claude Code's Write/Edit refuses to write through symlinks. Run `readlink -f <path-to-PROJECT.md>` to get the real target, then Read and Write/Edit that resolved path when adding the session entry or any later updates in this session. Reads through the symlink are fine; only writes require the resolved path. This same rule applies to PLAN.md and any other toolkit-managed file in the working directory.
+
 2. **Check for Continuation Checkpoint**
 
    If PROJECT.md contains a `## Continuation Checkpoint` section:
