@@ -26,6 +26,7 @@ Use `--draft` to show the review locally without posting. Use `--auto` to skip c
 - Assess impact before calibrating severity.
 - Validate PR premise for Standard or CORE-impact PRs.
 - Show findings and severity reasoning to the user before posting unless `--auto` is passed.
+- Run the PII scrub from `feedback/references/reply-resolve.md` over every drafted finding, top-level comment, and review summary before posting. Strip customer names, internal ticket IDs (Shortcut/Linear/Jira), internal URLs, reporter identity, and credentials. Reviewer findings often quote diff context — that quoted context is the most common PII leak surface.
 - Post only clean, user-confirmed finding text to GitHub.
 - For batch reviews, keep the main thread as a thin orchestrator and use compact per-PR handoffs.
 - For batch reviews of 4+ PRs, follow `rules/context-management.md`: after each wave of 3 PRs, the main thread must append a `## Review-PR Batch Wave N` block to PROJECT.md (per-PR recommendation, posted status, top finding, residual risk), then `/checkpoint --clear` before launching the next wave. This is a hard gate — without the PROJECT.md write, the per-PR posting state is lost on clear.
@@ -103,6 +104,7 @@ Emit the summary from [skills/review/references/pr-posting.md](../skills/review/
 - [ ] All findings tagged by severity
 - [ ] Recommendation determined before posting
 - [ ] Posting action respects `--draft`, `--auto`, and user-confirmation boundaries
+- [ ] PII scrub run over all drafted findings, top-level comments, and review summaries before posting
 - [ ] PROJECT.md `## PR Review — #N` entry written for every reviewed PR before summary
 - [ ] Summary emitted
 
