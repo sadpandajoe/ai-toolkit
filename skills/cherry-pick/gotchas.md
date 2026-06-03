@@ -90,13 +90,13 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 ---
 
-## Authorized push batched at end instead of per-cherry
+## Push batched at end instead of per-cherry
 
-**Symptom:** Push was authorized for a multi-PR batch, but all cherry-picks get committed locally and pushed in a single `git push` at the end. CI runs once against the bundle. If a later cherry breaks something, the failure can't be attributed without bisecting the bundled push.
+**Symptom:** All cherry-picks in a multi-PR batch get committed locally and pushed in a single `git push` at the end. CI runs once against the bundle. If a later cherry breaks something, the failure can't be attributed without bisecting the bundled push.
 
-**Why:** `git push` happening once per batch is the natural rhythm when you're orchestrating a tight loop ("apply, validate, next, …, done, push"). When push has been authorized, the per-cherry push directive is easy to skim past because it sits as a trailing note after the validate references rather than as a numbered phase, and the Batch Flow section doesn't restate it.
+**Why:** `git push` happening once per batch is the natural rhythm when you're orchestrating a tight loop ("apply, validate, next, …, done, push"). Even with per-cherry push as the default, the per-cherry directive is easy to skim past because it sits as a trailing step after the validate references rather than as a numbered phase, and the Batch Flow section doesn't restate it.
 
-**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must emit a `## Push Boundary — <pr-or-sha>` confirmation block (see SKILL.md step 8) before any subsequent work runs. If push is authorized, it runs **per cherry, before starting the next dependent one**. If push is not authorized, stop with `Status: pending-authorization`. Only batch pushes when the user explicitly requests it (e.g., to reduce CI cost) — confirm first.
+**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must emit a `## Push Boundary — <pr-or-sha>` confirmation block (see SKILL.md step 8) before any subsequent work runs. Default behavior: push runs **per cherry, before starting the next dependent one**, and the block records `Status: pushed`. Under `--no-push`, stop with `Status: pending-authorization` instead. Only batch pushes when the user explicitly requests it (e.g., to reduce CI cost) — confirm first.
 
 **First seen:** 4-PR batch into 6.0-release, 2026-05-06. Pushed once at the end; user flagged it.
 
