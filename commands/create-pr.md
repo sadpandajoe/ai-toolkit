@@ -124,7 +124,31 @@ gh pr create --title "..." --body "..." [--draft] [--base ...]
 
 Return the PR URL.
 
-### 8. Summary
+### 8. PROJECT.md Update (Hard Gate)
+
+Before emitting the chat summary, append a `## PR Created` entry to PROJECT.md so the project state reflects the new PR. Without this write, `/clear` or `/archive-project-file` immediately after `/create-pr` loses the PR pointer and the next session has no record that the PR exists.
+
+```markdown
+## PR Created
+PR #[number]: [title]
+URL: [link]
+Base: [base] ← [head branch]
+Commits: [N]
+Draft: [yes/no]
+```
+
+If a prior phase (`/create-feature`, `/fix-bug`, etc.) has an open entry in PROJECT.md whose work this PR ships, mark that entry resolved in the same write rather than leaving it dangling.
+
+Emit before the chat summary:
+
+```markdown
+## PROJECT.md Updated — PR Created
+PR #[number] recorded; prior phase entry: [resolved / none / kept]
+```
+
+### 9. Summary
+
+Do not emit this summary until the `## PROJECT.md Updated — PR Created` confirmation block has been emitted.
 
 ```markdown
 ## Create-PR Complete

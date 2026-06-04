@@ -74,7 +74,7 @@ Keep scope limited to the failing surface. If verification is weak or root cause
 
 ## Commit Recommendation Strategy
 
-This section recommends the shape of the git action; it does not grant permission to mutate history or publish changes. Commit, amend, rebase, push, force-push, GitHub posting, and thread resolution require explicit user authorization or a command flag that clearly grants that exact boundary.
+For STRONG-verified trivial/moderate fixes with a clean Review Gate, the default flow creates a new commit on the current feature branch and pushes it. Amend, rebase, and force-push still require explicit user authorization for this run, and the push target must be the current feature branch on the expected remote. PARTIAL/WEAK verification and standard-path holds stay non-committing.
 
 | Scenario | Action |
 |----------|--------|

@@ -35,7 +35,7 @@ For truly minimal edits, such as typo fixes or mechanical renames, review may be
 
 Prefer fixing the originating in-PR commit when the branch is not merged and the source commit is clear.
 
-This section recommends a git shape only. Do not commit, amend, rebase, push, or force-push unless the user explicitly authorized that exact boundary for this feedback round. `--auto` may skip triage or posting confirmations, but it does not authorize git history mutation by itself.
+New commits on the current PR branch and pushes are part of the default `/address-feedback` flow — apply the recommended shape and push once verification is clean. Amend, rebase, and force-push still require explicit user authorization for this feedback round (`--auto` does not grant history mutation by itself).
 
 | Scenario | Action |
 |----------|--------|

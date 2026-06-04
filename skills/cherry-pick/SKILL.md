@@ -1,7 +1,7 @@
 ---
 name: cherry-pick
 description: Cherry-pick, backport, or apply commits/PRs onto another branch with safety gates and per-change validation. Do NOT use for same-branch bug fixes, broad refactors, dependency upgrades, or general behavior rewrites.
-argument-hint: "[pr-url | sha...] [--target branch] [--force] [--plan-only] [--push]"
+argument-hint: "[pr-url | sha...] [--target branch] [--force] [--plan-only] [--no-push]"
 allowed-tools: Bash(git *) Bash(gh *) Read Grep Glob Edit
 ---
 
@@ -23,9 +23,9 @@ Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present. Ch
 
 If the workflow would cross a contract boundary, stop and ask — do not cross first and report after.
 
-`--push` explicitly authorizes the per-cherry push boundary. Without `--push` or explicit user authorization during the run, validate locally and stop with a push recommendation before publishing.
+Per-cherry push is the default action at step 8 — every successfully validated cherry is pushed to the target branch before the next cherry starts. `--no-push` opts out: validate locally, record `pending-authorization`, and stop before publishing. The per-cherry push boundary (step 8) and its hard-gate confirmation block still run on every cherry regardless; `--no-push` only changes whether the boundary's outcome is `pushed` or `pending-authorization`.
 
-For non-trivial or expensive cherry-picks, follow `rules/context-management.md`: checkpoint/clear after investigate/gate/plan is recorded in the execution table, and again after apply/adapt/validate when push authorization or final reporting remains. Batch runs checkpoint/clear between waves by default.
+For non-trivial or expensive cherry-picks, follow `rules/context-management.md`: checkpoint/clear after investigate/gate/plan is recorded in the execution table, and again after apply/adapt/validate when push (or, under `--no-push`, push authorization) and final reporting remain. Batch runs checkpoint/clear between waves by default.
 
 ## Usage
 
@@ -36,12 +36,12 @@ For non-trivial or expensive cherry-picks, follow `rules/context-management.md`:
 /cherry-pick <sha> --force                     # Override reject-category gate
 /cherry-pick <sha-1> <sha-2> <sha-3>           # Batch
 /cherry-pick <sha-1> <sha-2> --plan-only       # Plan without applying
-/cherry-pick <sha-1> <sha-2> --push            # Validate and push each successful cherry as it completes
+/cherry-pick <sha-1> <sha-2> --no-push         # Validate locally; stop with push recommendation
 ```
 
 ## Single Cherry-Pick Flow
 
-Each cherry-pick runs all validation phases. No validation phase may be skipped — the diff audit in step 7 is the only defense against scope leak (see gotchas.md). Step 8 is a publish boundary: run it only when `--push` or explicit user authorization grants push permission.
+Each cherry-pick runs all validation phases. No validation phase may be skipped — the diff audit in step 7 is the only defense against scope leak (see gotchas.md). Step 7c runs only when the cherry terminates as `Blocked` or `Rejected`; it surfaces the upstream PRs that would unstick the row before the final report. Step 8 is a publish boundary: per-cherry push is the default; `--no-push` (or explicit user deferral during the run) records `pending-authorization` instead.
 
 ### 1. Investigate (heavy effort)
 
@@ -111,19 +111,39 @@ Conflict-marker scan, **pre-commit on changed files**, build, type-check, target
 
 → Full procedure (subagent contract, LLM audit, validation order, status labels, dependency manifest rule): [references/validate.md](references/validate.md)
 
-### 8. Push Recommendation / Authorized Push
+### 7c. Unblock Discovery (Blocked / Rejected only)
+
+When a cherry terminates as `Blocked` or `Rejected` for reasons that look like "target is missing something" (modify/delete, prerequisite commits flagged in investigate, target-side architecture missing), spawn a discovery subagent before moving to the final report. Its only job is to name the upstream PRs/commits that would unstick this cherry — it does **not** investigate, gate, plan, or apply them.
+
+Skip when the rejection is intrinsic (reject-category API rewrite, dependency-bump PR, build-system change). Record "no unblock path" on the row and continue.
+
+Mode is inform-only: surface candidates in the final report under "What to do next" so the user decides whether to add them to the run. Auto-picking is a future extension (`--auto-unblock`).
+
+→ Full subagent contract, output block, future-auto-unblock notes: [references/unblock-discovery.md](references/unblock-discovery.md)
+
+### 8. Per-Cherry Push (default)
 
 ```bash
 git push
 ```
 
-When push is authorized, push **immediately after** step 7 passes for *this* cherry, before starting the next one. Do not batch pushes at the end of a multi-cherry run unless the user explicitly asked for batched push.
+Per-cherry push is the default. Immediately after step 7 passes for *this* cherry, the orchestrator pushes — before starting the next cherry. Do not batch pushes at the end of a multi-cherry run.
 
-When push is not authorized, stop before publishing and record `Push: pending authorization` in the execution table or `CHERRY_PICK.md`. Continue to independent planning/investigation work only if it does not depend on the unpublished cherry being on the remote.
+`--no-push` opts out: skip the `git push`, record `Push: pending authorization` in the execution table or `CHERRY_PICK.md`, and continue to independent planning/investigation work only if it does not depend on the unpublished cherry being on the remote.
 
-**Why:** CI can attribute each cherry independently only when each authorized push is per cherry. Batching defeats per-cherry attribution and forces bisection later.
+**Why per-cherry, not batched:** CI can attribute each cherry independently only when each push is per cherry. Batching defeats per-cherry attribution and forces bisection later. The user may explicitly ask for batched push (e.g., to reduce CI cost) — confirm before deferring and record the batched-push decision.
 
-The only exception is when the user explicitly asks for batched push (e.g., to reduce CI cost). In that case, confirm before deferring and record the batched-push decision.
+**Hard gate — per-cherry push boundary.** After step 7 passes and before any subsequent work runs (next cherry's investigate/apply, final report, checkpoint, or PR creation), the orchestrator must emit this confirmation block verbatim for *this* cherry:
+
+```markdown
+## Push Boundary — <pr-or-source-sha>
+Local SHA: <sha after validate/amend>
+Status: pushed | pending-authorization | deferred-by-user
+Remote SHA: <sha visible on remote after push> | n/a
+Reason (if not pushed): <one line>
+```
+
+If `Status: pushed`, the `git push` for this cherry has already happened — not queued, not deferred. If `Status: pending-authorization` (only when `--no-push` is set) or `deferred-by-user`, the orchestrator must also stop dependent follow-ups until the user clears the boundary. Do not start the next dependent cherry's worker without this block in chat for the previous cherry. This is the only structural defense against falling into the "apply, validate, next, …, done, push" rhythm that batches pushes (see gotchas.md, "Push batched at end instead of per-cherry").
 
 ## Batch Cherry-Pick Flow
 
@@ -197,6 +217,7 @@ Each per-cherry or per-wave subagent returns only:
 - commands run
 - residual risk
 - dependency implications for later rows
+- unblock candidates (only when result is `Blocked` or `Rejected` and step 7c ran): ordered list of upstream PRs/SHAs that would unstick this row, or `none` with one-line reason
 
 No full diffs or long logs unless blocked. If a blocked handoff needs raw evidence, put file paths or the shortest decisive excerpt in the manifest.
 
@@ -206,10 +227,11 @@ No full diffs or long logs unless blocked. If a blocked handoff needs raw eviden
    - TRIVIAL independent rows may use Standard-tier workers. Applying workers must use isolated worktrees/branches or return patch-only output; short-lived sessions are acceptable only for investigation, gating, planning, or status synthesis that does not mutate the checkout.
    - NON-TRIVIAL, conflict-prone, dependency-chain, or shared-file rows use Heavy-tier handling and usually run one at a time.
    - Headless workers are allowed only for TRIVIAL, independent rows with a tight contract such as [references/headless-trivial.md](references/headless-trivial.md). Treat this as an opt-in execution mode until validated on one cherry in the repo.
-3. **Per-cherry execution** — for each cherry in sequence, run the full single flow through validation in an isolated context. **Step 8 is a push boundary:** when authorized, the orchestrator performs the final shared-branch push per cherry; when unauthorized, record `pending authorization` and stop before publishing dependent work.
+3. **Per-cherry execution** — for each cherry in sequence, run the full single flow through validation in an isolated context. **Step 8 is a push boundary:** by default the orchestrator performs the final shared-branch push per cherry; under `--no-push` it records `pending authorization` and stops before publishing dependent work.
    - If a worker returns a prepared commit, branch, or patch from an isolated context, the orchestrator must replay it onto the current live target branch in planned order.
    - After replay, rerun the mandatory scope-leak audit and the minimum assigned validation on the live target branch before marking the row `Applied` or pushing.
    - Worker validation is useful evidence, but it is stale once fan-in happens; live-branch replay validation is the gate.
+   - **Hard gate before dispatching the next cherry:** the `## Push Boundary — <pr-or-sha>` block from step 8 must already be emitted in chat for the cherry that just finished. No "I'll batch the pushes at the end" path — that violates the boundary. If push is `pending-authorization` or `deferred-by-user`, stop dependent dispatch and surface to the user; only continue to *independent* picks (per the sequence plan's independence islands).
 4. **Status tracking** — record results in the execution table or `CHERRY_PICK.md`. If one fails, do NOT continue with subsequent dependent picks. Independent picks may continue.
 5. **Escalation** — surface escalations to the user, relay answers back.
 6. **Final report** — collect results and produce the document phase output. Include pushed cherries and any cherries waiting on push authorization; the report summarizes, it does not silently publish.

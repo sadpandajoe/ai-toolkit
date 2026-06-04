@@ -126,7 +126,7 @@ git commit --amend --no-edit
 
 **Pre-existing failures on unrelated files** (warnings on files the cherry-pick didn't touch) are out of scope — note them in the validation summary but do not attempt to fix them within the cherry-pick.
 
-The validation amend stays local since publishing is gated on `--push` or explicit user authorization. Do not push, then amend, then force-push, when amending pre-push would have worked.
+The validation amend must complete **before** the per-cherry push in step 8. Push is the default at step 8; if you push first and then amend, you have to force-push to publish the fix — which the workflow forbids. Always: validate → fix → amend → emit Push Boundary → push.
 
 ## Minimum Validation Bar
 

@@ -90,13 +90,13 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 ---
 
-## Authorized push batched at end instead of per-cherry
+## Push batched at end instead of per-cherry
 
-**Symptom:** Push was authorized for a multi-PR batch, but all cherry-picks get committed locally and pushed in a single `git push` at the end. CI runs once against the bundle. If a later cherry breaks something, the failure can't be attributed without bisecting the bundled push.
+**Symptom:** All cherry-picks in a multi-PR batch get committed locally and pushed in a single `git push` at the end. CI runs once against the bundle. If a later cherry breaks something, the failure can't be attributed without bisecting the bundled push.
 
-**Why:** `git push` happening once per batch is the natural rhythm when you're orchestrating a tight loop ("apply, validate, next, …, done, push"). When push has been authorized, the per-cherry push directive is easy to skim past because it sits as a trailing note after the validate references rather than as a numbered phase, and the Batch Flow section doesn't restate it.
+**Why:** `git push` happening once per batch is the natural rhythm when you're orchestrating a tight loop ("apply, validate, next, …, done, push"). Even with per-cherry push as the default, the per-cherry directive is easy to skim past because it sits as a trailing step after the validate references rather than as a numbered phase, and the Batch Flow section doesn't restate it.
 
-**Do instead:** Step 8 is a numbered push boundary. If push is authorized, it runs **per cherry, before starting the next dependent one**. If push is not authorized, stop with `Push: pending authorization`. Only batch pushes when the user explicitly requests it (e.g., to reduce CI cost) — confirm first.
+**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must emit a `## Push Boundary — <pr-or-sha>` confirmation block (see SKILL.md step 8) before any subsequent work runs. Default behavior: push runs **per cherry, before starting the next dependent one**, and the block records `Status: pushed`. Under `--no-push`, stop with `Status: pending-authorization` instead. Only batch pushes when the user explicitly requests it (e.g., to reduce CI cost) — confirm first.
 
 **First seen:** 4-PR batch into 6.0-release, 2026-05-06. Pushed once at the end; user flagged it.
 
@@ -132,3 +132,17 @@ If tests existed and weren't run, flag the gap explicitly with what was availabl
 **Remediation if already pushed:** Reset to before the bad commit, re-run `git cherry-pick -x` properly, then re-cherry-pick (or `rebase --onto`) any subsequent commits onto the corrected base, then `git push --force-with-lease`. Do not just amend the message — that leaves the wrong author.
 
 **First seen:** 2026-05-08 batch into 6.0-release. Partial cherry-pick of PR #39636 used `git format-patch | git apply` per the subagent prompt I wrote; landed with author=Joe Li (should have been Amin Ghadersohi) and a modified subject `(partial)`. User flagged; remediation required reset + redo + force-push of 5 commits.
+
+---
+
+## Blocked cherry reported with no path to unstick
+
+**Symptom:** Cherry terminates `Blocked` (modify/delete because target lacks the touched file, or a prerequisite commit isn't on target) or `Rejected` (architecture missing). The final report says "skipped because file X doesn't exist on target" and stops there. The user has to manually go figure out which upstream PRs would make the cherry applicable.
+
+**Why:** The investigation phase notes prerequisite commits and missing target-side modules in its raw signals, but nothing in the flow turns that into "you need PRs A, B, C to unstick this." The skill terminates the row and moves on. The orchestrator-as-thin-thing pattern bakes in early termination on `Blocked`/`Rejected` without giving the user a forward path.
+
+**Do instead:** Step 7c (Unblock Discovery) runs for every `Blocked`/`Rejected` row whose blocker looks like "target is missing something" — modify/delete, missing prereq, missing architecture. A discovery subagent (Standard tier by default) maps the missing files/symbols/prereqs to upstream PRs that introduced them, filters to those merged on source but not on target, and returns an ordered "apply these first" list. Result lands in `CHERRY_PICK.md` under the row's Subagent Handoff `Unblock candidates` field and in the Final Report under "What to do next" as "Could cherry if we first apply: #X, #Y, #Z." Inform-only for now — auto-prepending the candidates to the active wave is a future `--auto-unblock` extension. See [references/unblock-discovery.md](references/unblock-discovery.md).
+
+**Skip 7c** when the rejection is intrinsic (reject-category API rewrite, dependency bump, build-system change). Record "no unblock path" with the one-line reason and move on.
+
+**First seen:** 2026-05-21, user flagged the gap during workflow review — blocked cherries were terminating without forward path; user explicitly asked for inform-only first, auto-pick later.

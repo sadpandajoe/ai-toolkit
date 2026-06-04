@@ -104,10 +104,11 @@ ai-toolkit/
 │   └── workstreams/         # Post-parallel-implementation fan-in and merge sequencing
 ├── hooks/
 │   ├── prevent-project-commit.sh  # Block unsafe git flags and local workflow state commits
-│   ├── test-prevent-project-commit.sh # Smoke tests for git safety hook behavior
+│   ├── pre-push-validate.sh       # Run repo-pinned ruff + targeted pytest on commits about to be pushed
 │   ├── check-resources.sh         # Warn on constrained resources before tests
 │   ├── check-plan-drift.sh        # Warn at turn end when PLAN.md outpaces PROJECT.md
-│   └── agent-setup-edit-reminder.sh # Remind to load agent-setup-maintainer on agent-setup edits
+│   ├── agent-setup-edit-reminder.sh # Remind to load agent-setup-maintainer on agent-setup edits
+│   └── test-prevent-project-commit.sh # Smoke tests for the git safety hook (not a productive hook)
 ├── extensions/
 │   └── pgm/                 # Program management (optional, install with --with-pgm)
 │       ├── commands/         # /create-status-report, /create-velocity-report
