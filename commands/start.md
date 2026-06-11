@@ -10,6 +10,24 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
 
 ## Steps
 
+0. **Model/Advisor Preflight**
+
+   Before loading state or resuming any workflow, validate the session's model configuration. Invalid config has killed whole sessions *after* a workflow was dispatched (an `opus-4-8` advisor paired with a `fable-5` main model; shorthand names like "fable" that resolved to nothing) — the API error then lands mid-workflow where it costs the most.
+
+   - Identify the active main model from the environment.
+   - If an advisor/secondary model is configured (settings, env, or the user's request), verify the model ID exists and the pairing is one the API accepts.
+   - If the user requested a model by shorthand ("fable", "opus"), resolve it to a concrete model ID and confirm it exists **before** dispatching anything that spawns subagents with it.
+   - On any unknown ID or incompatible pairing, emit this hard gate and stop — do not resume a checkpoint or dispatch a workflow on a config that will fail mid-run:
+
+     ```markdown
+     ## Model Preflight Failed
+     Active model: [id]
+     Problem: [unknown model id | incompatible advisor pairing: <a> + <b>]
+     Fix: [exact setting change or valid model id]
+     ```
+
+   - Clean config → continue silently. This step produces no output when healthy.
+
 1. **Find PROJECT.md**
 
    Search these locations in order (stop at first match):
@@ -79,6 +97,7 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
    - Updating an existing test suite → `/update-tests`
    - Creating the first meaningful tests → `/create-tests`
    - Validating a story, PR, or environment without fixing it → `/run-test-plan`
+   - Open PR with pending CI or fresh review comments → `/watch-pr`
    - Cherry-picking → `/cherry-pick`
    - Ready to open a PR → `/create-pr`
    - Capturing a pattern or reviewing memories → `/reflect`
