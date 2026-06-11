@@ -39,6 +39,14 @@ For non-trivial or expensive cherry-picks, follow `rules/context-management.md`:
 /cherry-pick <sha-1> <sha-2> --no-push         # Validate locally; stop with push recommendation
 ```
 
+## Release Audit (Candidate Discovery)
+
+For "what's on `<source>` that hasn't reached `<release-branch>`?" questions — run the audit *before* building any cherry list. Compare **first-parent PR merges only** (never raw full-history logs), treat already-applied claims as proven only by target-side PR-number matches or exact `-x` markers, and verify every candidate with `gh pr view` before queuing.
+
+→ Methodology + script: [references/release-audit.md](references/release-audit.md) (`scripts/release-audit.sh`)
+
+The audit produces candidates, not decisions — every queued row still runs the full investigate/gate flow below.
+
 ## Single Cherry-Pick Flow
 
 Each cherry-pick runs all validation phases. No validation phase may be skipped — the diff audit in step 7 is the only defense against scope leak (see gotchas.md). Step 7c runs only when the cherry terminates as `Blocked` or `Rejected`; it surfaces the upstream PRs that would unstick the row before the final report. Step 8 is a publish boundary: per-cherry push is the default; `--no-push` (or explicit user deferral during the run) records `pending-authorization` instead.
