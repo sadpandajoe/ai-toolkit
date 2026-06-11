@@ -35,6 +35,7 @@ Print the reference card below and stop. No investigation, no file reading — j
 | `/review-pr` | Orchestrated team PR review: quality, tests, patterns, optional second opinion, recommendation/posting | Reviewing someone's PR | Complexity, recommendation gates |
 | `/address-feedback` | Fix PR review comments, post replies | PR has review feedback | Complexity, Review Gate |
 | `/create-pr` | Generate PR title + description from diff/commits | Ready to open a PR | — |
+| `/watch-pr` | Loop on an open PR: fix CI failures, handle comments, escalate judgment calls | PR open, want unattended babysitting | Standing-auth boundary, escalation hard stops |
 
 ### Project State
 | Command | What it does | When to call | Gates |

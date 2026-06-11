@@ -26,6 +26,7 @@ Identify the failing step, match it to a known pattern when possible, and produc
 | **Out-of-memory** | `FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed` | Reduce `maxWorkers`, add `--max-old-space-size` | HIGH |
 | **Lock file conflict** | `npm ci` fails with lockfile mismatch | Regenerate lockfile: `npm install`; recommend committing `package-lock.json` only after authorization | HIGH |
 | **Pre-existing / not-our-failure** | Failing file/test is not in our diff; same failure exists on the base branch | N/A — not caused by this branch | HIGH |
+| **Transient infra** | 401/5xx/timeout from GitHub, a registry, or the network during an infra step (checkout, auth, artifact up/download, runner setup) — not in the code under test; no correlation with the diff; same step passed on a previous run | Re-run failed jobs (`gh run rerun --failed`) before any diagnosis; cap 2 reruns, then treat as real | HIGH after one clean re-run |
 
 ## Analysis Steps
 
@@ -37,7 +38,8 @@ Identify the failing step, match it to a known pattern when possible, and produc
    - Is the failing file or test touched by our diff? (`git diff --name-only <base>...HEAD`)
    - Does the same failure exist on the base branch? (`gh run list --branch <base> --status failure --limit 3`)
    - If the answer is "not in our diff" AND "fails on base too", classify as **Pre-existing / not-our-failure**.
-6. If no pattern matches, read the referenced files and recent commits before classifying it as novel.
+6. **Auth-failure discriminator**: a **401** on a step that normally authenticates fine is a transient token blip — re-run before diagnosing. A **403** with a stable identity is a real permissions problem. Do not ship a permissions fix for a 401, and do not classify either as ours without checking whether the step touches our diff at all.
+7. If no pattern matches, read the referenced files and recent commits before classifying it as novel.
 
 Use numeric confidence with these defaults:
 - `8-10` = `HIGH`

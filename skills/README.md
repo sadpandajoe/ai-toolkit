@@ -51,6 +51,7 @@ End-to-end workflow umbrellas:
 |----------|---------|
 | [debug/](debug/) | Investigating bugs, diagnosing failures, RCA review, CI failure classification, fix verification |
 | [feedback/](feedback/) | PR review feedback triage, approved fixes, reviewer replies, and thread handling |
+| [pr-watch/](pr-watch/) | Watch-and-fix loop over an open PR — CI status + review comments, dispatching to debug/ and feedback/ |
 | [reflection/](reflection/) | Memory capture, memory review/prune, failure postmortems, rule promotion |
 | [planning/](planning/) | Producing/iterating technical plans, finalize cold read, classifying review findings as plan vs code |
 | [pm/](pm/) | Product scoping before planning — feature briefs, acceptance criteria, milestones |

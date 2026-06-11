@@ -9,6 +9,7 @@
 /create-pr                    # Create PR from current branch
 /create-pr --base develop     # Target a specific base branch
 /create-pr --draft            # Create as draft PR
+/create-pr --watch            # After creation, chain into /watch-pr on the new PR
 ```
 
 ## Steps
@@ -165,6 +166,10 @@ Commits: [N]
 - `rounds`: 0
 - `gate_decisions`: `{ pr_created: <yes | no>, draft: <yes | no> }`
 - `worker_usage`: subagent/worker invocation counts when applicable
+
+### 10. Watch Handoff
+
+With `--watch`, chain directly into `/watch-pr <new-pr>` — the flag is the explicit pre-authorization for the watch's standing commit+push grant. Without it, when the PR has CI checks, end with a one-line suggestion: `Next: /watch-pr #<number> to babysit CI and review comments.` Never enter the watch without the flag; entering it grants standing push authority, which must be the user's explicit choice.
 
 ## Notes
 - This command generates and creates the PR — it does not review the code

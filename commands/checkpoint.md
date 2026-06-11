@@ -17,7 +17,7 @@ This is the single command for updating PROJECT.md state. It absorbed the older 
 ```
 
 **Flags:**
-- `--clear` — Run `/clear` after writing.
+- `--clear` — Write, then request a context clear (the model cannot invoke `/clear`; see step 3).
 - `--quit` — Quit the session after writing (falls back to printing "Run /quit to exit." if programmatic quit isn't available).
 
 **Positional argument (optional):** a short message describing what just happened or where you left off. Becomes the "Where we left off" line in a Progress Update entry.
@@ -94,7 +94,7 @@ The Learnings field is for things you noticed during work that should inform lat
 
 ### 3. Run `--clear` or `--quit` (if specified)
 
-- `--clear`: invoke `/clear` to reset context. The user resumes by running `/start`, which reads the checkpoint and continues the saved workflow.
+- `--clear`: `/clear` is a built-in only the user can run — there is no programmatic clear. After writing, end the turn with exactly: `Checkpoint saved. Run /clear, then /start to resume.` `/start` reads the checkpoint and continues the saved workflow. Do not start new work after emitting this line — the turn is over.
 - `--quit`: invoke `/quit` if available; otherwise emit `"Checkpoint saved. Run /quit to exit."` as the final message and stop.
 
 Skip both if neither flag was specified.
