@@ -91,6 +91,20 @@ After applying reviewer fixes, re-run relevant checks:
 
 If checks fail, fix and re-run classification/review as needed.
 
+### Final Pass After Fix Queue
+
+When the fix queue introduced new code paths (not just deletions, one-line reverts, or check-driven fixes), spawn **one additional fresh-eyes review pass on the integrated diff** before emitting the Review Gate. Frame the prompt explicitly as "final pass on the integrated state, not a re-read of the original diff."
+
+Trigger signals (any one is enough):
+- ≥2 fix-queue items added new branches, helpers, fixtures, or guard clauses.
+- A major fix introduced a producer/consumer pair where one side was tested but not both.
+- A fix added a marker file, sentinel, or other artifact that needs symmetric cleanup elsewhere in the codebase.
+- A bug-fix during validation duplicated an existing helper into a second location without a sync mechanism.
+
+Skip the final pass only when **all** fix-queue items were: pure deletions, one-line reverts, formatting, or comment-only.
+
+The final pass uses fresh reviewer subagents — never the ones who reviewed the original diff. Its scope is `base..HEAD` of the integrated branch, not the fix-queue commits in isolation. If the final pass surfaces majors, treat them as a new review round and iterate.
+
 ## Optional Second Opinion
 
 For STANDARD complexity, use an external or platform-native second opinion if available. Skip silently when unavailable and note that in the summary.
