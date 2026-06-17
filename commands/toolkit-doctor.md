@@ -114,7 +114,7 @@ Check for optional external tools that specific commands depend on. All checks a
 | Capability | How to check | Commands that need it |
 |------------|-------------|----------------------|
 | **GitHub CLI** | `gh auth status` succeeds | `/review-pr`, `/address-feedback`, `/create-pr` |
-| **Codex plugin** | `/codex:setup` is a recognized command in the session | `/review-code` (step 7), `/review-code-adversarial`, `/review-pr` (Lane 2) |
+| **Codex plugin** | `/codex:setup` is a recognized command in the session | `/review-code` (always-on Codex second-opinion lane), `/review-code-adversarial`, `/review-pr` (Lane 2) |
 | **jq** | `command -v jq` succeeds | `install-hooks.sh`, hooks |
 | **Python 3** | `command -v python3` succeeds | git safety hook parsing |
 | **Playwright MCP** | Playwright MCP tools are available in the session | `/run-test-plan` (UI testing) |
