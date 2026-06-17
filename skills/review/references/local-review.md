@@ -62,6 +62,8 @@ If pre-flight fails, fix the failure or report it as a blocker before launching 
 
 ## Dispatch Reviewers
 
+**STANDARD tier (or ≥3 triggered lanes): dispatch via [workflow-review.md](workflow-review.md)** — lens fan-out, dedup, and adversarial verification run off-thread; the main thread ingests only confirmed findings, then resumes at the Review Record step below. TRIVIAL/MODERATE continue with direct spawns:
+
 The main thread is an orchestrator. Dispatch fresh-context reviewer subagents with:
 
 - Diff and full changed-file contents.
