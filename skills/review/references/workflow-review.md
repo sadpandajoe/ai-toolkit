@@ -23,9 +23,10 @@ export const meta = {
   phases: [{ title: 'Review' }, { title: 'Verify' }],
 }
 const FINDINGS = { type: 'object', required: ['findings'], properties: { findings: { type: 'array', items: {
-  type: 'object', required: ['severity', 'file', 'title', 'detail'],
+  type: 'object', required: ['severity', 'file', 'title', 'detail', 'proof'],
   properties: { severity: { enum: ['major', 'minor', 'nitpick'] }, file: { type: 'string' },
     line: { type: 'number' }, title: { type: 'string' }, detail: { type: 'string' },
+    proof: { type: 'string', description: 'how the cited line was confirmed, e.g. "read locally" or "verified via gh api" — not "from PR description"' },
     suggested_fix: { type: 'string' } } } } } }
 const VERDICT = { type: 'object', required: ['refuted', 'reason'], properties: {
   refuted: { type: 'boolean' }, reason: { type: 'string' } } }
@@ -34,12 +35,17 @@ phase('Review')
 const raw = (await parallel(args.lenses.map(l => () =>
   agent(`${l.context}\n\nReview per the lens reference at ${l.referencePath} (read it first). ` +
         `Diff: git diff ${args.base}..HEAD -- <changed files>. Pre-flight: ${args.preflight}. ` +
-        `Return findings only — no prose.`,
+        `Each finding must cite a file:line you actually read and set "proof" to how you confirmed it ` +
+        `(read locally / verified via gh api) — never a claim synthesized from the PR description. ` +
+        `Apply the finding calibration in rules/code-review.md: a finding whose line is not in the diff is out of scope; ` +
+        `sibling-path symmetry caps at minor. Return findings only — no prose.`,
     { label: `lens:${l.key}`, phase: 'Review', schema: FINDINGS })
 ))).filter(Boolean).flatMap(r => r.findings)
 
 // Barrier justified: dedup needs all lenses' findings before paying for verification.
-const deduped = dedupe(raw)   // same file+line+title overlap → keep highest severity
+// dedupe keeps highest severity on file+line+title overlap; a finding surfaced by ≥2 lenses is
+// convergent (high confidence, keep severity), a single-lens finding stays candidate until verified.
+const deduped = dedupe(raw)
 
 phase('Verify')
 const verified = await parallel(deduped.map(f => () =>

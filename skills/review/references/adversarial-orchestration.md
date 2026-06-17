@@ -35,8 +35,10 @@ If no second-opinion reviewer is available, continue with the primary reviewer a
 
 Deduplicate findings:
 
-- Found by both independent reviewers: high confidence.
-- Unique to one reviewer: include at normal confidence.
+- Found by both independent reviewers: high confidence — keep severity.
+- Unique to one reviewer: include at normal confidence; verify before promoting past `[minor]`.
+
+Apply the finding calibration in `rules/code-review.md` before sorting: drop any finding whose `file:line` is not in the diff (scope is upstream of correctness — settle this before adjudicating whether the two reviewers disagree on a bug's reality), and cap unchanged-sibling symmetry findings at `[minor]`.
 
 Sort by risk:
 
