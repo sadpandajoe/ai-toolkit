@@ -31,7 +31,7 @@ Keep PROJECT.md focused on active work by moving completed-phase detail into PRO
 - current status
 - current continuation checkpoint
 - anything still needed for the next immediate phase
-- the PLAN.md of an active workflow — those are deleted by the workflow's completion step, not here
+- the PLAN.md of an active workflow — it stays in place while the workflow runs and persists after completion; this skill is the only deletion path, and it only deletes once the plan is stale (step 7)
 
 ## When to Archive
 

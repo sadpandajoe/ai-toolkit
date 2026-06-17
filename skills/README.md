@@ -80,6 +80,7 @@ Domain integrations:
 |----------|---------|
 | [shortcut/](shortcut/) | Shortcut REST API: fetch story, post report, attach artifacts |
 | [superset-local/](superset-local/) | Superset-specific local Docker stack and Playwright glue |
+| [preset-rbac-setup/](preset-rbac-setup/) | Seed canonical RBAC test users on a fresh Preset staging workspace |
 
 ## Designing a new skill
 

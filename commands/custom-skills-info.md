@@ -36,6 +36,7 @@ Print the reference card below and stop. No investigation, no file reading — j
 | `/address-feedback` | Fix PR review comments, post replies | PR has review feedback | Complexity, Review Gate |
 | `/create-pr` | Generate PR title + description from diff/commits | Ready to open a PR | — |
 | `/watch-pr` | Loop on an open PR: fix CI failures, handle comments, escalate judgment calls | PR open, want unattended babysitting | Standing-auth boundary, escalation hard stops |
+| `/test-pr` | Manual PR testing via browser | Hands-on QA of a PR in a real environment | Prod-environment guard |
 
 ### Project State
 | Command | What it does | When to call | Gates |
@@ -49,11 +50,14 @@ Print the reference card below and stop. No investigation, no file reading — j
 |---------|-------------|-------------|-------|
 | `/reflect` | Add/list/review/prune/failure/promote memories and rules | Capture patterns, postmortems, promote to rules | — |
 | `/metrics` | Summarize workflow pass rates, rounds, model usage | Understand workflow performance | — |
+| `/show-cost` | Token usage and cost summary | Check session or recent spend | — |
+| `/optimize-cost` | Usage pattern analysis and recommendations | Spend feels high, periodic review | — |
 
 ### Maintenance
 | Command | What it does | When to call | Gates |
 |---------|-------------|-------------|-------|
 | `/toolkit-doctor` | Validate symlinks, imports, paths, permissions, extensions | After install, after edits | — |
+| `/check-resources` | Local environment capacity check (Docker, memory, workers) | Before starting stacks or heavy test runs | — |
 
 Note: agent-setup audits now happen automatically — the `agent-setup-edit-reminder` PostToolUse hook activates the `agent-setup-maintainer` skill whenever an agent-setup file is edited.
 

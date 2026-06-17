@@ -1,6 +1,6 @@
 ---
 name: qa
-description: Manual QA work — triage a bug, validate a fix, assess change impact, discover or expand use cases, execute scenarios in a real environment, or file a bug report. Do NOT use for writing automated tests (use testing/) or code review (use review/).
+description: Manual QA work — triage a loose bug report into a repro plan, validate a fix, assess change impact, discover or expand use cases, execute scenarios in a real environment, or file a bug report. Do NOT use for root-cause investigation (use debug/), writing automated tests (use testing/), or code review (use review/).
 user-invocable: false
 ---
 
