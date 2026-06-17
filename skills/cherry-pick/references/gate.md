@@ -32,7 +32,7 @@ When the change is a bug fix:
 
 - Consume the existing-fix status from the investigation output (investigate already ran `debug/references/check-existing-fix.md` — do not re-run it).
 - `Status: FIXED_UPSTREAM` with high confidence → stop, the fix is already there.
-- `Status: FIX_PENDING_PR` → surface the pending PR, ask whether to wait or proceed.
+- `Status: FIX_PENDING_PR` → proceed with the backport and record the pending PR in the row/final report (a pending master PR doesn't reach a release branch by itself); `--step` restores the wait-or-proceed ask.
 - `Status: UNFIXED` or `SKIPPED` → continue.
 
 ### Features with `--force`

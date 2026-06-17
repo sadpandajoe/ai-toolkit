@@ -138,7 +138,7 @@ Per-cherry push is the default. Immediately after step 7 passes for *this* cherr
 
 `--no-push` opts out: skip the `git push`, record `Push: pending authorization` in the execution table or `CHERRY_PICK.md`, and continue to independent planning/investigation work only if it does not depend on the unpublished cherry being on the remote.
 
-**Why per-cherry, not batched:** CI can attribute each cherry independently only when each push is per cherry. Batching defeats per-cherry attribution and forces bisection later. The user may explicitly ask for batched push (e.g., to reduce CI cost) — confirm before deferring and record the batched-push decision.
+**Why per-cherry, not batched:** CI can attribute each cherry independently only when each push is per cherry. Batching defeats per-cherry attribution and forces bisection later. The user may explicitly ask for batched push (e.g., to reduce CI cost) — that request is itself the authorization: defer without re-confirming and record the batched-push decision. Agent-initiated batching remains forbidden by the push-boundary hard gate below.
 
 **Hard gate — per-cherry push boundary.** After step 7 passes and before any subsequent work runs (next cherry's investigate/apply, final report, checkpoint, or PR creation), the orchestrator must emit this confirmation block verbatim for *this* cherry:
 
@@ -171,7 +171,7 @@ Pre-flight should gather, when applicable:
 
 The main agent reads the pre-flight table once and sorts rows into:
 - `ALREADY_APPLIED` — skip without per-cherry investigation only when exact source-SHA evidence or an explicit manifest decision supports the skip
-- `NOT_MERGED` — stop or queue for user decision
+- `NOT_MERGED` — classify the row `Skipped/NOT_MERGED`, continue independent rows, and surface the decision in the final report (never auto-pick an unmerged head); `--step` restores the mid-run stop for live decisions
 - `NEEDS_INVESTIGATION` — run investigate/gate
 - `PREFLIGHT_BLOCKED` — missing PR, missing target, auth failure, or ambiguous source
 

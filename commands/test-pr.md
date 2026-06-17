@@ -72,7 +72,7 @@ PR #[number] recorded
 
 - Stop if the app URL cannot be resolved.
 - Stop on production URLs.
-- Confirm scenarios before execution unless the user explicitly asked for a quick smoke.
+- Print the selected scenarios and proceed — invoking the command delegates scenario selection, and execution is non-destructive on local/staging (prod is already gated above). `--step` restores the confirm-before-execution pause.
 - Run scenarios sequentially; do not parallelize browser evidence gathering.
 - Record by default; skip only with `--no-record`.
 - Stop before posting unless `--post` was passed and evidence paths are available.

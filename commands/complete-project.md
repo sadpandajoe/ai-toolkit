@@ -45,7 +45,7 @@ For each candidate, present:
 ```
 
 Wait for user confirmation per candidate. Then follow the matching `/reflect` flow:
-- **Promote**: `/reflect promote` (drafts the rule, confirms, writes, deletes source memory, updates MEMORY.md)
+- **Promote**: `/reflect promote` with pre-authorization — the candidate approval above already authorizes the promotion, so the sub-flow drafts the rule, writes, deletes the source memory, and updates MEMORY.md without re-confirming intent (standalone `/reflect promote` keeps its own rule-text confirmation)
 - **Prune**: delete the memory file and MEMORY.md entry
 - **Keep**: no action
 

@@ -38,7 +38,7 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
    The file may be a real file or a **symlink** — both are valid. Read it normally either way.
 
    - If found: Read completely
-   - If not found anywhere: Ask if user wants to create one using `PROJECT_TEMPLATE.md`
+   - If not found anywhere: create one from `PROJECT_TEMPLATE.md`, announce the creation in the session summary, and continue (it's local-only and trivially deletable); `--ask` restores the prompt
 
    **If PROJECT.md is a symlink, resolve it before writing.** Claude Code's Write/Edit refuses to write through symlinks. Run `readlink -f <path-to-PROJECT.md>` to get the real target, then Read and Write/Edit that resolved path when adding the session entry or any later updates in this session. Reads through the symlink are fine; only writes require the resolved path. This same rule applies to PLAN.md and any other toolkit-managed file in the working directory.
 

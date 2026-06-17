@@ -29,7 +29,7 @@ That reference dispatches:
 
 ## Orchestration Model
 
-The main thread is the orchestrator. It gathers changed files, runs the Complexity Gate, runs repo-appropriate pre-flight verification, dispatches reviewer subagents, deduplicates findings, writes actionable review state to PROJECT.md, applies approved fixes, re-verifies, and emits the Review Gate.
+The main thread is the orchestrator. It gathers changed files, runs the Complexity Gate, runs repo-appropriate pre-flight verification, dispatches reviewer subagents, deduplicates findings, writes actionable review state to PROJECT.md, applies accepted fixes ("accepted" = confirmed by review synthesis/triage, not a per-fix user pause — only disputed or user-decision findings surface to the user), re-verifies, and emits the Review Gate.
 
 All review judgment comes from fresh-context reviewer lanes. The main thread synthesizes and fixes; it does not replace the reviewers.
 
