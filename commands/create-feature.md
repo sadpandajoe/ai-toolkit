@@ -37,9 +37,9 @@ The command owns the visible gates and sequence. Each step loads only the refere
 
 ## Planning Phase Boundary
 
-The planning phase is a workflow boundary. For STANDARD work, automatically start it after the Complexity Gate. Use the platform's native planning/read-only mode when available; otherwise announce the planning phase and self-enforce the same boundary.
+The planning phase is a workflow boundary. For STANDARD work, automatically start it after the Complexity Gate. Use the platform's native planning/read-only mode when available — `EnterPlanMode` to enter, `ExitPlanMode` to leave; otherwise announce the planning phase and self-enforce the same boundary.
 
-During the planning phase, read, search, fetch ticket context, inspect code, and draft the approach. Do not make implementation edits of any kind, change tests, run implementation workers, or start review iterations. If native planning/read-only mode cannot write files, exit that mode after drafting, then write `PLAN.md` as the planning-phase output. End the phase by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
+During the planning phase, read, search, fetch ticket context, inspect code, and draft the approach. Do not make implementation edits of any kind, change tests, run implementation workers, or start review iterations. If native planning/read-only mode cannot write files, exit that mode (`ExitPlanMode`) after drafting, then write `PLAN.md` as the planning-phase output. End the phase by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
 
 ```markdown
 ## PLAN.md Written

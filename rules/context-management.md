@@ -59,6 +59,15 @@ The user's part is two commands — `/clear`, then `/start`; everything else res
 
 Do not rely on chat memory after `/clear`. The checkpoint in PROJECT.md is the source of truth for where execution resumes.
 
+## Native Session State Is Not Durable State
+
+Session-scoped built-ins cannot hold workflow state across a reset, so they never replace the file-based record:
+
+- **`/goal`** is removed by `/clear` and is user-only (an orchestrator cannot call it mid-workflow) — incompatible with the clear-and-resume discipline. Keep work going via command contracts and reactive thresholds, not `/goal`.
+- **Native task tools** (`TaskCreate`/`TaskList`/`TaskUpdate`) survive `/clear` within one session but are lost on a fresh session, so the `## Slice N Complete`, Phase Plan, and fix-queue records that must outlive `/start` stay in PROJECT.md/PLAN.md. Native tasks may mirror the current phase as an **in-session working layer** — most useful on MODERATE single-session work that does not checkpoint/clear — but never as the durable copy.
+
+The built-ins whose state lives *outside* the session are safe to lean on, and the toolkit already adopts them: `/schedule` routines (cloud-backed), `EnterWorktree` (git-backed), and the `Workflow` tool (stateless fan-out).
+
 ## Batch Manifest Checkpoints
 
 For large batch workflows, checkpointing should preserve the manifest pointer and next unit/wave, not raw per-item history. The manifest is the source of truth; chat is only the control surface.

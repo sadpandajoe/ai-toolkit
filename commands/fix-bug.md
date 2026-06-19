@@ -39,9 +39,9 @@ The command owns the visible gates and sequence. Each step loads only the refere
 
 ## Planning Phase Boundary
 
-The planning phase is a workflow boundary. For STANDARD bug fixes, automatically start it after RCA evidence is strong enough to plan. Use the platform's native planning/read-only mode when available; otherwise announce the planning phase and self-enforce the same boundary.
+The planning phase is a workflow boundary. For STANDARD bug fixes, automatically start it after RCA evidence is strong enough to plan. Use the platform's native planning/read-only mode when available — `EnterPlanMode` to enter, `ExitPlanMode` to leave; otherwise announce the planning phase and self-enforce the same boundary.
 
-During the planning phase, read, search, reproduce where possible, investigate root cause, and draft the fix approach. Do not make implementation edits, change tests, run implementation workers, or start review iterations. If native planning/read-only mode cannot write files, exit that mode after drafting, then write `PLAN.md` as the planning-phase output. End by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
+During the planning phase, read, search, reproduce where possible, investigate root cause, and draft the fix approach. Do not make implementation edits, change tests, run implementation workers, or start review iterations. If native planning/read-only mode cannot write files, exit that mode (`ExitPlanMode`) after drafting, then write `PLAN.md` as the planning-phase output. End by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
 
 ```markdown
 ## PLAN.md Written
