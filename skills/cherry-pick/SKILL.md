@@ -126,7 +126,19 @@ Skip when the rejection is intrinsic (reject-category API rewrite, dependency-bu
 
 Mode is inform-only: surface candidates in the final report under "What to do next" so the user decides whether to add them to the run. Auto-picking is a future extension (`--auto-unblock`).
 
+The discovery subagent must **measure** each candidate (`gh pr view --json changedFiles,additions,files`, detect `migrations/versions/`) and rate the chain's difficulty `easy | heavy | risky` — a candidate with a DB migration or a large feature PR is `risky`/`heavy`, never a bare line in a PR list. Inform-only does not mean cost-free: the offer must carry how hard it is to unblock, so a heavy chain never reads as "two quick cherries and we're in."
+
 → Full subagent contract, output block, future-auto-unblock notes: [references/unblock-discovery.md](references/unblock-discovery.md)
+
+### 7d. Blocked-Owner Notification (release-candidate stories only)
+
+When the cherry comes from a Shortcut story labeled `release-candidate` and we did **not** land it this pass (`Skipped`, `Blocked`, or `Rejected`), the decision to leave it off / force it / adapt it belongs to the person who added the `release-candidate` label, not to us. Post one comment on the story that mentions that person and hands them a clean decision: why it's blocked, how to unblock it (from 7c), our recommendation, and the options — then let them decide. We recommend; the labeler decides. Do not force-backport or adapt off our own recommendation without their reply.
+
+Find the decider via `stories-get-history` (the entry whose `changes.label_ids.adds` contains label id `78270`), and mention them with the link form `[@handle](shortcutapp://members/<id>)` so the notification actually fires — plain `@handle` text does not notify.
+
+Skip only when there's nothing to decide (merge SHA already on the branch, or no merged apache/superset PR exists).
+
+→ Five required elements, decider-lookup, mention syntax, comment template: [references/blocked-owner-comment.md](references/blocked-owner-comment.md)
 
 ### 8. Per-Cherry Push (default)
 
