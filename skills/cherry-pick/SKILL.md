@@ -52,7 +52,7 @@ Each cherry-pick runs all validation phases. No validation phase may be skipped 
 
 ### 1. Investigate (heavy effort)
 
-Source analysis, target compatibility scan, prerequisite scan. Investigation produces raw analysis only — the gate decides go/no-go.
+Source analysis, target compatibility scan, prerequisite scan, **target-affected scan** (is the bug even live on target, or does it only occur on master?). Investigation produces raw analysis only — the gate decides go/no-go.
 
 → Full procedure: [references/investigate.md](references/investigate.md)
 → Output template: [assets/investigation-template.md](assets/investigation-template.md)

@@ -33,7 +33,13 @@ When the change is a bug fix:
 - Consume the existing-fix status from the investigation output (investigate already ran `debug/references/check-existing-fix.md` — do not re-run it).
 - `Status: FIXED_UPSTREAM` with high confidence → stop, the fix is already there.
 - `Status: FIX_PENDING_PR` → proceed with the backport and record the pending PR in the row/final report (a pending master PR doesn't reach a release branch by itself); `--step` restores the wait-or-proceed ask.
-- `Status: UNFIXED` or `SKIPPED` → continue.
+- `Status: UNFIXED` or `SKIPPED` → continue to the target-affected check below.
+
+Then consume the **target-affected** verdict (the "is the bug even live on target" scan — distinct from existing-fix's "is the fix already here"). This is the gate that *produces* the "master-only regression" Skip; without it that skip only happens by luck:
+
+- `Target-affected: NOT_AFFECTED` (concrete evidence — a named introducing commit not on target, or the buggy code path demonstrably absent) → **SKIP**. Verdict `SKIP`, reason `target not affected — <commit/path> not present on <target>`. Do not backport a fix for a bug that can't occur.
+- `Target-affected: UNCLEAR` → proceed, but record the open applicability question on the row so the final report carries it. Never skip on absence of evidence.
+- `Target-affected: AFFECTED` → continue. A live bug whose fix won't apply stays AFFECTED and becomes Blocked/Partial in apply — that is not a skip here.
 
 ### Features with `--force`
 
@@ -74,9 +80,10 @@ Regardless of signals, classify as **non-trivial** when:
 ```markdown
 ## Gate Decision
 
-Verdict: PROCEED / REJECT / FORCE-PROCEED
+Verdict: PROCEED / REJECT / FORCE-PROCEED / SKIP
 Difficulty: TRIVIAL / NON-TRIVIAL
 Reject Criteria Hit: [list or "none"]
+Skip Reason: [e.g. "target not affected — <commit/path> not on <target>", or "none"]
 Force Override: YES / NO
 
 ### Reasoning Tier

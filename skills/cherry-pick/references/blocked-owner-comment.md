@@ -10,7 +10,7 @@ Run for any release-candidate story whose PR(s) we did **not** land this pass:
 - `Blocked` / `Rejected` — architecture missing on target, modify/delete, dependency chain, structural divergence.
 - `Skipped` — we judged it shouldn't be backported (e.g. fixes a master-only regression that can't occur on the release branch).
 
-**Skip** only when there is genuinely nothing for an owner to decide — e.g. the PR's merge SHA is already on the branch (already backported), or the story has no merged apache/superset PR at all. Those need no comment.
+**Skip** only when there is genuinely nothing for an owner to decide — e.g. the PR's merge SHA is already on the branch (already backported), the story has no merged apache/superset PR at all, or the gate returned high-confidence `NOT_AFFECTED` (target not affected — the bug's trigger never reached the branch). A high-confidence not-affected skip is a no-decision skip like already-backported: don't fire an owner comment for it, or a release audit that drops 20 not-affected candidates becomes a notification cannon. Downgrade to an FYI at most. Reserve the owner comment for skips that carry a real judgment call (blocked, force-vs-leave-off, adapt).
 
 ## The Five Required Elements
 
