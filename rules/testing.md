@@ -7,6 +7,7 @@
 - [ ] **Mock ONLY external boundaries** — APIs, databases, file systems, network, time
 - [ ] **One assertion concept per test**
 - [ ] **Fix failing tests immediately**
+- [ ] **Fix the invariant, not the test** — when a test is red, skipped, or proposed for deletion to accommodate broken-but-current behaviour, fix the behaviour instead. Surface a "delete/loosen the test" option only when the test itself is genuinely wrong (asserts an unintended side-effect, depends on a removed feature, or encodes a value judgement no one stands by). Think about *where* to implement (call site, boundary helper, or a static invariant) — but the test's expected output usually wins.
 - [ ] **Delete tests for deleted features**
 - [ ] **Follow project conventions** — test structure, naming, organization
 
