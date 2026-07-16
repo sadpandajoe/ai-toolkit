@@ -34,7 +34,7 @@ A posted comment is read by a tired engineer. The defaults below keep findings s
 
 ## Security Suggestion
 
-If `--adversarial` was not used and the diff touches security-sensitive areas (auth, input handling, API endpoints, database queries, file operations, secrets), suggest re-running with `/review-pr <ref> --adversarial` or `/review-code-adversarial`.
+If `--adversarial` was not used and the diff touches security-sensitive areas (auth, input handling, API endpoints, database queries, file operations, secrets), suggest re-running with `review-pr <ref> --adversarial` or `review-code-adversarial`.
 
 ## Summary Shape
 
@@ -69,8 +69,8 @@ PR #<number>: <title> — <Approve / Request Changes / Comment>
 
 Suggested next step examples:
 - Approved: PR is ready to merge.
-- Request Changes posted: wait for author to address, then re-run `/review-pr`.
+- Request Changes posted: wait for author to address, then re-run `review-pr`.
 - Comment posted: author should review comments; re-run when updated.
-- Draft mode: post with `/review-pr <number>` without `--draft`.
+- Draft mode: post with `review-pr <number>` without `--draft`.
 - Security-sensitive: re-run with `--adversarial`.
-- Author asked you to address feedback: `/address-feedback <number>`.
+- Author asked you to address feedback: `address-feedback <number>`.

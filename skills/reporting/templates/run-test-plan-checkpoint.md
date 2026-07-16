@@ -1,6 +1,8 @@
-# /run-test-plan Continuation Checkpoint Extension
+# Run-Test-Plan Continuation Details
 
-`/checkpoint` writes the generic `## Continuation Checkpoint` block (see [../SKILL.md](../SKILL.md) and [../../../commands/checkpoint.md](../../../commands/checkpoint.md)). When the detected top-level command is `/run-test-plan`, replace the generic `Phase:` field with the `/run-test-plan`-specific enum:
+The deterministic checkpoint API owns the machine block in
+[workflow-checkpoint.md](workflow-checkpoint.md). For `run-test-plan`, add this
+human-readable phase below it:
 
 ```markdown
 - Phase: resolve-plan / review-plan / execute / capture-evidence / report / summarize

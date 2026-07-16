@@ -4,7 +4,7 @@ tier: Heavy
 
 # PR Review Procedure
 
-Use for a single GitHub PR review after `/review-pr` resolves the PR reference.
+Use for a single GitHub PR review after `review-pr` resolves the PR reference.
 
 ## Gather Context
 
@@ -38,7 +38,9 @@ Trivial + confidence 8/10+: code quality review only, unless impact assessment e
 Run [../../qa/references/assess-impact.md](../../qa/references/assess-impact.md) on the PR diff to classify impact as CORE, STANDARD, or PERIPHERAL.
 
 Impact escalation:
-- TRIVIAL + CORE -> full review team
+- TRIVIAL + CORE -> code quality plus only the lens matching why the workflow is
+  CORE. Use the full team only when multiple CORE lenses apply or the relevant
+  safety lens is ambiguous.
 - MODERATE + CORE -> triggered reviewer lanes plus stricter severity calibration
 - STANDARD + CORE -> full team + suggest adversarial review for security-sensitive areas
 

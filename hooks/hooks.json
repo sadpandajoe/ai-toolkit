@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$PLUGIN_ROOT/hooks/prevent-project-commit.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking git safety"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$PLUGIN_ROOT/hooks/check-resources.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking local capacity"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$PLUGIN_ROOT/hooks/agent-setup-edit-reminder.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$PLUGIN_ROOT/hooks/check-plan-drift.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

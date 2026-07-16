@@ -10,7 +10,7 @@ Canonical rules for QA verification reports posted to **any** shared destination
 
 After running QA validation, fix verification, or PR smoke tests, when results need to land on a ticket, PR, or shared channel that *other people* will read.
 
-Use *instead of* terminal-only output formats (e.g. `/test-pr` Step 7 grid, `validate-fix.md` bullet block) when the destination is external.
+Use *instead of* terminal-only output formats (e.g. `test-pr` Step 7 grid, `validate-fix.md` bullet block) when the destination is external.
 
 ## Pick the Shape
 
@@ -61,7 +61,7 @@ Lead the **Result** with a one-sentence verdict (PASS / FAIL / PARTIAL) and the 
 
 ## Anti-Patterns
 
-- Pasting a tabular pass/fail grid (the `/test-pr` Step 7 format) as a Shortcut/GitHub comment — that grid is for terminal output only.
+- Pasting a tabular pass/fail grid (the `test-pr` Step 7 format) as a Shortcut/GitHub comment — that grid is for terminal output only.
 - One mashed-up repro list covering four different viewports, with all evidence dumped at the bottom — use multi-scenario shape instead.
 - Engineering postmortem prose ("the issue is that `calculatePopupAlign` doesn't clamp the dropdown wrapper") — keep cause analysis out of the comment; file it separately.
 - "Tested on staging" with no URL/build/branch — make the environment line copy-pasteable so a reader can re-run.

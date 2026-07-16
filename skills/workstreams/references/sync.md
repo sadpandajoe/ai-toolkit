@@ -100,4 +100,4 @@ proceed-to-review / stop-for-failure / stop-for-conflict / stop-for-integration-
 - This reference never auto-resolves merge conflicts. Conflicts indicate a planning error (overlapping slice scopes) that needs human judgment.
 - The slice status table in PROJECT.md is the durable record — if context is cleared, the status table survives.
 - When a slice fails, do not abort already-completed slices. Their work is committed on worktree branches and can be merged independently if the failed slice is re-planned.
-- This reference is consumed by `/create-feature` step 5b and `/fix-bug` step 13, replacing inline merge logic.
+- This reference is consumed by `create-feature` step 5b and `fix-bug` step 13, replacing inline merge logic.

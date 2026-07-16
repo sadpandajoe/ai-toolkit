@@ -4,7 +4,7 @@ tier: Heavy
 
 # Adversarial Review Orchestration
 
-Use for `/review-code-adversarial`. This coordinates red-team reviewers; [adversarial.md](adversarial.md) is the reviewer lens prompt.
+Use for `review-code-adversarial`. This coordinates red-team reviewers; [adversarial.md](adversarial.md) is the reviewer lens prompt.
 
 ## Discover Changed Files
 

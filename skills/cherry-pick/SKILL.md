@@ -1,7 +1,6 @@
 ---
 name: cherry-pick
 description: Cherry-pick, backport, or apply commits/PRs onto another branch with safety gates and per-change validation; also release audits — "what's on master that hasn't reached the release branch", finding backport candidates. Do NOT use for same-branch bug fixes, broad refactors, dependency upgrades, or general behavior rewrites.
-argument-hint: "[pr-url | sha...] [--target branch] [--force] [--plan-only] [--no-push]"
 ---
 
 # Cherry-Pick
@@ -18,24 +17,27 @@ Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present. Ch
 
 **Out of scope:** broad refactors, behavior-changing adaptations without approval, dependency reinstall or environment rebuild, forcing incompatible APIs onto the target.
 
-**Success criteria:** each change is classified `Applied | Partial | Blocked | Rejected | Skipped`; applied changes preserve source intent; validation status recorded; push status recorded; batch state lives in the execution table or `CHERRY_PICK.md`; PROJECT.md is updated by the parent workflow (this command does not own it).
+**Success criteria:** each change is classified `Applied | Partial | Blocked | Rejected | Skipped`; applied changes preserve source intent; validation status recorded; push status recorded; batch state lives in the execution table or `CHERRY_PICK.md`; PROJECT.md is updated by the parent workflow (this skill does not own it).
 
 If the workflow would cross a contract boundary, stop and ask — do not cross first and report after.
 
 Per-cherry push is the default action at step 8 — every successfully validated cherry is pushed to the target branch before the next cherry starts. `--no-push` opts out: validate locally, record `pending-authorization`, and stop before publishing. The per-cherry push boundary (step 8) and its hard-gate confirmation block still run on every cherry regardless; `--no-push` only changes whether the boundary's outcome is `pushed` or `pending-authorization`.
 
-For non-trivial or expensive cherry-picks, follow `rules/context-management.md`: checkpoint/clear after investigate/gate/plan is recorded in the execution table, and again after apply/adapt/validate when push (or, under `--no-push`, push authorization) and final reporting remain. Batch runs checkpoint/clear between waves by default.
+For non-trivial or expensive cherry-picks, follow
+`rules/context-management.md`: checkpoint and apply `context_reset` after
+investigate/gate/plan is recorded, and again after apply/adapt/validate when
+push authorization and final reporting remain. Batch runs reset between waves.
 
 ## Usage
 
 ```
-/cherry-pick <pr-url>                          # From a PR
-/cherry-pick <sha>                             # Single commit
-/cherry-pick <sha> --target <branch>           # Specific target branch
-/cherry-pick <sha> --force                     # Override reject-category gate
-/cherry-pick <sha-1> <sha-2> <sha-3>           # Batch
-/cherry-pick <sha-1> <sha-2> --plan-only       # Plan without applying
-/cherry-pick <sha-1> <sha-2> --no-push         # Validate locally; stop with push recommendation
+cherry-pick <pr-url>                          # From a PR
+cherry-pick <sha>                             # Single commit
+cherry-pick <sha> --target <branch>           # Specific target branch
+cherry-pick <sha> --force                     # Override reject-category gate
+cherry-pick <sha-1> <sha-2> <sha-3>           # Batch
+cherry-pick <sha-1> <sha-2> --plan-only       # Plan without applying
+cherry-pick <sha-1> <sha-2> --no-push         # Validate locally; stop with push recommendation
 ```
 
 ## Release Audit (Candidate Discovery)
@@ -106,7 +108,7 @@ Two distinct jobs, run on different threads:
 Post-apply, spawn a subagent (reasoning effort from gate: standard for trivial, heavy for non-trivial). Its only job is leak detection. Single rule: every cherry, every time, including clean applies — clean applies are the highest-risk vector for scope leak.
 
 The subagent must:
-1. Run `${CLAUDE_SKILL_DIR}/scripts/scope-audit.sh <source-commit>` and capture the literal output.
+1. Resolve this skill's installed directory as `<skill-dir>`, run `<skill-dir>/scripts/scope-audit.sh <source-commit>`, and capture the literal output.
 2. Run the LLM hunk-level audit comparing source diff vs cherry-pick result diff.
 3. Return a structured report containing the literal `scope-audit.sh` output, per-hunk verdict, and a clear `LEAK / CLEAN / ESCALATE` recommendation.
 
@@ -205,7 +207,8 @@ For 10+ changes, or any run with meaningful dependencies, expected conflicts, or
 
 Never commit `CHERRY_PICK.md`. Prefer `.git/info/exclude` for this workspace-local file unless the repo should ignore it globally.
 
-Update `CHERRY_PICK.md` before every checkpoint/clear. After `/start`, resume from the manifest row/wave rather than from chat history.
+Update `CHERRY_PICK.md` before every checkpoint/reset. After the `start`
+workflow, resume from the manifest row/wave rather than chat history.
 
 ### Wave Size Policy
 
@@ -255,9 +258,15 @@ No full diffs or long logs unless blocked. If a blocked handoff needs raw eviden
 5. **Escalation** — surface escalations to the user, relay answers back.
 6. **Final report** — collect results and produce the document phase output. Include pushed cherries and any cherries waiting on push authorization; the report summarizes, it does not silently publish.
 
-Workers may return prepared commits, branches, patches, or status blocks, but they do not own the shared target branch, final ordering, or final push unless a command-specific run explicitly grants that boundary. A worker that applies code must run in its own worktree/branch or produce a patch for orchestrator replay; a context-isolated session alone is not filesystem isolation. This prevents parallel workers from racing on one release branch.
+Workers may return prepared commits, branches, patches, or status blocks, but
+they do not own the shared target branch, final ordering, or final push unless a
+run-specific grant says so. A mutating worker must use `isolated_worktree` or
+produce a patch for orchestrator replay; context isolation alone is not
+filesystem isolation.
 
-**Why isolation matters:** with 15 cherry-picks, inline processing pollutes context with prior diffs by cherry #10. Quality degrades silently — conflicts start looking alike, decisions bleed across cherries. The batch design reduces in-wave context growth and per-cherry handoff size; it does not eliminate the need to checkpoint/clear between phases or resume from the manifest.
+**Why isolation matters:** with 15 cherry-picks, inline processing pollutes
+context with prior diffs by cherry #10. The batch design reduces in-wave context
+growth; it does not eliminate checkpoint/reset boundaries or manifest resume.
 
 **`--plan-only`:** run sequence + per-cherry investigate + gate (parallel where independent). Produce execution table without applying.
 

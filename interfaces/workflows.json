@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "skill": "workflows",
+  "reference_root": "skills/workflows/references",
+  "workflows": [
+    {"name": "address-feedback", "summary": "Address actionable pull request feedback", "arguments": "[pr] [--step]", "rules": ["rules/durable-workflows.md", "rules/complexity-gate.md"], "triggers": ["address pr feedback", "address review comments", "fix review comments"], "execution_class": "durable"},
+    {"name": "check-resources", "summary": "Check local environment capacity", "arguments": "", "rules": [], "triggers": ["check resources", "check local capacity", "resource headroom"], "execution_class": "single_run"},
+    {"name": "checkpoint", "summary": "Save durable workflow state", "arguments": "[message] [--clear]", "rules": [], "triggers": ["save a checkpoint", "checkpoint progress", "save workflow state"], "execution_class": "single_run"},
+    {"name": "complete-project", "summary": "Generate a project capstone", "arguments": "", "rules": [], "triggers": ["complete project", "project capstone", "wrap up project"], "execution_class": "single_run"},
+    {"name": "create-feature", "summary": "Run the end-to-end feature workflow", "arguments": "[request]", "rules": ["rules/durable-workflows.md", "rules/input-detection.md", "rules/complexity-gate.md"], "triggers": ["create feature", "build a feature", "implement feature", "planned refactor"], "execution_class": "durable"},
+    {"name": "create-pr", "summary": "Generate a pull request title and description", "arguments": "[--draft]", "rules": [], "triggers": ["create pull request", "open a pull request", "create pr", "draft pr"], "execution_class": "single_run"},
+    {"name": "create-tests", "summary": "Create the first meaningful tests for an area", "arguments": "[scope]", "rules": ["rules/durable-workflows.md"], "triggers": ["create first tests", "add first tests", "create test suite"], "execution_class": "durable"},
+    {"name": "custom-skills-info", "summary": "Show the AI Toolkit reference card", "arguments": "", "rules": [], "triggers": ["toolkit reference", "toolkit help", "skills info"], "execution_class": "single_run"},
+    {"name": "fix-bug", "summary": "Run the end-to-end bug workflow", "arguments": "[bug report]", "rules": ["rules/durable-workflows.md", "rules/input-detection.md", "rules/complexity-gate.md"], "triggers": ["fix bug", "fix this bug", "diagnose and fix", "broken behavior"], "execution_class": "durable"},
+    {"name": "fix-ci", "summary": "Diagnose and fix CI failures", "arguments": "[run or PR]", "rules": ["rules/durable-workflows.md", "rules/complexity-gate.md"], "triggers": ["fix ci", "ci failure", "github actions failing", "fix failing checks"], "execution_class": "durable"},
+    {"name": "metrics", "summary": "Summarize workflow metrics", "arguments": "[filters]", "rules": [], "triggers": ["workflow metrics", "show metrics", "toolkit metrics"], "execution_class": "single_run"},
+    {"name": "optimize-cost", "summary": "Analyze usage and recommend cost improvements", "arguments": "", "rules": [], "triggers": ["optimize cost", "reduce ai cost", "cost recommendations"], "execution_class": "single_run"},
+    {"name": "reflect", "summary": "Manage memories and propose durable rules", "arguments": "[mode]", "rules": [], "triggers": ["reflect on workflow", "manage memories", "propose rule", "failure postmortem"], "execution_class": "single_run"},
+    {"name": "review-code-adversarial", "summary": "Run an adversarial local code review", "arguments": "[scope]", "rules": ["rules/durable-workflows.md"], "triggers": ["adversarial code review", "red team review", "review code adversarially"], "execution_class": "durable"},
+    {"name": "review-code", "summary": "Run an adaptive local code review", "arguments": "[scope]", "rules": ["rules/durable-workflows.md", "rules/complexity-gate.md"], "triggers": ["review my code", "review local changes", "code review"], "execution_class": "durable"},
+    {"name": "review-plan", "summary": "Review a technical plan", "arguments": "[plan path]", "rules": ["rules/durable-workflows.md", "rules/stop-rules.md"], "triggers": ["review plan", "review technical plan", "critique implementation plan"], "execution_class": "durable"},
+    {"name": "review-pr", "summary": "Review one or more pull requests", "arguments": "[pr] [--all-open]", "rules": ["rules/durable-workflows.md", "rules/complexity-gate.md"], "triggers": ["review pull request", "review pr", "pr review"], "execution_class": "durable"},
+    {"name": "run-test-plan", "summary": "Execute a standalone QA validation plan", "arguments": "[target]", "rules": ["rules/durable-workflows.md", "rules/input-detection.md", "rules/preset-environments.md"], "triggers": ["run test plan", "execute test plan", "validate use cases"], "execution_class": "durable"},
+    {"name": "show-cost", "summary": "Show token usage and cost", "arguments": "", "rules": [], "triggers": ["show cost", "token usage", "session cost"], "execution_class": "single_run"},
+    {"name": "start", "summary": "Initialize or resume a toolkit session", "arguments": "", "rules": [], "triggers": ["start session", "resume session", "initialize session"], "execution_class": "single_run"},
+    {"name": "test-pr", "summary": "Manually test a pull request in a browser", "arguments": "[pr] [--step]", "rules": ["rules/durable-workflows.md", "rules/input-detection.md", "rules/preset-environments.md"], "triggers": ["test pull request", "manually test pr", "browser test pr"], "execution_class": "durable"},
+    {"name": "toolkit-doctor", "summary": "Validate toolkit structure and portability", "arguments": "[--strict]", "rules": [], "triggers": ["toolkit doctor", "validate toolkit", "toolkit health"], "execution_class": "single_run"},
+    {"name": "update-tests", "summary": "Improve an existing automated test suite", "arguments": "[scope]", "rules": ["rules/durable-workflows.md"], "triggers": ["update tests", "improve test suite", "expand test coverage"], "execution_class": "durable"},
+    {"name": "verify", "summary": "Verify changed files and behavior", "arguments": "[scope]", "rules": [], "triggers": ["verify changes", "run targeted tests", "check my changes"], "execution_class": "single_run"},
+    {"name": "watch-pr", "summary": "Watch a pull request through CI and review", "arguments": "[pr] [--greens N] [--no-comments]", "rules": ["rules/durable-workflows.md"], "triggers": ["watch pull request", "watch pr", "babysit pr", "monitor pr"], "execution_class": "durable"}
+  ]
+}

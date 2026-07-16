@@ -28,7 +28,7 @@ Impact: CORE / STANDARD / PERIPHERAL
 - <N> passed, <N> failed, <N> blocked of <N> total
 
 ### Evidence
-- Recording: ~/qa-recordings/<file>.mov (<size>)
+- Recording: ~/qa-recordings/<file>.webm (<size>)
 - Screenshots: scenario-1-*.png, scenario-2-*.png
 
 ### Failures

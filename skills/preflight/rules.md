@@ -7,7 +7,10 @@ Read this when a workflow is preparing a local app, Docker stack, or git worktre
 Before starting any Docker containers:
 1. Run `docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"` to inspect running containers.
 2. **Stale check** — flag any container whose `STATUS` shows `Up` for more than 24 hours, or whose name contains a feature/branch prefix that doesn't match the current working branch (e.g., `fix-foo-*`, `feat-bar-*`). List the stale ones with their age and ask the user whether to stop them before starting new work. Do not stop containers without confirmation.
-3. **Count check** — if two or fewer non-stale containers are running, proceed. If more than two, show the running containers to the user and ask whether to stop any before starting another stack.
+3. **Capacity check** — compare aggregate container memory usage plus the new
+   stack estimate with the Docker daemon ceiling. Proceed when it fits; ask
+   before starting only when the estimate risks over-capacity. Container count
+   alone is not a stop condition.
 
 ### Capacity math
 

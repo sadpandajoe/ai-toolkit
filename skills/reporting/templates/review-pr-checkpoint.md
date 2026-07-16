@@ -1,6 +1,8 @@
-# /review-pr Continuation Checkpoint Extension
+# Review-PR Continuation Details
 
-`/checkpoint` writes the generic `## Continuation Checkpoint` block (see [../SKILL.md](../SKILL.md) and [../../../commands/checkpoint.md](../../../commands/checkpoint.md)). When the detected top-level command is `/review-pr`, replace the generic `Phase:` field with the `/review-pr`-specific enum and add the PR identifier:
+The deterministic checkpoint API owns the machine block in
+[workflow-checkpoint.md](workflow-checkpoint.md). For `review-pr`, add the phase
+and PR identifier below it:
 
 **Single-PR mode**:
 

@@ -4,7 +4,7 @@ Two tag systems coexist in the toolkit. Both are valid — use the one native to
 
 ## Code Review Severity
 
-Action tags for iterative review/fix loops (`/review-code`, `/review-pr`, `review/references/code-quality.md`):
+Action tags for iterative review/fix loops (`review-code`, `review-pr`, `review/references/code-quality.md`):
 
 | Tag | Meaning | When to use |
 |-----|---------|-------------|

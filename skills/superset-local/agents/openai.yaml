@@ -1,0 +1,6 @@
+interface:
+  display_name: "Superset Local"
+  short_description: "Help with Superset Local tasks"
+
+policy:
+  allow_implicit_invocation: false

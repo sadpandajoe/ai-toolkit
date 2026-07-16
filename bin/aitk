@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PYTHON=${PYTHON:-python3}
+
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+    printf '%s\n' "aitk: Python 3.11 or newer is required (cannot find $PYTHON)" >&2
+    exit 2
+fi
+if ! "$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+    printf '%s\n' "aitk: Python 3.11 or newer is required" >&2
+    exit 2
+fi
+
+if [ -n "${PYTHONPATH:-}" ]; then
+    PYTHONPATH="$ROOT:$PYTHONPATH"
+else
+    PYTHONPATH="$ROOT"
+fi
+export PYTHONPATH
+exec "$PYTHON" -m aitk.cli --root "$ROOT" "$@"

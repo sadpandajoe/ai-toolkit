@@ -25,7 +25,8 @@ Match subagent resources to the **actual reasoning load of this specific task**,
 
 Provider mapping is runtime-specific. Keep reusable rules in neutral mechanical/standard/heavy terms, then translate to the platform's available model or reasoning-effort controls at invocation time.
 
-Use `rules/model-assignment.md` for the shared Light / Standard / Heavy / Orchestrator tier table when a command dispatches workers or chooses a cheaper classifier model.
+Use `rules/model-assignment.md` for the shared Light / Standard / Heavy /
+Orchestrator tier table when a workflow dispatches workers.
 
 **Cherry-pick reasoning tiering**: Cherry-pick phases use gate-driven reasoning selection rather than the general reasoning-load heuristic above. The gate classifies difficulty (TRIVIAL vs NON-TRIVIAL) and that classification determines worker effort for plan, validate, and adapt phases. See `skills/cherry-pick/references/gate.md` for the tier table.
 
@@ -45,24 +46,29 @@ Do it inline when:
 - The orchestrator already has the relevant context loaded
 - The task is bounded and the result is short (triage, RCA for a single failure mode)
 
-When the complexity gate classifies work as MODERATE, default to inline for scoping, investigation, and planning, but still spawn a reviewer subagent. When STANDARD, use subagents per command-specific steps.
+When the complexity gate classifies work as MODERATE, default to inline for
+scoping, investigation, and planning, but still use `fresh_subagent` for the
+required reviewer. When STANDARD, follow the workflow's declared capability
+steps.
 
 ## Long-Running Workflow Pattern
 
 When a workflow may process many units, inspect large logs, or run across multiple phases, the main thread should stay as a thin orchestrator rather than becoming the durable memory for every raw detail.
 
 - **Main thread owns** ordering, dependency tracking, user decisions, checkpoint boundaries, and final synthesis.
-- **Durable state lives in files**: use `PROJECT.md`, `PLAN.md`, or a command-specific local manifest when chat history would otherwise become the state store.
+- **Durable state lives in files**: use `PROJECT.md`, `PLAN.md`, or a workflow-specific local manifest when chat history would otherwise become the state store.
 - **Subagents own bounded expensive context**: each receives only the unit, wave, or lane it needs plus the output contract.
 - **Subagents return compact handoffs**: status, evidence summary, blockers, verification, residual risk, and next-action implications. Do not return full logs or diffs unless blocked.
 - **The main thread updates durable state after every unit or wave** before starting the next one.
-- **Checkpoint between waves/phases** per `rules/context-management.md`. For STANDARD or expensive work, phase resets are proactive: clear after durable artifacts are updated, not only when context or cost is near a limit.
+- **Checkpoint between waves/phases** per `rules/context-management.md`. For STANDARD or expensive work, phase resets are proactive: apply `context_reset` after durable artifacts are updated, not only when context or cost is near a limit.
 
-Use command-specific manifests when the work has a natural table of units, for example large cherry-pick trains, multi-failure CI fixes, or batch PR reviews. Keep those files local-only unless the command explicitly says otherwise.
+Use workflow-specific manifests when the work has a natural table of units, for
+example large cherry-pick trains, multi-failure CI fixes, or batch PR reviews.
+Keep those files local-only unless the workflow explicitly says otherwise.
 
 ## Subagent Batch Rules
 
-Use these rules whenever a command delegates implementation, investigation lanes, review batches, cherry-pick waves, or CI failure groups.
+Use these rules whenever a workflow delegates implementation, investigation lanes, review batches, cherry-pick waves, or CI failure groups.
 
 - Start with one unit unless the plan already proves independence.
 - Batch 2-3 units only when ownership is disjoint and dependencies are clear.
@@ -73,11 +79,13 @@ Use these rules whenever a command delegates implementation, investigation lanes
 
 ## Subagent Context Loading
 
-Subagents load their own domain rules — commands should not `@import` rules that only subagents use.
+Workers load their own domain rules; public workflow references should not
+eagerly import rules used only by workers.
 
 - **Main thread imports**: rules the main thread directly evaluates (complexity gate, input routing, orchestration, planning)
 - **Subagent reads**: domain rules the subagent applies (code-review, testing, implementation, investigation, review-gate, stop-rules, shortcut-api)
 - **Skill files reference rules by path**: e.g., "Read and apply `rules/review-gate.md`"
-- **Commands tell subagents which files to read**: include the rule file path in the Agent tool prompt
+- **Workflows tell workers which files to read**: resolve the rule through the
+  manifest/root mapping and include its content or stable path in the bounded handoff
 
 Avoid redundantly loading the same rule in both contexts unless the main thread must evaluate a returned gate or handoff against that rule.

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "capabilities": [
+    {"name": "planning_boundary", "required": true},
+    {"name": "fresh_subagent", "required": true},
+    {"name": "parallel_fanout", "required": true},
+    {"name": "isolated_worktree", "required": true},
+    {"name": "context_reset", "required": true},
+    {"name": "recurrence", "required": true},
+    {"name": "independent_review", "required": false}
+  ],
+  "providers": {
+    "claude": {
+      "bindings": {
+        "planning_boundary": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
+        "fresh_subagent": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
+        "parallel_fanout": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
+        "isolated_worktree": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
+        "context_reset": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
+        "recurrence": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
+        "independent_review": {"mode": "native", "document": "config/providers/claude.md", "fallback": null}
+      }
+    },
+    "codex": {
+      "bindings": {
+        "planning_boundary": {"mode": "native", "document": "config/providers/codex.md", "fallback": null},
+        "fresh_subagent": {"mode": "native", "document": "config/providers/codex.md", "fallback": null},
+        "parallel_fanout": {"mode": "native", "document": "config/providers/codex.md", "fallback": null},
+        "isolated_worktree": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "manual_fresh_worktree"},
+        "context_reset": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "manual_fresh_session"},
+        "recurrence": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "manual_reinvocation"},
+        "independent_review": {"mode": "native", "document": "config/providers/codex.md", "fallback": null}
+      }
+    }
+  }
+}

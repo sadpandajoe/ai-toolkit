@@ -1,4 +1,4 @@
-# /complete-project Final PROJECT.md Status Template
+# complete-project Final PROJECT.md Status Template
 
 After archiving completed phases, write this final state to PROJECT.md (replacing prior status).
 
@@ -19,4 +19,4 @@ After archiving completed phases, write this final state to PROJECT.md (replacin
 See PROJECT_ARCHIVE.md for full history.
 ```
 
-The Stats line numbers come from the `/complete-project` Step 2 metrics aggregation. The Memories numbers come from Step 3.
+The Stats line numbers come from the `complete-project` Step 2 metrics aggregation. The Memories numbers come from Step 3.

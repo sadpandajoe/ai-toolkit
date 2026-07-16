@@ -8,7 +8,7 @@ Use this phase when the workflow needs to create the first meaningful automated 
 
 ## Goal
 
-Write the smallest set of high-signal tests that establishes real regression protection, follows project conventions, and gives later `/update-tests` work something meaningful to improve.
+Write the smallest set of high-signal tests that establishes real regression protection, follows project conventions, and gives later `update-tests` work something meaningful to improve.
 
 ## Core Steps
 

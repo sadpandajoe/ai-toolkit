@@ -6,7 +6,7 @@ See `rules/resource-management.md` for the underlying rationale.
 
 ## When to Run
 
-- Immediately after `EnterWorktree` or when an agent starts with `isolation: "worktree"`
+- Immediately after the `isolated_worktree` capability creates or enters a worktree
 - Skip if the worktree was already prepared earlier in the same session
 
 ## Checks

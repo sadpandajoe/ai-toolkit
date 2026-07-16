@@ -1,6 +1,6 @@
 ---
 name: iterate-plan-review
-description: Iterate a written plan through parallel reviewer subagents until it meets the quality threshold (default 8/10), then run a cold-read finalization. Internal helper called by /create-feature, /review-plan, and any workflow that produces a plan and needs structured review before proceeding.
+description: Iterate a written plan through parallel reviewer subagents until it meets the quality threshold (default 8/10), then run a cold-read finalization. Internal helper called by create-feature, review-plan, and any workflow that produces a plan and needs structured review before proceeding.
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -113,5 +113,5 @@ Return to the caller:
 
 ## Notes
 
-- This procedure replaces inline "review iteration" logic previously duplicated in `/create-feature` step 4 and `/review-plan` body. Both commands call this helper.
+- This procedure replaces inline "review iteration" logic previously duplicated in `create-feature` step 4 and `review-plan` body. Both commands call this helper.
 - Subagents load their own skill files — the caller references skill paths but does not `@`-import them into this helper.

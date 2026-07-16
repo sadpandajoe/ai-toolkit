@@ -1,12 +1,13 @@
 # Skills
 
-Skills are domain-scoped capabilities Claude can invoke when their description matches the task. Each skill lives in its own folder under `skills/` and follows the same anatomy.
+Skills are domain-scoped Agent Skills selected when their description matches the task. Each skill lives in its own folder under `skills/` and follows the same anatomy.
 
 ## Folder Anatomy
 
 ```
 skills/<name>/
 ├── SKILL.md                  required — frontmatter + routing
+├── agents/openai.yaml        optional — Codex UI and invocation policy
 ├── rules.md                  optional — scoped rules loaded with the skill
 ├── gotchas.md                optional — known traps with incident references
 ├── lessons.md                optional — patterns learned the hard way
@@ -23,11 +24,8 @@ skills/<name>/
 |-------|---------|
 | `name` | Skill name. Must match folder name. |
 | `description` | The classifier. Lead with **trigger phrases** users say; end with explicit **Do NOT use** boundaries. |
-| `user-invocable: false` | Hide from `/<name>` invocation. Default `true`. |
-| `disable-model-invocation: true` | Hide from auto-routing list. Use for coordination-only helpers the orchestrator must own. |
-| `allowed-tools` | Restrict tool access for safety (e.g. `Bash(git *) Read Edit`). |
-| `argument-hint` | Shown in `/<name>` autocomplete. |
-| `tier` | Optional provider-neutral dispatch tier (`Light`, `Standard`, `Heavy`, `Orchestrator`). See `rules/model-assignment.md`; do not use provider model names in reusable skill frontmatter. |
+
+Shared frontmatter intentionally contains only these two portable fields. Put Codex display metadata and `policy.allow_implicit_invocation` in `agents/openai.yaml`; keep concrete provider model/tool configuration in provider adapters.
 
 **The "Before Starting" line** at the top of every SKILL.md:
 ```
@@ -49,6 +47,7 @@ End-to-end workflow umbrellas:
 
 | Umbrella | Use for |
 |----------|---------|
+| [workflows/](workflows/) | Public daily-workflow routing and canonical orchestration references |
 | [debug/](debug/) | Investigating bugs, diagnosing failures, RCA review, CI failure classification, fix verification |
 | [feedback/](feedback/) | PR review feedback triage, approved fixes, reviewer replies, and thread handling |
 | [pr-watch/](pr-watch/) | Watch-and-fix loop over an open PR — CI status + review comments, dispatching to debug/ and feedback/ |
@@ -69,10 +68,10 @@ Workflow scaffolding (mostly orchestrator-only; not auto-routed):
 |----------|---------|
 | [action-gate/](action-gate/) | Execution Gate block (Risk/Confidence/Decision/Verification) after investigation |
 | [reporting/](reporting/) | Final summary + continuation checkpoint shapes |
-| [metrics-emit/](metrics-emit/) | Append structured event to `.claude/metrics.jsonl` |
+| [metrics-emit/](metrics-emit/) | Append structured event to `.ai-toolkit/metrics.jsonl` |
 | [workstreams/](workstreams/) | Fan-in after parallel implementation subagents finish |
 | [archive-project-file/](archive-project-file/) | Move completed PROJECT.md content to PROJECT_ARCHIVE.md |
-| [agent-setup-maintainer/](agent-setup-maintainer/) | Auditing or updating this toolkit's commands/skills/rules |
+| [agent-setup-maintainer/](agent-setup-maintainer/) | Auditing or updating toolkit skills, rules, interfaces, and generated adapters |
 
 Domain integrations:
 
@@ -88,4 +87,4 @@ Domain integrations:
 2. **Pick the right level.** A new umbrella is justified only when 3+ references would share rules/gotchas. Otherwise add a reference to an existing umbrella.
 3. **Keep SKILL.md as a routing table.** Steps and templates live in `references/`, not in SKILL.md itself. SKILL.md should fit on a screen.
 4. **Co-locate guidance.** New gotchas go in this skill's `gotchas.md`, not in global `rules/`. Global rules are routing hints, not task libraries.
-5. **Run `/toolkit-doctor`** after structural changes to catch broken cross-references and stale symlinks.
+5. **Run `bin/aitk check`** after structural changes to catch broken cross-references, adapter drift, contract failures, and hook regressions.

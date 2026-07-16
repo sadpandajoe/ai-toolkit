@@ -9,7 +9,7 @@
  * Output: ~/qa-recordings/<source-id>-<short-name>-<UTC-timestamp>.webm
  *
  * Prerequisite: ~/.qa-runner/node_modules symlinked to a Playwright install,
- * e.g. /Users/joeli/opt/code/superset-private/superset-frontend/node_modules.
+ * e.g. <path-to-playwright-project>/node_modules.
  */
 import { chromium } from 'playwright';
 import { mkdir, rename } from 'node:fs/promises';

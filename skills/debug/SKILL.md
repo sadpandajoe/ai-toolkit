@@ -1,7 +1,6 @@
 ---
 name: debug
 description: Investigating a bug or failure — find the root cause, classify a CI failure, review an RCA, search for an existing upstream fix, or verify a CI fix landed. Do NOT use for implementing the fix (use implement-change/), writing tests (use testing/), or turning a loose bug report into a repro plan before investigating (use qa/).
-user-invocable: false
 ---
 
 # Debug
@@ -26,19 +25,19 @@ Umbrella for all diagnostic work — finding root causes, validating them, and c
 
 ## Typical Composition
 
-**Bug workflow** (`/fix-bug`):
+**Bug workflow** (`fix-bug`):
 1. `check-existing-fix` → is fix already upstream?
 2. `investigate-change` (with "Investigating a Bug" section) → produces RCA
 3. `review-rca` → critiques the RCA
-4. The command routes implementation, review, QA, and reporting to their own skills.
+4. The workflow routes implementation, review, QA, and reporting to their own skills.
 
-**CI workflow** (`/fix-ci`):
+**CI workflow** (`fix-ci`):
 1. `ci-gather-logs` → resolve real failing logs or artifact chunks
 2. `ci-classify-failure` → pattern-match or novel
 3. `ci-fix-orchestration` → group failures, route gates, choose safe fix strategy
 4. `ci-verify-fix` → STRONG/PARTIAL/WEAK tier
 
-**Cherry-pick** (`/cherry-pick`):
+**Cherry-pick**:
 1. `check-existing-fix` → is the cherry still needed?
 
 ## Shape Notes
@@ -47,7 +46,7 @@ References here are intentionally diverse:
 - `investigate-change` is an open investigation flow (the orchestrator reads the reference and follows steps).
 - `ci-gather-logs` is a retrieval and manifest setup flow.
 - `ci-classify-failure` is a pattern-match producer (returns a classified failure block).
-- `ci-fix-orchestration` is a command-owned routing reference; it does not edit files by itself.
+- `ci-fix-orchestration` is a workflow-owned routing reference; it does not edit files by itself.
 - `review-rca` is a reviewer subagent prompt (spawned with its content as prompt).
 - `check-existing-fix` is a parallel-search workflow (runs git+gh queries in parallel).
 - `ci-verify-fix` is a verification-strength tiering reference (definitions + stop conditions).
@@ -56,7 +55,9 @@ The umbrella unifies them by workflow domain (diagnosis), not by shape.
 
 ## Notes
 
-- `investigate-change` has a "When Investigating a Bug" section with bug-specific framing fields — use it for `/fix-bug`.
+- `investigate-change` has a "When Investigating a Bug" section with bug-specific framing fields — use it for `fix-bug`.
 - `review-rca` is a *critic* — it scores and returns findings, unlike investigate-change which *produces* the RCA.
 - `check-existing-fix` can be skipped when the change is a dependency upgrade or structural refactor (not an isolated defect correction).
-- End-to-end command sequencing belongs in the command file. This skill owns diagnostic phases only; implementation, review, QA, and reporting are routed to their own skills by the command.
+- End-to-end sequencing belongs in the selected canonical workflow reference.
+  This skill owns diagnostic phases only; the workflow routes implementation,
+  review, QA, and reporting to their domain skills.

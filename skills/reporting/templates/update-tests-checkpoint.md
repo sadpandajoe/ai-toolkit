@@ -1,6 +1,8 @@
-# /update-tests Continuation Checkpoint Extension
+# Update-Tests Continuation Details
 
-`/checkpoint` writes the generic `## Continuation Checkpoint` block (see [../SKILL.md](../SKILL.md) and [../../../commands/checkpoint.md](../../../commands/checkpoint.md)). When the detected top-level command is `/update-tests`, replace the generic `Phase:` field with the `/update-tests`-specific enum:
+The deterministic checkpoint API owns the machine block in
+[workflow-checkpoint.md](workflow-checkpoint.md). For `update-tests`, add this
+human-readable phase below it:
 
 ```markdown
 - Phase: scope / gap-analysis / update-tests / verify / review / commit / summarize

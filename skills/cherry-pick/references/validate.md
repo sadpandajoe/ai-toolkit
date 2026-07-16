@@ -23,7 +23,7 @@ Consume risk signals from investigate and adaptation signals from adapt. Do not 
 
 **Subagent must produce** (orchestrator refuses `Applied` status without all three):
 
-1. Literal stdout of `${CLAUDE_SKILL_DIR}/scripts/scope-audit.sh <source-commit>` — pasted verbatim, not summarized.
+1. Literal stdout of `<skill-dir>/scripts/scope-audit.sh <source-commit>` — pasted verbatim, not summarized. Resolve `<skill-dir>` from the currently installed cherry-pick skill.
 2. Per-hunk audit verdict from Step 2 below — explicit list of extra hunks (or "none") with origin classification for each.
 3. Final recommendation: `CLEAN` / `LEAK — revert <hunks>` / `ESCALATE — <reason>`.
 
@@ -40,7 +40,7 @@ Run **before** build/test validation. A clean build doesn't catch unrelated chan
 Run the bundled script:
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/scope-audit.sh <source-commit>
+<skill-dir>/scripts/scope-audit.sh <source-commit>
 ```
 
 This produces a mechanical comparison (file list, line counts) — no LLM judgment. It outputs:
@@ -112,7 +112,7 @@ pre-commit run --files <changed-file-1> <changed-file-2>
 # or, if pre-commit isn't the repo's tool, use the equivalent CI lint/format command
 ```
 
-`/cherry-pick` authorizes local amend of the in-progress cherry-pick commit for validation-only cleanup before any push. Do not amend older commits, rebase, or push unless the calling command separately authorizes that boundary.
+`/cherry-pick` authorizes local amend of the in-progress cherry-pick commit for validation-only cleanup before any push. Do not amend older commits, rebase, or push unless the calling workflow separately authorizes that boundary.
 
 **If pre-commit auto-fixes files** (ruff-format, end-of-files, trailing whitespace, etc.):
 ```bash

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Action Gate"
+  short_description: "Help with Action Gate tasks"
+
+policy:
+  allow_implicit_invocation: false

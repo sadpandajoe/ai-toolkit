@@ -1,10 +1,9 @@
 ---
 name: archive-project-file
 description: Move completed-phase PROJECT.md content to PROJECT_ARCHIVE.md, or remove a stale PLAN.md after a workflow is done. Do NOT use for active work, unresolved blockers, current continuation checkpoints, or summaries that should stay in PROJECT.md.
-argument-hint: [phase-name]
 ---
 
-# /archive-project-file
+# archive-project-file
 
 > **When**: A project/feature is done and needs to be preserved.
 > **Produces**: Archived PROJECT.md content in PROJECT_ARCHIVE.md, stale PLAN.md deleted.

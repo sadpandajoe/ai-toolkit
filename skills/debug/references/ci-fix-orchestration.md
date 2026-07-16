@@ -4,7 +4,9 @@ tier: Standard
 
 # CI Fix Orchestration
 
-Use after logs have been gathered and failures have been classified. The command owns the final decision, but this reference defines grouping, routing, safe-fix scope, and commit recommendation strategy.
+Use after logs have been gathered and failures have been classified. The
+calling workflow owns the final decision; this reference defines grouping,
+routing, safe-fix scope, and commit recommendation strategy.
 
 ## Classify and Group
 
@@ -51,7 +53,7 @@ Evaluate each remaining failure:
 
 Trivial path: apply, verify, emit/obtain Review Gate, update PROJECT.md, summarize.
 
-Moderate path: plan inline, apply, verify, run `/review-code`, update PROJECT.md, summarize.
+Moderate path: plan inline, apply, verify, run `review-code`, update PROJECT.md, summarize.
 
 Standard path: update PROJECT.md, validate RCA when needed, run the Action Gate, then apply only if the gate allows it.
 

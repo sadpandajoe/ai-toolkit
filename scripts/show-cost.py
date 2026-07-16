@@ -1,33 +1,21 @@
 #!/usr/bin/env python3
-"""Aggregate token usage and estimated costs from Claude Code session JSONL files."""
+"""Aggregate token usage and estimated costs from local session JSONL files."""
 
 import json
 import os
 import sys
 import glob
+from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-# Per-model pricing ($/MTok) for known Claude models.
-PRICING = {
-    "claude-opus-4-6": {
-        "input": 15.00, "output": 75.00,
-        "cache_read": 1.50, "cache_create": 3.75,
-    },
-    "claude-sonnet-4-6": {
-        "input": 3.00, "output": 15.00,
-        "cache_read": 0.30, "cache_create": 0.75,
-    },
-    "claude-haiku-4-5": {
-        "input": 0.80, "output": 4.00,
-        "cache_read": 0.08, "cache_create": 0.20,
-    },
-}
+from aitk.pricing import compute_cost, get_pricing
 
-# Unknown models are reported with token/message counts but excluded from cost
-# instead of silently borrowing an unrelated provider's pricing.
-DEFAULT_PRICING = None
-
+# Per-model global API-equivalent pricing ($/MTok). Keep unknown models
+# unpriced. Sources verified 2026-07-15:
+# https://www.anthropic.com/claude/opus
+# https://www.anthropic.com/news/claude-sonnet-5
+# Anthropic List Prices 2026-05-27 (Sonnet 4.6 and Haiku 4.5).
 # ANSI colors
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -36,33 +24,6 @@ RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
-
-
-def get_pricing(model):
-    """Get pricing for a model, matching by prefix for version variants."""
-    if model in PRICING:
-        return PRICING[model]
-    for key in PRICING:
-        if model.startswith(key.rsplit("-", 1)[0]):
-            return PRICING[key]
-    return DEFAULT_PRICING
-
-
-def compute_cost(usage, model):
-    """Compute cost in USD for a single usage record."""
-    p = get_pricing(model)
-    if p is None:
-        return 0.0
-    inp = usage.get("input_tokens", 0)
-    out = usage.get("output_tokens", 0)
-    cache_read = usage.get("cache_read_input_tokens", 0)
-    cache_create = usage.get("cache_creation_input_tokens", 0)
-    return (
-        inp * p["input"] / 1_000_000
-        + out * p["output"] / 1_000_000
-        + cache_read * p["cache_read"] / 1_000_000
-        + cache_create * p["cache_create"] / 1_000_000
-    )
 
 
 def parse_sessions(base_dir, since=None):
@@ -87,10 +48,17 @@ def parse_sessions(base_dir, since=None):
 
 def parse_one_session(path, project, since):
     """Parse a single session JSONL file."""
-    totals = defaultdict(lambda: {
-        "input": 0, "output": 0, "cache_read": 0, "cache_create": 0,
-        "cost": 0.0, "messages": 0,
-    })
+    totals = defaultdict(
+        lambda: {
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "cache_create": 0,
+            "cost": 0.0,
+            "messages": 0,
+            "unpriced": 0,
+        }
+    )
     dates = set()
     first_ts = None
     last_ts = None
@@ -131,7 +99,8 @@ def parse_one_session(path, project, since):
             out = usage.get("output_tokens", 0)
             cr = usage.get("cache_read_input_tokens", 0)
             cc = usage.get("cache_creation_input_tokens", 0)
-            cost = compute_cost(usage, model)
+            pricing = get_pricing(model, ts_str, require_timestamp=True)
+            cost = compute_cost(usage, model, ts_str)
 
             totals[model]["input"] += inp
             totals[model]["output"] += out
@@ -139,13 +108,16 @@ def parse_one_session(path, project, since):
             totals[model]["cache_create"] += cc
             totals[model]["cost"] += cost
             totals[model]["messages"] += 1
+            totals[model]["unpriced"] += int(pricing is None)
             message_count += 1
 
     if message_count == 0:
         return None
 
     total_cost = sum(t["cost"] for t in totals.values())
-    total_input = sum(t["input"] + t["cache_read"] + t["cache_create"] for t in totals.values())
+    total_input = sum(
+        t["input"] + t["cache_read"] + t["cache_create"] for t in totals.values()
+    )
     total_output = sum(t["output"] for t in totals.values())
     cache_read_total = sum(t["cache_read"] for t in totals.values())
     cache_create_total = sum(t["cache_create"] for t in totals.values())
@@ -187,10 +159,15 @@ def format_cost(c):
 
 def shorten_project(name):
     """Shorten project dir name for display."""
-    # Remove the leading -Users-joeli- prefix
-    name = name.replace("-Users-joeli-", "").replace("-Users-joeli", "~")
+    encoded_home = "-" + "-".join(Path.home().parts[1:])
+    if name == encoded_home:
+        name = "~"
+    elif name.startswith(encoded_home + "-"):
+        name = name[len(encoded_home) + 1 :]
     # Collapse common path separators
-    name = name.replace("--", "/").replace("-", "/", 2) if name.startswith("opt") else name
+    name = (
+        name.replace("--", "/").replace("-", "/", 2) if name.startswith("opt") else name
+    )
     if len(name) > 35:
         name = name[:32] + "..."
     return name or "~"
@@ -198,12 +175,18 @@ def shorten_project(name):
 
 def aggregate_by_date(sessions):
     """Roll up sessions into per-date aggregates."""
-    by_date = defaultdict(lambda: {
-        "cost": 0.0, "input": 0, "output": 0,
-        "cache_read": 0, "messages": 0, "sessions": 0,
-        "models": defaultdict(lambda: {"cost": 0.0, "messages": 0}),
-        "projects": defaultdict(lambda: {"cost": 0.0, "messages": 0}),
-    })
+    by_date = defaultdict(
+        lambda: {
+            "cost": 0.0,
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "messages": 0,
+            "sessions": 0,
+            "models": defaultdict(lambda: {"cost": 0.0, "messages": 0, "unpriced": 0}),
+            "projects": defaultdict(lambda: {"cost": 0.0, "messages": 0}),
+        }
+    )
     for s in sessions:
         for date in s["dates"]:
             # Approximate: attribute full session to each active date equally
@@ -219,6 +202,7 @@ def aggregate_by_date(sessions):
             for model, mdata in s["models"].items():
                 d["models"][model]["cost"] += mdata["cost"] * frac
                 d["models"][model]["messages"] += int(mdata["messages"] * frac)
+                d["models"][model]["unpriced"] += int(mdata["unpriced"] * frac)
             proj = shorten_project(s["project"])
             d["projects"][proj]["cost"] += s["total_cost"] * frac
             d["projects"][proj]["messages"] += int(s["messages"] * frac)
@@ -238,9 +222,11 @@ def print_period(label, dates_data, show_details=True):
     print(f"\n{BOLD}{'=' * 60}{RESET}")
     print(f"{BOLD}{label}{RESET}")
     print(f"{'=' * 60}")
-    print(f"  Cost: {CYAN}{format_cost(total_cost)}{RESET}  |  "
-          f"Messages: {total_msgs:,}  |  "
-          f"In: {format_tokens(total_input)}  Out: {format_tokens(total_output)}")
+    print(
+        f"  Cost: {CYAN}{format_cost(total_cost)}{RESET}  |  "
+        f"Messages: {total_msgs:,}  |  "
+        f"In: {format_tokens(total_input)}  Out: {format_tokens(total_output)}"
+    )
     print(f"  Cache hit rate: {GREEN}{cache_pct:.0f}%{RESET}")
 
     if not show_details:
@@ -253,28 +239,42 @@ def print_period(label, dates_data, show_details=True):
     for date in sorted(dates_data.keys()):
         d = dates_data[date]
         cost_color = RED if d["cost"] > 5 else YELLOW if d["cost"] > 2 else ""
-        print(f"  {date:<12} {cost_color}{format_cost(d['cost']):>8}{RESET} "
-              f"{d['messages']:>6} {format_tokens(d['input']):>8} {format_tokens(d['output']):>8}")
+        print(
+            f"  {date:<12} {cost_color}{format_cost(d['cost']):>8}{RESET} "
+            f"{d['messages']:>6} {format_tokens(d['input']):>8} {format_tokens(d['output']):>8}"
+        )
 
     # Model breakdown
-    model_totals = defaultdict(lambda: {"cost": 0.0, "messages": 0})
+    model_totals = defaultdict(lambda: {"cost": 0.0, "messages": 0, "unpriced": 0})
     for d in dates_data.values():
         for model, mdata in d["models"].items():
             model_totals[model]["cost"] += mdata["cost"]
             model_totals[model]["messages"] += mdata["messages"]
+            model_totals[model]["unpriced"] += mdata["unpriced"]
 
     if model_totals:
         print(f"\n  {BOLD}By Model{RESET}")
         print(f"  {'Model':<25} {'Cost':>8} {'Msgs':>6} {'% Cost':>8}")
         print(f"  {'-' * 50}")
-        for model in sorted(model_totals, key=lambda m: (model_totals[m]["cost"], model_totals[m]["messages"]), reverse=True):
+        for model in sorted(
+            model_totals,
+            key=lambda m: (model_totals[m]["cost"], model_totals[m]["messages"]),
+            reverse=True,
+        ):
             mt = model_totals[model]
             pct = (mt["cost"] / total_cost * 100) if total_cost > 0 else 0
-            cost_label = format_cost(mt["cost"]) if get_pricing(model) is not None else "n/a"
+            if mt["unpriced"] == mt["messages"]:
+                cost_label = "n/a"
+            elif mt["unpriced"]:
+                cost_label = format_cost(mt["cost"]) + "*"
+            else:
+                cost_label = format_cost(mt["cost"])
             print(f"  {model:<25} {cost_label:>8} {mt['messages']:>6} {pct:>7.0f}%")
 
-        if any(get_pricing(model) is None for model in model_totals):
-            print(f"  {DIM}Unknown-model costs are shown as n/a and excluded from totals.{RESET}")
+        if any(value["unpriced"] for value in model_totals.values()):
+            print(
+                f"  {DIM}n/a or * records lack known pricing or a valid record timestamp; those costs are excluded.{RESET}"
+            )
 
     # Project breakdown (top 5)
     proj_totals = defaultdict(lambda: {"cost": 0.0, "messages": 0})
@@ -287,7 +287,9 @@ def print_period(label, dates_data, show_details=True):
         print(f"\n  {BOLD}By Project (top 5){RESET}")
         print(f"  {'Project':<35} {'Cost':>8} {'Msgs':>6}")
         print(f"  {'-' * 52}")
-        sorted_projs = sorted(proj_totals, key=lambda p: proj_totals[p]["cost"], reverse=True)[:5]
+        sorted_projs = sorted(
+            proj_totals, key=lambda p: proj_totals[p]["cost"], reverse=True
+        )[:5]
         for proj in sorted_projs:
             pt = proj_totals[proj]
             print(f"  {proj:<35} {format_cost(pt['cost']):>8} {pt['messages']:>6}")
@@ -353,7 +355,9 @@ def main():
             w = week_data[week]
             print(f"  {week:<20} {format_cost(w['cost']):>8} {w['messages']:>6}")
 
-    print(f"\n{DIM}Note: Costs are API-equivalent estimates, not actual billing.{RESET}\n")
+    print(
+        f"\n{DIM}Note: Costs are API-equivalent estimates, not actual billing.{RESET}\n"
+    )
 
 
 if __name__ == "__main__":

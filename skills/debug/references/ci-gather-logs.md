@@ -4,7 +4,7 @@ tier: Light
 
 # CI Gather Logs
 
-Use at the start of `/fix-ci` after input normalization. The goal is to resolve real failing log output before any classification happens.
+Use at the start of `fix-ci` after input normalization. The goal is to resolve real failing log output before any classification happens.
 
 ## Inputs
 

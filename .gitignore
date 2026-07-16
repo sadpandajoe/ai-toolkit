@@ -1,4 +1,8 @@
 .claude/
+.ai-toolkit/
+__pycache__/
+*.py[cod]
+*.egg-info/
 PROJECT.md
 PROJECT_ARCHIVE.md
 PLAN.md

@@ -54,7 +54,7 @@ For each `NEEDS_INVESTIGATION` candidate from the pre-flight table, run these an
    - Inspect intent and nearby history just enough to order and triage.
 
 2. **Dependency and overlap analysis**
-   - Run `${CLAUDE_SKILL_DIR}/scripts/batch-deps.sh <sha1> <sha2> ...` to get the mechanical signals: per-SHA file lists, SHA pairs sharing files, per-file coverage (×N count), author-date order, and a list of fully-independent SHAs eligible for parallel investigation.
+   - Resolve the installed cherry-pick skill directory as `<skill-dir>`, then run `<skill-dir>/scripts/batch-deps.sh <sha1> <sha2> ...` to get the mechanical signals: per-SHA file lists, SHA pairs sharing files, per-file coverage (×N count), author-date order, and a list of fully-independent SHAs eligible for parallel investigation.
    - Read the output: every "[×2]" or higher entry in per-file coverage is a dependency point. The pairs above each describe an edge in the dependency graph.
    - Detect imports, APIs, or modules introduced by one change and consumed by another — the script's per-SHA file list surfaces this; verify by inspecting hunks for any pair flagged with shared files.
 

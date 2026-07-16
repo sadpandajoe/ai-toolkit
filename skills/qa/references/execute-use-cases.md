@@ -23,11 +23,12 @@ Run the relevant scenarios against a real environment, record the outcomes clear
 
 ## Evidence Capture
 
-After execution, capture video evidence for every UI scenario:
+For UI execution, follow the canonical
+[browser-recording recipe](browser-recording.md):
 
-1. **Default to video**: When testing via Playwright, always record video (`recordVideo: { dir: 'qa-evidence/videos/', size: { width: 1280, height: 720 } }`). One video per logical flow — not one giant recording.
-2. Name files descriptively: `sc-<id>-<what-was-tested>.webm` or `<scenario-name>.webm`.
-3. Save artifacts under `qa-evidence/<scenario>/`.
+1. Start one linear full-flow recording before the first related scenario.
+2. Save the final `.webm` under `~/qa-recordings/` using the canonical name.
+3. Capture a screenshot at each scenario's decisive verification point.
 4. Supplement with console logs or API output when they explain a failure that video alone doesn't capture.
 5. Identify the single best proof artifact for each scenario.
 

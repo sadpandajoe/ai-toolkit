@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# check-resources.sh — Claude Code PreToolUse hook
+# check-resources.sh — provider-neutral PreToolUse hook
 #
 # Warns when test runners are invoked with constrained resources.
 # Advisory only: always exits 0 (never blocks).
@@ -24,32 +24,38 @@ fi
 
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
 
+# This hook is scoped to potentially parallel test runners.
+if ! echo "$COMMAND" | grep -qE '(^|[[:space:]])(jest|pytest|playwright|npm[[:space:]]+test|pnpm[[:space:]]+test|yarn[[:space:]]+test)([[:space:]]|$)'; then
+    exit 0
+fi
+
 # Skip if worker limit already specified
 if echo "$COMMAND" | grep -qE '\-\-maxWorkers|\-n [0-9]|\-w [0-9]|--workers'; then
     exit 0
 fi
 
-# Check Docker container count (bounded probe — avoid hanging on wedged daemon)
-DOCKER_COUNT=0
-if command -v docker &>/dev/null; then
-    if command -v gtimeout &>/dev/null; then
-        DOCKER_COUNT=$(gtimeout 2 docker ps -q 2>/dev/null | wc -l | tr -d ' ') || DOCKER_COUNT=0
-    elif command -v timeout &>/dev/null; then
-        DOCKER_COUNT=$(timeout 2 docker ps -q 2>/dev/null | wc -l | tr -d ' ') || DOCKER_COUNT=0
-    else
-        # No timeout utility — run in background with manual kill to avoid hanging
-        docker ps -q > /tmp/.cc_docker_count 2>/dev/null &
-        DOCKER_PID=$!
-        ( sleep 2 && kill $DOCKER_PID 2>/dev/null ) &
-        wait $DOCKER_PID 2>/dev/null
-        DOCKER_COUNT=$(wc -l < /tmp/.cc_docker_count 2>/dev/null | tr -d ' ') || DOCKER_COUNT=0
-        rm -f /tmp/.cc_docker_count
+# Measure available host memory instead of treating container count as load.
+AVAILABLE_MB=""
+if [[ -r /proc/meminfo ]]; then
+    AVAILABLE_KB=$(awk '/^MemAvailable:/ { print $2; exit }' /proc/meminfo)
+    if [[ "$AVAILABLE_KB" =~ ^[0-9]+$ ]]; then
+        AVAILABLE_MB=$((AVAILABLE_KB / 1024))
+    fi
+elif command -v vm_stat &>/dev/null; then
+    PAGE_SIZE=$(vm_stat | awk 'NR == 1 { gsub("[^0-9]", "", $8); print $8 }')
+    AVAILABLE_PAGES=$(vm_stat | awk '
+        /Pages free|Pages inactive|Pages speculative/ {
+            gsub("\\.", "", $NF); pages += $NF
+        }
+        END { print pages + 0 }
+    ')
+    if [[ "$PAGE_SIZE" =~ ^[0-9]+$ && "$AVAILABLE_PAGES" =~ ^[0-9]+$ ]]; then
+        AVAILABLE_MB=$((AVAILABLE_PAGES * PAGE_SIZE / 1024 / 1024))
     fi
 fi
 
-# Warn if Docker is heavy
-if [[ "$DOCKER_COUNT" -gt 2 ]]; then
-    echo "Warning: $DOCKER_COUNT Docker containers running. Consider adding --maxWorkers=2 to prevent OOM." >&2
+if [[ "$AVAILABLE_MB" =~ ^[0-9]+$ ]] && (( AVAILABLE_MB < 4096 )); then
+    echo "Warning: about ${AVAILABLE_MB} MB host memory is available. Set an explicit low worker count before this test run." >&2
 fi
 
 exit 0

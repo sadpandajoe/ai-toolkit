@@ -6,7 +6,7 @@ Transform the input report data, status update, or risk summary into audience-ap
 
 ## Usage
 
-This is an internal helper for report commands such as `/create-status-report` and `/create-velocity-report`.
+This is an internal helper for `$pgm create-status-report` and `$pgm create-velocity-report`.
 Do not require a separate top-level formatting command when the reporting command can emit the requested audience format directly.
 
 If no audience is specified, infer from context:

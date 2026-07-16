@@ -1,8 +1,6 @@
 ---
 name: review
-description: "Umbrella for code review (shipped code): orchestration, classifier, reviewer lenses (code-quality, adversarial), and PR posting helpers."
-user-invocable: false
-disable-model-invocation: true
+description: "Use for reviewing implemented code through orchestration, classification, reviewer lenses, and PR helpers. Do NOT use for plan review, root-cause investigation, or implementation."
 ---
 
 # Review
@@ -11,17 +9,18 @@ disable-model-invocation: true
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 
-Umbrella for code-review work — review of *shipped code*, not plans. References are grouped by role so commands can load only the phase they are entering.
+Umbrella for code-review work — review of *shipped code*, not plans. References
+are grouped by role so workflows load only the phase they are entering.
 
 ## Orchestration
 
 | Reference | Role |
 |-----------|------|
-| [references/local-review.md](references/local-review.md) | Local `/review-code` orchestration |
+| [references/local-review.md](references/local-review.md) | Local `review-code` orchestration |
 | [references/pr-review.md](references/pr-review.md) | Single GitHub PR review procedure |
 | [references/pr-batch.md](references/pr-batch.md) | Batch PR review orchestration |
-| [references/adversarial-orchestration.md](references/adversarial-orchestration.md) | `/review-code-adversarial` orchestration |
-| [references/workflow-review.md](references/workflow-review.md) | Standard-tier Workflow orchestration (lens fan-out → dedup → adversarial verify) |
+| [references/adversarial-orchestration.md](references/adversarial-orchestration.md) | `review-code-adversarial` orchestration |
+| [references/workflow-review.md](references/workflow-review.md) | Standard-tier capability orchestration (lens fan-out → dedup → adversarial verify) |
 
 ## Classifiers
 
@@ -40,7 +39,7 @@ Umbrella for code-review work — review of *shipped code*, not plans. Reference
 | Lens | When | Reference |
 |------|------|-----------|
 | Code quality | Always (every complexity tier) | [references/code-quality.md](references/code-quality.md) |
-| Adversarial | Security-sensitive diffs; `/review-code-adversarial` command | [references/adversarial.md](references/adversarial.md) |
+| Adversarial | Security-sensitive diffs; `review-code-adversarial` workflow | [references/adversarial.md](references/adversarial.md) |
 
 ## Distinction vs Other Umbrellas
 
@@ -49,9 +48,9 @@ Umbrella for code-review work — review of *shipped code*, not plans. Reference
 - **testing/** — includes `review-tests` + `review-testplan` (test-harness-specific reviewers)
 - **qa/** — scenario-level critique (bug triage, validation)
 
-The `/review-code` command dispatches through `classify-diff`, which chooses lenses from this umbrella **and** the `testing/` umbrella when tests are in scope.
+The `review-code` workflow dispatches through `classify-diff`, which chooses lenses from this umbrella **and** the `testing/` umbrella when tests are in scope.
 
-The `/review-pr` command uses `pr-review`, `pr-batch`, and `pr-posting` for PR-specific context gathering and GitHub interaction, then dispatches the same reviewer lenses as `/review-code`.
+The `review-pr` workflow uses `pr-review`, `pr-batch`, and `pr-posting` for PR-specific context gathering and GitHub interaction, then dispatches the same reviewer lenses as `review-code`.
 
 ## Invocation
 
@@ -59,13 +58,11 @@ Reviewer lens references are subagent prompts. Orchestration and posting referen
 
 Dispatch mode is tier-routed:
 
-- **TRIVIAL / MODERATE** — direct Agent-tool spawns from the main thread:
-
-  ```
-  Agent(subagent_type: "general-purpose", prompt: "Tier: Heavy\n<reference contents>")
-  ```
-
-- **STANDARD** (or ≥3 triggered lanes) — Workflow orchestration per [references/workflow-review.md](references/workflow-review.md): lens fan-out → dedup → adversarial verify off-thread; only confirmed findings return to the session. The command invocation is the Workflow opt-in.
+- **TRIVIAL / MODERATE** — use `fresh_subagent` for each required independent
+  lens; the provider binding chooses concrete syntax.
+- **STANDARD** (or ≥3 triggered lanes) — use `parallel_fanout` per
+  [references/workflow-review.md](references/workflow-review.md): lens fan-out →
+  dedup → adversarial verify; only confirmed findings return to the session.
 
 Map the tier to the current runtime's actual model or reasoning-effort controls at dispatch time.
 

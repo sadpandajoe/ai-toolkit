@@ -1,7 +1,6 @@
 ---
 name: planning
 description: Producing a technical implementation plan, iterating it through reviewer feedback, finalizing with a cold read, or classifying review findings as plan-level (re-plan) vs code-level (fix in place). Do NOT use for product scoping (use pm/), writing code (use implement-change/), or reviewing finished code (use review/).
-user-invocable: false
 ---
 
 # Planning
@@ -39,7 +38,7 @@ Standard substantial planning:
 3. `finalize` → cold-read "stay or move" gate
 4. Hand off to implementation
 
-During post-implementation review (via `/review-code`), if findings surface:
+During post-implementation review, if findings surface:
 5. `feedback-classify` → route to plan-level re-plan OR continue code-level fix
 
 ## Invocation
@@ -54,4 +53,6 @@ During post-implementation review (via `/review-code`), if findings surface:
 - `iterate-review` is the loop-runner that dispatches `plan-review/` lens subagents. They work together: this umbrella owns the loop; `plan-review/` owns the lenses.
 - `finalize` fires once per plan iteration cycle as the last gate before implementation begins.
 - `feedback-classify` is how the planning umbrella reaches back into implementation/review to say "this isn't a code fix — re-plan."
-- End-to-end command sequencing belongs in the command file. This skill owns planning phases only; implementation, review, QA, and reporting are routed to their own skills by the command.
+- End-to-end sequencing belongs in the selected canonical workflow reference.
+  This skill owns planning phases only; the workflow routes implementation,
+  review, QA, and reporting to their domain skills.

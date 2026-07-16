@@ -7,7 +7,7 @@ tier: Heavy
 > **Input**: Epic reference (Shortcut epic, GitHub milestone, or plain-text multi-feature request)
 > **Output**: Wave plan — stories grouped into dependency-ordered waves
 
-Called by `/create-feature` when the input contains multiple stories.
+Called by `create-feature` when the input contains multiple stories.
 
 ## Steps
 
@@ -87,5 +87,5 @@ Examples:
 
 ## Notes
 - Keep waves coarse — 2-4 waves is typical. More than 5 suggests over-decomposition.
-- If the epic has only 1-2 stories, skip the wave plan and let `/create-feature` run the standard single-story path for each.
-- The wave plan is a proposal. The orchestrator (in `/create-feature`) may adjust concurrency based on system resources.
+- If the epic has only 1-2 stories, skip the wave plan and let `create-feature` run the standard single-story path for each.
+- The wave plan is a proposal. The orchestrator (in `create-feature`) may adjust concurrency based on system resources.

@@ -1,6 +1,6 @@
 # Rule Promotion
 
-Use for `/reflect propose-rule` and `/reflect promote`.
+Use for `reflect propose-rule` and `reflect promote`.
 
 Read `rules/rule-maintenance.md` before drafting or modifying rules.
 
@@ -45,7 +45,7 @@ On confirmation:
 
 ## Promote Memory Flow
 
-Accept a memory filename. If absent, display `/reflect list` output and ask the user to select.
+Accept a memory filename. If absent, display `reflect list` output and ask the user to select.
 
 Read the memory and assess universality:
 - Does this apply across projects?

@@ -153,7 +153,7 @@ Before the Confirmation Gate, append a `## Feedback Triage` section to PROJECT.m
 - The triage table (comment id, reviewer, verdict, reasoning, confidence)
 - Open thread IDs that need resolution
 
-This is the source of truth for resuming after `/clear`. The triage table is the most expensive thing to reconstruct (it requires re-fetching every comment + redoing reviewer judgment), so it MUST land in PROJECT.md before any checkpoint/clear. STANDARD path: do not invoke `/checkpoint --clear` after triage until this section exists in PROJECT.md.
+This is the source of truth for resuming after `context_reset`. The triage table is the most expensive thing to reconstruct (it requires re-fetching every comment + redoing reviewer judgment), so it MUST land in PROJECT.md before any checkpoint + context_reset. STANDARD path: do not invoke checkpoint + context_reset after triage until this section exists in PROJECT.md.
 
 ## Confirmation Gate
 

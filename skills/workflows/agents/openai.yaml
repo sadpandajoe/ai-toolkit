@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Toolkit Workflows"
+  short_description: "Run portable software delivery workflows"
+  default_prompt: "Use $workflows to diagnose and fix this bug end to end."

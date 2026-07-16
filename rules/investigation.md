@@ -9,7 +9,10 @@
 - [ ] **Gather evidence** — logs, stack traces, reproduction steps
 - [ ] **Verify assumptions** — dependencies, imports, file existence
 
-When investigation is complete (root cause documented, evidence gathered, approach clear), move to planning — for STANDARD work that means entering the planning phase and producing a `PLAN.md` (see `/create-feature` or `/fix-bug` standard-path flow); for TRIVIAL or MODERATE work, go straight to inline implementation unless a command-specific gate says otherwise.
+When investigation is complete (root cause documented, evidence gathered,
+approach clear), move to planning. STANDARD work produces `PLAN.md` through the
+selected workflow; TRIVIAL or MODERATE work proceeds inline unless a
+workflow-specific gate says otherwise.
 
 ## Common Mistakes
 

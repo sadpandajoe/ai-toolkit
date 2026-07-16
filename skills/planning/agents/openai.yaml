@@ -1,0 +1,6 @@
+interface:
+  display_name: "Planning"
+  short_description: "Help with Planning tasks and workflows"
+
+policy:
+  allow_implicit_invocation: false

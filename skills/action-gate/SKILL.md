@@ -1,9 +1,6 @@
 ---
 name: action-gate
-description: Execution Gate block (Risk, Confidence, Decision Required, Verification Strength, proceed/ask/stop) emitted after investigation, classification, or cold-read planning. Referenced by review and gate workflows.
-user-invocable: false
-disable-model-invocation: true
-tier: Standard
+description: Use when a workflow needs an execution gate after investigation, classification, or cold-read planning. Do NOT use before evidence gathering or as a substitute for the workflow's domain decision.
 ---
 
 # Action Gate
@@ -35,7 +32,7 @@ Proceed without asking the user only when all of the following are true:
 - `Risk: LOW`
 - `Confidence: 8/10` or higher
 - `Decision Required: NO`
-- `Verification Strength` is not `WEAK`, **or** it is `WEAK` but a downstream verifier will exercise the change (e.g., CI on the PR for `/fix-ci` and `/watch-pr` flows — "cannot reproduce locally, CI is the verifier" is routine). Note `WEAK + downstream-verified` in the gate block. With WEAK verification and no downstream verifier, stop — and the no-push-after-failed-verification invariant always holds regardless.
+- `Verification Strength` is not `WEAK`, **or** it is `WEAK` but a downstream verifier will exercise the change (e.g., CI on the PR for `fix-ci` and `watch-pr` flows — "cannot reproduce locally, CI is the verifier" is routine). Note `WEAK + downstream-verified` in the gate block. With WEAK verification and no downstream verifier, stop — and the no-push-after-failed-verification invariant always holds regardless.
 
 `--gate-strict` removes the WEAK carve-out (unconditional WEAK stop) for callers that want the most conservative behavior.
 

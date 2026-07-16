@@ -1,6 +1,8 @@
-# /review-plan Continuation Checkpoint Extension
+# Review-Plan Continuation Details
 
-`/checkpoint` writes the generic `## Continuation Checkpoint` block (see [../SKILL.md](../SKILL.md) and [../../../commands/checkpoint.md](../../../commands/checkpoint.md)). When the detected top-level command is `/review-plan`, replace the generic `Phase:` field with the `/review-plan`-specific enum:
+The deterministic checkpoint API owns the machine block in
+[workflow-checkpoint.md](workflow-checkpoint.md). For `review-plan`, add this
+human-readable phase below it:
 
 ```markdown
 - Phase: read-plan / detect-reviewers / review-iterations / cold-read / update / summarize

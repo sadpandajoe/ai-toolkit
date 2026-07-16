@@ -1,6 +1,8 @@
-# /test-pr Continuation Checkpoint Extension
+# Test-PR Continuation Details
 
-`/checkpoint` writes the generic `## Continuation Checkpoint` block (see [../SKILL.md](../SKILL.md) and [../../../commands/checkpoint.md](../../../commands/checkpoint.md)). When the detected top-level command is `/test-pr`, replace the generic `Phase:` field with the `/test-pr`-specific enum and add the PR identifier:
+The deterministic checkpoint API owns the machine block in
+[workflow-checkpoint.md](workflow-checkpoint.md). For `test-pr`, add the phase
+and PR identifier below it:
 
 ```markdown
 - Phase: resolve-pr / detect-url / assess-impact / derive-scenarios / confirm-scenarios / execute / report

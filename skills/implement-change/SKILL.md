@@ -1,9 +1,6 @@
 ---
 name: implement-change
-description: Implements one approved plan/RCA slice — test-first per spec, verifies acceptance, returns changed files for review. Worktree-aware. Invoked by /create-feature, /fix-bug, /update-tests, /fix-ci.
-user-invocable: false
-disable-model-invocation: true
-tier: Heavy
+description: Use when implementing one approved plan or RCA slice test-first and returning verified files for review. Do NOT use for investigation, unapproved scope, planning, or standalone review.
 ---
 
 # Implement Change
@@ -35,7 +32,8 @@ When no structured slices exist (simple fix, trivial path), implement the full c
 
 Default mode is the caller's current worktree. In default mode, do not commit, amend, rebase, push, or force-push. Return changed files and verification evidence only; the orchestrator owns review, durable state, and any authorized git action.
 
-When launched with `isolation: "worktree"`, this skill runs in a temporary git worktree — an isolated copy of the repository. Key differences:
+When launched through `isolated_worktree`, this skill runs in a temporary git
+worktree. Key differences:
 
 - **Dependencies may be missing**: check for `node_modules/` or equivalent before running tests. Install if needed.
 - **Build outputs may be absent**: rebuild if the slice's acceptance check requires it.
@@ -54,7 +52,7 @@ When launched with `isolation: "worktree"`, this skill runs in a temporary git w
    - For RED/GREEN: confirm the previously-failing test now passes (GREEN).
    - For test-set-as-spec: run the full set; reconcile any failures by deciding code-vs-test and noting why if a test changed.
 6. Note anything that could not be verified locally.
-7. Hand changed files back to the calling workflow for `/review-code`.
+7. Hand changed files back to the calling workflow for `review-code`.
 
 ## Output
 
@@ -66,7 +64,7 @@ When launched with `isolation: "worktree"`, this skill runs in a temporary git w
 - Exit criteria: <met — evidence>
 - Files changed:
   - <file>
-- Branch/commit: <only when launched with isolation: "worktree"; otherwise "N/A">
+- Branch/commit: <only when `isolated_worktree` is active; otherwise "N/A">
 - Tests added or updated:
   - <test>
 - Acceptance: <passed / failed / not runnable — reason>
@@ -76,4 +74,8 @@ When launched with `isolation: "worktree"`, this skill runs in a temporary git w
 
 ## Orchestrator Responsibility (After Handoff)
 
-The orchestrator owns durable state. After receiving this handoff, the calling workflow (`/create-feature`, `/fix-bug`) must append a `## Slice N Complete` block to PROJECT.md before invoking `/checkpoint --clear`. This is a hard gate — context-management.md boundary #3 ("Implementation slice or wave complete") is not met until the block is written. See `commands/create-feature.md` step 8 and `commands/fix-bug.md` slice exit for the canonical block shape.
+The orchestrator owns durable state. After receiving this handoff, the calling
+workflow must append its `## Slice N Complete` block to `PROJECT.md` before the
+checkpoint API advances and `context_reset` fires. This is a hard gate:
+context-management boundary 3 is not met until the block is written. The
+selected canonical workflow reference owns the exact block shape.

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Qa"
+  short_description: "Help with Qa tasks and workflows"
+
+policy:
+  allow_implicit_invocation: false

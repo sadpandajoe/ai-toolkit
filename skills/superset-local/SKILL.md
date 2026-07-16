@@ -1,8 +1,6 @@
 ---
 name: superset-local
-description: "Superset local stack work: start Docker light stack, detect frontend port, apply Superset proxy fixes, run Playwright E2E."
-user-invocable: false
-disable-model-invocation: true
+description: "Use for Superset local stack startup, frontend detection, explicit proxy fixes, and Playwright E2E. Do NOT use for production environments, generic Docker work, or unrelated web applications."
 ---
 
 # Superset Local

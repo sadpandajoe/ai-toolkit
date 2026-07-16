@@ -78,4 +78,4 @@ Overall Impact: CORE / STANDARD / PERIPHERAL
 - This phase traces functional impact, not structural complexity. A one-liner in auth middleware is CORE. A 500-line refactor of an admin debug tool is PERIPHERAL.
 - When uncertain whether a workflow is CORE or STANDARD, check: "does every user hit this in a normal session?" If yes → CORE.
 - The evidence column is important — it shows the trace from changed code to user-facing workflow, making the assessment auditable.
-- Consumed by `/review-code` and `/review-pr` alongside the `review` skill's classify-diff reference. Together they answer: which reviewers (classify-diff), how critical (this phase).
+- Consumed by `review-code` and `review-pr` alongside the `review` skill's classify-diff reference. Together they answer: which reviewers (classify-diff), how critical (this phase).

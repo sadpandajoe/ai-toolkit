@@ -1,7 +1,6 @@
 ---
 name: feedback
 description: Addressing GitHub PR review feedback — triage reviewer comments, decide which to fix or skip, draft replies, and resolve review threads. Do NOT use for reviewing someone else's PR (use review/), bug fixing without review comments (use debug/ + implement-change/), or manual PR QA (use qa/).
-user-invocable: false
 ---
 
 # Feedback
@@ -22,7 +21,7 @@ Umbrella skill for addressing PR review feedback. The orchestrator keeps the top
 
 ## Invocation Pattern
 
-`/address-feedback` is the main entry point. It should read only the phase reference it needs next, and checkpoint before context grows beyond the current review round.
+`address-feedback` is the main entry point. It should read only the phase reference it needs next, and checkpoint before context grows beyond the current review round.
 
 For large review rounds, keep the main thread as orchestrator:
 - Send independent comment groups to implementation subagents.

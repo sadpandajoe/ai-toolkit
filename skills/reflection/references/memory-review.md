@@ -1,6 +1,6 @@
 # Memory Review
 
-Use for `/reflect review` and `/reflect prune`.
+Use for `reflect review` and `reflect prune`.
 
 ## Review Flow
 

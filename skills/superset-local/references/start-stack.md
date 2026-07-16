@@ -27,15 +27,12 @@ If a container matching the current project name shows `(healthy)` AND the front
 
 ### 2. Resource Gate
 
-Count total running containers. If more than 2 are running:
+Read the Docker daemon `Total Memory` and aggregate current `MemUsage`. Add the
+4–6 GB Superset estimate and proceed when it fits. If it risks over-capacity,
+show the math and ask whether to stop a stale stack or cancel. Container count
+alone is not a stop condition.
 
-- Show the user what's running
-- Ask whether to stop other stacks before starting, or start anyway
-- Each Superset stack uses 4-6 GB RAM — multiple stacks can crash the Docker VM
-
-Do not proceed until the user confirms.
-
-### 3. Apply ZSTD Proxy Fix
+### 3. Detect ZSTD Proxy Configuration
 
 Check `docker/pythonpath_dev/superset_config_docker_light.py` for `COMPRESS_ALGORITHM`:
 
@@ -43,11 +40,16 @@ Check `docker/pythonpath_dev/superset_config_docker_light.py` for `COMPRESS_ALGO
 grep -q 'COMPRESS_ALGORITHM' docker/pythonpath_dev/superset_config_docker_light.py
 ```
 
-If the line is missing, add it to the end of the file:
+Do not modify application source code by default. If the line is missing,
+explain the known local-proxy issue and show the proposed one-line patch:
 
 ```python
 COMPRESS_ALGORITHM = ["gzip"]
 ```
+
+Apply this source change only after an explicit `--apply-proxy-fix` request.
+Before applying it, show `git status --short`; afterward, show the exact diff so
+the user can distinguish the environment workaround from product changes.
 
 Why: webpack's dev server proxy cannot decompress ZSTD responses from Flask. Without this, requests to `/login/` and other proxied routes fail with `ZSTDDecompress is not a function`. If the stack was already running, it needs a restart for this to take effect.
 
@@ -117,6 +119,6 @@ The `PLAYWRIGHT_BASE_URL` line is the key output — other skills and the user n
 ## What This Skill Does NOT Do
 
 - Run tests (that's the caller's job)
-- Modify application source code
+- Modify application source code unless `--apply-proxy-fix` was explicitly requested
 - Install dependencies or build frontend assets
 - Make architectural decisions
