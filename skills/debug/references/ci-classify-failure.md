@@ -36,7 +36,11 @@ Identify the failing step, match it to a known pattern when possible, and produc
 4. Match each failure against the known patterns above.
 5. **Ownership check**: For each failure, determine whether this branch caused it:
    - Is the failing file or test touched by our diff? (`git diff --name-only <base>...HEAD`)
-   - Does the same failure exist on the base branch? (`gh run list --branch <base> --status failure --limit 3`)
+   - Does the same failure exist on the base branch? Check the base tip's **full** rollup, not just Actions — an external-CI failure on base is invisible to `gh run list` (see `rules/ci-evidence.md`):
+     ```bash
+     gh api repos/{owner}/{repo}/commits/<base-sha>/check-runs --jq '.check_runs[] | select(.conclusion == "failure") | .name'
+     gh api repos/{owner}/{repo}/commits/<base-sha>/status --jq '.statuses[] | select(.state == "failure" or .state == "error") | .context'
+     ```
    - If the answer is "not in our diff" AND "fails on base too", classify as **Pre-existing / not-our-failure**.
 6. **Auth-failure discriminator**: a **401** on a step that normally authenticates fine is a transient token blip — re-run before diagnosing. A **403** with a stable identity is a real permissions problem. Do not ship a permissions fix for a 401, and do not classify either as ours without checking whether the step touches our diff at all.
 7. If no pattern matches, read the referenced files and recent commits before classifying it as novel.

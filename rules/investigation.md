@@ -22,3 +22,4 @@ When investigation is complete (root cause documented, evidence gathered, approa
 | Skip documentation | Document in PROJECT.md |
 | `git log --all` for code to restore | Trace the removal commit on master, inspect parent |
 | Pull code from unmerged branches | Use only master's history — unmerged code is unvetted |
+| Classify CI from a check name, status string, or green check | Open the artifact behind it — see `rules/ci-evidence.md` |

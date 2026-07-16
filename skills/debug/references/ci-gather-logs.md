@@ -15,27 +15,51 @@ Accepted sources:
 - local zip artifact bundle
 - no argument: latest failed run on current branch
 
-## GitHub Actions Retrieval
+## Enumerate All Failures First
 
-Try `gh` first:
-
-```bash
-gh run list --branch <branch> --status failure --limit 1
-gh run view <run-id> --log-failed
-```
-
-From a PR:
+See `rules/ci-evidence.md`. The merged check rollup is the **first** call, not a
+fallback. `gh run list` and `gh pr checks` show GitHub Actions only — external CI
+(Jenkins, Buildkite, CircleCI) posts commit *statuses*, which never appear there. A
+single noisy Actions failure will otherwise look like the whole story.
 
 ```bash
-gh pr checks <number>
-gh run view <run-id> --log-failed
+gh pr view <number> --json statusCheckRollup,headRefName
 ```
 
-If `gh run list` returns no failures, check the check-runs endpoint:
+With no PR, go via the commit — check-runs *and* statuses:
 
 ```bash
 gh api repos/{owner}/{repo}/commits/{sha}/check-runs \
   --jq '.check_runs[] | select(.conclusion == "failure")'
+gh api repos/{owner}/{repo}/commits/{sha}/status \
+  --jq '.statuses[] | select(.state == "failure" or .state == "error")'
+```
+
+Enumerate every entry whose conclusion/state is in `{failure, error, cancelled,
+timed_out}`. External `StatusContext` entries count. Only when that merged list is
+empty may you declare "no failures" or fast-path "not our failure."
+
+For external `StatusContext` entries, `targetUrl` points at the external CI — follow it
+into the Jenkins/External Auth Gate below. Never classify from the status name or its
+`description` string.
+
+## GitHub Actions Retrieval
+
+For each failing `CheckRun` from the enumeration above, resolve its run-id. The
+rollup gives you the check's `detailsUrl`
+(`…/actions/runs/<run-id>/job/<job-id>`) — the `<run-id>` segment is what
+`gh run view` needs. If you only have a branch or SHA, `gh run list` maps it to
+run-ids — used here as an Actions-scoped resolver *after* enumeration, never as the
+first-line failure list:
+
+```bash
+gh run list --branch <headRefName> --status failure --json databaseId,name,conclusion
+```
+
+Then pull the failing logs:
+
+```bash
+gh run view <run-id> --log-failed
 ```
 
 If `gh run view --log-failed` returns empty output, fall back to per-job logs:

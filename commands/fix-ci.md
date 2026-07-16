@@ -16,7 +16,7 @@
 
 ## Command Contract
 
-- Read actual failing log output before classifying.
+- Read actual failing log output before classifying. Enumerate the **full** check rollup first — external CI never appears in `gh run list`, and a check's status string is not diagnostic. See `rules/ci-evidence.md`.
 - Keep raw logs out of chat when they are large; use log paths and compact excerpts.
 - For 3+ failed jobs, artifact bundles, or large logs, create local `CI_FIX.md` via [skills/debug/templates/ci-fix-manifest.md](../skills/debug/templates/ci-fix-manifest.md).
 - Group failures by root cause before fixing.
