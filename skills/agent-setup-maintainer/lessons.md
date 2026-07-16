@@ -28,3 +28,7 @@ Avoid:
 - Moving command-owned end-to-end flows into a domain skill whose boundary says it should not own that work.
 
 When auditing another command, compare it to `/create-feature` before inventing a new structure.
+
+## Cross-agent skill handoff: the spawn prompt is the only guaranteed channel (2026-06-10, Princeton workspace)
+
+When an orchestrator skill hands work to a spawned worker agent, do not hand it file pointers — relative paths don't resolve from the worker's cwd, and absolute paths assume the worker's user/sandbox can read the orchestrator's workspace (codex sandboxes file reads to its workdir; per-session unix users/groups are common in orchestration platforms). The first fix attempt here used absolute paths and was still wrong. Ship the contract inline in the spawn prompt: contract file verbatim + per-topic digests (only the receiver-relevant sections — skip routing/boundary sections the orchestrator already consumed). Measure the payload before assuming inlining is too costly (here: 8–13k tokens against a session that reads a full PR diff). Pair the handoff with a loud-failure rule (exact error string on malformed payload, no improvisation) — otherwise workers silently improvise a degraded contract and the output looks normal. A deferred smoke test on a handoff design ships the breakage. Also grep for inline *copies/summaries* of extracted content in companion procedure docs (cheat sheets, pipelines) — they drift silently because they don't match section-name cross-ref greps.

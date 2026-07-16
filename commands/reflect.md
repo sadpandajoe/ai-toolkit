@@ -35,12 +35,12 @@ Parse the first argument:
 
 - Use the configured agent memory directory. For Claude Code installs, this is usually `~/.claude/projects/<path>/memory/`.
 - Keep `MEMORY.md` in sync with memory files.
-- Ask before deleting memories or promoting them to rules.
+- Ask before deleting memories. For promotion, the ask is scoped to the **drafted rule text**, not promotion intent — when the user explicitly invoked `/reflect promote <filename>` (or a caller passes pre-authorization, e.g. `/complete-project`'s approved candidates), the intent is already authorized; do not re-ask "promote it?".
 - A pattern seen once is a memory; a pattern seen across projects can become a rule candidate.
-- Rule changes follow `rules/rule-maintenance.md` and require confirmation.
+- Rule changes follow `rules/rule-maintenance.md`; the rule-text confirmation above is the single canonical gate for them.
 
 ## Notes
 
-- `/reflect` is read-only for the codebase unless the user confirms a rule promotion or rule proposal.
+- `/reflect` is read-only for the codebase except for confirmed rule changes (single canonical gate: the rule-text confirmation in the Contract section).
 - When called from `/start`, suggest `/reflect review` if memories have not been reviewed in > 30 days.
 - `/reflect failure` is best used immediately after a failure while context is fresh.

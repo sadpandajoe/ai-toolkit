@@ -77,8 +77,8 @@ Pause for explicit confirmation when:
 
 Flag meanings:
 - `--draft`: never post or resolve; return reply drafts and resolution recommendations only.
-- `--auto`: skip the per-step posting confirmation for verified bot threads and the push announcement. Does NOT authorize amend, rebase, or force-push.
-- No flag: push the new commit, then announce the post/resolve plan in one block and proceed unless the user objects.
+- `--step`: announce the post/resolve plan in one block and wait for approval before posting or resolving.
+- No flag (default): skip the per-step posting confirmation for verified bot threads and the push announcement once verification is clean and identity checks pass. Does NOT authorize amend, rebase, or force-push. `--auto` is a legacy no-op alias for this default.
 
 Replies that claim a fix was made should only be posted after the fix is visible on the PR branch, or after the user explicitly asks to post draft wording before pushing.
 
@@ -92,7 +92,7 @@ Ready to push [N] commits and reply to [N] threads:
 Push and post?
 ```
 
-With `--auto`, skip this pause only for posting replies or resolving eligible bot threads after verification is clean and identity checks pass.
+By default this pause fires only for the invariant cases above; `--step` extends it to bot-thread posting and resolution as well.
 
 ## Summary
 

@@ -14,6 +14,7 @@
 /create-feature apache/superset#28456
 /create-feature https://github.com/owner/repo/issues/123
 /create-feature https://app.shortcut.com/.../story/123
+/create-feature sc-12345 --watch   # once a PR exists and the final push lands, chain into /watch-pr
 ```
 
 ## Command Contract
@@ -27,6 +28,7 @@ The command owns the visible gates and sequence. Each step loads only the refere
 - Run `/verify` or equivalent pre-flight checks before `/review-code`, and record the result in the Review Gate. Run `/review-code` after each meaningful implementation slice or wave.
 - For TRIVIAL work, use the Review Gate exception only for zero-logic diffs or true micro-fixes. If a TRIVIAL change needs logic review beyond those exceptions, reclassify as MODERATE and run `/review-code`.
 - Stop before final commit/PR for MODERATE or STANDARD work unless the user already authorized that boundary.
+- With `--watch`, after a PR exists and the final push lands, chain into `/watch-pr` on that PR — the flag is the explicit pre-authorization for the watch's standing commit+push grant. Without the flag, end with a one-line `/watch-pr` suggestion when an open PR exists; never enter the watch unflagged.
 - Only the main thread writes PROJECT.md or `PLAN.md`. Subagents return handoffs; the orchestrator updates durable state.
 - For STANDARD work, follow `rules/context-management.md`: checkpoint/clear after `PLAN.md` is written, after plan review/action gate accepts, after each implementation slice or wave, and after code review fixes when validation/PR work remains.
 - For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` immediately after the Complexity Gate.
@@ -35,9 +37,9 @@ The command owns the visible gates and sequence. Each step loads only the refere
 
 ## Planning Phase Boundary
 
-The planning phase is a workflow boundary. For STANDARD work, automatically start it after the Complexity Gate. Use the platform's native planning/read-only mode when available; otherwise announce the planning phase and self-enforce the same boundary.
+The planning phase is a workflow boundary. For STANDARD work, automatically start it after the Complexity Gate. Use the platform's native planning/read-only mode when available — `EnterPlanMode` to enter, `ExitPlanMode` to leave; otherwise announce the planning phase and self-enforce the same boundary.
 
-During the planning phase, read, search, fetch ticket context, inspect code, and draft the approach. Do not make implementation edits of any kind, change tests, run implementation workers, or start review iterations. If native planning/read-only mode cannot write files, exit that mode after drafting, then write `PLAN.md` as the planning-phase output. End the phase by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
+During the planning phase, read, search, fetch ticket context, inspect code, and draft the approach. Do not make implementation edits of any kind, change tests, run implementation workers, or start review iterations. If native planning/read-only mode cannot write files, exit that mode (`ExitPlanMode`) after drafting, then write `PLAN.md` as the planning-phase output. End the phase by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
 
 ```markdown
 ## PLAN.md Written

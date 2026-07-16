@@ -7,7 +7,7 @@ tier: Standard
 ## Inputs
 
 - PR number or URL
-- Flags: `--draft`, `--auto`
+- Flags: `--draft`, `--step` (`--auto` is a legacy no-op alias for the default)
 
 ## Gather
 
@@ -41,7 +41,7 @@ gh api --paginate repos/<owner>/<repo>/issues/<number>/comments \
   | sort
 ```
 
-If the workflow may reply to or resolve threads (`--auto`, explicit posting permission, or requested resolution), GraphQL review-thread data is mandatory before triage. Include unresolved counts in the inventory and stop if thread state cannot be fetched.
+If the workflow may reply to or resolve threads (the default; `--draft` is the exception), GraphQL review-thread data is mandatory before triage. Include unresolved counts in the inventory and stop if thread state cannot be fetched.
 
 When combining the sources above, dedupe by stable IDs (`databaseId` / REST `id` / GraphQL node id) before counting authors. `gh pr view --comments` is useful for display, but paginated REST/GraphQL IDs are the inventory authority.
 
@@ -113,7 +113,7 @@ Classify scope before acting:
 
 Emit the Complexity Gate block from `rules/complexity-gate.md`.
 
-Trivial plus confidence 8/10 or higher can use the quick-fix path: fix, draft the reply, summarize, and skip the full triage table. Post only when `--auto` or explicit user authorization grants the GitHub posting boundary.
+Trivial plus confidence 8/10 or higher can use the quick-fix path: fix, draft the reply, summarize, and skip the full triage table. Posting is the default boundary; hold posts only under `--draft` or `--step`.
 
 Moderate path: run the triage table, fix approved items inline or in one bounded wave, verify, then draft replies. Use full standard handling only when comments span subsystems, require user/product decisions, or need multiple fix/review waves.
 
@@ -128,7 +128,7 @@ For each actionable review comment:
 
 ## Triage Output
 
-Present this table before fixing unless `--auto` was passed:
+Always produce this table. With `--step`, present it and wait for approval before fixing; otherwise emit it and proceed:
 
 ```markdown
 | # | Reviewer | Comment | Verdict | Reasoning | Confidence |
@@ -157,9 +157,9 @@ This is the source of truth for resuming after `/clear`. The triage table is the
 
 ## Confirmation Gate
 
-Pause after triage and the PROJECT.md write unless `--auto` was passed.
+Default: no pause — emit the triage table, complete the PROJECT.md write, and proceed straight to fixes. The triage table must still appear in the final summary.
 
-Ask the user to confirm, adjust verdicts, or override. Do not start fixing or posting until approved.
+With `--step`: pause after triage and the PROJECT.md write. Ask the user to confirm, adjust verdicts, or override; do not start fixing or posting until approved.
 
 `--draft` still runs triage and draft response work, but does not post.
-`--auto` skips the pause; still include the triage table in the summary and still requires the PROJECT.md write.
+The PROJECT.md write is required on every path.

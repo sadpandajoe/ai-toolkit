@@ -57,3 +57,13 @@ When reviewing, **assess what the PR does before scoring test coverage**. A blan
 - Personal style preferences
 - Demanding specific implementation
 - Scope creep (unrelated fixes)
+
+## Finding Calibration
+
+Rules of thumb for grading and triaging findings. They apply to every review path — single-reviewer, adversarial, and multi-reviewer synthesis.
+
+- **Scope is upstream of correctness.** Before grading whether a finding is a real bug, confirm its `file:line` is actually in the diff. If the cited code is unchanged by the change set, drop the finding regardless of whether it's correct — it's a pre-existing-code observation, not a review of this change. Adjudicate correctness only for in-scope findings.
+- **Symmetry findings cap at `[minor]`.** "The same problem exists in sibling path X" is at most `[minor]`, and only if the change's stated scope plausibly covers X *or* the change worsened X. If X is unchanged and not worsened, it's a follow-up-PR suggestion masquerading as a finding — note it in the summary's Remaining section, don't grade it. Symmetry findings feel rigorous ("I traced all N call sites") but reward breadth over the risk the change actually introduced.
+- **Convergent beats single-source.** When two independent reviewers (different model, fresh context) surface the same finding without prompting, treat it as high-confidence and keep its severity. A finding only one reviewer raised is worth investigating but rarely worth blocking on alone — verify before promoting it past `[minor]`.
+- **History audit before grading a "wrong semantics" finding.** When a change reverses or amends prior behavior, scan recent history of the touched files (`git log --follow -p <file> | head -200`) for the PR it's undoing. A change that looks like a regression is often a conscious reversal the history already justifies.
+- **Don't leading-question subagents.** When spawning reviewer subagents, the prompt supplies diff facts, lens list, and posture — never a finding shape ("look for a case where X breaks", "check if Y is null"). Steering a worker toward a specific finding pre-decides what matters and reproduces the orchestrator's framing as findings. The lens already encodes what to look for.

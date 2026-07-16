@@ -41,8 +41,9 @@
    Identify the meaningful existing tests for the target area before planning any updates.
 
    If no meaningful suite exists:
-   - stop and recommend `/create-tests`
-   - do not create the first suite inside `/update-tests`
+   - announce the transition and hand off into the `/create-tests` flow automatically — the delegated intent ("get this area properly tested") is the same deliverable, and end-to-end commands own their internal loops
+   - `--step` (or `--no-handoff`) restores the stop-and-recommend behavior
+   - either way, do not build the first suite using `/update-tests`' own improvement loop — first suites follow `/create-tests`' procedure
 
 3. **Analyze the Current Suite**
 

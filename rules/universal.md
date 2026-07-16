@@ -2,6 +2,7 @@
 
 ## Golden Rules
 - **PROJECT.md is current context; PLAN.md is the active plan** — PROJECT.md holds lightweight state (what we're working on, where we are, durable decisions). PLAN.md holds the formal plan when standard-path planning produced one. Both are local-only and must never be committed to git.
+- **No PII on public surfaces** — never put customer names, ticket IDs (Shortcut `sc-XXXXX` / Linear / Jira), customer-identifying URLs, or other PII in anything destined for a public repo: PR titles, bodies, comments, and commit messages. Describe the bug or behaviour generically ("embedded dashboard with tabs", not "Customer X's dashboard"). Keep IDs and reporter context in local-only files (PROJECT.md, commit notes). Chat summaries back to the user and local files are fine — the constraint is about content that lands on GitHub or another public destination.
 - **Evidence over assumptions** — use version control history, test results, existing solutions
 - **Working solution before optimization** — get it working, commit, then improve
 - **Incremental progress** — small, verified changes over big risky ones

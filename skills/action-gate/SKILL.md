@@ -35,7 +35,9 @@ Proceed without asking the user only when all of the following are true:
 - `Risk: LOW`
 - `Confidence: 8/10` or higher
 - `Decision Required: NO`
-- `Verification Strength` is not `WEAK`
+- `Verification Strength` is not `WEAK`, **or** it is `WEAK` but a downstream verifier will exercise the change (e.g., CI on the PR for `/fix-ci` and `/watch-pr` flows — "cannot reproduce locally, CI is the verifier" is routine). Note `WEAK + downstream-verified` in the gate block. With WEAK verification and no downstream verifier, stop — and the no-push-after-failed-verification invariant always holds regardless.
+
+`--gate-strict` removes the WEAK carve-out (unconditional WEAK stop) for callers that want the most conservative behavior.
 
 Otherwise stop and surface the reason clearly.
 

@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Investigating a bug or failure — find the root cause, classify a CI failure, review an RCA, search for an existing upstream fix, or verify a CI fix landed. Do NOT use for implementing the fix (use implement-change/) or writing tests (use testing/).
+description: Investigating a bug or failure — find the root cause, classify a CI failure, review an RCA, search for an existing upstream fix, or verify a CI fix landed. Do NOT use for implementing the fix (use implement-change/), writing tests (use testing/), or turning a loose bug report into a repro plan before investigating (use qa/).
 user-invocable: false
 ---
 

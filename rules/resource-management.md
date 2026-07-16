@@ -18,7 +18,7 @@ Use this file as the always-on index. Load the scoped rule only when the task ne
 ## Always-On Guardrails
 
 - Before starting containers, run `docker ps` and check **two things**:
-  1. **How many** are running — if more than two, show them and ask before starting another stack.
+  1. **Capacity fit** — when more than two are running, read the daemon cap (`docker info | grep "Total Memory"`), estimate the new stack's footprint (Host Capacity Reference below), show the math, and proceed if it fits. Ask only on genuine over-capacity, where starting the stack risks disrupting running work. `--ask` (or an explicit user preference) restores always-ask.
   2. **Which look stale** — surface any container running > 24h (column: `STATUS`) or whose name references an old branch/feature, list them with age, and ask the user whether to stop them. Do not stop without confirmation.
 - Before heavy test runs, choose worker counts intentionally; do not blindly use CPU count.
 - In worktrees, assume dependencies, build outputs, and env files may be missing until checked.

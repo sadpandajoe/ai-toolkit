@@ -10,10 +10,10 @@
 ```bash
 /address-feedback <pr-number-or-url>
 /address-feedback <pr-number-or-url> --draft
-/address-feedback <pr-number-or-url> --auto
+/address-feedback <pr-number-or-url> --step
 ```
 
-`--auto` skips triage/posting confirmations entirely (no per-step prompts). Without `--auto`, the default flow still creates new commits, pushes them to the current PR branch, posts replies to bot threads, and resolves eligible bot threads — but pauses for amend/rebase/force-push, human-thread wording, and final approval/request-changes. `--auto` removes those pauses for bot/posting work only; it does NOT authorize amend, rebase, or force-push.
+The default runs unattended for bot/posting work: no post-triage pause, no per-post confirmations — it creates new commits, pushes them to the current PR branch, posts replies to bot threads, and resolves eligible bot threads once fixes are verified. Invariant pauses on every path: human-thread reply wording, amend/rebase/force-push, ambiguous push target, failed verification, and approve/request-changes. `--step` restores the post-triage confirmation and the post/resolve announcement for a supervised round. `--auto` is a legacy no-op alias for the default.
 
 ## Routing
 
@@ -53,7 +53,7 @@ For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` imm
 - Start with the mandatory reviewer/bot inventory from `feedback/references/gather-triage.md`; do not triage only the first visible comments.
 - Emit a Complexity Gate before fixing.
 - Investigate before triage; never accept or reject comments by guess.
-- Pause after triage unless `--auto` was passed.
+- Pause after triage only when `--step` was passed; otherwise emit the triage table and proceed.
 - Run `/verify` or equivalent pre-flight checks before `/review-code`, and record the result in the Review Gate.
 - Use the Review Gate skip/micro-fix exceptions only when `rules/review-gate.md` allows them; otherwise run `/review-code` after substantive fixes.
 - Default action: create a new commit on the current PR branch, push it, post replies to bot threads, and resolve eligible bot threads once the underlying fix is verified.

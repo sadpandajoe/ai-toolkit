@@ -9,6 +9,7 @@
 /create-pr                    # Create PR from current branch
 /create-pr --base develop     # Target a specific base branch
 /create-pr --draft            # Create as draft PR
+/create-pr --watch            # After creation, chain into /watch-pr on the new PR
 ```
 
 ## Steps
@@ -114,7 +115,11 @@ If you find PII, rewrite it generically and re-run the title/body tightness chec
 
 ### 6. Present for Review
 
-Show the generated title and body to the user. Wait for confirmation or edits.
+Default: print the generated title and body for visibility and proceed directly to step 7 — invoking `/create-pr` is the authorization to create the PR, and the step-5 PII scrub covers the irreversible-text risk.
+
+Pause and wait for confirmation only when:
+- the step-5 scrub actually found and rewrote PII (show the rewrite, confirm before posting), or
+- `--step` was passed (restores the always-pause behavior).
 
 ### 7. Create PR
 
@@ -166,8 +171,12 @@ Commits: [N]
 - `gate_decisions`: `{ pr_created: <yes | no>, draft: <yes | no> }`
 - `worker_usage`: subagent/worker invocation counts when applicable
 
+### 10. Watch Handoff
+
+With `--watch`, chain directly into `/watch-pr <new-pr>` — the flag is the explicit pre-authorization for the watch's standing commit+push grant. Without it, when the PR has CI checks, end with a one-line suggestion: `Next: /watch-pr #<number> to babysit CI and review comments.` Never enter the watch without the flag; entering it grants standing push authority, which must be the user's explicit choice.
+
 ## Notes
 - This command generates and creates the PR — it does not review the code
 - For code review before PR, use `/review-code` first
 - For reviewing someone else's PR, use `/review-pr`
-- The title and body are always shown for user approval before creating
+- The title and body are printed before creating; the command pauses for approval only on a PII-scrub rewrite or `--step` (see step 6)

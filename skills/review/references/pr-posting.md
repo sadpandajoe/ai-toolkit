@@ -21,6 +21,17 @@ Reasoning, confidence, and internal evidence shown to the user are not posted to
 
 Use `gh api repos/{owner}/{repo}/pulls/{number}/files --paginate` for accurate diff positions.
 
+## Voice
+
+A posted comment is read by a tired engineer. The defaults below keep findings short, collaborative, and free of the tells that mark a comment as machine-written.
+
+- **Default register is a question, not a verdict.** Make the author justify the asymmetry instead of dictating the fix: "I see X here; the sibling does Y — why the difference?" Reserve declarative phrasing for blocking issues.
+- **Strength of ask scales with severity.** Question form for nitpicks ("Did we mean to update this?"), "we should" / "can we" for should-fix items, plain declarative for blockers. Speak to the code, never the author ("you forgot" → "this misses").
+- **Length cap: 1–2 sentences per finding.** Past ~50 words it reads as an essay. Cite `file:line` and name the sibling, helper, or prior pattern so the author doesn't have to hunt — the anchor already carries the location, so don't restate it.
+- **No code blocks by default.** Add a `suggestion` block only when the fix is non-obvious *and* the severity is should-fix or higher. For a missing test, point at the technique in one sentence; paste a full test only when the mocking/setup is genuinely non-obvious.
+- **Match the author's own posting voice when one is observable.** Before posting, glance at the PR author's (or repo's) recent review comments and mirror their length and register. A house style beats a generic one.
+- **Cut the AI tells:** scaffolding labels ("Result:", "Worth noting:"), walking the author through code they wrote, restating the PR description back at them, over-hedging, double negatives ("would no longer fail"), and stacking nitpicks to pad the review. A review with only nitpicks is an approval dressed up — say "approve" instead.
+
 ## Security Suggestion
 
 If `--adversarial` was not used and the diff touches security-sensitive areas (auth, input handling, API endpoints, database queries, file operations, secrets), suggest re-running with `/review-pr <ref> --adversarial` or `/review-code-adversarial`.

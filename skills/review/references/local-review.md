@@ -32,7 +32,9 @@ Classify scope with `rules/complexity-gate.md` and this review-specific routing:
 | Files changed | 1-2 | 2-4 in one subsystem | 5+ or unclear ownership |
 | Lines changed | < 50 | 50-200 | 200+ |
 | Logic changes | None or cosmetic | Contained functional change | Cross-cutting behavior |
-| Reviewer lanes | Code quality only | Triggered lanes only | Full triggered team, plus optional second opinion |
+| Reviewer lanes | Code quality only | Triggered lanes only | Full triggered team |
+
+The always-on Codex second-opinion lane runs on **every** tier (see Codex Second Opinion below), independent of this table.
 
 Formatting-only diffs and micro-fixes may skip the review loop under `rules/review-gate.md`.
 
@@ -62,6 +64,8 @@ If pre-flight fails, fix the failure or report it as a blocker before launching 
 
 ## Dispatch Reviewers
 
+**STANDARD tier (or ≥3 triggered lanes): dispatch via [workflow-review.md](workflow-review.md)** — lens fan-out, dedup, and adversarial verification run off-thread; the main thread ingests only confirmed findings, then resumes at the Review Record step below. TRIVIAL/MODERATE continue with direct spawns:
+
 The main thread is an orchestrator. Dispatch fresh-context reviewer subagents with:
 
 - Diff and full changed-file contents.
@@ -79,7 +83,9 @@ Use triggered references from `classify-diff.md`, including:
 - [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md)
 - [../../plan-review/references/backend.md](../../plan-review/references/backend.md)
 
-Collect findings, dedupe, sort by severity, and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing.
+Launch the always-on **Codex Second Opinion** lane (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
+
+Collect findings from all Claude lanes **and** the Codex lane, dedupe, sort by severity, and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing.
 
 ## Re-Verify + Iterate
 
@@ -91,17 +97,50 @@ After applying reviewer fixes, re-run relevant checks:
 
 If checks fail, fix and re-run classification/review as needed.
 
-## Optional Second Opinion
+### Final Pass After Fix Queue
 
-For STANDARD complexity, use an external or platform-native second opinion if available. Skip silently when unavailable and note that in the summary.
+When the fix queue introduced new code paths (not just deletions, one-line reverts, or check-driven fixes), spawn **one additional fresh-eyes review pass on the integrated diff** before emitting the Review Gate. Frame the prompt explicitly as "final pass on the integrated state, not a re-read of the original diff."
 
-Map second-opinion findings to toolkit severity:
+Trigger signals (any one is enough):
+- ≥2 fix-queue items added new branches, helpers, fixtures, or guard clauses.
+- A major fix introduced a producer/consumer pair where one side was tested but not both.
+- A fix added a marker file, sentinel, or other artifact that needs symmetric cleanup elsewhere in the codebase.
+- A bug-fix during validation duplicated an existing helper into a second location without a sync mechanism.
 
-- Must fix / critical -> `[major]`
-- Should fix / improvement -> `[minor]`
-- Style/preference -> `[nitpick]`
+Skip the final pass only when **all** fix-queue items were: pure deletions, one-line reverts, formatting, or comment-only.
 
-Fix new `[major]` issues and verify again.
+The final pass uses fresh reviewer subagents — never the ones who reviewed the original diff. Its scope is `base..HEAD` of the integrated branch, not the fix-queue commits in isolation. If the final pass surfaces majors, treat them as a new review round and iterate.
+
+## Codex Second Opinion (always-on)
+
+Every `/review-code` run includes an independent **Codex** review *in addition to* the Claude reviewer lanes, on all tiers (TRIVIAL, MODERATE, STANDARD) whenever the review loop runs. Codex is the toolkit's concrete second-opinion provider. The lane degrades gracefully — it never blocks the review.
+
+**Launch it concurrently with reviewer dispatch** (see Dispatch Reviewers above), so it overlaps the Claude reviewer subagents rather than serializing after them. The main-thread orchestrator owns this lane even when the Claude lanes go through Workflow — `codex-companion` runs as a Bash task from the main thread, not inside a reviewer subagent.
+
+Resolve the companion script's path dynamically (the plugin dir is version-pinned), then run a blocking review scope-matched to the `/review-code` mode:
+
+```bash
+CODEX_CO=$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs 2>/dev/null | sort -V | tail -1)
+[ -n "$CODEX_CO" ] && node "$CODEX_CO" review --wait <scope flags> || echo "Codex: unavailable"
+```
+
+Scope flags by mode:
+
+- default branch-wide → `--scope auto`
+- `--committed` → `--scope branch --base <base>`
+- `--uncommitted` → `--scope working-tree`
+
+Run it as a background Bash task at dispatch time so it overlaps the Claude lanes; collect its stdout at the dedup step. If `CODEX_CO` is empty (plugin not installed), the command errors, or Codex is not authenticated, record `Codex: skipped (unavailable)` in the Review Gate and continue with the Claude lanes only — **never block the review on Codex**.
+
+Map Codex findings into the toolkit severity scale, then dedupe against the Claude lanes:
+
+- Must fix / critical → `[major]`
+- Should fix / improvement → `[minor]`
+- Style/preference → `[nitpick]`
+
+Fix new `[major]` issues and verify again. Surface **Codex-only** findings (those no Claude lane flagged) explicitly in the Review Record so cross-reviewer divergence stays visible.
+
+The whole-loop skip for formatting-only and micro-fix diffs (per `rules/review-gate.md`) skips the Codex lane too — there is no diff worth a second opinion. Codex runs on every tier *that runs the review loop*.
 
 ## Review Gate
 
@@ -111,6 +150,7 @@ Emit after all review lanes finish:
 ## Review Gate
 Rounds: [N]
 Pre-flight: [pass/fail/skipped]
+Codex: [clean/findings (N) /skipped (unavailable) /skipped (micro-fix)]
 Status: [clean/blocked/user decision/skipped/micro-fix]
 ```
 

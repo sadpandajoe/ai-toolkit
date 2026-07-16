@@ -99,7 +99,7 @@ Do NOT write a per-iteration change log. The caller prints a brief summary in co
 
 ### 6. Action Gate (optional)
 
-When the caller requested an action gate, include `action-gate` context after cold read passes. Auto-proceed when Risk is LOW, Confidence >= 8/10, and no decision is required.
+When the caller requested an action gate, include `action-gate` context after cold read passes. Auto-proceed conditions are owned by `skills/action-gate/SKILL.md` (Auto-Proceed Rule) — follow that rule rather than a restated threshold here.
 
 ## Output
 

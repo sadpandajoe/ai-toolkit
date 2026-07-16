@@ -40,6 +40,7 @@ Wrap the available code-review mechanism in a repo-standard loop:
 7. Fix all `[major]` and `[minor]` items directly — including adding tests for uncovered behavior.
 8. Re-run targeted tests after each fix to catch regressions.
 9. Re-run review on the changed files — including files you just fixed and tests you just added. Review your own fix as if someone else wrote it: check error paths, async ordering, state consistency, and boundary conditions. The re-review is not a formality.
+10. **Pre-verdict claim check.** Before reporting "clean", name one claim the verdict rests on that the diff alone doesn't prove, and verify it with a cheap check: does the title/commit message match what changed; do docs or call sites still reference a surface this change removed; does a changed pin/version resolve to what's claimed; is anything that referenced a deleted symbol now dangling. State the check and its result. If the diff is self-contained, say so — don't skip the question. Apply the finding calibration in `rules/code-review.md` (scope-before-correctness, symmetry cap, convergent vs single-source) when grading what surfaces.
 
 ## Stop Rules
 

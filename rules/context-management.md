@@ -55,9 +55,18 @@ When a proactive phase reset fires, or either reactive trigger fires (context �
 
 After `/clear`, run `/start` to reload PROJECT.md and resume the saved workflow automatically.
 
-The user should not need to do anything — this is a seamless context refresh.
+The user's part is two commands — `/clear`, then `/start`; everything else restores from PROJECT.md. The model cannot run `/clear` itself, so `--clear` means "write state, then request the clear" — the workflow must end its turn on that request, not assume the clear happened.
 
 Do not rely on chat memory after `/clear`. The checkpoint in PROJECT.md is the source of truth for where execution resumes.
+
+## Native Session State Is Not Durable State
+
+Session-scoped built-ins cannot hold workflow state across a reset, so they never replace the file-based record:
+
+- **`/goal`** is removed by `/clear` and is user-only (an orchestrator cannot call it mid-workflow) — incompatible with the clear-and-resume discipline. Keep work going via command contracts and reactive thresholds, not `/goal`.
+- **Native task tools** (`TaskCreate`/`TaskList`/`TaskUpdate`) survive `/clear` within one session but are lost on a fresh session, so the `## Slice N Complete`, Phase Plan, and fix-queue records that must outlive `/start` stay in PROJECT.md/PLAN.md. Native tasks may mirror the current phase as an **in-session working layer** — most useful on MODERATE single-session work that does not checkpoint/clear — but never as the durable copy.
+
+The built-ins whose state lives *outside* the session are safe to lean on, and the toolkit already adopts them: `/schedule` routines (cloud-backed), `EnterWorktree` (git-backed), and the `Workflow` tool (stateless fan-out).
 
 ## Batch Manifest Checkpoints
 
@@ -67,6 +76,7 @@ Examples:
 - Cherry-pick trains: `PROJECT.md` points to `CHERRY_PICK.md`, current wave, and next PR/SHA.
 - Multi-failure CI fixes: `PROJECT.md` points to `CI_FIX.md`, current failure group, and next verification step.
 - Large feature builds: `PROJECT.md` points to `PLAN.md`, current slice/wave, and pending workstream handoffs.
+- PR watches: `PROJECT.md` points to `WATCH.md`. Dispatches run in subagents to keep the orchestrator thin; clears happen at reactive thresholds (user runs `/clear`, `/start` resumes) and the iteration counter in the manifest survives them.
 
 If a manifest exists, update it before `/checkpoint --clear` so resume does not depend on context that will be discarded.
 

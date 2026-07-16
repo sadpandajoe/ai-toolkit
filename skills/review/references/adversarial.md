@@ -8,6 +8,10 @@ tier: Heavy
 
 Review changed code with the assumption that it is broken. Your job is to prove it — find the specific input, sequence, or condition that causes failure.
 
+## Posture Self-Check
+
+Before you write any finding — or any "no findings" — ask: *did I look for failure scenarios, or did I read the code, find it sensible, and stop?* The second is a normal-posture review wearing an adversarial label. The test: for every finding you surfaced, you can write the concrete input that triggers it; for the clean areas, you can name the input you tried that *didn't* break them. If you can't produce the triggering input, the posture wasn't applied — go back and construct the scenario or drop the finding. Abstract reasoning ("this could be fragile") is not an adversarial finding; a reproducing scenario is.
+
 ## Focus Areas
 
 ### Security
@@ -45,6 +49,17 @@ Review changed code with the assumption that it is broken. Your job is to prove 
 - Missing sanitization before database queries or shell commands
 - Type coercion surprises (string "0" vs number 0, "null" vs null)
 - File path traversal, symlink attacks
+
+## Pre-Verdict Gate: Verify One Claim the Diff Doesn't Prove
+
+Before approving or rating "Hardened", name out loud one claim the verdict rests on that the diff alone does not prove — then verify it with a cheap external check. A confident pass from a sensible diff read is the exact failure mode this gate exists to catch: the diff looked fine, so the review stopped at the diff. Common claims worth one check each:
+
+- **Title/commit-message vs. actual change** — does a `fix:`-labeled change hide a breaking change, or vice versa? Compare the stated intent to what the diff does.
+- **Removed user-facing surface** — if the change deletes a flag, command, endpoint, or UI affordance, grep docs and call sites for stale references to it.
+- **Pinned/declared versions** — if it adds or changes a pinned dependency, action SHA, or image digest, verify the pin resolves to what the change claims.
+- **Orphaned references** — if it deletes a thing other code triggers or imports, grep for the now-dangling reference.
+
+State the check you ran and its result. If no claim needs external proof (the diff is self-contained), say so explicitly — don't skip the question.
 
 ## Output Format
 

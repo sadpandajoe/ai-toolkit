@@ -30,6 +30,10 @@ Required prior commits: [list or "none identified"]
 Existing fix status: [output from debug/references/check-existing-fix.md or "not a bug fix"]
 Ordering constraints: [list or "none"]
 
+### Target-Affected
+Verdict: AFFECTED / NOT_AFFECTED / UNCLEAR
+Evidence: [buggy pre-fix code present on target, OR named introducing commit + is-ancestor result, OR why unclear]
+
 ### Raw Signals for Gate
 Files touched: [N]
 New dependencies: YES / NO
@@ -37,4 +41,5 @@ Lockfile changes: YES / NO
 Target APIs compatible: YES / NO / PARTIALLY
 Conflicts expected: YES / NO / LIKELY
 Prerequisite needed: YES / NO
+Target-affected: AFFECTED / NOT_AFFECTED / UNCLEAR
 ```

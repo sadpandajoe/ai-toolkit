@@ -35,7 +35,7 @@ For truly minimal edits, such as typo fixes or mechanical renames, review may be
 
 Prefer fixing the originating in-PR commit when the branch is not merged and the source commit is clear.
 
-New commits on the current PR branch and pushes are part of the default `/address-feedback` flow — apply the recommended shape and push once verification is clean. Amend, rebase, and force-push still require explicit user authorization for this feedback round (`--auto` does not grant history mutation by itself).
+New commits on the current PR branch and pushes are part of the default `/address-feedback` flow — apply the recommended shape and push once verification is clean. Amend, rebase, and force-push still require explicit user authorization for this feedback round (the unattended default does not grant history mutation).
 
 | Scenario | Action |
 |----------|--------|

@@ -1,8 +1,7 @@
 ---
 name: cherry-pick
-description: Cherry-pick, backport, or apply commits/PRs onto another branch with safety gates and per-change validation. Do NOT use for same-branch bug fixes, broad refactors, dependency upgrades, or general behavior rewrites.
+description: Cherry-pick, backport, or apply commits/PRs onto another branch with safety gates and per-change validation; also release audits — "what's on master that hasn't reached the release branch", finding backport candidates. Do NOT use for same-branch bug fixes, broad refactors, dependency upgrades, or general behavior rewrites.
 argument-hint: "[pr-url | sha...] [--target branch] [--force] [--plan-only] [--no-push]"
-allowed-tools: Bash(git *) Bash(gh *) Read Grep Glob Edit
 ---
 
 # Cherry-Pick
@@ -39,13 +38,21 @@ For non-trivial or expensive cherry-picks, follow `rules/context-management.md`:
 /cherry-pick <sha-1> <sha-2> --no-push         # Validate locally; stop with push recommendation
 ```
 
+## Release Audit (Candidate Discovery)
+
+For "what's on `<source>` that hasn't reached `<release-branch>`?" questions — run the audit *before* building any cherry list. Compare **first-parent PR merges only** (never raw full-history logs), treat already-applied claims as proven only by target-side PR-number matches or exact `-x` markers, and verify every candidate with `gh pr view` before queuing.
+
+→ Methodology + script: [references/release-audit.md](references/release-audit.md) (`scripts/release-audit.sh`)
+
+The audit produces candidates, not decisions — every queued row still runs the full investigate/gate flow below.
+
 ## Single Cherry-Pick Flow
 
 Each cherry-pick runs all validation phases. No validation phase may be skipped — the diff audit in step 7 is the only defense against scope leak (see gotchas.md). Step 7c runs only when the cherry terminates as `Blocked` or `Rejected`; it surfaces the upstream PRs that would unstick the row before the final report. Step 8 is a publish boundary: per-cherry push is the default; `--no-push` (or explicit user deferral during the run) records `pending-authorization` instead.
 
 ### 1. Investigate (heavy effort)
 
-Source analysis, target compatibility scan, prerequisite scan. Investigation produces raw analysis only — the gate decides go/no-go.
+Source analysis, target compatibility scan, prerequisite scan, **target-affected scan** (is the bug even live on target, or does it only occur on master?). Investigation produces raw analysis only — the gate decides go/no-go.
 
 → Full procedure: [references/investigate.md](references/investigate.md)
 → Output template: [assets/investigation-template.md](assets/investigation-template.md)
@@ -119,7 +126,19 @@ Skip when the rejection is intrinsic (reject-category API rewrite, dependency-bu
 
 Mode is inform-only: surface candidates in the final report under "What to do next" so the user decides whether to add them to the run. Auto-picking is a future extension (`--auto-unblock`).
 
+The discovery subagent must **measure** each candidate (`gh pr view --json changedFiles,additions,files`, detect `migrations/versions/`) and rate the chain's difficulty `easy | heavy | risky` — a candidate with a DB migration or a large feature PR is `risky`/`heavy`, never a bare line in a PR list. Inform-only does not mean cost-free: the offer must carry how hard it is to unblock, so a heavy chain never reads as "two quick cherries and we're in."
+
 → Full subagent contract, output block, future-auto-unblock notes: [references/unblock-discovery.md](references/unblock-discovery.md)
+
+### 7d. Blocked-Owner Notification (release-candidate stories only)
+
+When the cherry comes from a Shortcut story labeled `release-candidate` and we did **not** land it this pass (`Skipped`, `Blocked`, or `Rejected`), the decision to leave it off / force it / adapt it belongs to the person who added the `release-candidate` label, not to us. Post one comment on the story that mentions that person and hands them a clean decision: why it's blocked, how to unblock it (from 7c), our recommendation, and the options — then let them decide. We recommend; the labeler decides. Do not force-backport or adapt off our own recommendation without their reply.
+
+Find the decider via `stories-get-history` (the entry whose `changes.label_ids.adds` contains label id `78270`), and mention them with the link form `[@handle](shortcutapp://members/<id>)` so the notification actually fires — plain `@handle` text does not notify.
+
+Skip only when there's nothing to decide (merge SHA already on the branch, or no merged apache/superset PR exists).
+
+→ Five required elements, decider-lookup, mention syntax, comment template: [references/blocked-owner-comment.md](references/blocked-owner-comment.md)
 
 ### 8. Per-Cherry Push (default)
 
@@ -131,7 +150,7 @@ Per-cherry push is the default. Immediately after step 7 passes for *this* cherr
 
 `--no-push` opts out: skip the `git push`, record `Push: pending authorization` in the execution table or `CHERRY_PICK.md`, and continue to independent planning/investigation work only if it does not depend on the unpublished cherry being on the remote.
 
-**Why per-cherry, not batched:** CI can attribute each cherry independently only when each push is per cherry. Batching defeats per-cherry attribution and forces bisection later. The user may explicitly ask for batched push (e.g., to reduce CI cost) — confirm before deferring and record the batched-push decision.
+**Why per-cherry, not batched:** CI can attribute each cherry independently only when each push is per cherry. Batching defeats per-cherry attribution and forces bisection later. The user may explicitly ask for batched push (e.g., to reduce CI cost) — that request is itself the authorization: defer without re-confirming and record the batched-push decision. Agent-initiated batching remains forbidden by the push-boundary hard gate below.
 
 **Hard gate — per-cherry push boundary.** After step 7 passes and before any subsequent work runs (next cherry's investigate/apply, final report, checkpoint, or PR creation), the orchestrator must emit this confirmation block verbatim for *this* cherry:
 
@@ -164,7 +183,7 @@ Pre-flight should gather, when applicable:
 
 The main agent reads the pre-flight table once and sorts rows into:
 - `ALREADY_APPLIED` — skip without per-cherry investigation only when exact source-SHA evidence or an explicit manifest decision supports the skip
-- `NOT_MERGED` — stop or queue for user decision
+- `NOT_MERGED` — classify the row `Skipped/NOT_MERGED`, continue independent rows, and surface the decision in the final report (never auto-pick an unmerged head); `--step` restores the mid-run stop for live decisions
 - `NEEDS_INVESTIGATION` — run investigate/gate
 - `PREFLIGHT_BLOCKED` — missing PR, missing target, auth failure, or ambiguous source
 

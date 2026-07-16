@@ -1,7 +1,10 @@
 .claude/
 PROJECT.md
+PROJECT_ARCHIVE.md
+PLAN.md
 CHERRY_PICK.md
 CI_FIX.md
+WATCH.md
 build/
 config/CLAUDE.md
 .DS_Store

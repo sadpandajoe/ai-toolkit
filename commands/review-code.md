@@ -29,7 +29,7 @@ That reference dispatches:
 
 ## Orchestration Model
 
-The main thread is the orchestrator. It gathers changed files, runs the Complexity Gate, runs repo-appropriate pre-flight verification, dispatches reviewer subagents, deduplicates findings, writes actionable review state to PROJECT.md, applies approved fixes, re-verifies, and emits the Review Gate.
+The main thread is the orchestrator. It gathers changed files, runs the Complexity Gate, runs repo-appropriate pre-flight verification, dispatches reviewer subagents **plus an always-on Codex second-opinion lane** (launched concurrently, owned by the main thread), deduplicates findings across all lanes, writes actionable review state to PROJECT.md, applies accepted fixes ("accepted" = confirmed by review synthesis/triage, not a per-fix user pause — only disputed or user-decision findings surface to the user), re-verifies, and emits the Review Gate.
 
 All review judgment comes from fresh-context reviewer lanes. The main thread synthesizes and fixes; it does not replace the reviewers.
 
@@ -55,4 +55,4 @@ Internal callers such as `/create-feature`, `/fix-bug`, `/fix-ci`, `/create-test
 
 - This command is used standalone and as an internal review phase.
 - The selected team should be visible in the summary so bad selections can be corrected with `/reflect`.
-- Optional second-opinion review is allowed for STANDARD complexity when available.
+- **Codex always reviews too.** Every run launches an independent Codex second-opinion lane (all tiers) concurrently with the Claude reviewer lanes — see the Codex Second Opinion section in `review/references/local-review.md`. It degrades gracefully: when the Codex plugin/CLI is unavailable, record `Codex: skipped (unavailable)` and continue. The whole-loop skip for formatting-only/micro-fix diffs skips Codex too.

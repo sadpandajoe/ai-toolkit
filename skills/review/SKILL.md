@@ -21,6 +21,7 @@ Umbrella for code-review work — review of *shipped code*, not plans. Reference
 | [references/pr-review.md](references/pr-review.md) | Single GitHub PR review procedure |
 | [references/pr-batch.md](references/pr-batch.md) | Batch PR review orchestration |
 | [references/adversarial-orchestration.md](references/adversarial-orchestration.md) | `/review-code-adversarial` orchestration |
+| [references/workflow-review.md](references/workflow-review.md) | Standard-tier Workflow orchestration (lens fan-out → dedup → adversarial verify) |
 
 ## Classifiers
 
@@ -56,9 +57,15 @@ The `/review-pr` command uses `pr-review`, `pr-batch`, and `pr-posting` for PR-s
 
 Reviewer lens references are subagent prompts. Orchestration and posting references are read by the main thread.
 
-```
-Agent(subagent_type: "general-purpose", prompt: "Tier: Heavy\n<reference contents>")
-```
+Dispatch mode is tier-routed:
+
+- **TRIVIAL / MODERATE** — direct Agent-tool spawns from the main thread:
+
+  ```
+  Agent(subagent_type: "general-purpose", prompt: "Tier: Heavy\n<reference contents>")
+  ```
+
+- **STANDARD** (or ≥3 triggered lanes) — Workflow orchestration per [references/workflow-review.md](references/workflow-review.md): lens fan-out → dedup → adversarial verify off-thread; only confirmed findings return to the session. The command invocation is the Workflow opt-in.
 
 Map the tier to the current runtime's actual model or reasoning-effort controls at dispatch time.
 

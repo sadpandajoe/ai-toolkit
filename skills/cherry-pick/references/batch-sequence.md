@@ -38,7 +38,7 @@ Classify rows mechanically before sequence planning:
 | Status | Meaning | Next step |
 |--------|---------|-----------|
 | `ALREADY_APPLIED` | exact source-SHA `-x` marker, or explicit manifest/user decision with equivalent source evidence, exists on target | Skip |
-| `NOT_MERGED` | PR is open/closed-unmerged or has no source SHA | User decision |
+| `NOT_MERGED` | PR is open/closed-unmerged or has no source SHA | Skip row, continue batch, surface in final report (`--step`: live decision) |
 | `PREFLIGHT_BLOCKED` | PR/SHA/target/auth cannot be resolved | User decision |
 | `NEEDS_INVESTIGATION` | Candidate is eligible for investigate/gate | Continue |
 

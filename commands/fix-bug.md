@@ -14,6 +14,7 @@
 /fix-bug apache/superset#28456
 /fix-bug https://github.com/owner/repo/issues/123
 /fix-bug https://app.shortcut.com/.../story/123
+/fix-bug sc-12345 --watch     # after the fix push lands on a branch with an open PR, chain into /watch-pr
 ```
 
 ## Command Contract
@@ -30,6 +31,7 @@ The command owns the visible gates and sequence. Each step loads only the refere
 - Do not commit without an added or updated regression test unless the gap is explicitly accepted.
 - Default action when verification is STRONG, a regression test was added or updated (or the gap was explicitly accepted by the user), and the Review Gate is clean: create a new commit on the current feature branch and push it as part of the fix flow. The TDD regression test is the verification gate that makes auto-push safe — without it, pause. Pause for amend, rebase, force-push, ambiguous push target (not the current feature branch, or tracks an unexpected remote), PARTIAL/WEAK verification, or any STANDARD-path hold (RCA review, plan review, per-slice gates).
 - Only the main thread writes PROJECT.md or `PLAN.md`. Subagents return handoffs; the orchestrator updates durable state.
+- With `--watch`, after the final push lands on a branch with an open PR, chain into `/watch-pr` on that PR — the flag is the explicit pre-authorization for the watch's standing commit+push grant. Without the flag, when an open PR exists for the pushed branch, end the summary with a one-line `/watch-pr` suggestion instead; never enter the watch unflagged.
 - For STANDARD or expensive bug work, follow `rules/context-management.md`: checkpoint/clear after RCA review accepts, after `PLAN.md` is written, after plan review accepts, after implementation, and after code review fixes when QA/PR work remains.
 - For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` immediately after the Complexity Gate.
 - **`## Slice N Complete` PROJECT.md write is a hard gate** before every per-slice checkpoint/clear on the STANDARD path. Block shape matches `commands/create-feature.md` step 8. No clear without the entry.
@@ -37,9 +39,9 @@ The command owns the visible gates and sequence. Each step loads only the refere
 
 ## Planning Phase Boundary
 
-The planning phase is a workflow boundary. For STANDARD bug fixes, automatically start it after RCA evidence is strong enough to plan. Use the platform's native planning/read-only mode when available; otherwise announce the planning phase and self-enforce the same boundary.
+The planning phase is a workflow boundary. For STANDARD bug fixes, automatically start it after RCA evidence is strong enough to plan. Use the platform's native planning/read-only mode when available — `EnterPlanMode` to enter, `ExitPlanMode` to leave; otherwise announce the planning phase and self-enforce the same boundary.
 
-During the planning phase, read, search, reproduce where possible, investigate root cause, and draft the fix approach. Do not make implementation edits, change tests, run implementation workers, or start review iterations. If native planning/read-only mode cannot write files, exit that mode after drafting, then write `PLAN.md` as the planning-phase output. End by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
+During the planning phase, read, search, reproduce where possible, investigate root cause, and draft the fix approach. Do not make implementation edits, change tests, run implementation workers, or start review iterations. If native planning/read-only mode cannot write files, exit that mode (`ExitPlanMode`) after drafting, then write `PLAN.md` as the planning-phase output. End by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
 
 ```markdown
 ## PLAN.md Written
