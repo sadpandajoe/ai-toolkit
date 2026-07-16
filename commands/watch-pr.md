@@ -12,7 +12,7 @@
 /watch-pr <pr> --no-comments  # CI only; leave comments untouched
 ```
 
-Recurrence layers on top: `/loop /watch-pr <pr>` for self-paced long-horizon babysitting, or a `/schedule` routine for headless cron runs. In-session, `/watch-pr` iterates until stable or escalated, then suggests the loop/schedule layer if comment watching should continue.
+Recurrence layers on top: `/loop /watch-pr <pr>` for self-paced long-horizon babysitting, or a `/schedule` routine for headless cron runs — but `/schedule` executes in the cloud and **cannot reach VPN-gated repos** (all Preset repos), so on those it is not an option; see the reachability gate in [skills/pr-watch/SKILL.md](../skills/pr-watch/SKILL.md#recurrence). In-session, `/watch-pr` iterates until stable or escalated, then suggests the recurrence layer if comment watching should continue.
 
 ## Command Contract
 
@@ -22,7 +22,7 @@ The loop contract — iteration shape, dispatch table, authorization boundary, e
 - **Comment scope**: bot threads get full auto handling (fix, rebut with evidence, reply, resolve). Human comments are auto-fixed only when the ask is unambiguous and local; replies to humans stay factual ("Done in `<sha>`"). Everything judgment-shaped is escalated, never guessed.
 - **State lives in WATCH.md**, created from [skills/pr-watch/templates/watch-manifest.md](../skills/pr-watch/templates/watch-manifest.md). PROJECT.md points to it; chat is never the state store. Resolve symlinks before writing (`readlink -f`).
 - Every fix dispatch inherits its engine's own gates (classification, verification strength, Review Gate, PII scrub). The watch adds no shortcuts around them.
-- **Context control is subagent isolation, not self-clearing** — the loop cannot run `/clear` (built-ins are user-only). The CI/comment poll runs as a `model: haiku` check worker returning a binary delta report, and fix dispatches run as subagent workers returning compact handoffs — so check JSON, run-watch output, diffs, CI logs, and review rounds never enter the orchestrator thread, and an idle iteration costs a heartbeat. The session model spends only when the check worker reports a delta. If the main thread still hits the reactive thresholds (~70% context, cost), it checkpoints and stops with `Checkpoint saved. Run /clear, then /start to resume the watch.` — one manual step, then `/start` auto-resumes from WATCH.md. For zero-touch resets, run the watch under a `/schedule` routine: every scheduled run is a fresh session resuming from the manifest.
+- **Context control is subagent isolation, not self-clearing** — the loop cannot run `/clear` (built-ins are user-only). The CI/comment poll runs as a `model: haiku` check worker returning a binary delta report, and fix dispatches run as subagent workers returning compact handoffs — so check JSON, run-watch output, diffs, CI logs, and review rounds never enter the orchestrator thread, and an idle iteration costs a heartbeat. The session model spends only when the check worker reports a delta. If the main thread still hits the reactive thresholds (~70% context, cost), it checkpoints and stops with `Checkpoint saved. Run /clear, then /start to resume the watch.` — one manual step, then `/start` auto-resumes from WATCH.md. For zero-touch resets, run the watch under a `/schedule` routine: every scheduled run is a fresh session resuming from the manifest — but only when the repo passes the reachability gate (cloud agents cannot read VPN-gated repos; on those, stay on the local `/loop` or a `launchd` cron).
 
 ## Steps
 
@@ -90,7 +90,7 @@ PR #[number] — [stable / escalated / blocked] after [N] iterations
 - [item + why the loop stopped, or "none"]
 ```
 
-If CI is stable but the PR stays open for human review, suggest `/loop /watch-pr <pr>` or a `/schedule` routine for ongoing comment watch.
+If CI is stable but the PR stays open for human review, suggest `/loop /watch-pr <pr>` for ongoing comment watch — or a `/schedule` routine, but only if the repo passes the reachability gate (never for VPN-gated repos).
 
 **Record metrics**:
 - `command`: `watch-pr`
