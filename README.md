@@ -71,13 +71,19 @@ ai-toolkit/
 │   ├── context-management.md   # Context depth thresholds and checkpoint protocol
 │   ├── rule-maintenance.md     # How to strengthen, update, or extract rules
 │   ├── investigation.md    # Debugging & root cause
+│   ├── ci-evidence.md      # CI signals are summaries — open the artifact behind them
+│   ├── rca-writeups.md     # Root-cause write-up structure
 │   ├── implementation.md   # Code development
+│   ├── api-boundary-defense.md # Validation at API boundaries
 │   ├── testing.md          # Test strategy
 │   ├── troubleshooting.md  # Emergency recovery
 │   ├── resource-management.md  # Worktrees, Docker, heavy tasks
+│   ├── preset-environments.md  # Preset staging/prod envs, credentials, VPN reachability
 │   ├── code-review.md      # Review guidelines
 │   ├── complexity-gate.md  # Complexity classification and fast-path
 │   ├── review-gate.md      # Review gate output contract
+│   ├── scoring.md          # Review scoring scale
+│   ├── severity.md         # Finding severity levels
 │   ├── stop-rules.md       # Universal stop conditions for iterative loops
 │   ├── shortcut-api.md     # Shortcut REST API routing hint
 │   └── input-detection.md  # Route ticket/issue inputs to Shortcut or GitHub
@@ -87,6 +93,7 @@ ai-toolkit/
 │   ├── plan-review/         # Plan-reviewer lenses — architecture, backend, frontend, implementation
 │   ├── review/              # Code/PR reviewer orchestration + lenses — local-review, pr-review, classify-diff, adversarial
 │   ├── feedback/            # PR feedback response — triage comments, fix approved items, post replies
+│   ├── pr-watch/            # Watch-and-fix loop for an open PR — CI to green + incoming comments, with escalation
 │   ├── debug/               # Diagnostic umbrella — investigate-change, review-rca, check-existing-fix, CI gather/classify/fix/verify
 │   ├── reflection/          # Memory capture, review/prune, failure postmortems, rule promotion
 │   ├── qa/                  # QA — triage-bug, validate-fix, assess-impact, analyze/expand/execute-use-cases, file-bug
@@ -101,6 +108,7 @@ ai-toolkit/
 │   ├── archive-project-file/ # Archive lifecycle command
 │   ├── shortcut/            # Shortcut REST fetch/report helpers
 │   ├── superset-local/      # Superset-specific local stack + Playwright helpers
+│   ├── preset-rbac-setup/   # Seed canonical RBAC test users on a staging workspace via the Manager API
 │   └── workstreams/         # Post-parallel-implementation fan-in and merge sequencing
 ├── hooks/
 │   ├── prevent-project-commit.sh  # Block unsafe git flags and local workflow state commits
@@ -170,6 +178,7 @@ ai-toolkit/
 |---------|---------|
 | `/review-pr` | Adaptive team PR review: patterns, tests, architecture, RCA, auto-approve |
 | `/address-feedback` | Investigate PR comments, fix valid items, post replies |
+| `/watch-pr` | Babysit an open PR: loop CI to green and auto-handle incoming comments, escalating what needs judgment |
 | `/cherry-pick` | Plan, order, and safely apply one or more cross-branch cherry-picks (skill — also auto-triggers on natural-language requests) |
 | `/create-pr` | Generate PR title + description from diff, commits, and PROJECT.md |
 
@@ -286,12 +295,19 @@ Use `/review-code` when you want the repo-standard wrapper: review, fix, validat
 | `rules/orchestration.md` | When coordinating helpers, reviewers, or parallel agents |
 | `rules/context-management.md` | Always (checkpoint protocol, loaded via CLAUDE.md) |
 | `rules/investigation.md` | `/fix-bug`, `/create-feature`, `/fix-ci` when RCA matters |
+| `rules/ci-evidence.md` | `/fix-ci`, `/watch-pr`, any CI triage (a check is a summary — open the artifact) |
+| `rules/rca-writeups.md` | `/fix-bug`, `/fix-ci` when writing up a root cause |
 | `rules/implementation.md` | `/fix-bug`, `/create-feature`, `/fix-ci` |
+| `rules/api-boundary-defense.md` | Code that validates or trusts data crossing an API boundary |
 | `rules/testing.md` | `/create-tests`, `/update-tests`, `/run-test-plan` |
 | `rules/troubleshooting.md` | Emergency recovery |
+| `rules/resource-management.md` | Always (Docker, worktrees, test workers — loaded via CLAUDE.md) |
+| `rules/preset-environments.md` | `/test-pr`, `/run-test-plan`, and anything reading a Preset repo or staging env |
 | `rules/code-review.md` | `/review-code`, `/review-pr`, `/address-feedback` |
 | `rules/complexity-gate.md` | `/create-feature`, `/fix-bug` (trivial vs standard routing) |
 | `rules/review-gate.md` | `/review-code`, `/create-feature`, `/fix-bug` (review output contract) |
+| `rules/scoring.md` | Review and plan-review scoring |
+| `rules/severity.md` | Classifying finding severity in reviews and QA |
 | `rules/stop-rules.md` | Any iterative loop (universal stop conditions) |
 | `rules/shortcut-api.md` | Commands that query Shortcut REST API |
 | `rules/input-detection.md` | Commands that accept Shortcut/GitHub ticket inputs |
