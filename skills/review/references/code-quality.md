@@ -39,10 +39,13 @@ Wrap the available code-review mechanism in a repo-standard loop:
    - **Tests found**: Trigger the test quality reviewer (`testing/references/review-tests.md`) to evaluate whether they catch regressions, plus test suggestions for additional coverage.
 7. Fix all `[major]` and `[minor]` items directly — including adding tests for uncovered behavior.
 8. Re-run targeted tests after each fix to catch regressions.
+<!-- aitk-model-route:review.code-quality-final -->
 9. Dispatch a fresh-context reviewer for the changed files — including files
    fixed and tests added during this loop. The main thread may synthesize and
    apply findings, but it must not substitute self-review for this final pass.
-   Check error paths, async ordering, state consistency, and boundary conditions.
+   Use `review` for a bounded pass and `deep-review` when the integrated diff is
+   cross-system, security-sensitive, adversarial, or otherwise high-risk. Check
+   error paths, async ordering, state consistency, and boundary conditions.
 10. **Pre-verdict claim check.** Before reporting "clean", name one claim the verdict rests on that the diff alone doesn't prove, and verify it with a cheap check: does the title/commit message match what changed; do docs or call sites still reference a surface this change removed; does a changed pin/version resolve to what's claimed; is anything that referenced a deleted symbol now dangling. State the check and its result. If the diff is self-contained, say so — don't skip the question. Apply the finding calibration in `rules/code-review.md` (scope-before-correctness, symmetry cap, convergent vs single-source) when grading what surfaces.
 
 ## Stop Rules

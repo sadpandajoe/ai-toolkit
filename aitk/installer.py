@@ -25,6 +25,7 @@ from .interfaces import (
     validate_skill_interfaces,
     validate_support_interface,
 )
+from .model_routing import validate_model_routing
 from .workflows import (
     extension_manifest_path,
     load_workflows,
@@ -172,6 +173,7 @@ def _validate_source(root: Path) -> None:
         problems.extend(validate_extension_workflows(root, "pgm"))
     problems.extend(validate_skill_interfaces(root))
     problems.extend(validate_provider_interfaces(root))
+    problems.extend(validate_model_routing(root))
     problems.extend(validate_support_interface(root))
     problems.extend(validate_contracts(root))
     if problems:

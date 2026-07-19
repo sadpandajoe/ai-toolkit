@@ -105,14 +105,16 @@ Two distinct jobs, run on different threads:
 
 **7a. Scope-leak audit — subagent, mandatory, every cherry, no exceptions.**
 
-Post-apply, spawn a subagent (reasoning effort from gate: standard for trivial, heavy for non-trivial). Its only job is leak detection. Single rule: every cherry, every time, including clean applies — clean applies are the highest-risk vector for scope leak.
+<!-- aitk-model-route:cherry-pick.scope-leak-review -->
+Post-apply, spawn a subagent on `review` for trivial or `deep-review` for non-trivial changes. Its only job is leak detection. Single rule: every cherry, every time, including clean applies — clean applies are the highest-risk vector for scope leak.
 
 The subagent must:
 1. Resolve this skill's installed directory as `<skill-dir>`, run `<skill-dir>/scripts/scope-audit.sh <source-commit>`, and capture the literal output.
 2. Run the LLM hunk-level audit comparing source diff vs cherry-pick result diff.
 3. Return a structured report containing the literal `scope-audit.sh` output, per-hunk verdict, and a clear `LEAK / CLEAN / ESCALATE` recommendation.
 
-The orchestrator may not mark a cherry `Applied` without this report. If the subagent finds leaks, revert leaked hunks and amend on the main thread, then re-spawn the subagent on the amended commit.
+<!-- aitk-model-route:cherry-pick.scope-leak-rereview -->
+The orchestrator may not mark a cherry `Applied` without this report. If the subagent finds leaks, revert leaked hunks and amend on the main thread, then re-spawn the subagent on the same `review`/`deep-review` route on the amended commit.
 
 **7b. Correctness validation — main thread.**
 
@@ -122,7 +124,8 @@ Conflict-marker scan, **pre-commit on changed files**, build, type-check, target
 
 ### 7c. Unblock Discovery (Blocked / Rejected only)
 
-When a cherry terminates as `Blocked` or `Rejected` for reasons that look like "target is missing something" (modify/delete, prerequisite commits flagged in investigate, target-side architecture missing), spawn a discovery subagent before moving to the final report. Its only job is to name the upstream PRs/commits that would unstick this cherry — it does **not** investigate, gate, plan, or apply them.
+<!-- aitk-model-route:cherry-pick.unblock-discovery -->
+When a cherry terminates as `Blocked` or `Rejected` for reasons that look like "target is missing something" (modify/delete, prerequisite commits flagged in investigate, target-side architecture missing), spawn a discovery subagent on `review` before moving to the final report. Its only job is to name the upstream PRs/commits that would unstick this cherry — it does **not** investigate, gate, plan, or apply them.
 
 Skip when the rejection is intrinsic (reject-category API rewrite, dependency-bump PR, build-system change). Record "no unblock path" on the row and continue.
 

@@ -7,29 +7,32 @@
     {"name": "isolated_worktree", "required": true},
     {"name": "context_reset", "required": true},
     {"name": "recurrence", "required": true},
-    {"name": "independent_review", "required": false}
+    {"name": "independent_review", "required": false},
+    {"name": "routed_subagent", "required": true}
   ],
   "providers": {
     "claude": {
       "bindings": {
         "planning_boundary": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
-        "fresh_subagent": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
+        "fresh_subagent": {"mode": "fallback", "document": "config/providers/claude.md", "fallback": "source_linked_model_run"},
         "parallel_fanout": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
         "isolated_worktree": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
         "context_reset": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
         "recurrence": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
-        "independent_review": {"mode": "native", "document": "config/providers/claude.md", "fallback": null}
+        "independent_review": {"mode": "fallback", "document": "config/providers/claude.md", "fallback": "source_linked_model_run"},
+        "routed_subagent": {"mode": "fallback", "document": "config/providers/claude.md", "fallback": "source_linked_model_run"}
       }
     },
     "codex": {
       "bindings": {
         "planning_boundary": {"mode": "native", "document": "config/providers/codex.md", "fallback": null},
-        "fresh_subagent": {"mode": "native", "document": "config/providers/codex.md", "fallback": null},
+        "fresh_subagent": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "source_linked_model_run"},
         "parallel_fanout": {"mode": "native", "document": "config/providers/codex.md", "fallback": null},
         "isolated_worktree": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "manual_fresh_worktree"},
         "context_reset": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "manual_fresh_session"},
         "recurrence": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "manual_reinvocation"},
-        "independent_review": {"mode": "native", "document": "config/providers/codex.md", "fallback": null}
+        "independent_review": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "source_linked_model_run"},
+        "routed_subagent": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "source_linked_model_run"}
       }
     }
   }

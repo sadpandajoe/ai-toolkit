@@ -73,7 +73,8 @@ That reference owns:
 - pattern analysis
 - synthesis, scoring, and recommendation
 
-Use fresh reviewer subagents for each single-PR review pass. Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
+<!-- aitk-model-route:workflows.review-pr-fresh -->
+Use fresh reviewer subagents for each single-PR review pass. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, or substantial multi-system lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
 
 ### 3. Post or Draft
 

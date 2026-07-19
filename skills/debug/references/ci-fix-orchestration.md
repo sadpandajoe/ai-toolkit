@@ -10,7 +10,8 @@ routing, safe-fix scope, and commit recommendation strategy.
 
 ## Classify and Group
 
-The orchestrator classifies failures inline by default. Spawn a triage subagent only when:
+<!-- aitk-model-route:debug.ci-triage -->
+The orchestrator classifies failures inline by default. Spawn a triage subagent on `rca` or `deep-rca` only when:
 - multiple independent failures need parallel analysis
 - logs are very large (>500 lines) and need focused extraction
 - the failure pattern is novel and benefits from isolated reasoning
@@ -70,7 +71,7 @@ Proceed automatically only when the Action Gate says the fix is low-risk, high-c
 ## Apply Safe Fixes
 
 - Trivial path: orchestrator applies the proposed fix inline.
-- Standard path: spawn a planning subagent when useful. The subagent returns a file-level fix plan and flags cross-cutting concerns. The orchestrator applies the plan.
+- Standard path: plan the fix in the main thread after RCA. The orchestrator applies the plan.
 
 Keep scope limited to the failing surface. If verification is weak or root cause is ambiguous, stop instead of widening scope.
 

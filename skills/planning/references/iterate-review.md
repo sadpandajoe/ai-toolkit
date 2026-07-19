@@ -33,14 +33,16 @@ Default: **8/10 or better** on every applicable reviewer, plus a **Go** from col
 
 When the caller provides PM context:
 
-- Spawn `pm/references/review-feature-brief.md` as a subagent
-- Use standard reasoning effort by default; escalate to heavy effort only when the brief covers multi-system rollout or material business risk
+<!-- aitk-model-route:planning.pm-brief-review -->
+- Spawn `pm/references/review-feature-brief.md` as a subagent on `review`
+- Use `review` by default; use `deep-review` only when the brief covers multi-system rollout or material business risk
 - Revise the brief until 8/10
 - If the brief reaches 8/10 after the first pass, proceed to technical plan review
 
 ### 2. Technical Plan Review
 
-Launch all applicable technical reviewers **in parallel** as subagents. Always-on reviewers:
+<!-- aitk-model-route:planning.technical-plan-review -->
+Launch all applicable technical reviewers **in parallel** as subagents using the routes below. Always-on reviewers:
 
 - `plan-review/references/architecture.md`
 - `plan-review/references/implementation.md`
@@ -51,14 +53,15 @@ Add conditional reviewers when the plan touches their area:
 - `plan-review/references/frontend.md` — React, CSS, UI components
 - `plan-review/references/backend.md` — API, database, migrations
 
-**Reasoning effort selection** per the scope input (see `rules/orchestration.md`):
+**Model routing** (see `rules/model-assignment.md`):
 
-- `trivial` / `moderate` — standard reasoning effort
-- `standard` — heavy reasoning effort when the plan has multi-system scope, real trade-offs, novel design, or ambiguous constraints
+- PM, implementation, and test-plan lanes use `review`.
+- Architecture, security-sensitive, adversarial, and final cold-read lanes use `deep-review`.
+- Re-run a shallow lane on `deep-review`; do not invent a different model or effort override.
 
 Each reviewer:
 - Reads the plan from the location provided by the caller
-- Loads its own skill file (subagents load their own domain rules)
+- Receives the exact inventoried reviewer contract closure inline from the route runner
 - Produces a scored review block (X/10 with strengths, issues, suggestions)
 
 ### 3. Iterate Until Threshold
@@ -74,7 +77,7 @@ After collecting scores:
 
 ### 4. Cold Read
 
-Spawn sibling [finalize.md](finalize.md) as a fresh-eyes final check. Match reasoning effort to the plan's reasoning load (same rule as step 2).
+Spawn sibling [finalize.md](finalize.md) as a fresh-eyes final check using `deep-review`.
 
 - **Go** → proceed to step 5
 - **No-Go** with blocking issues → revise and re-run sibling [finalize.md](finalize.md)
@@ -114,4 +117,5 @@ Return to the caller:
 ## Notes
 
 - This procedure replaces inline "review iteration" logic previously duplicated in `create-feature` step 4 and `review-plan` body. Both commands call this helper.
-- Subagents load their own skill files — the caller references skill paths but does not `@`-import them into this helper.
+- The runner derives and inlines the boundary's exact contract closure; callers
+  cannot substitute arbitrary files, and routed workers do not load ambient skills.

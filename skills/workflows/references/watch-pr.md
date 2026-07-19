@@ -46,7 +46,7 @@ The loop contract — iteration shape, dispatch table, authorization boundary, e
 - **Comment scope**: bot threads get full auto handling (fix, rebut with evidence, reply, resolve). Human comments are auto-fixed only when the ask is unambiguous and local; replies to humans stay factual ("Done in `<sha>`"). Everything judgment-shaped is escalated, never guessed.
 - **State lives in WATCH.md**, created from [skills/pr-watch/templates/watch-manifest.md](../../pr-watch/templates/watch-manifest.md). PROJECT.md points to it; chat is never the state store. Resolve symlinks before writing (`readlink -f`).
 - Every fix dispatch inherits its engine's own gates (classification, verification strength, Review Gate, PII scrub). The watch adds no shortcuts around them.
-- **Context control is subagent isolation, not self-clearing** — the loop cannot run a user-only context-clear action. The CI/comment poll runs as a low-cost check worker returning a binary delta report, and fix dispatches run as subagent workers returning compact handoffs — so check JSON, run-watch output, diffs, CI logs, and review rounds never enter the orchestrator thread, and an idle iteration costs a heartbeat. The session model spends only when the check worker reports a delta. If the main thread still hits the reactive thresholds (~70% context, cost), it checkpoints and asks the user to clear and resume — one manual step, then the start workflow auto-resumes from WATCH.md. For zero-touch resets, use the selected provider recurrence binding only when its execution environment can reach the repository; otherwise use its declared local/manual fallback.
+- **Context control is subagent isolation, not self-clearing** — the loop cannot run a user-only context-clear action. The parent/tool layer polls CI/comments; an `operations` worker may reduce only the supplied evidence to a binary delta report. Fix dispatches use `implementation` and return compact handoffs. Classification and diagnosis remain on the main thread or use `rca`/`deep-rca`. Check JSON, run-watch output, diffs, CI logs, and review rounds therefore stay out of the orchestrator thread, and an idle iteration costs only a heartbeat. If the main thread still hits the reactive thresholds (~70% context, cost), it checkpoints and asks the user to clear and resume — one manual step, then the start workflow auto-resumes from WATCH.md. For zero-touch resets, use the selected provider recurrence binding only when its execution environment can reach the repository; otherwise use its declared local/manual fallback.
 
 ## Steps
 
@@ -73,8 +73,10 @@ Record the watch in PROJECT.md (top-level workflow `watch-pr <pr>`, pointer to W
 
 Run iterations per the skill's dispatch table until a stop condition or hard stop fires:
 
-1. **Check (low-cost worker)**: spawn a lightweight subagent to poll the head SHA — check-run states (blocking on `gh run watch` while a run is in progress, re-invoking past tool timeouts) and, unless `--no-comments`, comment threads newer than the cursor. The worker diffs against WATCH.md and returns a delta report: `no change`, or a factual list (failed run id + job names + brief error lines; new thread ids). Raw check JSON and run-watch output stay in the worker. **No delta → skip to step 3** — nothing else spends.
-2. **Act on deltas (session model)**: CI failure → classify (`debug/references/ci-classify-failure.md`), then dispatch: transient → rerun (cap 2/run id); real+ours → `fix-ci` fix path, push, reset streak; pre-existing → record, escalate only if merge-blocking. New comments → route per the dispatch table through the feedback skill references. Classification and routing never run on the check worker.
+<!-- aitk-model-route:workflows.watch-pr-poll -->
+1. **Check (parent tools + operations summary)**: poll the head SHA deterministically in the parent/tool layer — check-run states (blocking on `gh run watch` while a run is in progress, re-invoking past tool timeouts) and, unless `--no-comments`, comment threads newer than the cursor. After collection, spawn an `operations` worker only to reduce the supplied read-only evidence to a delta report: `no change`, or failed run id/job/error lines plus new thread ids. **No delta → skip to step 3**.
+<!-- aitk-model-route:workflows.watch-pr-fix -->
+2. **Act on deltas (session model)**: CI failure → classify (`debug/references/ci-classify-failure.md`), then dispatch on `implementation`: transient → rerun (cap 2/run id); real+ours → `fix-ci` fix path, push, reset streak; pre-existing → record, escalate only if merge-blocking. New comments → route per the dispatch table through the feedback skill references. Classification and routing never run on the check worker.
 3. **Evaluate stop conditions** from the skill: green streak ≥ target AND no unprocessed comments AND empty escalations → `stable`. Any hard stop → `escalated`.
 4. **Save state** (hard gate — no iteration ends without it):
 
@@ -83,6 +85,7 @@ Run iterations per the skill's dispatch table until a stop condition or hard sto
 Streak: [n]/[target] | Fixes: [n] | Reruns: [n] | Comments handled: [n] | Escalations: [n]
 ```
 
+<!-- aitk-model-route-exempt:describes-prior-dispatch-payloads -->
 5. **Context check**: if a reactive threshold fired (~70% context or cost), run `checkpoint` — it names `watch-pr <pr>` as the top-level workflow and WATCH.md as the manifest (extension: [`skills/reporting/templates/watch-pr-checkpoint.md`](../../reporting/templates/watch-pr-checkpoint.md)) — then stop with `Checkpoint saved. Run context_reset, then start to resume the watch.` Otherwise continue to the next iteration; dispatch payloads stayed in their workers, so the orchestrator thread grows slowly.
 
 If the session must end mid-watch (checkpoint + context_reset, user interrupt), WATCH.md keeps `Status: watching` and the PROJECT.md checkpoint names the resume target.

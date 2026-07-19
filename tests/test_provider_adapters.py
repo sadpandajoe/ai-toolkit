@@ -132,6 +132,9 @@ class ProviderAdapterTests(unittest.TestCase):
             plugin = Path(temporary) / "plugin"
             for relative in (
                 ".codex-plugin",
+                "aitk",
+                "bin",
+                "config",
                 "docs",
                 "interfaces",
                 "rules",
@@ -139,6 +142,26 @@ class ProviderAdapterTests(unittest.TestCase):
             ):
                 shutil.copytree(ROOT / relative, plugin / relative, symlinks=True)
             shutil.copy2(ROOT / "PROJECT_TEMPLATE.md", plugin / "PROJECT_TEMPLATE.md")
+            routed = subprocess.run(
+                [
+                    str(plugin / "bin/aitk"),
+                    "--root",
+                    str(plugin),
+                    "model-route",
+                    "deep-review",
+                    "--provider",
+                    "codex",
+                    "--boundary",
+                    "review.code-quality-final",
+                    "--json",
+                ],
+                cwd=Path(temporary),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, routed.returncode, routed.stderr)
+            self.assertEqual("deep-review", json.loads(routed.stdout)["route"])
             declared = {
                 entry["name"]: Path(entry["path"])
                 for entry in load_skill_interfaces(plugin)

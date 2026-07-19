@@ -16,6 +16,7 @@ from .interfaces import (
     validate_skill_interfaces,
     validate_support_interface,
 )
+from .model_routing import validate_model_routing
 from .installer import InstallPaths, inspect_install
 from .workflows import (
     extension_manifest_path,
@@ -486,6 +487,12 @@ def run_doctor(
             "provider-interfaces",
             "Provider capability bindings",
             validate_provider_interfaces,
+        ),
+        (
+            "model-routing.json",
+            "model-routing",
+            "Model and effort routing",
+            validate_model_routing,
         ),
         (
             "support.json",

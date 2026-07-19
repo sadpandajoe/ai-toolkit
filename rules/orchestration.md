@@ -11,26 +11,31 @@ The active coding agent is the primary orchestrator: planning, investigation, co
 | **Internal workers** | Subagents/workers | Exploration, planning, research |
 | **Domain reviewers** | Skill subagents | Architecture, implementation, testing, frontend, backend perspectives |
 
-## Reasoning Load And Effort
+## Model Routes And Effort
 
-Match subagent resources to the **actual reasoning load of this specific task**, not the category label. A trivial architecture review uses a standard reviewer; a gnarly multi-constraint planning task uses heavy reasoning regardless of role label.
+The active parent session is the orchestrator and keeps the user's selected
+workhorse configuration. Every spawned model worker uses a stable route from
+`rules/model-assignment.md`; the route resolver supplies the exact current
+selector, effort, permission boundary, and output contract.
 
-| Reasoning load | Effort boundary | Examples |
-|----------------|-----------------|----------|
-| Mechanical — no judgment, just retrieval or pattern-match | low | File search, symbol grep, listing definitions, fetching a known artifact |
-| Standard — apply known patterns, classify, review bounded change, single-file work | medium / high | Triage, RCA validation, single-file implementation, log classification, reviews where the diff or plan is small/well-scoped |
-| Heavy — multi-constraint trade-offs, novel design, deep adversarial probing across many files | high / xhigh | Cross-system plans, real architectural trade-offs, security-sensitive adversarial review, hard fix planning where the failure surface is unclear |
+Use the normal `implementation`, `review`, or `rca` route for bounded work. Use
+`deep-review` for architecture, security, adversarial analysis, and meaningful
+final cold reads. Use `deep-rca` when evidence is ambiguous, intermittent,
+history-dependent, or crosses systems. Use `operations` only for its narrow,
+non-development allowlist. Automatic implementation stays on the normal
+Sol/Opus workhorse route; Fable remains a read-only deep advisor.
 
-**The decision rule**: assess the *substance* of this specific task before choosing. Default to standard reasoning. Drop to mechanical only for purely mechanical work. Escalate to heavy only when this specific instance genuinely requires deep reasoning. Role labels do not auto-promote the task — the actual scope does.
-
-Provider mapping is runtime-specific. Keep reusable rules in neutral mechanical/standard/heavy terms, then translate to the platform's available model or reasoning-effort controls at invocation time.
-
-Use `rules/model-assignment.md` for the shared Light / Standard / Heavy /
-Orchestrator tier table when a workflow dispatches workers.
+High is the automatic baseline; xhigh is reserved for deep routes. Automatic
+dispatch never selects max and never falls back to a weaker model or effort.
+Resolve the toolkit/package root from the installed skill. Resolve with
+`<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, then launch with
+`<toolkit-root>/bin/aitk model-run --boundary <marker-id>`.
 
 **Cherry-pick reasoning tiering**: Cherry-pick phases use gate-driven reasoning selection rather than the general reasoning-load heuristic above. The gate classifies difficulty (TRIVIAL vs NON-TRIVIAL) and that classification determines worker effort for plan, validate, and adapt phases. See `skills/cherry-pick/references/gate.md` for the tier table.
 
-The orchestrator may run on any model the user has selected. These tiers apply to **subagents/workers** spawned from it. A standard orchestrator escalating one genuinely hard subtask to a heavier worker is the canonical cost-efficient pattern.
+The orchestrator may run on any user-selected model that satisfies the user's
+workhorse policy. The stable routes apply to **subagents/workers** spawned from
+it and cannot retroactively change the parent session.
 
 ## Inline-First Principle
 

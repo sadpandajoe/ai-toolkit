@@ -11,6 +11,32 @@ A provider-portable toolkit for repeatable AI-assisted software delivery. Canoni
 - **`aitk`** builds adapters and turns structural drift into deterministic failures.
 - **CI** runs the same `aitk check` gate on supported Python versions with SHA-pinned first-party actions.
 
+## Model and Effort Routing
+
+Keep the main coding session on a current Sol-or-newer or Opus workhorse at
+high effort. Spawned workers use stable routes, so normal skills choose the
+right family and effort without copying volatile model IDs into workflow text.
+
+| Job | Route | Automatic effort | Codex | Claude |
+|---|---|---|---|---|
+| Implementation | `implementation` | high | Sol | Opus |
+| Plan/code/test/PR review | `review` | high | Sol | Opus |
+| Architecture, security, adversarial, final cold review | `deep-review` | xhigh | Sol | Fable |
+| RCA | `rca` | high | Sol | Opus |
+| Ambiguous or cross-system RCA | `deep-rca` | xhigh | Sol | Fable |
+| Read-only evidence and deterministic operational summaries | `operations` | high | Sol | Sonnet |
+
+Sonnet does not perform development judgment or effects: no implementation,
+test execution/design, API/ticket mutation, diagnosis, RCA, or review. Fable is
+a read-only deep advisor for reviews and RCA. Automatic routing never selects max and never falls back
+to a weaker model or effort.
+
+Exact current selectors live only in `interfaces/model-routing.json`. A future
+Sol, Opus, Fable, or Sonnet promotion changes one catalog entry; route names,
+skills, and this table remain stable. Resolve the installed toolkit/package
+root, then use `<toolkit-root>/bin/aitk model-route` and
+`<toolkit-root>/bin/aitk model-run --boundary <marker-id>`.
+
 ## Quick Start
 
 ```bash
@@ -80,6 +106,7 @@ ai-toolkit/
 │   ├── contracts.json      # Safety, state, resume, and verification contracts
 │   ├── skills.json         # Total public/internal skill classification
 │   ├── providers.json      # Provider capability bindings
+│   ├── model-routing.json  # Exact selectors, effort policy, and dispatch inventory
 │   ├── guidance.json       # Shared always-on rule inventory
 │   └── support.json        # Supported release matrix
 ├── setup.sh                # Install tools (run once)
@@ -94,7 +121,7 @@ ai-toolkit/
 ├── rules/
 │   ├── universal.md        # Core principles (loaded first)
 │   ├── orchestration.md    # Multi-agent workflow rules
-│   ├── model-assignment.md # Provider-neutral model/effort tiers
+│   ├── model-assignment.md # Stable worker routes and family/effort policy
 │   ├── context-management.md   # Context depth thresholds and checkpoint protocol
 │   ├── durable-workflows.md    # Deterministic phase/effect checkpoint protocol
 │   ├── rule-maintenance.md     # How to strengthen, update, or extract rules
@@ -353,7 +380,7 @@ $workflows review-pr 123 --draft      # Local only, don't post
 | `rules/stop-rules.md` | Any iterative loop (universal stop conditions) |
 | `rules/shortcut-api.md` | Commands that query Shortcut REST API |
 | `rules/input-detection.md` | Commands that accept Shortcut/GitHub ticket inputs |
-| `rules/model-assignment.md` | Worker dispatch and provider-neutral model/effort tiering |
+| `rules/model-assignment.md` | Stable worker routes, model-family policy, and effort boundaries |
 | `rules/rule-maintenance.md` | `reflect propose-rule`, rule editing |
 
 ## Hooks (optional)

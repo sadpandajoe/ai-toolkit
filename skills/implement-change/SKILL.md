@@ -1,6 +1,6 @@
 ---
 name: implement-change
-description: Use when implementing one approved plan or RCA slice test-first and returning verified files for review. Do NOT use for investigation, unapproved scope, planning, or standalone review.
+description: Use when implementing one approved plan or RCA slice as a bounded patch and returning changed files for parent verification and review. Do NOT use for investigation, unapproved scope, planning, or standalone review.
 ---
 
 # Implement Change
@@ -16,7 +16,7 @@ Read before starting: `rules/implementation.md`, `rules/testing.md`
 
 ## Goal
 
-Implement one slice from the plan — the narrowest change that satisfies the slice's exit criteria. Add regression protection, verify against the slice's acceptance criteria, and hand the result back.
+Implement one slice from the plan — the narrowest patch that satisfies the slice's exit criteria. Add regression protection and hand the result back for parent-run verification.
 
 ## Slice Awareness
 
@@ -24,7 +24,7 @@ When the plan defines structured slices (with scope, entrance/exit criteria, acc
 - Verify **entrance criteria** are met before starting — if not, stop and report what's missing
 - Stay within the slice's **scope** — do not touch files outside the boundary
 - Stop when **exit criteria** are met — the slice is done, hand it back
-- Run the slice's **acceptance** check to verify
+- Name the slice's **acceptance** check for the parent to run
 
 When no structured slices exist (simple fix, trivial path), implement the full change as a single unit.
 
@@ -32,26 +32,22 @@ When no structured slices exist (simple fix, trivial path), implement the full c
 
 Default mode is the caller's current worktree. In default mode, do not commit, amend, rebase, push, or force-push. Return changed files and verification evidence only; the orchestrator owns review, durable state, and any authorized git action.
 
-When launched through `isolated_worktree`, this skill runs in a temporary git
-worktree. Key differences:
-
-- **Dependencies may be missing**: check for `node_modules/` or equivalent before running tests. Install if needed.
-- **Build outputs may be absent**: rebuild if the slice's acceptance check requires it.
-- **Commit your changes**: worktree changes must be committed to be preserved. Create a commit with a clear message referencing the slice name.
-- **The orchestrator handles the merge**: do not merge back yourself. Commit on the worktree's temp branch and return the implementation handoff.
+Routed model workers are patch-only and do not use `isolated_worktree`; their
+contract forbids commits. Claude implementation workers are launched without
+Bash, while Codex implementation workers retain sandboxed shell access for
+editing and inspection. In both cases the parent orchestrator owns verification,
+worktree preservation, and any authorized commit.
 
 ## Core Steps
 
 1. Check entrance criteria (if slice is defined). Stop if unmet.
 2. Write the test(s) first per the test-first mode the plan specified (see `rules/implementation.md` Test-First Modes):
-   - **RED/GREEN per slice** (bug fixes): write the failing test, run it, confirm RED.
+   - **RED/GREEN per slice** (bug fixes): write the regression test and name the parent-run RED check.
    - **Test set as specification** (features): write the slice's full acceptance test set as the spec.
 3. If test-first is blocked by repro, env, or harness constraints, write the test anyway and record the verification gap before continuing.
 4. Implement the minimum code change that satisfies the slice's exit criteria (or the validated RCA for non-sliced work).
-5. Run the slice's acceptance check or targeted verification for changed files.
-   - For RED/GREEN: confirm the previously-failing test now passes (GREEN).
-   - For test-set-as-spec: run the full set; reconcile any failures by deciding code-vs-test and noting why if a test changed.
-6. Note anything that could not be verified locally.
+5. Return the exact acceptance and targeted verification commands for the parent.
+6. Mark verification pending; never claim RED/GREEN or acceptance success from a patch-only worker.
 7. Hand changed files back to the calling workflow for `review-code`.
 
 ## Output
@@ -61,13 +57,13 @@ worktree. Key differences:
 
 - Slice: <name, or "single change" if no slices>
 - Entrance criteria: <met / N/A>
-- Exit criteria: <met — evidence>
+- Exit criteria: <implemented — pending parent verification>
 - Files changed:
   - <file>
-- Branch/commit: <only when `isolated_worktree` is active; otherwise "N/A">
+- Branch/commit: N/A
 - Tests added or updated:
   - <test>
-- Acceptance: <passed / failed / not runnable — reason>
+- Acceptance: pending parent — <exact commands>
 - Unverified areas:
   - <gap or none>
 ```

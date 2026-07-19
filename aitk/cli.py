@@ -22,6 +22,7 @@ from .checkpoint import (
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
 from .doctor import run_doctor
 from .installer import install, resolve_paths, rollback, uninstall
+from .model_routing import ModelRouteError, resolve_route, run_model
 from .pgm import preflight as pgm_preflight
 from .workflows import load_workflows
 
@@ -175,6 +176,80 @@ def _route(arguments: argparse.Namespace) -> int:
             f"Invoke: Use ${match.workflow.owner_skill} in {match.workflow.name} mode for: {request}"
         )
     return 0 if match is not None else 1
+
+
+def _model_route(arguments: argparse.Namespace) -> int:
+    root = _root(arguments.root)
+    try:
+        route = resolve_route(
+            root,
+            arguments.model_route,
+            arguments.provider,
+            arguments.boundary,
+        )
+    except ModelRouteError as error:
+        if arguments.json:
+            print(
+                json.dumps(
+                    {
+                        "command": "model-route",
+                        "error": {"code": error.code, "message": str(error)},
+                    },
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(f"{error.code}: {error}", file=sys.stderr)
+        return 2
+    payload = {"command": "model-route", **route.as_dict()}
+    if arguments.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        for key in (
+            "route",
+            "provider",
+            "family",
+            "selector",
+            "effort",
+            "responsibility",
+            "controls",
+        ):
+            value = payload[key]
+            rendered = (
+                json.dumps(value, separators=(",", ":"), sort_keys=True)
+                if isinstance(value, dict)
+                else value
+            )
+            print(f"{key}: {rendered}")
+    return 0
+
+
+def _model_run(arguments: argparse.Namespace) -> int:
+    root = _root(arguments.root)
+    try:
+        exit_code, payload = run_model(
+            root,
+            arguments.model_route,
+            arguments.provider,
+            arguments.boundary,
+            Path(arguments.prompt_file),
+            Path(arguments.cwd) if arguments.cwd else None,
+            arguments.timeout_seconds,
+            arguments.dry_run,
+        )
+    except ModelRouteError as error:
+        print(
+            json.dumps(
+                {
+                    "command": "model-run",
+                    "error": {"code": error.code, "message": str(error)},
+                },
+                sort_keys=True,
+            )
+        )
+        return 2
+    print(json.dumps(payload, sort_keys=True))
+    return exit_code
 
 
 def _lifecycle(arguments: argparse.Namespace) -> int:
@@ -410,6 +485,27 @@ def parser() -> argparse.ArgumentParser:
         "--with-pgm", action="store_true", help="include optional PGM workflows"
     )
     route.set_defaults(handler=_route)
+
+    model_route = subparsers.add_parser(
+        "model-route", help="resolve a stable worker route to model and effort"
+    )
+    model_route.add_argument("model_route")
+    model_route.add_argument("--provider", required=True, choices=("codex", "claude"))
+    model_route.add_argument("--boundary")
+    model_route.add_argument("--json", action="store_true")
+    model_route.set_defaults(handler=_model_route)
+
+    model_run = subparsers.add_parser(
+        "model-run", help="run one fail-closed worker with pinned model and effort"
+    )
+    model_run.add_argument("model_route")
+    model_run.add_argument("--provider", required=True, choices=("codex", "claude"))
+    model_run.add_argument("--boundary", required=True)
+    model_run.add_argument("--prompt-file", required=True)
+    model_run.add_argument("--cwd")
+    model_run.add_argument("--timeout-seconds", type=int, default=1800)
+    model_run.add_argument("--dry-run", action="store_true")
+    model_run.set_defaults(handler=_model_run)
 
     checkpoint = subparsers.add_parser(
         "checkpoint", help="manage durable workflow checkpoints"

@@ -10,9 +10,10 @@ AI Toolkit separates stable workflow behavior from provider syntax.
    workflow identity, owner skill, routing, rule imports, and execution class.
    `interfaces/contracts.json` v2 declares the phase graph, authorization,
    effects, idempotency, verification, reporting, and recovery behavior.
-   `interfaces/skills.json`, `providers.json`, `guidance.json`, and
-   `support.json` make public discovery, provider capabilities, shared
-   always-on guidance, and the release matrix explicit.
+   `interfaces/skills.json`, `providers.json`, `model-routing.json`,
+   `guidance.json`, and `support.json` make public discovery, provider
+   capabilities, fail-closed model routing, shared always-on guidance, and the
+   release matrix explicit.
 4. `commands/` is generated Claude compatibility output. It imports rules and one canonical workflow reference; it contains no procedure.
 5. `.codex-plugin/`, `skills/*/agents/openai.yaml`, `hooks/hooks.json`, and `config/AGENTS.md` form the Codex adapter.
 6. `aitk/` and `bin/aitk` build, route, validate, transact installation, and
@@ -40,6 +41,27 @@ Claude alias
 ```
 
 Provider adapters may translate invocation syntax, tool names, planning controls, scheduling, and independent-review capabilities. They may not weaken authorization boundaries, protected state, stop conditions, verification labels, or reporting contracts.
+
+Model workers cross a stricter source-linked boundary. Skills declare stable
+route names at inventoried dispatch sites. `<toolkit-root>/bin/aitk model-route`
+resolves the exact selector, effort, and permissions from
+`interfaces/model-routing.json`; `<toolkit-root>/bin/aitk model-run` validates
+the boundary, provider CLI, and route before launching one structured worker
+without downgrade or generic-worker fallback. Each boundary deterministically
+derives a validated transitive inline contract closure from the shared model
+rule, owner and responsibility skills, required-context dependencies, selected
+review lenses, and canonical dispatch document; callers cannot substitute
+arbitrary files. Codex launches from a sanitized temporary project root and
+exposes the target only through `--add-dir`, while also disabling project-document discovery,
+user config, hooks, MCP servers, and exec-policy rules. The toolkit guarantees
+the requested CLI configuration and validates the returned envelope; provider
+backend execution remains the provider's responsibility.
+
+The Codex plugin bundle retains `bin/`, `aitk/`, `config/`, `interfaces/`,
+`rules/`, and `skills/` beneath one plugin root. Routed skills resolve that root
+from their installed location; they never assume the user's product repository
+contains `bin/aitk`. Isolated-plugin tests execute the resolver from an
+unrelated working directory.
 
 ## State and recovery
 

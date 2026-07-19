@@ -16,6 +16,7 @@ CAPABILITIES = {
     "context_reset": True,
     "recurrence": True,
     "independent_review": False,
+    "routed_subagent": True,
 }
 FALLBACKS = {
     "sequential_execution",
@@ -24,6 +25,7 @@ FALLBACKS = {
     "manual_fresh_worktree",
     "manual_reinvocation",
     "skip_and_report_unavailable",
+    "source_linked_model_run",
 }
 
 

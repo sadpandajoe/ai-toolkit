@@ -30,6 +30,7 @@ This workflow owns one-off plan review only. It does not create the plan,
 implement it, or turn review comments into code changes.
 
 - Read PROJECT.md to find the active plan pointer, then review `PLAN.md` as the formal plan body; do not preload unrelated workflow references.
+<!-- aitk-model-route:workflows.review-plan-fresh -->
 - Use fresh reviewer subagents for each review pass after material plan revisions.
 - Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
 - The main thread revises `PLAN.md`; PROJECT.md stores state/pointers and final scores. Subagents return scored findings only.
@@ -65,9 +66,10 @@ State the scope assessment, which reviewers are selected, and why before launchi
 
 ### 3. Review Iterations
 
-Launch selected fresh reviewer subagents in parallel. Match reviewer reasoning effort to the actual plan complexity. Each reviewer:
+<!-- aitk-model-route:workflows.review-plan-selected -->
+Launch selected fresh reviewer subagents in parallel. Use `review` for bounded implementation/test/PM lanes and `deep-review` for architecture, security-sensitive, and final cold-read lanes. Each reviewer:
 - Reads only PROJECT.md plus the active plan content needed for its lens
-- Loads its own skill file (subagents load their own domain rules)
+- Receives the exact inventoried reviewer contract closure inline from the route runner
 - Produces a scored review block (X/10 with strengths, issues, suggestions)
 
 After collecting scores:
@@ -78,7 +80,7 @@ After collecting scores:
 
 ### 4. Cold Read
 
-Run `planning/references/finalize.md` as a fresh-eyes final check:
+Run `planning/references/finalize.md` on `deep-review` as a fresh-eyes final check:
 - If **Go** → proceed to step 5
 - If **No-Go** with blocking issues → revise the plan and re-run finalize-plan
 - If **No-Go** after two revisions → stop and surface the blocking issues to the user
@@ -133,4 +135,5 @@ Write final review scores to PROJECT.md:
 ## Notes
 - Standalone command — `create-feature` step 4 does the same work inline, but this is for one-off use
 - Does not create or implement the plan — only reviews an existing one
-- Subagents load their own skill files; this command references skill paths but does not `@`-import them
+- The runner derives and inlines the boundary's exact contract closure; callers
+  cannot substitute arbitrary files, and routed workers do not load ambient skills.

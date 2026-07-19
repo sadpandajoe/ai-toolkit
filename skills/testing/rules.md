@@ -16,6 +16,7 @@ Before running Jest, pytest, Playwright, or similar test suites:
 | Single test file | 1-2 | `--maxWorkers=2` |
 | Full suite, nothing else running | 50% of CPUs | `--maxWorkers=50%` |
 
+<!-- aitk-model-route-exempt:test-runner-process-workers -->
 Always pass `--maxWorkers` to Jest. The default can spawn too many workers and cause OOM crashes.
 
 For pytest, use `-n` with pytest-xdist following the same worker guidelines, or omit it for sequential runs.

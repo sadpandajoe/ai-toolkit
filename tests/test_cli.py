@@ -72,6 +72,40 @@ class CliTests(unittest.TestCase):
             "fix-bug", {item["name"] for item in json.loads(result.stdout)["workflows"]}
         )
 
+    def test_model_route_resolves_and_rejects_exactly(self) -> None:
+        resolved = self.run_cli(
+            "model-route",
+            "deep-review",
+            "--provider",
+            "claude",
+            "--boundary",
+            "workflows.review-plan-fresh",
+            "--json",
+        )
+        self.assertEqual(0, resolved.returncode, resolved.stderr)
+        payload = json.loads(resolved.stdout)
+        self.assertEqual("fable", payload["family"])
+        self.assertEqual("xhigh", payload["effort"])
+        self.assertEqual("plan", payload["controls"]["permission_mode"])
+        for contract in (
+            "rules/model-assignment.md",
+            "skills/workflows/SKILL.md",
+            "skills/review/SKILL.md",
+            "skills/workflows/references/review-plan.md",
+            "skills/plan-review/references/architecture.md",
+            "skills/testing/references/review-testplan.md",
+            "rules/scoring.md",
+            "rules/severity.md",
+        ):
+            self.assertIn(contract, payload["required_contracts"])
+
+        rejected = self.run_cli(
+            "model-route", "unknown", "--provider", "codex", "--json"
+        )
+        self.assertEqual(2, rejected.returncode)
+        error = json.loads(rejected.stdout)["error"]
+        self.assertEqual("MODEL_ROUTE_INVALID", error["code"])
+
 
 if __name__ == "__main__":
     unittest.main()

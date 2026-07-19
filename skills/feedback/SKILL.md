@@ -24,7 +24,8 @@ Umbrella skill for addressing PR review feedback. The orchestrator keeps the top
 `address-feedback` is the main entry point. It should read only the phase reference it needs next, and checkpoint before context grows beyond the current review round.
 
 For large review rounds, keep the main thread as orchestrator:
-- Send independent comment groups to implementation subagents.
+<!-- aitk-model-route:feedback.comment-fix-groups -->
+- Send independent comment groups to implementation subagents on `implementation`.
 - Keep comment ids, verdicts, and post status in the main thread.
 - Require each subagent to return a compact handoff with changed files, comments addressed, tests run, residual risk, and reply draft.
 

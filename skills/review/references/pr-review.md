@@ -68,13 +68,16 @@ Trivial:
 - If clean, return a compact approve recommendation. Post/approve only when `--auto` or explicit user authorization grants that boundary.
 
 Moderate:
+<!-- aitk-model-route:review.pr-moderate -->
 - Launch only the triggered reviewer lenses needed by the diff classification.
 - Keep the main thread compact: collect findings, recommendation, confidence, and any premise uncertainty.
 - Escalate to Standard only when reviewers find cross-cutting risk, unclear ownership, or security-sensitive behavior.
 
 Standard:
+<!-- aitk-model-route:review.pr-standard -->
 - Launch triggered reviewer lenses in parallel.
-- Use reasoning-effort selection from `rules/orchestration.md`; default to standard effort for bounded PRs, heavier effort for substantial multi-system or security-sensitive reviews.
+- Use `review` for bounded PR lanes and `deep-review` for architecture,
+  security-sensitive, adversarial, or substantial multi-system lanes.
 - Optional second opinion when available.
 - Adversarial lane only with `--adversarial` or security-sensitive detection.
 

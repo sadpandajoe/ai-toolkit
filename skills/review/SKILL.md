@@ -50,7 +50,8 @@ are grouped by role so workflows load only the phase they are entering.
 
 The `review-code` workflow dispatches through `classify-diff`, which chooses lenses from this umbrella **and** the `testing/` umbrella when tests are in scope.
 
-The `review-pr` workflow uses `pr-review`, `pr-batch`, and `pr-posting` for PR-specific context gathering and GitHub interaction, then dispatches the same reviewer lenses as `review-code`.
+<!-- aitk-model-route:review.pr-lenses -->
+The `review-pr` workflow uses `pr-review`, `pr-batch`, and `pr-posting` for PR-specific context gathering and GitHub interaction, then dispatches the same reviewer lenses on `review`/`deep-review` as `review-code`.
 
 ## Invocation
 

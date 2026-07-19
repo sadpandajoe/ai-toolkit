@@ -23,7 +23,8 @@ The main thread must not accumulate full diffs or full review transcripts for ev
 
 ## Dispatch
 
-For each PR, dispatch a subagent with:
+<!-- aitk-model-route:review.pr-batch -->
+For each PR, dispatch a subagent on `review`/`deep-review` with:
 - PR number/ref
 - flags (draft/summary by default; pass `--auto` only when the user explicitly requested auto-posting)
 - pointer to [pr-review.md](pr-review.md)

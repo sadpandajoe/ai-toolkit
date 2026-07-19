@@ -4,6 +4,7 @@ tier: Heavy
 
 # Adversarial Review Orchestration
 
+<!-- aitk-model-route-exempt:describes-reviewers-not-dispatch -->
 Use for `review-code-adversarial`. This coordinates red-team reviewers; [adversarial.md](adversarial.md) is the reviewer lens prompt.
 
 ## Discover Changed Files
@@ -23,6 +24,8 @@ git merge-base HEAD origin/$base_branch
 Read full file contents and diff context.
 
 ## Launch Reviewers
+
+Use `deep-review` for every adversarial lane.
 
 Run in parallel when available:
 

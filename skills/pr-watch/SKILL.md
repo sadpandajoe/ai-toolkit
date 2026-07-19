@@ -16,9 +16,11 @@ debug and feedback skills own fix procedures.
 One iteration is: check CI → check comments → route deltas → save `WATCH.md` and
 the checkpoint. A fresh context must resume from those artifacts alone.
 
-1. Run polling in a Light `fresh_subagent`; raw status/log payloads remain in
-   that worker. Return only changed run IDs, brief failure evidence, new thread
-   IDs, and a no-change marker.
+1. Run polling deterministically in the parent/tool layer. An `operations`
+   worker may summarize only the already-collected read-only evidence; it does
+   not execute API calls. Return only changed run IDs, brief failure evidence,
+   new thread IDs, and a no-change marker. Classification and diagnosis stay
+   with the main thread or an `rca`/`deep-rca` worker.
 2. Classify deltas on the main reasoning tier. Use bounded workers for fix
    engines and return compact SHAs, verification, replies, and residual risk.
 3. When context thresholds fire, finish the iteration, update `WATCH.md`, use

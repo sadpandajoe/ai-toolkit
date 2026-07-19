@@ -39,7 +39,8 @@ $pgm create-status-report --audience executive    # Format for a specific audien
 
 ### 2. Collect Data (Concurrent Workers When Available)
 
-When the runtime supports independent workers, dispatch the 2-3 collection slices in one scheduling step. Otherwise, execute the same slices sequentially. Each worker brief must include instructions to:
+<!-- aitk-model-route:pgm.status-collection -->
+When the runtime supports independent workers, collect source data in the parent/tool layer, then dispatch the 2-3 read-only summarization slices on `operations` in one scheduling step. Otherwise, summarize the same slices sequentially. Each worker brief must include instructions to:
 - Read the program management context for API patterns
 - Read `$PGM_DIR/config.json` for team UUIDs, members, bots
 - Return structured JSON or markdown that the main context can synthesize

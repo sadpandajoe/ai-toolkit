@@ -85,7 +85,10 @@ Route using the CI-specific matrix in [skills/debug/references/ci-fix-orchestrat
 
 ### 5. Apply Safe Fixes
 
-Apply only the fix path selected by the grouped classification. For standard-path planning, use a bounded planning subagent only when it materially improves isolation or reasoning; the orchestrator applies the final patch.
+Apply only the fix path selected by the grouped classification. Keep
+standard-path planning in the main thread; route ambiguous causal synthesis to
+`rca`/`deep-rca`. Any bounded fix worker uses `implementation`, and the
+orchestrator applies the final patch.
 
 ### 6. Verify Locally
 

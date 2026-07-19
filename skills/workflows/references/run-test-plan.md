@@ -148,4 +148,4 @@ run-test-plan https://github.com/owner/repo/pull/123
 - Prefer a small runnable matrix over a broad exploratory sweep
 - Keep findings factual and local-first
 - The command should keep tightening and executing the plan automatically until the matrix reaches threshold or a real blocker stops it
-- The main thread owns scenario state, evidence paths, and reporting destinations; any subagent returns compact scenario/review handoffs only
+- The main thread owns scenario execution, state, evidence paths, and reporting destinations; use `operations` only to summarize already-collected evidence, use `review` for independent test-result judgment, and keep test design or diagnosis on the main thread; any subagent returns compact scenario/review handoffs only

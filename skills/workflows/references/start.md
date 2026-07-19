@@ -20,6 +20,7 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
 
    - Identify the active main model from the environment.
    - If an advisor/secondary model is configured (settings, env, or the user's request), verify the model ID exists and the pairing is one the API accepts.
+<!-- aitk-model-route-exempt:preflight-before-later-dispatch -->
    - If the user requested an alias, ask the provider adapter to resolve it to a concrete available profile **before** dispatching anything that spawns subagents with it.
    - On any unknown ID or incompatible pairing, emit this hard gate and stop — do not resume a checkpoint or dispatch a workflow on a config that will fail mid-run:
 

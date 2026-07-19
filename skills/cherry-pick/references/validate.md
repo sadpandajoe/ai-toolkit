@@ -7,7 +7,8 @@ Validate is two distinct jobs:
 - **Scope-leak audit (7a)** — runs as a subagent, mandatory for every cherry, no exceptions. Catches the silent failure mode that build/test cannot catch.
 - **Correctness validation (7b)** — runs on the main thread. Build/type-check/tests fail loudly when the cherry is broken; no fresh context required.
 
-**Reasoning-effort selection** for the scope-leak subagent: set by the gate (standard for trivial, heavy for non-trivial). The caller spawns the subagent with the correct available model or reasoning effort for the runtime.
+<!-- aitk-model-route:cherry-pick.validate-scope-leak -->
+**Route selection** for the scope-leak subagent: the caller spawns the subagent on `review` for trivial or `deep-review` for non-trivial changes.
 
 ## Goal
 
@@ -27,7 +28,8 @@ Consume risk signals from investigate and adaptation signals from adapt. Do not 
 2. Per-hunk audit verdict from Step 2 below — explicit list of extra hunks (or "none") with origin classification for each.
 3. Final recommendation: `CLEAN` / `LEAK — revert <hunks>` / `ESCALATE — <reason>`.
 
-If the subagent returns `LEAK`, the main thread reverts the named hunks, amends, and re-spawns the subagent on the amended commit. Loop until `CLEAN` or `ESCALATE`.
+<!-- aitk-model-route:cherry-pick.validate-scope-leak-rerun -->
+If the subagent returns `LEAK`, the main thread reverts the named hunks, amends, and re-spawns the subagent on the same route on the amended commit. Loop until `CLEAN` or `ESCALATE`.
 
 The subagent does **not** run build/test. Correctness is the main thread's job (7b).
 

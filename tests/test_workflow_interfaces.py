@@ -11,6 +11,7 @@ from aitk.interfaces import (
     validate_skill_interfaces,
     validate_support_interface,
 )
+from aitk.model_routing import validate_model_routing
 from aitk.workflows import (
     command_adapters,
     extension_command_adapters,
@@ -67,6 +68,7 @@ class WorkflowInterfaceTests(unittest.TestCase):
     def test_skill_provider_and_support_interfaces_are_total(self) -> None:
         self.assertEqual([], validate_skill_interfaces(ROOT))
         self.assertEqual([], validate_provider_interfaces(ROOT))
+        self.assertEqual([], validate_model_routing(ROOT))
         self.assertEqual([], validate_support_interface(ROOT))
 
     def test_contract_version_one_is_rejected_with_migration_error(self) -> None:

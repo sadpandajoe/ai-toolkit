@@ -15,6 +15,7 @@ Default scope is **branch-wide**: combine `<base>..HEAD` (committed) with `git d
 - Path args or `--files`: filter to requested files.
 - Read full content for changed files plus the relevant diff.
 
+<!-- aitk-model-route-exempt:pre-dispatch-condition -->
 Before dispatching reviewers, print a one-line scope summary so the user can intervene early:
 
 ```
@@ -60,13 +61,21 @@ Run the repo's relevant checks before reviewer dispatch:
 - Tests covering changed files or changed behavior when they are quick enough for the review scope.
 - A clear skipped reason when the app or suite is not runnable locally.
 
+<!-- aitk-model-route-exempt:pre-launch-condition -->
 If pre-flight fails, fix the failure or report it as a blocker before launching reviewer lanes. Reviewer context should include the pre-flight result.
 
 ## Dispatch Reviewers
 
+Routine bounded lanes use `review`. Architecture, security, adversarial, and
+high-risk final lanes use `deep-review`. Resolve and launch the route through
+`<toolkit-root>/bin/aitk model-route --boundary <marker-id>` and matching
+`model-run`; an unrouteable lane is
+unavailable and must not silently fall back to a generic worker.
+
 **STANDARD tier (or ≥3 triggered lanes): dispatch via [workflow-review.md](workflow-review.md)** — lens fan-out, dedup, and adversarial verification run off-thread; the main thread ingests only confirmed findings, then resumes at the Review Record step below. TRIVIAL/MODERATE continue with direct spawns:
 
-The main thread is an orchestrator. Dispatch fresh-context reviewer subagents with:
+<!-- aitk-model-route:review.local-primary-lanes -->
+The main thread is an orchestrator. Dispatch fresh-context reviewer subagents on `review`/`deep-review` with:
 
 - Diff and full changed-file contents.
 - Acceptance criteria from PROJECT.md if relevant.
@@ -83,6 +92,7 @@ Use triggered references from `classify-diff.md`, including:
 - [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md)
 - [../../plan-review/references/backend.md](../../plan-review/references/backend.md)
 
+<!-- aitk-model-route:review.local-independent-second-opinion -->
 Launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
 
 Collect findings from all primary lanes and the independent lane, dedupe, sort by severity, and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing.
@@ -109,13 +119,15 @@ Trigger signals (any one is enough):
 
 Skip the final pass only when **all** fix-queue items were: pure deletions, one-line reverts, formatting, or comment-only.
 
-The final pass uses fresh reviewer subagents — never the ones who reviewed the original diff. Its scope is `base..HEAD` of the integrated branch, not the fix-queue commits in isolation. If the final pass surfaces majors, treat them as a new review round and iterate.
+<!-- aitk-model-route:review.local-final-pass -->
+Use fresh reviewer subagents on `deep-review` for the final pass — never the ones who reviewed the original diff. Its scope is `base..HEAD` of the integrated branch, not the fix-queue commits in isolation. If the final pass surfaces majors, treat them as a new review round and iterate.
 
 ## Independent Second Opinion (capability-based)
 
 Every `review-code` run requests an independent review in addition to the primary reviewer lanes on all tiers that run the review loop. The lane degrades gracefully and never blocks the review.
 
-Launch the runtime's configured `independent-review` capability concurrently with reviewer dispatch. Provider adapters own discovery, authentication, and invocation; this shared skill owns only the stable input and output contract. Pass one of these scopes:
+<!-- aitk-model-route:review.local-independent-capability -->
+Launch the runtime's configured `independent-review` capability on `review` concurrently with reviewer dispatch. Provider adapters own discovery, authentication, and invocation; this shared skill owns only the stable input and output contract. Pass one of these scopes:
 
 - default branch-wide → `auto`
 - `--committed` → `branch`, with the selected base

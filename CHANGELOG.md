@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added canonical, fail-closed model and effort routes for Codex and Claude
+  workers, including high-effort workhorse defaults, xhigh deep review/RCA,
+  Sonnet operations-only constraints, and future-proof selector promotion.
+- Added `aitk model-route` and `aitk model-run`, dispatch-boundary validation,
+  provider CLI preflight, structured worker results, and no-downgrade behavior.
+
 ## 0.1.0 — 2026-07-15
 
 - Moved all daily workflow procedures from commands into a canonical provider-neutral workflow skill.

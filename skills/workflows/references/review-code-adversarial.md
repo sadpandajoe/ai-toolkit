@@ -29,8 +29,10 @@ Load [skills/review/references/adversarial-orchestration.md](../../review/refere
 
 Within that flow:
 
-- Use [skills/review/references/adversarial.md](../../review/references/adversarial.md) for the primary adversarial reviewer.
-- Use an optional second-opinion adversarial reviewer only when available.
+<!-- aitk-model-route:workflows.adversarial-primary -->
+- Use [skills/review/references/adversarial.md](../../review/references/adversarial.md) for the primary adversarial reviewer on `deep-review`.
+<!-- aitk-model-route:workflows.adversarial-second-opinion -->
+- Use an optional second-opinion adversarial reviewer on `deep-review` only when available.
 - Use `review-code` style Review Gate semantics for final status.
 
 ## Gates

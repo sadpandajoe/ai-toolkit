@@ -23,7 +23,17 @@ does not maintain a second workflow table.
    binding document declared for any capability the workflow uses. A binding is
    operational only after that document is loaded; do not infer syntax from a
    different provider.
-6. Preserve the selected workflow's authorization, state, verification, and
+<!-- aitk-model-route-exempt:meta-routing-policy -->
+6. Before dispatching any model worker, read `rules/model-assignment.md`, choose
+   a stable route named by the canonical workflow/reference, resolve it with
+   `<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, and launch it
+   with the same boundary through the provider's `routed_subagent`. The runner
+   derives, inlines, and hashes the exact contract closure from that inventoried
+   boundary; routed workers never rely on ambient skill loading.
+   `fresh_subagent`, `parallel_fanout`, or `independent_review`
+   describe isolation/scheduling; they never authorize an unpinned generic
+   worker or a model/effort downgrade.
+7. Preserve the selected workflow's authorization, state, verification, and
    reporting contract. Durable state uses the artifacts declared in
    `interfaces/contracts.json`; provider-native task state is only a disposable
    mirror.
