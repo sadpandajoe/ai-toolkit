@@ -750,8 +750,8 @@ class InstallerLifecycleTests(unittest.TestCase):
         self.assertEqual(0o755, stat.S_IMODE(outside.stat().st_mode))
 
     def test_moved_checkout_upgrade_and_rollback_restore_recorded_root(self) -> None:
-        first = Path(self.temporary.name) / "checkout-one"
-        second = Path(self.temporary.name) / "checkout-two"
+        first = self.base / "checkout-one"
+        second = self.base / "checkout-two"
         for checkout in (first, second):
             for name in (
                 "config",
