@@ -1,4 +1,4 @@
-"""Canonical workflow manifest and provider adapter generation."""
+"""Canonical workflow manifest loading and validation."""
 
 from __future__ import annotations
 
@@ -119,35 +119,6 @@ def load_workflows(root: Path, include_pgm: bool = False) -> list[Workflow]:
     if include_pgm and extension_manifest_path(root, "pgm").is_file():
         workflows.extend(load_extension_workflows(root, "pgm"))
     return workflows
-
-
-def _adapter(workflow: Workflow) -> str:
-    lines = [
-        "---",
-        f"description: {json.dumps(workflow.summary)}",
-    ]
-    if workflow.arguments:
-        lines.append(f"argument-hint: {json.dumps(workflow.arguments)}")
-    lines.extend(["---", f"# /{workflow.name}", ""])
-    lines.extend(f"@{{{{TOOLKIT_DIR}}}}/{rule}" for rule in workflow.rules)
-    lines.append(f"@{{{{TOOLKIT_DIR}}}}/{workflow.reference.as_posix()}")
-    return "\n".join(lines) + "\n"
-
-
-def command_adapters(root: Path) -> dict[Path, str]:
-    return {
-        Path("commands") / f"{workflow.name}.md": _adapter(workflow)
-        for workflow in load_workflows(root)
-    }
-
-
-def extension_command_adapters(root: Path, extension: str) -> dict[Path, str]:
-    return {
-        Path("extensions") / extension / "commands" / f"{workflow.name}.md": _adapter(
-            workflow
-        )
-        for workflow in load_extension_workflows(root, extension)
-    }
 
 
 def _validate_workflows(

@@ -11,23 +11,17 @@ from aitk.doctor import _secret_output, run_doctor
 class DoctorTests(unittest.TestCase):
     def make_clean_repo(self, root: Path) -> None:
         for directory in (
-            "commands",
             "config",
             "hooks",
             "rules",
             "skills/example/references",
         ):
             (root / directory).mkdir(parents=True, exist_ok=True)
-        (root / "README.md").write_text(
-            "commands/hello.md rules/universal.md skills/example/\n"
-        )
+        (root / "README.md").write_text("rules/universal.md skills/example/\n")
         (root / ".gitignore").write_text(
             "PROJECT.md\nPROJECT_ARCHIVE.md\nPLAN.md\nWATCH.md\nCHERRY_PICK.md\nCI_FIX.md\nbuild/\n"
         )
         (root / "config/CLAUDE.md").write_text("@{{TOOLKIT_DIR}}/rules/universal.md\n")
-        (root / "commands/hello.md").write_text(
-            "# Hello\n\n@{{TOOLKIT_DIR}}/rules/universal.md\n"
-        )
         (root / "rules/universal.md").write_text("# Universal\n")
         (root / "skills/example/SKILL.md").write_text(
             "---\n"
@@ -49,6 +43,36 @@ class DoctorTests(unittest.TestCase):
             findings = run_doctor(root)
             problems = [finding for finding in findings if finding.status != "PASS"]
             self.assertEqual([], problems)
+
+    def test_retired_command_sources_and_slash_aliases_fail_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / "commands").mkdir()
+            (root / "commands/fix-bug.md").write_text("# Retired\n")
+            (root / "extensions/pgm/commands").mkdir(parents=True)
+            (root / "extensions/pgm/commands/report.md").write_text("# Retired\n")
+            extension_skill = root / "extensions/pgm/skills/pgm/SKILL.md"
+            extension_skill.parent.mkdir(parents=True)
+            extension_skill.write_text("Route this work to `/create-status-report`.\n")
+
+            finding = next(
+                item
+                for item in run_doctor(root)
+                if item.check == "canonical-ownership"
+            )
+
+            self.assertEqual("FAIL", finding.status)
+            combined = " ".join(finding.details)
+            self.assertIn("commands/fix-bug.md: retired command source", combined)
+            self.assertIn(
+                "extensions/pgm/commands/report.md: retired command source",
+                combined,
+            )
+            self.assertIn(
+                "extensions/pgm/skills/pgm/SKILL.md: retired slash alias",
+                combined,
+            )
 
     def test_broken_link_and_bad_description_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -3,7 +3,7 @@
 ## `create-feature` Is The Current Workflow Pattern
 
 Use `skills/workflows/references/create-feature.md` as the reference shape when
-refactoring long-running workflows. Its generated command alias is never the
+refactoring long-running workflows. The canonical skill reference is the
 behavior owner.
 
 Good workflow shape:

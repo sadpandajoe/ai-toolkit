@@ -38,6 +38,35 @@ BEGIN = "# >>> ai-toolkit managed guidance >>>"
 END = "# <<< ai-toolkit managed guidance <<<"
 LEDGER_VERSION = 1
 FAILPOINT_ENV = "AITK_INSTALL_FAILPOINT"
+LEGACY_COMMAND_NAMES_0_1 = (
+    "address-feedback",
+    "check-resources",
+    "checkpoint",
+    "complete-project",
+    "create-feature",
+    "create-pr",
+    "create-status-report",
+    "create-tests",
+    "create-velocity-report",
+    "custom-skills-info",
+    "fix-bug",
+    "fix-ci",
+    "metrics",
+    "optimize-cost",
+    "reflect",
+    "review-code",
+    "review-code-adversarial",
+    "review-plan",
+    "review-pr",
+    "run-test-plan",
+    "show-cost",
+    "start",
+    "test-pr",
+    "toolkit-doctor",
+    "update-tests",
+    "verify",
+    "watch-pr",
+)
 
 
 class LifecycleError(RuntimeError):
@@ -226,7 +255,6 @@ def _public_skills(root: Path, with_pgm: bool) -> list[tuple[str, Path]]:
 
 
 def desired_targets(paths: InstallPaths, with_pgm: bool) -> list[Target]:
-    workflows = load_workflows(paths.root, include_pgm=with_pgm)
     result = [
         Target(
             "claude-guidance",
@@ -241,15 +269,6 @@ def desired_targets(paths: InstallPaths, with_pgm: bool) -> list[Target]:
             paths.root / "build/config/AGENTS.md",
         ),
     ]
-    result.extend(
-        Target(
-            f"command:{workflow.name}",
-            "symlink",
-            paths.home / ".claude/commands" / f"{workflow.name}.md",
-            paths.root / "build/commands" / f"{workflow.name}.md",
-        )
-        for workflow in workflows
-    )
     for name, source in _public_skills(paths.root, with_pgm):
         result.append(
             Target(
@@ -268,6 +287,19 @@ def desired_targets(paths: InstallPaths, with_pgm: bool) -> list[Target]:
             )
         )
     return sorted(result, key=lambda item: str(item.target))
+
+
+def _legacy_command_targets(paths: InstallPaths) -> list[Target]:
+    """Return the removed 0.1.x command inventory for ledger migration only."""
+    return [
+        Target(
+            f"command:{name}",
+            "symlink",
+            paths.home / ".claude/commands" / f"{name}.md",
+            paths.root / "build/commands" / f"{name}.md",
+        )
+        for name in LEGACY_COMMAND_NAMES_0_1
+    ]
 
 
 def _legacy_targets(paths: InstallPaths) -> dict[Path, tuple[str, ...]]:
@@ -423,6 +455,25 @@ def _remove(path: Path) -> None:
     elif path.is_dir():
         shutil.rmtree(path)
         _fsync_dir(path.parent)
+
+
+def _copy_personal_entry(source: Path, destination: Path) -> None:
+    """Copy a legacy personal command without changing symlink resolution."""
+    if source.is_symlink():
+        link_target = os.readlink(source)
+        if not Path(link_target).is_absolute():
+            absolute_target = Path(os.path.abspath(source.parent / link_target))
+            link_target = os.path.relpath(absolute_target, start=destination.parent)
+        destination.symlink_to(link_target)
+    elif source.is_dir():
+        destination.mkdir()
+        for child in sorted(source.iterdir()):
+            _copy_personal_entry(child, destination / child.name)
+        shutil.copystat(source, destination, follow_symlinks=False)
+    elif source.is_file():
+        shutil.copy2(source, destination)
+    else:
+        raise LifecycleError(f"unsupported personal command entry: {source}")
 
 
 def _tree_digest(path: Path) -> str:
@@ -601,18 +652,21 @@ def _allowed_targets(paths: InstallPaths) -> set[str]:
     desired = desired_targets(paths, with_pgm=True)
     return (
         {str(item.target) for item in desired}
+        | {str(item.target) for item in _legacy_command_targets(paths)}
         | {str(path) for path in _legacy_targets(paths)}
         | {str(path) for path in _legacy_directories(paths)}
     )
 
 
 def _allowed_records(paths: InstallPaths) -> dict[str, Target]:
-    return {str(item.target): item for item in desired_targets(paths, with_pgm=True)}
+    records = desired_targets(paths, with_pgm=True) + _legacy_command_targets(paths)
+    return {str(item.target): item for item in records}
 
 
 def _allowed_owned_dirs(paths: InstallPaths) -> set[str]:
     result: set[str] = set()
-    for item in desired_targets(paths, with_pgm=True):
+    targets = desired_targets(paths, with_pgm=True) + _legacy_command_targets(paths)
+    for item in targets:
         root = _root_for_target(paths, item.target)
         current = item.target.parent
         while current != root:
@@ -1249,10 +1303,32 @@ def install(paths: InstallPaths, with_pgm: bool = False) -> LifecycleResult:
         for action, item in mutations:
             target_path = item.target if isinstance(item, Target) else item
             if action == "migrate-dir":
+                personal_sources: list[Path] = []
+                legacy_command_directory = paths.home / ".claude/commands"
+                if target_path == legacy_command_directory:
+                    toolkit_names = {
+                        target.target.name
+                        for target in _legacy_command_targets(paths)
+                    }
+                    legacy_source = target_path.resolve(strict=False)
+                    if legacy_source.is_dir():
+                        personal_sources = [
+                            source
+                            for source in sorted(legacy_source.iterdir())
+                            if source.name not in toolkit_names
+                        ]
                 _remove(target_path)
-                target_path.mkdir(parents=True, exist_ok=False)
+                needs_directory = any(
+                    target.target.is_relative_to(target_path) for target in desired
+                )
+                if needs_directory or personal_sources:
+                    target_path.mkdir(parents=True, exist_ok=False)
+                    if needs_directory:
+                        created_dirs.append(str(target_path))
+                    for source in personal_sources:
+                        _copy_personal_entry(source, target_path / source.name)
+                    _fsync_dir(target_path)
                 _fsync_dir(target_path.parent)
-                created_dirs.append(str(target_path))
                 changed.append(str(target_path))
                 _fail("link-mutated")
                 continue
@@ -1303,6 +1379,21 @@ def install(paths: InstallPaths, with_pgm: bool = False) -> LifecycleResult:
                 _fail("guidance-mutated")
             changed.append(str(item.target))
 
+        retained_owned_dirs = [
+            directory
+            for directory in old_owned_dirs
+            if any(
+                target.target.is_relative_to(Path(directory)) for target in desired
+            )
+        ]
+        _prune_dirs(
+            [
+                directory
+                for directory in old_owned_dirs
+                if directory not in retained_owned_dirs
+            ]
+        )
+
         new_active: list[dict[str, object]] = []
         for target in desired:
             if (
@@ -1333,7 +1424,7 @@ def install(paths: InstallPaths, with_pgm: bool = False) -> LifecycleResult:
                 new_active.append(record)
         after = _snapshot_many(affected)
         operation = "upgrade" if ledger and ledger.get("active") else "install"
-        new_owned = sorted(set(old_owned_dirs) | set(created_dirs))
+        new_owned = sorted(set(retained_owned_dirs) | set(created_dirs))
         payload: dict[str, object] = {
             "version": LEDGER_VERSION,
             "status": "installed",

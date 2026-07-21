@@ -27,5 +27,4 @@ This opt-in public router reads workflow identity and routing data only from
    Preserve the workflow's authorization, checkpoint, verification, and
    reporting contract.
 
-Generated PGM command files are deprecated compatibility aliases and contain no
-reporting procedure.
+This skill and its natural-language triggers are the public PGM interface.

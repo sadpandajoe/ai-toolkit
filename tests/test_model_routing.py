@@ -346,7 +346,7 @@ class ModelRoutingTests(unittest.TestCase):
         self.assertIn("mcp_servers={}", argv)
         self.assertIn("project_doc_max_bytes=0", argv)
         self.assertEqual("<isolated-project-root>", argv[argv.index("--cd") + 1])
-        self.assertEqual(str(Path(cwd)), argv[argv.index("--add-dir") + 1])
+        self.assertEqual(str(Path(cwd).resolve()), argv[argv.index("--add-dir") + 1])
         self.assertIn("--output-last-message", argv)
         self.assertNotIn("--fallback-model", argv)
 

@@ -17,7 +17,7 @@ from .interfaces import (
     validate_support_interface,
 )
 from .model_routing import validate_model_routing
-from .installer import InstallPaths, inspect_install
+from .installer import LEGACY_COMMAND_NAMES_0_1, InstallPaths, inspect_install
 from .workflows import (
     extension_manifest_path,
     manifest_path,
@@ -34,7 +34,7 @@ class Finding:
     details: tuple[str, ...] = ()
 
 
-CONTENT_DIRECTORIES = ("commands", "config", "docs", "extensions", "rules", "skills")
+CONTENT_DIRECTORIES = ("config", "docs", "extensions", "rules", "skills")
 IGNORED_TREE_PARTS = {
     ".git",
     ".venv",
@@ -177,11 +177,14 @@ def _provider_portability(root: Path) -> Finding:
 
 def _canonical_ownership(root: Path) -> Finding:
     problems: list[str] = []
+    canonical_directories = [root / "rules", root / "skills"]
+    canonical_directories.extend((root / "extensions").glob("*/rules"))
+    canonical_directories.extend((root / "extensions").glob("*/skills"))
     patterns = (
         re.compile(r"commands/[a-z0-9_-]+\.md"),
         re.compile(r"\b(?:the\s+)?command\s+(?:owns|is the source of truth)", re.I),
     )
-    for directory in (root / "rules", root / "skills"):
+    for directory in canonical_directories:
         if not directory.is_dir():
             continue
         for source in sorted(directory.rglob("*.md")):
@@ -190,6 +193,24 @@ def _canonical_ownership(root: Path) -> Finding:
             text = source.read_text()
             if any(pattern.search(text) for pattern in patterns):
                 problems.append(str(source.relative_to(root)))
+    retired = LEGACY_COMMAND_NAMES_0_1 + ("archive-project-file", "cherry-pick")
+    invocation = re.compile(
+        r"(?<![A-Za-z0-9_.-])/" + "(?:" + "|".join(map(re.escape, retired)) + r")\b"
+    )
+    for directory in canonical_directories:
+        if not directory.is_dir():
+            continue
+        for source in sorted(directory.rglob("*.md")):
+            if not _ignored(root, source) and invocation.search(source.read_text()):
+                problems.append(f"{source.relative_to(root)}: retired slash alias")
+    command_directories = [root / "commands"]
+    command_directories.extend((root / "extensions").glob("*/commands"))
+    for directory in command_directories:
+        if directory.is_dir():
+            problems.extend(
+                f"{source.relative_to(root)}: retired command source"
+                for source in sorted(directory.rglob("*.md"))
+            )
     return Finding(
         "canonical-ownership",
         "FAIL" if problems else "PASS",
@@ -212,7 +233,7 @@ def _source_imports(root: Path) -> Finding:
 def _readme_inventory(root: Path) -> Finding:
     readme = (root / "README.md").read_text() if (root / "README.md").is_file() else ""
     problems: list[str] = []
-    for directory_name in ("commands", "rules"):
+    for directory_name in ("rules",):
         directory = root / directory_name
         if directory.is_dir():
             for source in sorted(directory.glob("*.md")):
@@ -316,16 +337,8 @@ def _state_protection(root: Path) -> Finding:
 
 
 def _build_freshness(root: Path) -> Finding:
-    extension_names = (
-        {path.name for path in (root / "extensions/pgm/commands").glob("*.md")}
-        if (root / "extensions/pgm/commands").is_dir()
-        else set()
-    )
-    include_pgm = any(
-        (root / "build/commands" / name).is_file() for name in extension_names
-    )
     try:
-        problems = compare_build(root, include_pgm=include_pgm)
+        problems = compare_build(root)
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         return Finding(
             "build-freshness",

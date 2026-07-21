@@ -364,15 +364,7 @@ def _pgm_preflight(arguments: argparse.Namespace) -> int:
 
 def _check(arguments: argparse.Namespace) -> int:
     root = _root(arguments.root)
-    extension_names = (
-        {path.name for path in (root / "extensions/pgm/commands").glob("*.md")}
-        if (root / "extensions/pgm/commands").is_dir()
-        else set()
-    )
-    include_pgm = any(
-        (root / "build/commands" / name).is_file() for name in extension_names
-    )
-    differences = compare_build(root, include_pgm=include_pgm)
+    differences = compare_build(root)
     findings = run_doctor(root)
     doctor_problems = [finding for finding in findings if finding.status != "PASS"]
     tests = subprocess.run(
@@ -440,7 +432,7 @@ def parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="emit machine-readable output"
     )
     build.add_argument(
-        "--with-pgm", action="store_true", help="include optional PGM commands"
+        "--with-pgm", action="store_true", help="validate the optional PGM extension"
     )
     build.set_defaults(handler=_build)
 

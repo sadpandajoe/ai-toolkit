@@ -218,7 +218,7 @@ class InstallerOwnershipTests(unittest.TestCase):
             )
             self.assertEqual(first_snapshot, second_snapshot)
 
-    def test_install_preserves_conflicts_and_reports_failure(self) -> None:
+    def test_install_ignores_personal_legacy_command_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             conflict = home / ".claude/commands/start.md"
@@ -227,8 +227,7 @@ class InstallerOwnershipTests(unittest.TestCase):
 
             result = self.run_installer(home)
 
-            self.assertEqual(1, result.returncode)
-            self.assertIn("conflict preserved", result.stderr)
+            self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("# Personal start command\n", conflict.read_text())
             self.assertTrue((home / ".agents/skills/workflows").is_symlink())
 
@@ -239,25 +238,16 @@ class InstallerOwnershipTests(unittest.TestCase):
         self.assertIn("write_build(paths.root", implementation)
         self.assertNotIn('rm -rf "$BUILD_DIR"', installer)
 
-    def test_optional_pgm_commands_are_linked_during_install(self) -> None:
+    def test_optional_pgm_skill_is_linked_during_install(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             result = self.run_installer(home, "--with-pgm")
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertTrue(
-                (home / ".claude/commands/create-status-report.md").is_symlink()
-            )
-            self.assertTrue(
-                (home / ".claude/commands/create-velocity-report.md").is_symlink()
-            )
             self.assertTrue((home / ".claude/skills/pgm").is_symlink())
             self.assertTrue((home / ".agents/skills/pgm").is_symlink())
 
             regular = self.run_installer(home)
             self.assertEqual(0, regular.returncode, regular.stderr)
-            self.assertFalse(
-                (home / ".claude/commands/create-status-report.md").exists()
-            )
             self.assertFalse((home / ".agents/skills/pgm").exists())
 
     def test_install_migrates_legacy_whole_directory_links(self) -> None:
@@ -271,11 +261,9 @@ class InstallerOwnershipTests(unittest.TestCase):
 
             result = self.run_installer(home)
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertTrue((claude / "commands").is_dir())
-            self.assertFalse((claude / "commands").is_symlink())
+            self.assertFalse((claude / "commands").exists())
             self.assertTrue((claude / "skills").is_dir())
             self.assertFalse((claude / "skills").is_symlink())
-            self.assertTrue((claude / "commands/fix-bug.md").is_symlink())
             self.assertTrue((claude / "skills/workflows").is_symlink())
             self.assertFalse((claude / "skills/debug").exists())
             self.assertIn(

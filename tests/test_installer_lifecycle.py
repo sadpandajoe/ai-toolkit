@@ -13,6 +13,7 @@ from unittest import mock
 from aitk.doctor import run_doctor
 from aitk.installer import (
     FAILPOINT_ENV,
+    _legacy_command_targets,
     inspect_install,
     install,
     resolve_paths,
@@ -44,7 +45,8 @@ def tree_state(root: Path) -> tuple[tuple[object, ...], ...]:
 class InstallerLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.home = Path(self.temporary.name) / "home"
+        self.base = Path(self.temporary.name).resolve()
+        self.home = self.base / "home"
         self.home.mkdir()
         self.paths = resolve_paths(
             ROOT,
@@ -57,7 +59,7 @@ class InstallerLifecycleTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def copy_checkout(self, name: str) -> Path:
-        checkout = Path(self.temporary.name) / name
+        checkout = self.base / name
         for directory in (
             "config",
             "docs",
@@ -84,7 +86,7 @@ class InstallerLifecycleTests(unittest.TestCase):
             with self.subTest(
                 content=content, mode=oct(mode)
             ), tempfile.TemporaryDirectory() as temporary:
-                home = Path(temporary) / "home"
+                home = Path(temporary).resolve() / "home"
                 claude = home / ".claude/CLAUDE.md"
                 codex = home / ".codex/AGENTS.md"
                 claude.parent.mkdir(parents=True)
@@ -376,12 +378,12 @@ class InstallerLifecycleTests(unittest.TestCase):
 
         self.paths.ledger.write_text(json.dumps(original))
         os.chmod(self.paths.ledger, 0o600)
-        commands = self.home / ".claude/commands"
-        shutil.rmtree(commands)
-        outside = Path(self.temporary.name) / "outside"
+        skills = self.home / ".claude/skills"
+        shutil.rmtree(skills)
+        outside = self.base / "outside"
         outside.mkdir()
         (outside / "sentinel").write_text("safe\n")
-        commands.symlink_to(outside)
+        skills.symlink_to(outside)
         before = tree_state(self.home)
         self.assertEqual("refused", uninstall(self.paths).status)
         self.assertEqual(before, tree_state(self.home))
@@ -395,7 +397,7 @@ class InstallerLifecycleTests(unittest.TestCase):
             "ledger-temp-written",
         ):
             with self.subTest(point=point), tempfile.TemporaryDirectory() as temporary:
-                home = Path(temporary) / "home"
+                home = Path(temporary).resolve() / "home"
                 home.mkdir()
                 personal = home / ".claude/CLAUDE.md"
                 personal.parent.mkdir(parents=True)
@@ -476,7 +478,7 @@ class InstallerLifecycleTests(unittest.TestCase):
         initial = json.loads(paths.ledger.read_text())
         pyproject = checkout / "pyproject.toml"
         pyproject.write_text(
-            pyproject.read_text().replace('version = "0.1.0"', 'version = "0.1.1"')
+            pyproject.read_text().replace('version = "0.2.0"', 'version = "0.2.1"')
         )
 
         self.assertTrue(
@@ -489,15 +491,168 @@ class InstallerLifecycleTests(unittest.TestCase):
         self.assertEqual("upgrade", upgraded.operation)
         self.assertEqual("ok", upgraded.status, upgraded.conflicts)
         self.assertEqual(
-            "0.1.1", json.loads(paths.ledger.read_text())["toolkit_version"]
+            "0.2.1", json.loads(paths.ledger.read_text())["toolkit_version"]
         )
-
         restored = rollback(paths)
         self.assertEqual("ok", restored.status, restored.conflicts)
         self.assertEqual(
             initial["toolkit_version"],
             json.loads(paths.ledger.read_text())["toolkit_version"],
         )
+
+    def test_0_1_command_ownership_migrates_without_touching_personal_commands(
+        self,
+    ) -> None:
+        checkout = self.copy_checkout("legacy-command-checkout")
+        paths = resolve_paths(
+            checkout,
+            self.home,
+            self.home / ".codex",
+            self.home / ".agents",
+        )
+        self.assertEqual("ok", install(paths).status)
+        command_dir = self.home / ".claude/commands"
+        command_dir.mkdir(parents=True)
+        target = command_dir / "fix-bug.md"
+        source = checkout / "build/commands/fix-bug.md"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("# Legacy fix-bug adapter\n")
+        target.symlink_to(source)
+        personal = command_dir / "personal.md"
+        personal.write_text("# Personal\n")
+        ledger = json.loads(paths.ledger.read_text())
+        ledger["toolkit_version"] = "0.1.0"
+        ledger["active"].append(
+            {
+                "name": "command:fix-bug",
+                "kind": "symlink",
+                "target": str(target),
+                "source": str(source),
+                "link_target": str(source),
+                "created": True,
+            }
+        )
+        ledger["owned_dirs"].append(str(command_dir))
+        ledger["last_transaction"] = None
+        paths.ledger.write_text(json.dumps(ledger))
+        os.chmod(paths.ledger, 0o600)
+        before_ledger = paths.ledger.read_bytes()
+
+        with mock.patch.dict(os.environ, {FAILPOINT_ENV: "backup-created"}):
+            refused = install(paths)
+
+        self.assertEqual("refused", refused.status)
+        self.assertTrue(target.exists())
+        self.assertEqual("# Legacy fix-bug adapter\n", target.read_text())
+        self.assertEqual("# Personal\n", personal.read_text())
+        self.assertEqual(before_ledger, paths.ledger.read_bytes())
+
+        result = install(paths)
+
+        self.assertEqual("ok", result.status, result.conflicts)
+        self.assertEqual("upgrade", result.operation)
+        self.assertFalse(target.exists())
+        self.assertEqual("# Personal\n", personal.read_text())
+        upgraded = json.loads(paths.ledger.read_text())
+        self.assertNotIn(str(command_dir), upgraded["owned_dirs"])
+        self.assertFalse(
+            any(item["name"].startswith("command:") for item in upgraded["active"])
+        )
+
+        restored = rollback(paths)
+
+        self.assertEqual("ok", restored.status, restored.conflicts)
+        self.assertTrue(target.is_symlink())
+        self.assertTrue(target.exists())
+        self.assertEqual(str(source), os.readlink(target))
+        self.assertEqual("# Legacy fix-bug adapter\n", target.read_text())
+        self.assertEqual("# Personal\n", personal.read_text())
+        rolled_back = json.loads(paths.ledger.read_text())
+        self.assertTrue(
+            any(item["name"] == "command:fix-bug" for item in rolled_back["active"])
+        )
+
+    def test_0_1_whole_command_link_keeps_personal_entries_and_rolls_back(
+        self,
+    ) -> None:
+        checkout = self.copy_checkout("legacy-whole-command-checkout")
+        legacy = checkout / "build/commands"
+        legacy.mkdir(parents=True)
+        (legacy / "fix-bug.md").write_text("# Legacy toolkit alias\n")
+        (legacy / "personal.md").write_text("# Personal alias\n")
+        external = checkout / "my-commands/personal.md"
+        external.parent.mkdir()
+        external.write_text("# External personal alias\n")
+        (legacy / "personal-link.md").symlink_to("../../my-commands/personal.md")
+        personal_directory = legacy / "personal-directory"
+        personal_directory.mkdir()
+        (personal_directory / "nested-link.md").symlink_to(
+            "../../../my-commands/personal.md"
+        )
+        claude = self.home / ".claude"
+        claude.mkdir(parents=True)
+        commands = claude / "commands"
+        commands.symlink_to(legacy)
+        paths = resolve_paths(
+            checkout,
+            self.home,
+            self.home / ".codex",
+            self.home / ".agents",
+        )
+
+        result = install(paths)
+
+        self.assertEqual("ok", result.status, result.conflicts)
+        self.assertTrue(commands.is_dir())
+        self.assertFalse(commands.is_symlink())
+        self.assertFalse((commands / "fix-bug.md").exists())
+        self.assertEqual("# Personal alias\n", (commands / "personal.md").read_text())
+        self.assertTrue((commands / "personal-link.md").is_symlink())
+        self.assertEqual(
+            "# External personal alias\n",
+            (commands / "personal-link.md").read_text(),
+        )
+        self.assertEqual(
+            "# External personal alias\n",
+            (commands / "personal-directory/nested-link.md").read_text(),
+        )
+        self.assertEqual("# Legacy toolkit alias\n", (legacy / "fix-bug.md").read_text())
+        self.assertEqual("# Personal alias\n", (legacy / "personal.md").read_text())
+
+        restored = rollback(paths)
+
+        self.assertEqual("ok", restored.status, restored.conflicts)
+        self.assertTrue(commands.is_symlink())
+        self.assertEqual("# Legacy toolkit alias\n", (commands / "fix-bug.md").read_text())
+        self.assertEqual("# Personal alias\n", (commands / "personal.md").read_text())
+        self.assertEqual(
+            "# External personal alias\n",
+            (commands / "personal-link.md").read_text(),
+        )
+        self.assertEqual(
+            "# External personal alias\n",
+            (commands / "personal-directory/nested-link.md").read_text(),
+        )
+
+    def test_0_1_command_inventory_is_independent_of_the_live_manifest(self) -> None:
+        checkout = self.copy_checkout("legacy-inventory-checkout")
+        manifest = checkout / "interfaces/workflows.json"
+        payload = json.loads(manifest.read_text())
+        payload["workflows"] = [
+            item for item in payload["workflows"] if item["name"] != "fix-bug"
+        ]
+        manifest.write_text(json.dumps(payload))
+        paths = resolve_paths(
+            checkout,
+            self.home,
+            self.home / ".codex",
+            self.home / ".agents",
+        )
+
+        names = {target.name for target in _legacy_command_targets(paths)}
+
+        self.assertIn("command:fix-bug", names)
+        self.assertIn("command:create-status-report", names)
 
     def test_concurrent_installs_serialize_to_one_change_and_one_noop(self) -> None:
         command = [

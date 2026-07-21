@@ -114,7 +114,7 @@ pre-commit run --files <changed-file-1> <changed-file-2>
 # or, if pre-commit isn't the repo's tool, use the equivalent CI lint/format command
 ```
 
-`/cherry-pick` authorizes local amend of the in-progress cherry-pick commit for validation-only cleanup before any push. Do not amend older commits, rebase, or push unless the calling workflow separately authorizes that boundary.
+`$cherry-pick` authorizes local amend of the in-progress cherry-pick commit for validation-only cleanup before any push. Do not amend older commits, rebase, or push unless the calling workflow separately authorizes that boundary.
 
 **If pre-commit auto-fixes files** (ruff-format, end-of-files, trailing whitespace, etc.):
 ```bash

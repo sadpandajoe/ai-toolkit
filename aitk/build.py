@@ -8,8 +8,6 @@ from pathlib import Path
 import tempfile
 
 from .workflows import (
-    command_adapters,
-    extension_command_adapters,
     extension_manifest_path,
     manifest_path,
     validate_extension_workflows,
@@ -41,19 +39,6 @@ def _target(root: Path, relative: Path) -> Path:
     return target
 
 
-def _source_files(root: Path, include_pgm: bool) -> list[tuple[Path, Path]]:
-    sources = [(root / "config/CLAUDE.md", Path("build/config/CLAUDE.md"))]
-    command_dirs = [root / "commands"]
-    if include_pgm:
-        command_dirs.append(root / "extensions/pgm/commands")
-    for command_dir in command_dirs:
-        if not command_dir.is_dir():
-            continue
-        for source in sorted(command_dir.glob("*.md")):
-            sources.append((source, Path("build/commands") / source.name))
-    return sources
-
-
 def expected_build(root: Path, include_pgm: bool = False) -> dict[Path, str]:
     """Return the complete generated file map without touching the filesystem."""
     root = root.resolve()
@@ -71,25 +56,6 @@ def expected_build(root: Path, include_pgm: bool = False) -> dict[Path, str]:
                 PLACEHOLDER, str(root)
             )
 
-    if manifest_path(root).is_file():
-        adapters = command_adapters(root)
-        expected.update(adapters)
-        for relative, content in adapters.items():
-            expected[Path("build/commands") / relative.name] = content.replace(
-                PLACEHOLDER, str(root)
-            )
-        if include_pgm and extension_manifest_path(root, "pgm").is_file():
-            extension_adapters = extension_command_adapters(root, "pgm")
-            expected.update(extension_adapters)
-            for relative, content in extension_adapters.items():
-                expected[Path("build/commands") / relative.name] = content.replace(
-                    PLACEHOLDER, str(root)
-                )
-        return expected
-
-    for source, destination in _source_files(root, include_pgm):
-        if source.is_file() and destination != Path("build/config/CLAUDE.md"):
-            expected[destination] = source.read_text().replace(PLACEHOLDER, str(root))
     return expected
 
 
@@ -106,11 +72,7 @@ def compare_build(root: Path, include_pgm: bool = False) -> list[str]:
             differences.append(f"different: {relative.as_posix()}")
 
     expected_paths = set(expected)
-    generated_directories = [root / "build/config", root / "build/commands"]
-    if manifest_path(root).is_file():
-        generated_directories.append(root / "commands")
-    if include_pgm and extension_manifest_path(root, "pgm").is_file():
-        generated_directories.append(root / "extensions/pgm/commands")
+    generated_directories = [root / "build/config"]
     for directory in generated_directories:
         if not directory.is_dir():
             continue
@@ -152,11 +114,7 @@ def write_build(root: Path, include_pgm: bool = False) -> BuildResult:
 
     removed: list[Path] = []
     expected_paths = set(expected)
-    generated_directories = [root / "build/config", root / "build/commands"]
-    if manifest_path(root).is_file():
-        generated_directories.append(root / "commands")
-    if include_pgm and extension_manifest_path(root, "pgm").is_file():
-        generated_directories.append(root / "extensions/pgm/commands")
+    generated_directories = [root / "build/config"]
     for directory in generated_directories:
         if not directory.is_dir():
             continue

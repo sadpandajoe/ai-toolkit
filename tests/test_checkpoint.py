@@ -77,7 +77,7 @@ def shortest_phase_path(contract: dict[str, object], target: str) -> list[str]:
 class CheckpointTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.directory = Path(self.temporary.name)
+        self.directory = Path(self.temporary.name).resolve()
         self.contracts = contracts_by_name(ROOT)
 
     def tearDown(self) -> None:

@@ -38,5 +38,4 @@ does not maintain a second workflow table.
    `interfaces/contracts.json`; provider-native task state is only a disposable
    mirror.
 
-Generated `/commands` are deprecated compatibility aliases. They may route here
-but never own behavior or public metadata.
+This skill and natural-language routing are the public workflow interface.

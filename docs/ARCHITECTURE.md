@@ -14,14 +14,13 @@ AI Toolkit separates stable workflow behavior from provider syntax.
    `guidance.json`, and `support.json` make public discovery, provider
    capabilities, fail-closed model routing, shared always-on guidance, and the
    release matrix explicit.
-4. `commands/` is generated Claude compatibility output. It imports rules and one canonical workflow reference; it contains no procedure.
-5. `.codex-plugin/`, `skills/*/agents/openai.yaml`, `hooks/hooks.json`, and `config/AGENTS.md` form the Codex adapter.
-6. `aitk/` and `bin/aitk` build, route, validate, transact installation, and
+4. `.codex-plugin/`, `skills/*/agents/openai.yaml`, `hooks/hooks.json`, and `config/AGENTS.md` form the Codex adapter.
+5. `aitk/` and `bin/aitk` build, route, validate, transact installation, and
    serialize durable workflow checkpoints.
 
-Optional extensions repeat the same pattern below `extensions/<name>/`: a manifest, canonical Agent Skill, generated compatibility commands, and any extension-specific rules. `--with-pgm` opts the bundled PGM extension into build, routing, and installation.
+Optional extensions repeat the same pattern below `extensions/<name>/`: a manifest, canonical Agent Skill, and any extension-specific rules. `--with-pgm` opts the bundled PGM extension into validation, routing, and installation.
 
-The version 0.1.0 Codex plugin packages the core `skills/` tree. PGM remains an
+The version 0.2.0 Codex plugin packages the core `skills/` tree. PGM remains an
 explicitly source-linked extension until plugin distribution supports its
 separate skill root; `interfaces/support.json` makes that distribution boundary
 machine-readable.
@@ -33,11 +32,9 @@ workflow manifest + v2 contract + canonical skill reference
                  │
        ┌─────────┴──────────┐
        │                    │
- bin/aitk build      checkpoint runtime
-       │            (phase/effect ledger)
-       │                    │
-generated deprecated  PROJECT.md machine block
-Claude alias
+ routing/validation  checkpoint runtime
+                            │
+                   PROJECT.md machine block
 ```
 
 Provider adapters may translate invocation syntax, tool names, planning controls, scheduling, and independent-review capabilities. They may not weaken authorization boundaries, protected state, stop conditions, verification labels, or reporting contracts.
@@ -89,8 +86,8 @@ conflicts, and restore exact bytes/modes/links on pre-commit failure. A moved
 checkout is an explicit upgrade whose prior root remains recoverable.
 
 Internal skills are packaged for resolver use but are not linked as standalone
-Agent Skills. Generated `commands/` files are deprecated Claude aliases and
-have no lifecycle or behavior authority.
+Agent Skills. During a 0.2.0 upgrade, the lifecycle ledger removes old
+toolkit-owned Claude aliases while preserving unrelated personal commands.
 
 ## Adding a workflow
 
@@ -99,10 +96,10 @@ have no lifecycle or behavior authority.
 3. Add a total v2 entry to `interfaces/contracts.json`; use the canonical
    durable runtime rule and runtime-contract section when execution is durable.
 4. Classify any new skill in `interfaces/skills.json`.
-5. Run `bin/aitk build` (or `--with-pgm` for the bundled extension).
-6. Add positive and negative routing, semantic, recovery, and adapter cases,
+5. Run `bin/aitk build` (or `--with-pgm` to validate the bundled extension).
+6. Add positive and negative routing, semantic, recovery, and provider cases,
    then run `bin/aitk check`.
 
-Do not add workflow logic to `commands/`, provider config, hooks, or the manifest.
+Do not add workflow logic to provider config, hooks, or the manifest.
 
-For an optional extension, use the matching `extensions/<name>/interfaces/workflows.json` and `extensions/<name>/skills/<name>/references/` locations, then validate its generated aliases with the same conformance gate.
+For an optional extension, use the matching `extensions/<name>/interfaces/workflows.json` and `extensions/<name>/skills/<name>/references/` locations, then validate it with the same conformance gate.

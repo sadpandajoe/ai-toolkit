@@ -17,8 +17,8 @@
 - **Rules evolve from usage** — see `rules/rule-maintenance.md` for how to strengthen, update, or extract rules
 
 ## Agent Context Model
-- **Rules are always-on constraints and routing hints** — keep them short; point to commands, skills, or deeper docs instead of carrying task libraries.
-- **Commands expand prompts** — they create context for a workflow and may reference skill paths, but skills are selected from descriptions and the expanded prompt.
+- **Rules are always-on constraints and routing hints** — keep them short; point to skills or deeper docs instead of carrying task libraries.
+- **Skills own workflow context** — natural-language routing and explicit skill invocation select canonical procedures; provider adapters only translate capabilities.
 - **Skill descriptions are classifiers** — make trigger and non-trigger boundaries explicit. Put skill-only rules, lessons, and gotchas beside the skill.
 
 ## Communication Rules

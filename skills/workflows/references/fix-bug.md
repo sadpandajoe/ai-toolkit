@@ -94,7 +94,7 @@ Use the happy paths and path rules as the primary flow. Use this table as a phas
 |------|-------|-------|----------------------|
 | Normalize input | Main thread | `rules/input-detection.md` | Load immediately. Fetch ticket context before classification or implementation. |
 | Complexity Gate | Main thread | `rules/complexity-gate.md` | Load immediately. Choose TRIVIAL, MODERATE, or STANDARD path. |
-| Existing fix check | Main thread | [skills/debug/references/check-existing-fix.md](../../debug/references/check-existing-fix.md) | MODERATE/STANDARD path before planning or coding. If `FIXED_UPSTREAM`, route to `/cherry-pick`; if `FIX_PENDING_PR`, stop with choices. |
+| Existing fix check | Main thread | [skills/debug/references/check-existing-fix.md](../../debug/references/check-existing-fix.md) | MODERATE/STANDARD path before planning or coding. If `FIXED_UPSTREAM`, route to `$cherry-pick`; if `FIX_PENDING_PR`, stop with choices. |
 | Triage/repro | Main thread by default | [skills/qa/references/triage-bug.md](../../qa/references/triage-bug.md) | Load when report evidence is weak, user-visible behavior needs repro, or STANDARD path needs scenario evidence. |
 | Environment prep | Main thread | [skills/preflight/references/prepare-environment.md](../../preflight/references/prepare-environment.md) | Load only when repro or validation needs a runnable app. |
 | RCA investigation | Main thread by default; bounded investigation lanes only when causes are independent | [skills/debug/references/investigate-change.md](../../debug/references/investigate-change.md) | Load when root cause is not obvious. Lanes return compact evidence, candidate RCA, confidence, ruled-out alternatives, and next action. |
@@ -113,7 +113,7 @@ Use the happy paths and path rules as the primary flow. Use this table as a phas
 
 For multiple plausible causes, use bounded investigation lanes only when they save context or real time. Do not start the next lane wave while a current lane has unresolved blockers, conflicting evidence, or a user decision.
 
-If the existing fix status is `FIXED_UPSTREAM`, route to `/cherry-pick`. If it is `FIX_PENDING_PR`, stop and surface adopt/monitor/supersede choices.
+If the existing fix status is `FIXED_UPSTREAM`, route to `$cherry-pick`. If it is `FIX_PENDING_PR`, stop and surface adopt/monitor/supersede choices.
 
 ## End-of-Workflow PROJECT.md Update (Hard Gate)
 

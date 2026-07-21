@@ -15,7 +15,7 @@ Append a single structured event to `.ai-toolkit/metrics.jsonl` at the end of an
 
 The calling workflow provides these values in its prompt:
 
-- `command` — the slash command name (e.g., `create-feature`, `fix-bug`)
+- `command` — the canonical workflow identifier (legacy JSON key retained for compatibility; e.g., `create-feature`, `fix-bug`)
 - `complexity` — `trivial`, `moderate`, or `standard`
 - `status` — the final outcome: `clean`, `blocked`, `user-decision`, `skipped`, `micro-fix`, or workflow-specific
 - `rounds` — number of review iterations (0 if no review loop)
@@ -48,7 +48,7 @@ All fields are best-effort. If a value is unknown or not applicable, omit it rat
 
 ```markdown
 ## Metrics Recorded
-Event: <command-name>
+Event: <workflow-name>
 Status: <outcome>
 File: .ai-toolkit/metrics.jsonl
 ```
@@ -56,5 +56,5 @@ File: .ai-toolkit/metrics.jsonl
 ## Notes
 - One line per event, strict JSON — no trailing commas, no multi-line formatting
 - The `.ai-toolkit/` directory is user-local and ignored by git
-- End-to-end command prompts should reference this skill context at the very end of their summary step, after all gates have resolved
-- `metrics` command reads this file and produces aggregate summaries
+- End-to-end workflows should reference this skill context at the very end of their summary step, after all gates have resolved
+- The `metrics` workflow reads this file and produces aggregate summaries

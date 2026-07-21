@@ -64,4 +64,5 @@ discarded conversation state.
 
 Public workflow references should load only the short rules needed at entry.
 Resolve detailed domain skills through `interfaces/skills.json` when entering
-their phase. Generated compatibility aliases are never behavior owners.
+their phase. Provider adapters are never behavior owners; canonical skills and
+references are.

@@ -13,8 +13,6 @@ from aitk.interfaces import (
 )
 from aitk.model_routing import validate_model_routing
 from aitk.workflows import (
-    command_adapters,
-    extension_command_adapters,
     validate_extension_workflows,
     validate_workflows,
 )
@@ -38,32 +36,8 @@ class WorkflowInterfaceTests(unittest.TestCase):
     def test_manifest_is_complete_and_references_canonical_workflows(self) -> None:
         self.assertEqual([], validate_workflows(ROOT))
 
-    def test_tracked_commands_are_exact_generated_adapters(self) -> None:
-        adapters = command_adapters(ROOT)
-        tracked = {
-            path.name: path.read_text() for path in (ROOT / "commands").glob("*.md")
-        }
-        expected = {path.name: content for path, content in adapters.items()}
-        self.assertEqual(expected, tracked)
-        self.assertTrue(
-            all(content.count("@{{TOOLKIT_DIR}}/") >= 1 for content in tracked.values())
-        )
-        self.assertTrue(
-            all(len(content.splitlines()) <= 12 for content in tracked.values())
-        )
-
-    def test_optional_pgm_commands_are_exact_generated_adapters(self) -> None:
+    def test_optional_pgm_manifest_references_canonical_workflows(self) -> None:
         self.assertEqual([], validate_extension_workflows(ROOT, "pgm"))
-        adapters = extension_command_adapters(ROOT, "pgm")
-        tracked = {
-            path.name: path.read_text()
-            for path in (ROOT / "extensions/pgm/commands").glob("*.md")
-        }
-        expected = {path.name: content for path, content in adapters.items()}
-        self.assertEqual(expected, tracked)
-        self.assertTrue(
-            all(len(content.splitlines()) <= 12 for content in tracked.values())
-        )
 
     def test_skill_provider_and_support_interfaces_are_total(self) -> None:
         self.assertEqual([], validate_skill_interfaces(ROOT))

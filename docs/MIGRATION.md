@@ -1,55 +1,65 @@
-# Commands-to-Skills Migration
+# 0.2.0 Skills-Only Migration
 
-Version 0.1.0 changes the ownership model. Claude slash aliases remain only as
-deprecated generated shims during migration.
+Version 0.2.0 removes AI Toolkit's generated Claude slash aliases. Canonical
+workflow behavior remains in `skills/workflows/references/`, registered by
+`interfaces/workflows.json`, and exposed through the `workflows` Agent Skill.
 
-## What changed
+## Invocation changes
 
-- The 25 files in `commands/` are generated adapters and no longer contain workflow procedures.
-- Canonical procedures moved to `skills/workflows/references/` and are selected through the `workflows` skill.
-- Codex and other Agent Skills-compatible runtimes can use natural-language requests or explicitly invoke `$workflows`.
-- Claude users can temporarily continue using the same slash aliases, but new
-  documentation and integrations should use natural language, `$workflows`,
-  `$pgm`, or `bin/aitk`.
-- Toolkit metrics now write to `.ai-toolkit/metrics.jsonl`; readers fall back to legacy `.claude/metrics.jsonl` during migration.
-- Local workflow state protection now covers PROJECT, archive, plan, watch, cherry-pick, and CI manifests.
-- The optional PGM reports now use their own manifest and canonical `pgm` Agent Skill; `--with-pgm` installs both generated aliases and the skill.
-- PGM is source-linked-only in version 0.1.0; the Codex plugin distribution
-  contains the core `skills/` tree and does not advertise `$pgm`.
+Use a natural-language request or explicitly invoke the router:
 
-## Updating a local install
+```text
+Fix this bug: pagination skips rows after an update
+$workflows fix-bug "pagination skips rows after an update"
+
+Review my local changes
+$workflows review-code
+
+Create a current program status report
+$pgm create-status-report
+```
+
+For every former core `/name [args]` alias, the direct migration is
+`$workflows name [args]`. Optional PGM aliases migrate to `$pgm name [args]`.
+Claude's built-in commands, including `/review`, are not owned or changed by AI
+Toolkit.
+
+## Updating a source-linked install
 
 ```bash
 git pull
-./install.sh
+./install.sh              # add --with-pgm when needed
 bin/aitk doctor --strict
 bin/aitk doctor --installed --strict
 ```
 
-The installer migrates only exact legacy toolkit-owned links, records all new
-ownership in `~/.ai-toolkit/install-state.json`, and preserves unrelated
-commands, skills, and instructions. Internal support skills are no longer
-linked into public discovery locations.
+The installer removes old per-command links only when the ownership ledger
+records them as toolkit-owned. It also migrates the old whole-directory
+`.claude/commands` link when it points at this toolkit's legacy generated
+output. Unrelated personal commands and directories are preserved. Existing
+ignored `build/commands/` output may remain as one-level rollback material; it
+is not installed or treated as a public interface in 0.2.0.
 
 Use `bin/aitk uninstall` to remove matching owned artifacts or `bin/aitk
 rollback` to restore the last exact install/upgrade/uninstall transaction.
 Manual deletion loses recovery evidence and is not the supported lifecycle.
 
-## Contributor action
+## Contributor changes
 
-Do not edit `commands/*.md`. Edit the canonical workflow reference and manifest, then run `bin/aitk build`. CI or `bin/aitk check` fails if a generated adapter drifts.
+- Add or edit canonical workflow references under
+  `skills/workflows/references/` and register routing metadata in
+  `interfaces/workflows.json`.
+- Keep shared `SKILL.md` frontmatter provider-neutral. Put Codex invocation
+  policy in `skills/<name>/agents/openai.yaml` and provider-specific behavior in
+  adapters.
+- Run `bin/aitk build --with-pgm` to validate core and optional manifests and
+  regenerate path-resolved provider guidance.
+- Run `bin/aitk check` and `git diff --check` before handoff.
 
-Provider-specific frontmatter was removed from shared `SKILL.md` files. Codex invocation policy now lives in `skills/<name>/agents/openai.yaml`; Claude compatibility comes from generated commands and its installed skill discovery.
-
-If the PGM extension is installed, use `bin/aitk build --with-pgm --check`,
-`bin/aitk list --with-pgm`, or `bin/aitk route --with-pgm`. Its reports must
-pass `bin/aitk pgm-preflight` before collection. Running `./install.sh` without
-the flag removes only ledger-owned PGM links and leaves unrelated user
-configuration intact.
+PGM remains source-linked-only in 0.2.0; the Codex plugin distribution contains
+the core `skills/` tree and does not advertise `$pgm`.
 
 Existing hand-written continuation blocks should be reinitialized with
 `bin/aitk checkpoint init --workflow <name> --replace`. Normal init is a no-op
-when the same valid workflow already owns the artifact, so resuming cannot
-erase progress. Replacement is explicit and refuses while any effect remains
-pending. The v1 machine block is strict: malformed/stale state is refused
-instead of guessed.
+when the same valid workflow already owns the artifact, and replacement refuses
+while any effect remains pending.

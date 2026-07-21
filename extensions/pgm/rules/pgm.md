@@ -67,8 +67,8 @@ Each worker should:
 
 ## Audience Tiers
 
-Used by the internal PGM formatting skill for audience-specific output from report commands.
-Referenced here so report commands know what audience modes are available.
+Used by the internal PGM formatting skill for audience-specific workflow output.
+Referenced here so report workflows know what audience modes are available.
 
 | Audience | Focus | Tone |
 |----------|-------|------|

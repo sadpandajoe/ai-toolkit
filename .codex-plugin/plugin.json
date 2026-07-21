@@ -1,6 +1,6 @@
 {
   "name": "ai-toolkit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Provider-portable workflows for AI-assisted software delivery",
   "author": {
     "name": "Joe Li",

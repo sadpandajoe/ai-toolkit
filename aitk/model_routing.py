@@ -537,7 +537,6 @@ def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[
         ".codex-plugin",
         "aitk",
         "bin",
-        "commands",
         "config",
         "docs",
         "extensions",

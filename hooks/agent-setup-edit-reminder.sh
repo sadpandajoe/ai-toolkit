@@ -3,7 +3,7 @@
 # agent-setup-edit-reminder.sh — provider-neutral PostToolUse hook
 #
 # Injects a system reminder when an agent edits AI Toolkit setup
-# files (skills, commands, rules, CLAUDE.md, hooks). Reminds the model to
+# files (skills, rules, provider guidance, hooks). Reminds the model to
 # load and apply the agent-setup-maintainer skill's principles before
 # continuing.
 #
@@ -39,7 +39,7 @@ fi
 # symlink paths (~/.claude/skills -> repo skills, etc.).
 MATCH=0
 if [[ "$TOOL_NAME" == "apply_patch" ]]; then
-    if echo "$PATCH" | grep -qE '(^|/)(skills/[^/]+/(SKILL\.md|lessons\.md|rules\.md|gotchas\.md|references/)|commands/[^/]+\.md|rules/[^/]+\.md|config/(CLAUDE|AGENTS)\.md|hooks/)'; then
+    if echo "$PATCH" | grep -qE '(^|/)(skills/[^/]+/(SKILL\.md|lessons\.md|rules\.md|gotchas\.md|references/)|rules/[^/]+\.md|config/(CLAUDE|AGENTS)\.md|hooks/)'; then
         MATCH=1
     fi
 else
@@ -49,7 +49,6 @@ else
         */skills/*/rules.md) MATCH=1 ;;
         */skills/*/gotchas.md) MATCH=1 ;;
         */skills/*/references/*) MATCH=1 ;;
-        */commands/*.md) MATCH=1 ;;
         */rules/*.md) MATCH=1 ;;
         */config/CLAUDE.md|*/config/AGENTS.md) MATCH=1 ;;
         */hooks/*) MATCH=1 ;;

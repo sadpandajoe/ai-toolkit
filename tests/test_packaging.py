@@ -33,7 +33,9 @@ class PackagingTests(unittest.TestCase):
     def test_ci_runs_the_same_local_gate_with_pinned_actions(self) -> None:
         workflow = (ROOT / ".github/workflows/validate.yml").read_text()
         self.assertIn("run: bin/aitk check", workflow)
-        self.assertIn("python -m pip wheel --no-deps --no-build-isolation", workflow)
+        self.assertIn("python -m pip wheel --no-deps --wheel-dir dist .", workflow)
+        self.assertNotIn("--no-build-isolation", workflow)
+        self.assertIn("branches: [main]", workflow)
         self.assertIn("python -m venv", workflow)
         self.assertIn('cd "$RUNNER_TEMP"', workflow)
         self.assertIn("git diff --check", workflow)
@@ -43,6 +45,16 @@ class PackagingTests(unittest.TestCase):
         self.assertGreaterEqual(len(action_lines), 2)
         for line in action_lines:
             self.assertRegex(line, r"uses: actions/[a-z-]+@[0-9a-f]{40}(?:\s+#.*)?$")
+
+    def test_public_docs_and_cli_describe_the_skills_only_interface(self) -> None:
+        readme = (ROOT / "README.md").read_text()
+        cli = (ROOT / "aitk/cli.py").read_text()
+
+        self.assertIn("## Migrating from Slash Commands", readme)
+        self.assertIn("$workflows fix-bug", readme)
+        self.assertIn("validate the optional PGM extension", cli)
+        self.assertNotIn("commands and guidance need a rebuild", readme)
+        self.assertNotIn("include optional PGM commands", cli)
 
 
 if __name__ == "__main__":

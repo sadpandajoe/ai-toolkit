@@ -4,10 +4,10 @@ This rubric defines “10/10” as a maintainable product contract, not a claim 
 
 | # | Criterion | Implementation evidence | Automated evidence |
 |---|---|---|---|
-| 1 | One canonical workflow source | Skill references plus total core/PGM manifests; aliases generated only | Exact adapter tests, ownership scan, untracked-adapter CI negative fixture |
+| 1 | One canonical workflow source | Skill references plus total core/PGM manifests | Manifest completeness, ownership scan, and orphan-reference tests |
 | 2 | Small, stable public interface | `$workflows`, optional `$pgm`, public-direct classifications, and additive CLI JSON | Total skill classification, owner-aware routing, list-detail and JSON-schema tests |
 | 3 | Provider-portable core | Shared capability vocabulary and provider bindings | Provider primitive negative fixtures, frontmatter validation, package self-containment |
-| 4 | Provider parity without duplication | Capability-preserving Claude/Codex adapters around one skill/reference graph | Provider binding validation, exact aliases, plugin hooks/metadata tests |
+| 4 | Provider parity without duplication | Capability-preserving Claude/Codex adapters around one skill/reference graph | Provider binding validation and plugin hooks/metadata tests |
 | 5 | Safe defaults | Machine authorization/effect policies plus protected state and secret-safe diagnostics | Semantic negative fixtures, RBAC dry-run, hook suite, no-eval and no-secret-output checks |
 | 6 | Non-destructive lifecycle | Mode-0600 ledger, exact inventory, atomic install/uninstall/rollback | Idempotency, conflict, legacy, hostile-ledger, corrupt-backup, moved-root, and every fault-boundary fixture |
 | 7 | Deterministic health | Source and installed PASS/DRIFT/FAIL diagnostics | Strict doctor, installed matrix, stale/untracked build and malformed-ledger tests |
@@ -19,7 +19,6 @@ This rubric defines “10/10” as a maintainable product contract, not a claim 
 
 ```bash
 bin/aitk build --with-pgm
-git status --porcelain --untracked-files=all -- commands extensions/pgm/commands
 bin/aitk doctor --strict
 bin/aitk check
 git diff --check

@@ -1,12 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-07-21
 
 - Added canonical, fail-closed model and effort routes for Codex and Claude
   workers, including high-effort workhorse defaults, xhigh deep review/RCA,
   Sonnet operations-only constraints, and future-proof selector promotion.
 - Added `aitk model-route` and `aitk model-run`, dispatch-boundary validation,
   provider CLI preflight, structured worker results, and no-downgrade behavior.
+- Removed generated Claude slash-command aliases in favor of natural-language
+  routing and the public `$workflows` and `$pgm` Agent Skills.
+- Preserved upgrade-safe cleanup of toolkit-owned legacy command links while
+  leaving unrelated personal commands untouched.
+- Made CI portable across macOS path aliases and Python 3.11–3.14, enabled PEP
+  517 build isolation, and eliminated duplicate push runs for PR branches.
 
 ## 0.1.0 — 2026-07-15
 
