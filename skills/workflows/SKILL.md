@@ -28,8 +28,10 @@ does not maintain a second workflow table.
    a stable route named by the canonical workflow/reference, resolve it with
    `<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, and launch it
    with the same boundary through the provider's `routed_subagent`. The runner
-   derives, inlines, and hashes the exact contract closure from that inventoried
-   boundary; routed workers never rely on ambient skill loading.
+   derives and inlines the exact contract closure from that inventoried
+   boundary; per-file digests identify the transmitted content for diagnostics
+   but are not an independently anchored integrity gate. Routed workers never
+   rely on ambient skill loading.
    `fresh_subagent`, `parallel_fanout`, or `independent_review`
    describe isolation/scheduling; they never authorize an unpinned generic
    worker or a model/effort downgrade.

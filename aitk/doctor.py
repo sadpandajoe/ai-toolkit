@@ -254,6 +254,117 @@ def _readme_inventory(root: Path) -> Finding:
     return Finding("readme-inventory", status, "README inventory", tuple(problems))
 
 
+def _rule_loaders(root: Path) -> Finding:
+    rules = sorted((root / "rules").glob("*.md"))
+    # A rule-to-rule reference is dependency wiring, not proof that either rule
+    # is reachable from a real entry point. Excluding rules/ prevents isolated
+    # cycles from satisfying the loader invariant.
+    loader_roots = ("config", "extensions", "interfaces", "skills")
+    suffixes = {".json", ".md", ".yaml", ".yml"}
+    sources: list[Path] = []
+    for name in loader_roots:
+        base = root / name
+        if base.is_dir():
+            sources.extend(
+                path
+                for path in base.rglob("*")
+                if path.is_file()
+                and not path.is_symlink()
+                and path.suffix in suffixes
+                and not _ignored(root, path)
+            )
+    problems: list[str] = []
+    contents: dict[Path, str] = {}
+    for source in sources:
+        try:
+            contents[source] = source.read_text()
+        except UnicodeDecodeError:
+            problems.append(
+                f"{source.relative_to(root).as_posix()}: not valid UTF-8 text"
+            )
+    for rule in rules:
+        relative = rule.relative_to(root).as_posix()
+        if not any(
+            source != rule and relative in text for source, text in contents.items()
+        ):
+            problems.append(relative)
+    return Finding(
+        "rule-loaders",
+        "FAIL" if problems else "PASS",
+        "Canonical rule loaders",
+        tuple(problems),
+    )
+
+
+def _readme_workflow_rules(root: Path) -> Finding:
+    readme_path = root / "README.md"
+    workflow_path = manifest_path(root)
+    if not readme_path.is_file() or not workflow_path.is_file():
+        return Finding(
+            "readme-workflow-rules", "PASS", "README workflow rule claims"
+        )
+    try:
+        payload = json.loads(workflow_path.read_text())
+        workflows = payload["workflows"]
+        names = {
+            item["name"]
+            for item in workflows
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        }
+        expected: dict[str, set[str]] = {}
+        for item in workflows:
+            if not isinstance(item, dict) or item.get("name") not in names:
+                continue
+            for rule in item.get("rules", []):
+                if isinstance(rule, str):
+                    expected.setdefault(rule, set()).add(item["name"])
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        return Finding(
+            "readme-workflow-rules",
+            "FAIL",
+            "README workflow rule claims",
+            (f"workflow manifest could not be read: {error}",),
+        )
+    claims: dict[str, set[str]] = {}
+    duplicate_claims: set[str] = set()
+    row = re.compile(r"^\|\s*`(rules/[^`]+\.md)`\s*\|\s*(.*?)\|\s*$")
+    for line in readme_path.read_text().splitlines():
+        match = row.match(line)
+        if match is None:
+            continue
+        rule = match.group(1)
+        if rule in claims:
+            duplicate_claims.add(rule)
+        claims[rule] = {
+            token
+            for token in re.findall(r"`([a-z0-9-]+)`", match.group(2))
+            if token in names
+        }
+    rule_paths = {
+        path.relative_to(root).as_posix() for path in (root / "rules").glob("*.md")
+    }
+    problems = [
+        f"{rule}: duplicate README workflow rule row"
+        for rule in sorted(duplicate_claims)
+    ]
+    for rule in sorted(rule_paths | set(expected) | set(claims)):
+        wanted = expected.get(rule, set())
+        actual = claims.get(rule, set())
+        if wanted == actual and rule in claims:
+            continue
+        wanted_text = ", ".join(sorted(wanted)) or "none"
+        actual_text = ", ".join(sorted(actual)) or "none"
+        problems.append(
+            f"{rule}: expected {wanted_text}; README claims {actual_text}"
+        )
+    return Finding(
+        "readme-workflow-rules",
+        "FAIL" if problems else "PASS",
+        "README workflow rule claims",
+        tuple(problems),
+    )
+
+
 def _personal_paths(root: Path) -> Finding:
     problems: list[str] = []
     pattern = re.compile(r"/(?:Users|home)/[^/\s`]+/")
@@ -327,8 +438,11 @@ def _state_protection(root: Path) -> Finding:
     )
     hook_path = root / "hooks/prevent-project-commit.sh"
     hook = hook_path.read_text() if hook_path.is_file() else ""
+    ignored = {line.strip() for line in gitignore.splitlines()}
     problems = [
-        name for name in STATE_FILES if name not in gitignore or name not in hook
+        f"/{name}"
+        for name in STATE_FILES
+        if f"/{name}" not in ignored or name not in hook
     ]
     status = "FAIL" if problems else "PASS"
     return Finding(
@@ -481,6 +595,8 @@ def run_doctor(
         _canonical_ownership(root),
         _source_imports(root),
         _readme_inventory(root),
+        _rule_loaders(root),
+        _readme_workflow_rules(root),
         _personal_paths(root),
         _secret_output(root),
         _state_protection(root),

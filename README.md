@@ -37,6 +37,13 @@ skills, and this table remain stable. Resolve the installed toolkit/package
 root, then use `<toolkit-root>/bin/aitk model-route` and
 `<toolkit-root>/bin/aitk model-run --boundary <marker-id>`.
 
+The runner proves the exact CLI request, absence of a fallback argument,
+successful provider exit, and a valid structured result. Current provider
+success formats do not attest the internal serving-model identity, so the
+toolkit does not claim post-hoc verification of provider-side substitution.
+Per-contract SHA-256 labels identify the inlined content for diagnostics; they
+are not an independently anchored integrity check.
+
 ## Quick Start
 
 ```bash
@@ -115,7 +122,8 @@ ai-toolkit/
 │   └── config/             # Resolved provider guidance
 ├── config/
 │   ├── CLAUDE.md           # Claude guidance adapter template
-│   └── AGENTS.md           # Codex guidance adapter template
+│   ├── AGENTS.md           # Codex guidance adapter template
+│   └── providers/          # Capability bindings for Claude and Codex
 ├── rules/
 │   ├── universal.md        # Core principles (loaded first)
 │   ├── orchestration.md    # Multi-agent workflow rules
@@ -123,13 +131,9 @@ ai-toolkit/
 │   ├── context-management.md   # Context depth thresholds and checkpoint protocol
 │   ├── durable-workflows.md    # Deterministic phase/effect checkpoint protocol
 │   ├── rule-maintenance.md     # How to strengthen, update, or extract rules
-│   ├── investigation.md    # Debugging & root cause
 │   ├── ci-evidence.md      # CI signals are summaries — open the artifact behind them
-│   ├── rca-writeups.md     # Root-cause write-up structure
 │   ├── implementation.md   # Code development
-│   ├── api-boundary-defense.md # Validation at API boundaries
 │   ├── testing.md          # Test strategy
-│   ├── troubleshooting.md  # Emergency recovery
 │   ├── resource-management.md  # Worktrees, Docker, heavy tasks
 │   ├── preset-environments.md  # Preset staging/prod envs, credentials, VPN reachability
 │   ├── code-review.md      # Review guidelines
@@ -299,30 +303,30 @@ $workflows review-pr 123 --draft      # Local only, don't post
 
 ## Workflow Rules
 
-| File | When to Read |
-|------|--------------|
-| `rules/universal.md` | Always (core principles) |
-| `rules/orchestration.md` | When coordinating helpers, reviewers, or parallel agents |
-| `rules/context-management.md` | Always (checkpoint protocol, loaded via CLAUDE.md) |
-| `rules/durable-workflows.md` | Every durable workflow (phase and idempotent-effect checkpoint protocol) |
-| `rules/investigation.md` | `fix-bug`, `create-feature`, `fix-ci` when RCA matters |
-| `rules/ci-evidence.md` | `fix-ci`, `watch-pr`, any CI triage (open the artifact behind a summary) |
-| `rules/rca-writeups.md` | `fix-bug`, `fix-ci` when writing up a root cause |
-| `rules/implementation.md` | `fix-bug`, `create-feature`, `fix-ci` |
-| `rules/api-boundary-defense.md` | Code that validates or trusts data crossing an API boundary |
-| `rules/testing.md` | `create-tests`, `update-tests`, `run-test-plan` |
-| `rules/troubleshooting.md` | Emergency recovery |
-| `rules/resource-management.md` | Always (Docker, worktrees, test workers — loaded via CLAUDE.md) |
-| `rules/preset-environments.md` | `test-pr`, `run-test-plan`, and anything reading a Preset repo or staging env |
-| `rules/code-review.md` | `review-code`, `review-pr`, `address-feedback` |
-| `rules/complexity-gate.md` | `create-feature`, `fix-bug` (trivial vs standard routing) |
-| `rules/review-gate.md` | `review-code`, `create-feature`, `fix-bug` (review output contract) |
-| `rules/scoring.md` | Review and plan-review scoring |
-| `rules/severity.md` | Classifying finding severity in reviews and QA |
-| `rules/stop-rules.md` | Any iterative loop (universal stop conditions) |
-| `rules/shortcut-api.md` | Commands that query Shortcut REST API |
-| `rules/input-detection.md` | Commands that accept Shortcut/GitHub ticket inputs |
-| `rules/model-assignment.md` | Stable worker routes, model-family policy, and effort boundaries |
+The manifest owns direct workflow loading. Skill-owned and always-on loaders are
+described without workflow names so the table cannot imply manifest wiring that
+does not exist.
+
+| File | Owner / direct workflow loaders |
+|------|---------------------------------|
+| `rules/universal.md` | Always-on provider guidance |
+| `rules/orchestration.md` | Skill-owned orchestration policy |
+| `rules/context-management.md` | Always-on provider guidance |
+| `rules/durable-workflows.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests`, `watch-pr` |
+| `rules/ci-evidence.md` | Debug and watch skill loaders |
+| `rules/implementation.md` | Implementation skill loader |
+| `rules/testing.md` | Testing and implementation skill loaders |
+| `rules/resource-management.md` | Always-on provider guidance |
+| `rules/preset-environments.md` | `run-test-plan`, `test-pr` |
+| `rules/code-review.md` | Review skill loader |
+| `rules/complexity-gate.md` | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` |
+| `rules/review-gate.md` | Review and workflow reference loaders |
+| `rules/scoring.md` | Review and planning skill loaders |
+| `rules/severity.md` | Review, planning, and QA skill loaders |
+| `rules/stop-rules.md` | `review-plan` |
+| `rules/shortcut-api.md` | Shortcut skill loader |
+| `rules/input-detection.md` | `create-feature`, `fix-bug`, `run-test-plan`, `test-pr` |
+| `rules/model-assignment.md` | Routed worker contract |
 | `rules/rule-maintenance.md` | `reflect propose-rule`, rule editing |
 
 ## Hooks (optional)
@@ -332,6 +336,7 @@ Hooks enforce toolkit rules at runtime. The shell guards are provider-neutral; o
 | Hook | Event | Behavior |
 |------|-------|----------|
 | `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, and commits of local workflow state files |
+| `pre-push-validate.sh` | PreToolUse (Bash) | Runs repository-pinned lint and targeted tests before a push |
 | `check-resources.sh` | PreToolUse (Bash) | Warns when running tests with constrained resources |
 | `check-plan-drift.sh` | Stop | Warns at turn end when PLAN.md outpaces PROJECT.md |
 | `agent-setup-edit-reminder.sh` | PostToolUse (Edit/Write/MultiEdit/NotebookEdit) | Reminds to load `agent-setup-maintainer` when an agent-setup file is edited |

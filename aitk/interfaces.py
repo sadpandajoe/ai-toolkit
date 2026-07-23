@@ -124,6 +124,8 @@ def validate_skill_interfaces(root: Path) -> list[str]:
             problems.append(
                 f"{name}: internal skill must disable implicit Codex invocation"
             )
+        if classification != "internal_support" and not adapter.is_file():
+            problems.append(f"{name}: public skill is missing agents/openai.yaml")
         if classification != "internal_support" and disabled:
             problems.append(
                 f"{name}: public skill cannot disable implicit Codex invocation"

@@ -8,6 +8,7 @@ description: "Use for creating, updating, or reviewing automated tests and test-
 ## Before Starting
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
+Read and apply `rules/testing.md` for test strategy and execution guardrails.
 
 Umbrella for test-harness craft — writing, updating, and critiquing automated tests at the pytest/jest/vitest layer.
 

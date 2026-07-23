@@ -53,6 +53,27 @@ class ProviderAdapterTests(unittest.TestCase):
             any("prevent-project-commit.sh" in command for command in commands)
         )
 
+    def test_provider_hook_adapters_cover_every_productive_hook(self) -> None:
+        productive = {
+            "prevent-project-commit.sh",
+            "pre-push-validate.sh",
+            "check-resources.sh",
+            "check-plan-drift.sh",
+            "agent-setup-edit-reminder.sh",
+        }
+        codex = (ROOT / "hooks/hooks.json").read_text()
+        claude = (ROOT / "install-hooks.sh").read_text()
+
+        for script in productive:
+            with self.subTest(script=script):
+                self.assertIn(script, codex)
+                self.assertIn(script, claude)
+
+        hooks = json.loads(codex)["hooks"]
+        posttool_matcher = hooks["PostToolUse"][0]["matcher"]
+        for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"):
+            self.assertIn(tool, posttool_matcher)
+
     def test_internal_codex_skills_disable_implicit_routing(self) -> None:
         internal = (
             "action-gate",

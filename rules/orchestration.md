@@ -31,7 +31,11 @@ Resolve the toolkit/package root from the installed skill. Resolve with
 `<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, then launch with
 `<toolkit-root>/bin/aitk model-run --boundary <marker-id>`.
 
-**Cherry-pick reasoning tiering**: Cherry-pick phases use gate-driven reasoning selection rather than the general reasoning-load heuristic above. The gate classifies difficulty (TRIVIAL vs NON-TRIVIAL) and that classification determines worker effort for plan, validate, and adapt phases. See `skills/cherry-pick/references/gate.md` for the tier table.
+**Cherry-pick routing**: the cherry-pick gate classifies difficulty (TRIVIAL vs
+NON-TRIVIAL) and selects `review` or `deep-review` for the mandatory post-apply
+scope audit. Planning, application, adaptation, and correctness validation stay
+with the main thread. See `skills/cherry-pick/references/gate.md` for the route
+table; exact effort values remain manifest-owned.
 
 The orchestrator may run on any user-selected model that satisfies the user's
 workhorse policy. The stable routes apply to **subagents/workers** spawned from

@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Investigating a bug or failure — find the root cause, classify a CI failure, review an RCA, search for an existing upstream fix, or verify a CI fix landed. Do NOT use for implementing the fix (use implement-change/), writing tests (use testing/), or turning a loose bug report into a repro plan before investigating (use qa/).
+description: Investigating a bug or failure — find the root cause, recover Git state, classify a CI failure, review an RCA, search for an existing upstream fix, or verify a CI fix landed. Do NOT use for implementing the fix (use implement-change/), writing tests (use testing/), or turning a loose bug report into a repro plan before investigating (use qa/).
 ---
 
 # Debug
@@ -16,6 +16,7 @@ Umbrella for all diagnostic work — finding root causes, validating them, and c
 | Phase | When | Shape | Reference |
 |-------|------|-------|-----------|
 | Investigate change | Open-ended investigation — bug or RCA | Orchestrator inline OR subagent | [references/investigate-change.md](references/investigate-change.md) |
+| Recover Git state | A failed Git operation or mistaken mutation needs bounded recovery | Orchestrator inline | [references/recover-git-state.md](references/recover-git-state.md) |
 | Gather CI logs | Resolve actual failing logs from GitHub, local files, or artifacts | Orchestrator inline | [references/ci-gather-logs.md](references/ci-gather-logs.md) |
 | Classify CI failure | CI log / artifact available, need pattern match | Fast pattern-match producer | [references/ci-classify-failure.md](references/ci-classify-failure.md) |
 | Orchestrate CI fix | Group failures, route complexity, apply safe fix strategy | Orchestrator inline | [references/ci-fix-orchestration.md](references/ci-fix-orchestration.md) |
@@ -44,6 +45,7 @@ Umbrella for all diagnostic work — finding root causes, validating them, and c
 
 References here are intentionally diverse:
 - `investigate-change` is an open investigation flow (the orchestrator reads the reference and follows steps).
+- `recover-git-state` is a safety ladder for inspecting damage, preserving a rollback point, and escalating only with explicit authorization.
 - `ci-gather-logs` is a retrieval and manifest setup flow.
 - `ci-classify-failure` is a pattern-match producer (returns a classified failure block).
 - `ci-fix-orchestration` is a workflow-owned routing reference; it does not edit files by itself.

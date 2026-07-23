@@ -45,6 +45,17 @@ class WorkflowInterfaceTests(unittest.TestCase):
         self.assertEqual([], validate_model_routing(ROOT))
         self.assertEqual([], validate_support_interface(ROOT))
 
+    def test_public_skills_require_openai_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.fixture(temporary)
+            (root / "skills/cherry-pick/agents/openai.yaml").unlink()
+
+            problems = validate_skill_interfaces(root)
+
+            self.assertIn(
+                "cherry-pick: public skill is missing agents/openai.yaml", problems
+            )
+
     def test_contract_version_one_is_rejected_with_migration_error(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)

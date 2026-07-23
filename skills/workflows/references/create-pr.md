@@ -103,6 +103,23 @@ If no template, use this default structure:
 [Link to ticket, issue, or prior PR if referenced in commits or PROJECT.md]
 ```
 
+For a bug fix with a validated RCA in PROJECT.md or the commit context, replace
+the generic `Changes` section with this causal structure:
+
+```markdown
+## Incident Root Cause
+[The single cause of the user-visible failure]
+
+## Latent Bugs / Hardening
+[Separate correctness issues fixed in the same PR; omit when there are none]
+
+## Fix
+[What changed, grouped by the problem each change addresses]
+```
+
+Do not blend opportunistic hardening into the incident cause. This keeps the
+blocking fix distinct from secondary correctness improvements.
+
 **Body tightness check.** The same anti-patterns from the title check apply to the opening summary — readers form their first impression from the first paragraph. Specifically:
 
 - **Don't import conversation jargon into the body.** If a label was useful for organizing the planning discussion (channels, tiers, layers, phases) but never made it into commit messages or code, do not introduce it for the first time in the PR body. The reader can't follow back to where it was defined.

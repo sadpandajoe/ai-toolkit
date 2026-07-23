@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# pre-push-validate.sh — Claude Code PreToolUse hook
+# pre-push-validate.sh — provider-neutral PreToolUse hook
 #
 # Runs lint + targeted tests on the commits that are about to be pushed,
 # using the repo's pinned tool versions (not the system's). Blocks the push

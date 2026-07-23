@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cherry Pick"
+  short_description: "Backport changes with safety gates"
+  default_prompt: "Use $cherry-pick to backport this change safely."

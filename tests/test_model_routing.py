@@ -10,6 +10,7 @@ from unittest import mock
 
 from aitk.model_routing import (
     ModelRouteError,
+    _safe_path,
     parse_claude_output,
     parse_codex_output,
     resolve_route,
@@ -226,6 +227,18 @@ class ModelRoutingTests(unittest.TestCase):
                 any("volatile model selector" in item for item in problems), problems
             )
 
+    def test_cherry_pick_authoritative_prose_cannot_restore_legacy_tiers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.fixture(temporary)
+            gate = root / "skills/cherry-pick/references/gate.md"
+            gate.write_text(gate.read_text() + "\nUse Heavy-tier handling.\n")
+
+            problems = validate_model_routing(root)
+
+            self.assertTrue(
+                any("legacy route vocabulary" in item for item in problems), problems
+            )
+
     def test_new_dispatch_requires_an_inventoried_marker(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
@@ -267,6 +280,15 @@ class ModelRoutingTests(unittest.TestCase):
         self.assertIn("design tests", prompt)
         self.assertIn(contract_content, prompt)
         self.assertTrue(prompt.endswith("TASK_END\n"))
+
+    def test_contract_paths_reject_symlinked_parent_components(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "rules").mkdir()
+            (root / "rules/universal.md").write_text("# Universal\n")
+            (root / "linked-rules").symlink_to(root / "rules", target_is_directory=True)
+
+            self.assertIsNone(_safe_path(root, "linked-rules/universal.md"))
 
     def test_provider_output_parsers_require_one_structured_result(self) -> None:
         codex = json.dumps(
@@ -512,6 +534,108 @@ class ModelRoutingTests(unittest.TestCase):
         self.assertEqual(3, code)
         self.assertTrue(payload["transport"]["started"])
         self.assertEqual("MODEL_ROUTE_UNAVAILABLE", payload["error"]["code"])
+
+    def test_codex_success_path_returns_the_structured_result(self) -> None:
+        def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            if "--version" in argv:
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.144.5\n", "")
+            if "--help" in argv:
+                flags = " ".join(
+                    (
+                        "--ephemeral --strict-config --ignore-user-config ",
+                        "--ignore-rules --skip-git-repo-check --disable --model --config --sandbox ",
+                        "--cd --add-dir --output-schema --output-last-message --json",
+                    )
+                )
+                return subprocess.CompletedProcess(argv, 0, flags, "")
+            output_path = Path(argv[argv.index("--output-last-message") + 1])
+            output_path.write_text(json.dumps(RESULT))
+            return subprocess.CompletedProcess(
+                argv, 0, json.dumps({"type": "turn.completed"}), ""
+            )
+
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+            prompt.write("Review this change.")
+            prompt.flush()
+            with mock.patch(
+                "aitk.model_routing.shutil.which", return_value="/bin/codex"
+            ):
+                code, payload = run_model(
+                    ROOT,
+                    "review",
+                    "codex",
+                    "review.code-quality-final",
+                    Path(prompt.name),
+                    cwd=ROOT,
+                    runner=runner,
+                )
+
+        self.assertEqual(0, code)
+        self.assertEqual(RESULT, payload["result"])
+        self.assertEqual({"started": True, "exit_code": 0}, payload["transport"])
+
+    def test_provider_timeout_and_nonzero_exit_fail_closed(self) -> None:
+        for failure, expected_exit in (("timeout", None), ("nonzero", 17)):
+            with self.subTest(failure=failure):
+
+                def runner(
+                    argv: list[str], **_: object
+                ) -> subprocess.CompletedProcess[str]:
+                    if "--version" in argv:
+                        return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                    if "--help" in argv:
+                        flags = " ".join(
+                            (
+                                "--print --no-session-persistence --safe-mode ",
+                                "--strict-mcp-config --mcp-config --model --effort ",
+                                "--permission-mode --json-schema --output-format ",
+                                "--disallowedTools --tools",
+                            )
+                        )
+                        return subprocess.CompletedProcess(argv, 0, flags, "")
+                    if failure == "timeout":
+                        raise subprocess.TimeoutExpired(argv, 1)
+                    return subprocess.CompletedProcess(argv, 17, "", "rejected")
+
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+                    prompt.write("Review this change.")
+                    prompt.flush()
+                    with mock.patch(
+                        "aitk.model_routing.shutil.which", return_value="/bin/claude"
+                    ):
+                        code, payload = run_model(
+                            ROOT,
+                            "review",
+                            "claude",
+                            "review.code-quality-final",
+                            Path(prompt.name),
+                            cwd=ROOT,
+                            timeout_seconds=1,
+                            runner=runner,
+                        )
+
+                self.assertEqual(3, code)
+                self.assertEqual(
+                    {"started": True, "exit_code": expected_exit},
+                    payload["transport"],
+                )
+                self.assertEqual("MODEL_ROUTE_UNAVAILABLE", payload["error"]["code"])
+
+    def test_invalid_prompt_is_rejected_before_provider_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            prompt = Path(temporary) / "prompt.md"
+            prompt.write_bytes(b"\xff")
+            with mock.patch("aitk.model_routing.shutil.which") as which:
+                with self.assertRaisesRegex(ModelRouteError, "must be UTF-8"):
+                    run_model(
+                        ROOT,
+                        "review",
+                        "claude",
+                        "review.code-quality-final",
+                        prompt,
+                        cwd=ROOT,
+                    )
+            which.assert_not_called()
 
     def test_missing_executable_fails_closed_without_starting(self) -> None:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:

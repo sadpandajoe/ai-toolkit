@@ -25,13 +25,8 @@ A single blocking component (1-2) pulls the overall score into the 3-5 range —
 
 ## Severity Tags
 
-Use the code review tags from `rules/severity.md`:
-
-| Tag | Meaning | When |
-|-----|---------|------|
-| **[major]** | Must fix before proceeding | Logic errors, security issues, missing tests (see calibration below) |
-| **[minor]** | Should fix | Naming, DRY violations, incomplete docs, missing edge-case handling |
-| **[nitpick]** | Optional | Style preferences, micro-optimizations, cosmetic issues |
+Use the canonical code-review tags and definitions from `rules/severity.md`.
+This rule only adds the test-coverage calibration below.
 
 ### Test Coverage Severity Calibration
 

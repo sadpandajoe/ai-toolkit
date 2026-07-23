@@ -62,11 +62,10 @@ Checkpoints fire after: [list of durable artifacts that trigger checkpoint + con
 Resume contract: PROJECT.md (+ manifest if any) carries state across clears.
 ```
 
-Pull the phase list from the workflow's STANDARD happy path. Pull the checkpoint/reset list from its contract and `rules/context-management.md` Proactive Phase Reset Policy. Examples:
-
-- `create-feature` STANDARD: `plan → reset → plan-review → reset → implement-slice(s) → reset → review-code → reset → feature-validation → summary`
-- `fix-bug` STANDARD: `RCA → RCA-review → reset → PLAN.md → reset → plan-review → reset → implement → review-code → reset → QA → summary`
-- `fix-ci` STANDARD: `triage → action-gate → reset → apply → verify → review-code → reset → commit-recommendation`
+Pull the phase list from the selected workflow's STANDARD happy path. Pull the
+checkpoint/reset list from its contract and `rules/context-management.md`
+Proactive Phase Reset Policy. This rule owns the block shape only; it must not
+copy workflow-specific phase sequences.
 
 If the user's request is genuinely too small for STANDARD (≤2 phases after Complexity Gate), reclassify MODERATE rather than emit a degenerate Phase Plan.
 

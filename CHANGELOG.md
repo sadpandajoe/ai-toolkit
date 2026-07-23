@@ -24,7 +24,9 @@
 - Standardized local metrics under `.ai-toolkit/metrics.jsonl` with legacy-read migration.
 - Removed personal paths, unsafe secret diagnostics, `eval` retries, destructive RBAC defaults, and provider primitives from shared workflows.
 - Migrated the optional PGM reports to a manifest-backed Agent Skill with generated aliases, opt-in routing, and reversible installation.
-- Added SHA-pinned CI that runs the same complete conformance gate as local development on Python 3.11 and 3.14.
+- Added SHA-pinned CI that initially ran the same complete conformance gate as
+  local development on Python 3.11 and 3.14; the later expansion to Python
+  3.11–3.14 is recorded below.
 - Added strict v2 workflow contracts and a deterministic checkpoint CLI with
   phase, generation, reservation, reconciliation, and replay validation.
 - Added a mode-0600 ownership ledger with atomic install/upgrade/uninstall,

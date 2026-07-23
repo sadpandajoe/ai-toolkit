@@ -19,7 +19,7 @@ class DoctorTests(unittest.TestCase):
             (root / directory).mkdir(parents=True, exist_ok=True)
         (root / "README.md").write_text("rules/universal.md skills/example/\n")
         (root / ".gitignore").write_text(
-            "PROJECT.md\nPROJECT_ARCHIVE.md\nPLAN.md\nWATCH.md\nCHERRY_PICK.md\nCI_FIX.md\nbuild/\n"
+            "/PROJECT.md\n/PROJECT_ARCHIVE.md\n/PLAN.md\n/WATCH.md\n/CHERRY_PICK.md\n/CI_FIX.md\nbuild/\n"
         )
         (root / "config/CLAUDE.md").write_text("@{{TOOLKIT_DIR}}/rules/universal.md\n")
         (root / "rules/universal.md").write_text("# Universal\n")
@@ -89,6 +89,139 @@ class DoctorTests(unittest.TestCase):
             )
             self.assertIn("DRIFT Skill descriptions", messages)
             self.assertIn("FAIL Markdown links", messages)
+
+    def test_rule_inventory_requires_a_real_non_readme_loader(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / "rules/orphan.md").write_text("# Orphan\n")
+            (root / "README.md").write_text(
+                "rules/universal.md rules/orphan.md skills/example/\n"
+            )
+
+            finding = next(
+                item for item in run_doctor(root) if item.check == "rule-loaders"
+            )
+
+            self.assertEqual("FAIL", finding.status)
+            self.assertEqual(("rules/orphan.md",), finding.details)
+
+    def test_rule_inventory_rejects_rule_only_reference_cycles(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / "rules/first.md").write_text(
+                "# First\n\nRead `rules/second.md`.\n"
+            )
+            (root / "rules/second.md").write_text(
+                "# Second\n\nRead `rules/first.md`.\n"
+            )
+            (root / "README.md").write_text(
+                "rules/universal.md rules/first.md rules/second.md "
+                "skills/example/\n"
+            )
+
+            finding = next(
+                item for item in run_doctor(root) if item.check == "rule-loaders"
+            )
+
+            self.assertEqual("FAIL", finding.status)
+            self.assertEqual(
+                ("rules/first.md", "rules/second.md"), finding.details
+            )
+
+    def test_rule_inventory_reports_non_utf8_sources_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / "config/binary.yaml").write_bytes(b"\xff\xfe\x00")
+
+            finding = next(
+                item for item in run_doctor(root) if item.check == "rule-loaders"
+            )
+
+            self.assertEqual("FAIL", finding.status)
+            self.assertIn(
+                "config/binary.yaml: not valid UTF-8 text", finding.details
+            )
+
+    def test_readme_direct_workflow_rule_claims_match_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / "interfaces").mkdir()
+            (root / "interfaces/workflows.json").write_text(
+                '{"version":1,"skill":"workflows",'
+                '"reference_root":"skills/workflows/references",'
+                '"workflows":[{"name":"example","summary":"Example",'
+                '"arguments":"","rules":["rules/universal.md"],'
+                '"triggers":["run example"],"execution_class":"single_run"}]}\n'
+            )
+            (root / "README.md").write_text(
+                "skills/example/\n\n"
+                "## Workflow Rules\n\n"
+                "| File | Owner / direct workflow loaders |\n"
+                "|---|---|\n"
+                "| `rules/universal.md` | Always-on guidance; `wrong` |\n"
+            )
+
+            finding = next(
+                item
+                for item in run_doctor(root)
+                if item.check == "readme-workflow-rules"
+            )
+
+            self.assertEqual("FAIL", finding.status)
+            self.assertIn(
+                "rules/universal.md: expected example; README claims none",
+                finding.details,
+            )
+
+    def test_readme_workflow_rule_rows_cannot_be_duplicated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / "interfaces").mkdir()
+            (root / "interfaces/workflows.json").write_text(
+                '{"version":1,"skill":"workflows",'
+                '"reference_root":"skills/workflows/references",'
+                '"workflows":[{"name":"example","summary":"Example",'
+                '"arguments":"","rules":[],"triggers":["run example"],'
+                '"execution_class":"single_run"}]}\n'
+            )
+            (root / "README.md").write_text(
+                "skills/example/\n\n## Workflow Rules\n\n"
+                "| File | Owner / direct workflow loaders |\n|---|---|\n"
+                "| `rules/universal.md` | Always-on |\n"
+                "| `rules/universal.md` | Still always-on |\n"
+            )
+
+            finding = next(
+                item
+                for item in run_doctor(root)
+                if item.check == "readme-workflow-rules"
+            )
+
+            self.assertIn(
+                "rules/universal.md: duplicate README workflow rule row",
+                finding.details,
+            )
+
+    def test_state_files_must_be_ignored_only_at_repository_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / ".gitignore").write_text(
+                "PROJECT.md\nPROJECT_ARCHIVE.md\nPLAN.md\nWATCH.md\n"
+                "CHERRY_PICK.md\nCI_FIX.md\nbuild/\n"
+            )
+
+            finding = next(
+                item for item in run_doctor(root) if item.check == "state-protection"
+            )
+
+            self.assertEqual("FAIL", finding.status)
+            self.assertIn("/PLAN.md", finding.details)
 
     def test_provider_specific_primitives_in_shared_skills_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

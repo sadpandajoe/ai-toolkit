@@ -51,8 +51,11 @@ review lenses, and canonical dispatch document; callers cannot substitute
 arbitrary files. Codex launches from a sanitized temporary project root and
 exposes the target only through `--add-dir`, while also disabling project-document discovery,
 user config, hooks, MCP servers, and exec-policy rules. The toolkit guarantees
-the requested CLI configuration and validates the returned envelope; provider
-backend execution remains the provider's responsibility.
+the requested CLI configuration and validates the returned envelope. Inline
+SHA-256 labels identify the exact content sent for diagnostics; they are not
+compared with a separately trusted expected digest. Neither supported provider
+result format attests the internal serving-model identity, so provider backend
+execution and substitution remain the provider's responsibility.
 
 The Codex plugin bundle retains `bin/`, `aitk/`, `config/`, `interfaces/`,
 `rules/`, and `skills/` beneath one plugin root. Routed skills resolve that root

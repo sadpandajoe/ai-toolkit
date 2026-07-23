@@ -154,7 +154,18 @@ def _safe_path(root: Path, value: object) -> Path | None:
     if path.is_absolute() or ".." in path.parts or path == Path("."):
         return None
     target = root / path
-    return path if target.is_file() and not target.is_symlink() else None
+    current = root
+    for part in path.parts:
+        current /= part
+        if current.is_symlink():
+            return None
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved_target = target.resolve(strict=True)
+        resolved_target.relative_to(resolved_root)
+    except (OSError, ValueError):
+        return None
+    return path if resolved_target.is_file() else None
 
 
 def _safe_dispatch_path(root: Path, value: object) -> Path | None:
@@ -164,8 +175,8 @@ def _safe_dispatch_path(root: Path, value: object) -> Path | None:
     if path.is_absolute() or ".." in path.parts or path == Path("."):
         return None
     target = root / path
-    if target.is_file() and not target.is_symlink():
-        return path
+    if target.exists():
+        return _safe_path(root, value)
     if (
         len(path.parts) >= 3
         and path.parts[0] == "extensions"
@@ -498,6 +509,33 @@ def validate_model_routing(root: Path) -> list[str]:
         problems.extend(validate_selector_ownership(root, payload))
         problems.extend(validate_dispatch_boundaries(root, payload))
         problems.extend(validate_route_bindings(root))
+        problems.extend(validate_legacy_route_prose(root))
+    return problems
+
+
+def validate_legacy_route_prose(root: Path) -> list[str]:
+    paths = list((root / "skills/cherry-pick").rglob("*.md"))
+    paths.append(root / "rules/orchestration.md")
+    legacy = re.compile(
+        r"\b(?:Standard|Heavy)-tier\b|"
+        r"\b(?:standard|heavy) reasoning effort\b|"
+        r"\bheavy effort\b",
+        re.I,
+    )
+    problems: list[str] = []
+    for path in sorted(set(paths)):
+        if not path.is_file() or path.is_symlink():
+            continue
+        for number, line in _markdown_lines(path):
+            gate_legacy = (
+                path == root / "skills/cherry-pick/references/gate.md"
+                and re.search(r"\b(?:Standard|Heavy)\b", line) is not None
+            )
+            if legacy.search(line) or gate_legacy:
+                problems.append(
+                    "legacy route vocabulary in authoritative cherry-pick prose: "
+                    f"{path.relative_to(root)}:{number}"
+                )
     return problems
 
 
