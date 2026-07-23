@@ -36,10 +36,12 @@ are grouped by role so workflows load only the phase they are entering.
 
 ## Reviewer Lenses
 
-| Lens | When | Reference |
-|------|------|-----------|
-| Code quality | Always (every complexity tier) | [references/code-quality.md](references/code-quality.md) |
-| Adversarial | Security-sensitive diffs; `review-code-adversarial` workflow | [references/adversarial.md](references/adversarial.md) |
+| Lens | When | Reference | Route |
+|------|------|-----------|-------|
+| Code quality | Always (every complexity tier) | [references/code-quality.md](references/code-quality.md) | review |
+| Deep quality | Refactor-shaped or STANDARD diff, or deep review mode (`max`/`ultra` effort / "deep review" / "deep quality" ask). Strict structural **findings**. Routed by `classify-diff`. | [references/deep-quality.md](references/deep-quality.md) | review (deep-review in deep review mode) |
+| Code-judo | Deep review mode (`ultra`/`max` effort, "deep review" / "deep quality" / "thermonuclear" ask), `refactor:`-titled change, or explicit ask. Generative restructuring **proposal**. Pinned deep tier — see Invocation. | [references/code-judo.md](references/code-judo.md) | deep-review |
+| Adversarial | Security-sensitive diffs; `review-code-adversarial` workflow | [references/adversarial.md](references/adversarial.md) | review |
 
 ## Distinction vs Other Umbrellas
 
@@ -66,6 +68,17 @@ Dispatch mode is tier-routed:
   dedup → adversarial verify; only confirmed findings return to the session.
 
 Map the tier to the current runtime's actual model or reasoning-effort controls at dispatch time.
+
+### Deep review mode (tier override)
+
+"Deep review", "deep quality review", or "thermonuclear" — and `ultra`/`max` effort — are an explicit **escalation**, not a route name. In this mode, route *every* triggered lens through the `deep-review` route (fable / xhigh) instead of the tier's default route, and add the Code-judo lane below. The Complexity Gate still decides *which* lenses trigger; deep review mode only changes the route they run on. Every lens boundary already permits `deep-review` in its allowlist, so this is a route selection, not a new binding.
+
+### Code-judo (deep tier)
+
+The `code-judo` lens is the one exception to tier-routing: it is pinned to the deep tier regardless of the diff's complexity.
+
+<!-- aitk-model-route:review.code-judo -->
+When `classify-diff` triggers the Code-judo lane, dispatch a single code-judo agent through the `deep-review` route — the generative restructuring pass always runs on the deepest reasoning tier, never the standard `review` route. The `review.code-judo` boundary allows only `deep-review`, so a mistaken standard-route request fails closed rather than silently downgrading the model.
 
 ## Notes
 
