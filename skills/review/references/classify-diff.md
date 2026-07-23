@@ -55,7 +55,7 @@ The caller provides:
 Rules:
 - Code quality **always** triggers regardless of complexity tier.
 - **Deep quality vs Code-judo (cost discipline).** Deep quality is *findings* on the cheap `review` route — auto-fire it on refactor shape or STANDARD. Code-judo is a *generative* pass on the expensive `deep-review` route — auto-fire it only on high-confidence intent (`ultra`/`max` effort, `^refactor` title, or explicit ask). When only the shape signal fires, **recommend** Code-judo in the output ("looks like a refactor — consider a code-judo pass") rather than triggering it; do not spend the deep tier on a heuristic guess.
-- TRIVIAL diffs never trigger Deep quality or Code-judo (a rename or one-liner needs neither).
+- TRIVIAL diffs never **auto**-trigger Deep quality or Code-judo by tier or shape alone (a rename or one-liner needs neither); an explicit "deep quality" / Code-judo ask or `ultra`/`max` effort still fires them.
 - **Deep-tier escalation.** When effort is `ultra`/`max` (including the "deep review" / "deep quality" phrase), report that deep-tier escalation applies: the orchestrator routes *every* triggered lens through the `deep-review` route and adds the Code-judo lane. classify-diff only flags this; the review SKILL Invocation owns the routing (see its Deep review mode section).
 - TRIVIAL complexity: code quality reviewer only unless impact or security sensitivity escalates.
 - MODERATE complexity: triggered lanes only; do not launch the full review team just because one lane triggers.
