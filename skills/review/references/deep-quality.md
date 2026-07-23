@@ -18,21 +18,25 @@ pinned to the deeper `deep-review` route. This findings lens runs on the normal
 
 Activates on a refactor-shaped change (title/commit says refactor, high churn
 with net-neutral or negative line count, renames without new public surface,
-tests unchanged) or a STANDARD-tier diff, and always under `max`/`ultra` effort
-or an explicit "deep quality" ask. Not part of the `classify-diff` default lens
-set for ordinary feature diffs.
+tests unchanged) or any STANDARD-tier diff; always fires under `max`/`ultra`
+effort or an explicit "deep quality" ask. TRIVIAL and MODERATE feature diffs do
+not trigger it unless the change is refactor-shaped or it is explicitly
+requested. It is a default lens for STANDARD-tier review, running on the cheap
+`review` route alongside baseline code quality.
 
 ## Required Context
 
-Read before starting: `rules/code-review.md`, `rules/severity.md`.
+Read before starting: `rules/code-review.md`, `rules/severity.md`,
+`rules/stop-rules.md`.
 Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 
 ## Standards
 
-1. **File-size gate.** A diff that pushes a file from under 1000 lines to over
-   1000 lines is a `[major]` structural smell by default — ask whether it should
-   be decomposed first (extract helpers/subcomponents/modules). Waive only for a
-   compelling structural reason where the result is still clearly organized.
+1. **File-size gate.** A diff that pushes a file across 1000 lines — from under
+   1000 to over, or already over 1000 and grown materially by the diff — is a
+   `[major]` structural smell by default; ask whether it should be decomposed
+   first (extract helpers/subcomponents/modules). Waive only for a compelling
+   structural reason where the result is still clearly organized.
 2. **No spaghetti growth.** New ad-hoc conditionals, scattered special cases, or
    one-off branches bolted into unrelated flows are a design problem, not a
    style nit — `[major]` when they make an existing path materially harder to
@@ -59,8 +63,8 @@ Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 
 ## What to Flag
 
-- A file crossing 1000 lines due to the diff, especially when the new code could
-  be split out.
+- A file crossing 1000 lines due to the diff, or already over 1000 and
+  materially grown by it, especially when the new code could be split out.
 - New conditionals bolted onto unrelated code paths; one-off booleans/flags/modes
   that complicate existing control flow.
 - Feature-specific logic leaking into general-purpose modules.

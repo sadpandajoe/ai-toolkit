@@ -190,7 +190,7 @@
     {"id": "review.local-independent-second-opinion", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"]},
     {"id": "review.local-final-pass", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"]},
     {"id": "review.local-independent-capability", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"]},
-    {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review"]},
+    {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "review.pr-standard", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "workflows.adversarial-primary", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"]},
     {"id": "workflows.adversarial-second-opinion", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"]},

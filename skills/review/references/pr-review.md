@@ -81,6 +81,15 @@ Standard:
 - Optional second opinion when available.
 - Adversarial lane only with `--adversarial` or security-sensitive detection.
 
+**Deep review mode.** When `classify-diff` reports **Deep-tier escalation: YES**
+(`ultra`/`max` effort or an explicit "deep review" / "deep quality" ask), follow
+the review SKILL's *Deep review mode* and *Code-judo* sections: route every
+triggered lens through `deep-review` — both `review.pr-moderate` and
+`review.pr-standard` permit it — and dispatch the code-judo generative pass
+separately via `review.code-judo`. Code-judo returns unscored restructuring
+**proposals**; surface them in their own section, not the scored findings/
+component table.
+
 ## Synthesize and Score
 
 Merge findings, deduplicate, and score:

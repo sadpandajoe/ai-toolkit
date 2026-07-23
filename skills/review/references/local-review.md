@@ -86,11 +86,14 @@ The main thread is an orchestrator. Dispatch fresh-context reviewer subagents on
 Use triggered references from `classify-diff.md`, including:
 
 - [code-quality.md](code-quality.md)
+- [deep-quality.md](deep-quality.md) — strict structural findings; default lane on STANDARD-tier diffs
 - [../../testing/references/review-tests.md](../../testing/references/review-tests.md)
 - [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md)
 - [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
 - [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md)
 - [../../plan-review/references/backend.md](../../plan-review/references/backend.md)
+
+If `classify-diff` reports **Deep-tier escalation: YES** (`ultra`/`max` effort or a "deep review" ask), follow the review SKILL's *Deep review mode* and *Code-judo* sections: route every triggered lens through `deep-review`, and dispatch the [code-judo.md](code-judo.md) generative pass separately (outside the findings fan-out) via the `review.code-judo` boundary — its proposals go in the Restructuring Proposals section, not the findings table.
 
 <!-- aitk-model-route:review.local-independent-second-opinion -->
 Launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
@@ -172,6 +175,10 @@ Write or update this compact record before fixing findings or clearing context. 
 | ID | Severity | File | Finding | Status |
 |----|----------|------|---------|--------|
 | R1 | major/minor/nitpick | path:line | concise issue | open/fixed/deferred/user-decision |
+
+### Restructuring Proposals
+<!-- Only when a code-judo pass ran (deep review mode). These are unscored, behavior-preserving proposals, not severity findings — never fold them into the Fix Queue automatically. Omit the section entirely when no judo pass ran or it found no move. -->
+- P1 — <one-line restructuring> — deletes <what>, reframing <how>; behavior-preservation risk: <the one weak point>.
 
 ### Fix Queue
 - [ ] R1 — <specific next action>

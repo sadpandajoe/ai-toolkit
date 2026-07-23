@@ -38,7 +38,7 @@ The caller provides:
 | Review Domain | Trigger | Skill |
 |---------------|---------|-------|
 | Code quality | Always | `review/references/code-quality.md` |
-| Deep quality | Refactor-shaped diff (see step 3a) OR STANDARD + net-neutral/negative churn; always under `max`/`ultra` effort or an explicit "deep quality" ask. Strict structural findings. | `review/references/deep-quality.md` |
+| Deep quality | Refactor-shaped diff (see step 3a) OR any STANDARD-tier diff; always under `max`/`ultra` effort or an explicit "deep quality" ask. Strict structural findings on the cheap `review` route. | `review/references/deep-quality.md` |
 | Code-judo | `ultra`/`max` effort OR title matches `^refactor` OR explicit ask. Generative restructuring proposal — routes to `deep-review` (see review SKILL Invocation). Refactor-shape alone is **advisory**: recommend it, do not auto-fire. | `review/references/code-judo.md` |
 | Architecture | STANDARD + logic changes in source files; MODERATE only when ownership/design placement is unclear | `plan-review/references/architecture.md` |
 | Tests | MODERATE or STANDARD + test files exist in diff OR test files exist for changed source files | `testing/references/review-tests.md` |
@@ -54,7 +54,7 @@ The caller provides:
 
 Rules:
 - Code quality **always** triggers regardless of complexity tier.
-- **Deep quality vs Code-judo (cost discipline).** Deep quality is *findings* on the cheap `review` route — auto-fire it on refactor shape or STANDARD. Code-judo is a *generative* pass on the expensive `deep-review` (fable/xhigh) route — auto-fire it only on high-confidence intent (`ultra`/`max` effort, `^refactor` title, or explicit ask). When only the shape signal fires, **recommend** Code-judo in the output ("looks like a refactor — consider a code-judo pass") rather than triggering it; do not spend the deep tier on a heuristic guess.
+- **Deep quality vs Code-judo (cost discipline).** Deep quality is *findings* on the cheap `review` route — auto-fire it on refactor shape or STANDARD. Code-judo is a *generative* pass on the expensive `deep-review` route — auto-fire it only on high-confidence intent (`ultra`/`max` effort, `^refactor` title, or explicit ask). When only the shape signal fires, **recommend** Code-judo in the output ("looks like a refactor — consider a code-judo pass") rather than triggering it; do not spend the deep tier on a heuristic guess.
 - TRIVIAL diffs never trigger Deep quality or Code-judo (a rename or one-liner needs neither).
 - **Deep-tier escalation.** When effort is `ultra`/`max` (including the "deep review" / "deep quality" phrase), report that deep-tier escalation applies: the orchestrator routes *every* triggered lens through the `deep-review` route and adds the Code-judo lane. classify-diff only flags this; the review SKILL Invocation owns the routing (see its Deep review mode section).
 - TRIVIAL complexity: code quality reviewer only unless impact or security sensitivity escalates.
@@ -79,6 +79,7 @@ Rules:
 
 Complexity: TRIVIAL / MODERATE / STANDARD
 Security-sensitive: YES / NO
+Deep-tier escalation: YES / NO   (YES when `max`/`ultra` effort or a "deep review" / "deep quality" ask — the orchestrator then routes every triggered lens through `deep-review` and adds the Code-judo lane)
 Files analyzed: [count]
 
 ### Triggered Reviewers

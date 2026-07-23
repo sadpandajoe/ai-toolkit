@@ -7,7 +7,7 @@
   3. **Against language built-ins** — modern stdlib often covers what looks custom (`Object.groupBy`, `Array.prototype.flatMap`, `itertools.groupby`, etc.). Flag custom helpers that duplicate built-ins.
 - **Consistency** — follow existing patterns and conventions (grep for similar files to find them)
 - **Modeling** — logic lives in the right module/package/class; signatures match neighbors; new code is placed where a future reader would look for it
-- **File-size smell** — a diff that pushes a file from under 1000 lines to over 1000 lines is a `[minor]` decomposition prompt by default; ask whether it should be split first. Escalate to `[major]` under the deep-quality lens (`skills/review/references/deep-quality.md`).
+- **File-size smell** — a diff that pushes a file across 1000 lines (from under 1000 to over, or already over 1000 and grown materially by the diff) is a `[minor]` decomposition prompt by default; ask whether it should be split first. Escalate to `[major]` under the deep-quality lens (`skills/review/references/deep-quality.md`).
 - **Spaghetti growth** — new ad-hoc conditionals or one-off branches inserted into unrelated flows are a design problem, not a style nit; prefer a helper/model/module over tangling an existing path. `[minor]` when it worsens legibility, `[major]` when it makes an existing flow materially harder to reason about.
 - **Test quality** — tests should not silently pass (always-green tests are noise); data should match types
 
