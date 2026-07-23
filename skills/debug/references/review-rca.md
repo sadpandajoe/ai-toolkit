@@ -9,6 +9,10 @@ tier: Heavy
 Review the root cause analysis and proposed solution before implementation.
 This is a shared validator, not a persona-owned workflow.
 
+Use `rca` when the causal chain is bounded and evidence is direct. Use
+`deep-rca` when causes compete, reproduction is intermittent, history matters,
+or multiple systems participate. Both routes are read-only.
+
 If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
 
 Focus on these sections if present:

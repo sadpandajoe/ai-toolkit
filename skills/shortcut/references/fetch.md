@@ -20,12 +20,13 @@ The Shortcut API returns `organization2_missing` (or similar transient errors) o
 ```bash
 shortcut_call() {
   local result
-  result=$(eval "$1") && echo "$result" && return 0
+  result=$("$@") && printf '%s\n' "$result" && return 0
   # First call often fails with transient error — retry once
-  result=$(eval "$1") && echo "$result" && return 0
-  echo "Shortcut API failed after retry: $result" >&2 && return 1
+  result=$("$@") && printf '%s\n' "$result" && return 0
+  printf 'Shortcut API failed after retry: %s\n' "$result" >&2
+  return 1
 }
-# Usage: shortcut_call 'curl -s -H "Shortcut-Token: $SHORTCUT_API_TOKEN" ...'
+# Usage: shortcut_call curl -s -H "Shortcut-Token: $SHORTCUT_API_TOKEN" ...
 ```
 
 If the retry also fails, surface the gap to the user — do not silently move on with missing data.
@@ -127,13 +128,16 @@ When REST API is unavailable after retry or for interactive one-off lookups, use
 # 1. Set up wrapper
 shortcut_call() {
   local result
-  result=$(eval "$1") && echo "$result" && return 0
-  result=$(eval "$1") && echo "$result" && return 0
-  echo "Shortcut API failed after retry: $result" >&2 && return 1
+  result=$("$@") && printf '%s\n' "$result" && return 0
+  result=$("$@") && printf '%s\n' "$result" && return 0
+  printf 'Shortcut API failed after retry: %s\n' "$result" >&2
+  return 1
 }
 
 # 2. Fetch story
-story=$(shortcut_call 'curl -s "https://api.app.shortcut.com/api/v3/stories/12345" -H "Shortcut-Token: $SHORTCUT_API_TOKEN"')
+story=$(shortcut_call curl -s \
+  "https://api.app.shortcut.com/api/v3/stories/12345" \
+  -H "Shortcut-Token: $SHORTCUT_API_TOKEN")
 
 # 3. Parse safely
 python3 -c "

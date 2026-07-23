@@ -39,13 +39,13 @@ for sha in "$@"; do
   fi
 done
 
-TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
+WORK_DIR=$(mktemp -d)
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Build sorted (author date, full sha, short sha, subject) — oldest first
 for sha in "$@"; do
   git show -s --format="%aI%x09%H%x09%h%x09%s" "$sha"
-done | sort -k1,1 > "$TMPDIR/sorted"
+done | sort -k1,1 > "$WORK_DIR/sorted"
 
 # Per-SHA file lists; also record (file, short_sha) for overlap analysis
 echo "## Per-SHA File Lists (author-date order, oldest first)"
@@ -56,10 +56,10 @@ while IFS=$'\t' read -r adate full_sha short_sha subj; do
   while IFS= read -r f; do
     [[ -z "$f" ]] && continue
     echo "    - $f"
-    printf '%s\t%s\n' "$f" "$short_sha" >> "$TMPDIR/file_sha"
+    printf '%s\t%s\n' "$f" "$short_sha" >> "$WORK_DIR/file_sha"
   done < <(git diff-tree --no-commit-id --name-only -r "$full_sha")
   echo
-done < "$TMPDIR/sorted"
+done < "$WORK_DIR/sorted"
 
 # SHA pairs sharing files
 echo "## SHA Pairs Sharing Files (dependency edges)"
@@ -67,7 +67,7 @@ echo
 echo "Pairs with overlap need ordering. The earlier SHA (by author date) generally comes first; verify by inspecting hunks for revert/replace patterns."
 echo
 
-if [[ -s "$TMPDIR/file_sha" ]]; then
+if [[ -s "$WORK_DIR/file_sha" ]]; then
   PAIRS=$(awk -F'\t' '
     { files[$1] = files[$1] " " $2 }
     END {
@@ -104,7 +104,7 @@ if [[ -s "$TMPDIR/file_sha" ]]; then
         printf "\n"
       }
     }
-  ' "$TMPDIR/file_sha" | sort -k3,3rn -k1,1)
+  ' "$WORK_DIR/file_sha" | sort -k3,3rn -k1,1)
 
   if [[ -z "$PAIRS" ]]; then
     echo "  (no shared files — all SHAs are independent)"
@@ -124,8 +124,8 @@ echo
 echo "Files touched by 2+ SHAs are dependency points. Files touched by 1 SHA are safe."
 echo
 
-if [[ -s "$TMPDIR/file_sha" ]]; then
-  sort "$TMPDIR/file_sha" | awk -F'\t' '
+if [[ -s "$WORK_DIR/file_sha" ]]; then
+  sort "$WORK_DIR/file_sha" | awk -F'\t' '
     {
       if ($1 != prev) {
         if (prev != "") {
@@ -160,14 +160,14 @@ n=0
 while IFS=$'\t' read -r adate full_sha short_sha subj; do
   n=$((n + 1))
   printf "  %2d. %s  %s  %s\n" "$n" "$short_sha" "$adate" "$subj"
-done < "$TMPDIR/sorted"
+done < "$WORK_DIR/sorted"
 
 echo
 echo "## Independence Check"
 echo
 
-if [[ -s "$TMPDIR/file_sha" ]]; then
-  ALL_SHAS=$(awk -F'\t' '{print $3}' "$TMPDIR/sorted" | sort -u)
+if [[ -s "$WORK_DIR/file_sha" ]]; then
+  ALL_SHAS=$(awk -F'\t' '{print $3}' "$WORK_DIR/sorted" | sort -u)
   OVERLAPPING_SHAS=$(awk -F'\t' '
     { files[$1] = files[$1] " " $2 }
     END {
@@ -179,7 +179,7 @@ if [[ -s "$TMPDIR/file_sha" ]]; then
         delete arr
       }
     }
-  ' "$TMPDIR/file_sha" | sort -u)
+  ' "$WORK_DIR/file_sha" | sort -u)
 
   INDEPENDENT=$(comm -23 <(echo "$ALL_SHAS") <(echo "$OVERLAPPING_SHAS") || true)
   if [[ -n "$INDEPENDENT" ]]; then

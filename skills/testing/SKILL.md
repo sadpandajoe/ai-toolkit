@@ -1,8 +1,6 @@
 ---
 name: testing
-description: "Umbrella for test-harness craft: create/update automated test suites, review test code, review test-plan adequacy."
-user-invocable: false
-disable-model-invocation: true
+description: "Use for creating, updating, or reviewing automated tests and test-plan adequacy. Do NOT use for manual QA execution, production debugging, or feature implementation beyond test harnesses."
 ---
 
 # Testing
@@ -10,6 +8,7 @@ disable-model-invocation: true
 ## Before Starting
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
+Read and apply `rules/testing.md` for test strategy and execution guardrails.
 
 Umbrella for test-harness craft — writing, updating, and critiquing automated tests at the pytest/jest/vitest layer.
 
@@ -31,8 +30,9 @@ A QA scenario list feeds testing; testing implements the suite that protects tho
 
 ## Invocation Patterns
 
-- `create-tests` / `update-tests` — orchestrator spawns as implementation subagent with handoff back for `/review-code`
-- `review-tests` — reviewer subagent dispatched by `/review-code` when tests exist in the diff
+<!-- aitk-model-route:testing.test-authoring -->
+- `create-tests` / `update-tests` — orchestrator spawns an `implementation` subagent with handoff back for `review-code`
+- `review-tests` — reviewer subagent dispatched by `review-code` when tests exist in the diff
 - `review-testplan` — reviewer subagent dispatched by `planning/references/iterate-review.md` when reviewing a plan's test strategy
 
 ## Notes

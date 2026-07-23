@@ -8,7 +8,8 @@ tier: Standard
 
 Deterministic reviewer routing. Read the changeset and return which review domains should be activated, why each triggered, and whether the diff is security-sensitive.
 
-This skill replaces inline reviewer-selection logic in commands. The calling command dispatches subagents based on this skill's output — this skill classifies, the command orchestrates.
+<!-- aitk-model-route-exempt:describes-caller-owned-dispatch -->
+This skill replaces inline reviewer-selection logic in commands. The calling workflow dispatches subagents based on this skill's output — this skill classifies, the command orchestrates.
 
 ## Required Context
 
@@ -82,6 +83,7 @@ Files analyzed: [count]
 ```
 
 ## Notes
-- This skill classifies — it does not dispatch reviewers or launch subagents. The calling command owns orchestration.
+<!-- aitk-model-route-exempt:explicitly-not-a-dispatch -->
+- This skill classifies — it does not dispatch reviewers or launch subagents. The calling workflow owns orchestration.
 - File domain detection uses path patterns first, content signals second. When a file matches multiple domains (e.g., a test for a frontend component), classify it under each applicable domain.
 - The trigger table is the single source of truth for which reviewers activate. If the table needs updating (new reviewer, new trigger), update it here rather than in individual commands.

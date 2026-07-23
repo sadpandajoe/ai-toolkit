@@ -23,16 +23,24 @@ Use this for:
 - validating whether a suspected fix already exists
 - narrowing failure scope before planning or adaptation
 
-This file is the reusable RCA phase for larger workflows. Use it when the public action is still `/fix-bug`, `/create-feature`, or another end-to-end command.
+This file is the reusable RCA phase for larger workflows. Use it when the public action is still `fix-bug`, `create-feature`, or another end-to-end command.
 
 ## Core Steps
 
 1. Define the problem precisely.
 2. Reproduce if possible.
-3. Inspect code, history, and recent changes. Scope git searches to master and the current branch — do not use `git log --all` (unmerged branches may contain experimental or unvetted code).
+3. Use git history early: inspect blame, logs, and recent changes before settling
+   on a cause. Scope git searches to master and the current branch — do not use
+   `git log --all` (unmerged branches may contain experimental or unvetted code).
 4. Identify the most likely introducing change. When restoring removed or commented-out code, trace the removal commit on master and inspect its parent (`git show <sha>^:<file>`) rather than searching other branches.
 5. Check whether an equivalent fix already exists.
-6. Summarize root cause, evidence, and open uncertainty.
+6. Name the regression test that should fail before the fix and pass after it,
+   or record why that proof is not currently practical.
+7. Summarize root cause, evidence, and open uncertainty. Separate the incident
+   root cause from latent bugs or opportunistic hardening so the causal chain
+   remains clear. Preserve that distinction in PROJECT.md and carry it into a
+   later bug-fix PR description: **Incident Root Cause**, **Latent Bugs /
+   Hardening** when present, then **Fix**.
 
 ## Output
 
@@ -43,6 +51,7 @@ Return a compact handoff:
 
 - Problem: <what is broken>
 - Root cause: <most likely cause>
+- Latent bugs / hardening: <separate findings, or none>
 - Evidence: <key proof points>
 - Existing fix: <yes/no and where>
 - Open questions: <remaining uncertainty>
@@ -70,6 +79,7 @@ Full extended output:
 - Problem: <user-visible symptom, in code-level terms>
 - Affected area: <files, services, flows>
 - Likely root cause: <most plausible cause>
+- Latent bugs / hardening: <separate findings, or none>
 - Evidence: <key proof points>
 - Introducing change: <commit / PR / unknown>
 - Existing local safeguards: <present / absent / partial>

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "python": {"minimum": "3.11", "maximum": "3.14"},
+  "operating_systems": ["macos-latest", "ubuntu-latest"],
+  "shell": "posix-sh",
+  "providers": ["claude", "codex"],
+  "distributions": ["source-linked", "codex-plugin"],
+  "extensions": ["pgm"],
+  "extension_distributions": {"pgm": ["source-linked"]},
+  "environment_gated": ["live-provider-invocation", "authenticated-apis", "hook-trust-ui"]
+}

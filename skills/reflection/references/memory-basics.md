@@ -1,6 +1,6 @@
 # Memory Basics
 
-Use for `/reflect`, `/reflect add`, and `/reflect list`.
+Use for `reflect`, `reflect add`, and `reflect list`.
 
 ## Add Flow
 

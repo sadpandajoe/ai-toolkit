@@ -1,6 +1,8 @@
-# /fix-ci Continuation Checkpoint Extension
+# Fix-CI Continuation Details
 
-`/checkpoint` writes the generic `## Continuation Checkpoint` block (see [../SKILL.md](../SKILL.md) and [../../../commands/checkpoint.md](../../../commands/checkpoint.md)). When the detected top-level command is `/fix-ci`, replace the generic `Phase:` field with the `/fix-ci`-specific enum:
+The deterministic checkpoint API owns the machine block in
+[workflow-checkpoint.md](workflow-checkpoint.md). For `fix-ci`, add this
+human-readable phase below it:
 
 ```markdown
 - Phase: gather-logs / classify / ownership-check / complexity-gate / rca / gate / apply / verify / review / summarize

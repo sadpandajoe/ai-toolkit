@@ -4,7 +4,7 @@ tier: Heavy
 
 # PR Review Procedure
 
-Use for a single GitHub PR review after `/review-pr` resolves the PR reference.
+Use for a single GitHub PR review after `review-pr` resolves the PR reference.
 
 ## Gather Context
 
@@ -38,7 +38,9 @@ Trivial + confidence 8/10+: code quality review only, unless impact assessment e
 Run [../../qa/references/assess-impact.md](../../qa/references/assess-impact.md) on the PR diff to classify impact as CORE, STANDARD, or PERIPHERAL.
 
 Impact escalation:
-- TRIVIAL + CORE -> full review team
+- TRIVIAL + CORE -> code quality plus only the lens matching why the workflow is
+  CORE. Use the full team only when multiple CORE lenses apply or the relevant
+  safety lens is ambiguous.
 - MODERATE + CORE -> triggered reviewer lanes plus stricter severity calibration
 - STANDARD + CORE -> full team + suggest adversarial review for security-sensitive areas
 
@@ -66,13 +68,16 @@ Trivial:
 - If clean, return a compact approve recommendation. Post/approve only when `--auto` or explicit user authorization grants that boundary.
 
 Moderate:
+<!-- aitk-model-route:review.pr-moderate -->
 - Launch only the triggered reviewer lenses needed by the diff classification.
 - Keep the main thread compact: collect findings, recommendation, confidence, and any premise uncertainty.
 - Escalate to Standard only when reviewers find cross-cutting risk, unclear ownership, or security-sensitive behavior.
 
 Standard:
+<!-- aitk-model-route:review.pr-standard -->
 - Launch triggered reviewer lenses in parallel.
-- Use reasoning-effort selection from `rules/orchestration.md`; default to standard effort for bounded PRs, heavier effort for substantial multi-system or security-sensitive reviews.
+- Use `review` for bounded PR lanes and `deep-review` for architecture,
+  security-sensitive, adversarial, or substantial multi-system lanes.
 - Optional second opinion when available.
 - Adversarial lane only with `--adversarial` or security-sensitive detection.
 

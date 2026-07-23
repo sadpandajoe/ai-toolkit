@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "always_on_rules": [
+    "rules/universal.md",
+    "rules/resource-management.md",
+    "rules/context-management.md"
+  ]
+}

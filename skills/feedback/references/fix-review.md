@@ -27,7 +27,7 @@ The main thread owns final review, posting, thread resolution, and user-facing s
 
 ## Review Gate
 
-Run `/review-code` on changed files after substantive fixes. The developer emits the Review Gate block from `rules/review-gate.md`.
+Run `review-code` on changed files after substantive fixes. The developer emits the Review Gate block from `rules/review-gate.md`.
 
 For truly minimal edits, such as typo fixes or mechanical renames, review may be skipped under the review-gate skip rule. State the skip reason.
 
@@ -35,7 +35,7 @@ For truly minimal edits, such as typo fixes or mechanical renames, review may be
 
 Prefer fixing the originating in-PR commit when the branch is not merged and the source commit is clear.
 
-New commits on the current PR branch and pushes are part of the default `/address-feedback` flow — apply the recommended shape and push once verification is clean. Amend, rebase, and force-push still require explicit user authorization for this feedback round (the unattended default does not grant history mutation).
+New commits on the current PR branch and pushes are part of the default `address-feedback` flow — apply the recommended shape and push once verification is clean. Amend, rebase, and force-push still require explicit user authorization for this feedback round (the unattended default does not grant history mutation).
 
 | Scenario | Action |
 |----------|--------|
@@ -56,7 +56,7 @@ Force-push only after explicit user authorization, only on the current feature b
 
 ## Persist Fix Wave to PROJECT.md (Hard Gate Before Clear)
 
-After each fix wave, before `/checkpoint --clear` can fire, the orchestrator must append a `## Feedback Round N` entry to PROJECT.md:
+After each fix wave, before checkpoint + context_reset can fire, the orchestrator must append a `## Feedback Round N` entry to PROJECT.md:
 
 ```markdown
 ## Feedback Round N
@@ -69,7 +69,7 @@ Residual risk: [...]
 Next: [next wave / posting / done]
 ```
 
-This block is what `/start` reads to resume mid-feedback-round after a clear. Without it, the comment-id → fix-state mapping is lost.
+This block is what `start` reads to resume mid-feedback-round after a clear. Without it, the comment-id → fix-state mapping is lost.
 
 ## Stop Conditions
 

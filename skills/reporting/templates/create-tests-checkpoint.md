@@ -1,6 +1,8 @@
-# /create-tests Continuation Checkpoint Extension
+# Create-Tests Continuation Details
 
-`/checkpoint` writes the generic `## Continuation Checkpoint` block (see [../SKILL.md](../SKILL.md) and [../../../commands/checkpoint.md](../../../commands/checkpoint.md)). When the detected top-level command is `/create-tests`, replace the generic `Phase:` field with the `/create-tests`-specific enum:
+The deterministic checkpoint API owns the machine block in
+[workflow-checkpoint.md](workflow-checkpoint.md). For `create-tests`, add this
+human-readable phase below it:
 
 ```markdown
 - Phase: scope / review-tests / write-tests / verify / review / summarize

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Reporting"
+  short_description: "Help with Reporting tasks"
+
+policy:
+  allow_implicit_invocation: false

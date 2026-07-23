@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "policy": {
+    "efforts": {
+      "standard": "high",
+      "deep": "xhigh"
+    },
+    "automatic_max": false,
+    "fallback": "forbidden"
+  },
+  "providers": {
+    "codex": {
+      "minimum_cli": "0.144.5",
+      "models": {
+        "sol": {
+          "selector": "gpt-5.6-sol"
+        }
+      }
+    },
+    "claude": {
+      "minimum_cli": "2.1.214",
+      "models": {
+        "opus": {
+          "selector": "claude-opus-4-8"
+        },
+        "fable": {
+          "selector": "claude-fable-5"
+        },
+        "sonnet": {
+          "selector": "claude-sonnet-5"
+        }
+      }
+    }
+  },
+  "routes": [
+    {
+      "name": "implementation",
+      "reasoning": "standard",
+      "responsibility": "implementation",
+      "restrictions": [
+        "Implement only the bounded task contract.",
+        "Do not commit, push, publish, or widen scope."
+      ],
+      "explicit_only": false,
+      "providers": {
+        "codex": {
+          "model": "sol",
+          "sandbox": "workspace-write"
+        },
+        "claude": {
+          "model": "opus",
+          "permission_mode": "acceptEdits",
+          "disallowed_tools": []
+        }
+      }
+    },
+    {
+      "name": "review",
+      "reasoning": "standard",
+      "responsibility": "review",
+      "restrictions": [
+        "Perform an independent read-only review.",
+        "Do not edit files or mutate external state."
+      ],
+      "explicit_only": false,
+      "providers": {
+        "codex": {
+          "model": "sol",
+          "sandbox": "read-only"
+        },
+        "claude": {
+          "model": "opus",
+          "permission_mode": "plan",
+          "disallowed_tools": [
+            "Write",
+            "Edit",
+            "NotebookEdit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "deep-review",
+      "reasoning": "deep",
+      "responsibility": "review",
+      "restrictions": [
+        "Perform an independent read-only architecture, security, adversarial, or cold review.",
+        "Do not edit files or mutate external state."
+      ],
+      "explicit_only": false,
+      "providers": {
+        "codex": {
+          "model": "sol",
+          "sandbox": "read-only"
+        },
+        "claude": {
+          "model": "fable",
+          "permission_mode": "plan",
+          "disallowed_tools": [
+            "Write",
+            "Edit",
+            "NotebookEdit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rca",
+      "reasoning": "standard",
+      "responsibility": "rca",
+      "restrictions": [
+        "Synthesize root cause from supplied evidence.",
+        "Do not edit files, decide implementation scope, or mutate external state."
+      ],
+      "explicit_only": false,
+      "providers": {
+        "codex": {
+          "model": "sol",
+          "sandbox": "read-only"
+        },
+        "claude": {
+          "model": "opus",
+          "permission_mode": "plan",
+          "disallowed_tools": [
+            "Write",
+            "Edit",
+            "NotebookEdit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "deep-rca",
+      "reasoning": "deep",
+      "responsibility": "rca",
+      "restrictions": [
+        "Synthesize ambiguous, intermittent, history-dependent, or cross-system root cause from supplied evidence.",
+        "Do not edit files, decide implementation scope, or mutate external state."
+      ],
+      "explicit_only": false,
+      "providers": {
+        "codex": {
+          "model": "sol",
+          "sandbox": "read-only"
+        },
+        "claude": {
+          "model": "fable",
+          "permission_mode": "plan",
+          "disallowed_tools": [
+            "Write",
+            "Edit",
+            "NotebookEdit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "operations",
+      "reasoning": "standard",
+      "responsibility": "operations",
+      "restrictions": [
+        "Collect read-only evidence, produce deterministic reports, or prepare already-authored API, ticket, or Playwright steps for parent execution.",
+        "Do not perform external mutations, execute tests, design tests, diagnose failures, perform RCA, review, decide fixes, or modify product code."
+      ],
+      "explicit_only": false,
+      "providers": {
+        "codex": {
+          "model": "sol",
+          "sandbox": "read-only"
+        },
+        "claude": {
+          "model": "sonnet",
+          "permission_mode": "dontAsk",
+          "disallowed_tools": [
+            "Write",
+            "Edit",
+            "NotebookEdit"
+          ]
+        }
+      }
+    }
+  ],
+  "dispatch_boundaries": [
+    {"id": "planning.pm-brief-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "planning.technical-plan-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.create-feature-plan-review", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.create-feature-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
+    {"id": "workflows.fix-bug-implementation", "path": "skills/workflows/references/fix-bug.md", "count": 1, "routes": ["implementation"]},
+    {"id": "review.code-quality-final", "path": "skills/review/references/code-quality.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "review.local-independent-second-opinion", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"]},
+    {"id": "review.local-final-pass", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"]},
+    {"id": "review.local-independent-capability", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"]},
+    {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review"]},
+    {"id": "review.pr-standard", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.adversarial-primary", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"]},
+    {"id": "workflows.adversarial-second-opinion", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"]},
+    {"id": "workflows.review-code-fresh", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.review-plan-fresh", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.review-plan-selected", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.review-pr-fresh", "path": "skills/workflows/references/review-pr.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "pgm.status-collection", "path": "extensions/pgm/skills/pgm/references/create-status-report.md", "count": 1, "routes": ["operations"]},
+    {"id": "cherry-pick.scope-leak-review", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "cherry-pick.scope-leak-rereview", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "cherry-pick.unblock-discovery", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review"]},
+    {"id": "cherry-pick.batch-investigation", "path": "skills/cherry-pick/references/batch-sequence.md", "count": 1, "routes": ["rca", "deep-rca"]},
+    {"id": "cherry-pick.headless-implementation", "path": "skills/cherry-pick/references/headless-trivial.md", "count": 1, "routes": ["implementation"]},
+    {"id": "cherry-pick.validate-scope-leak", "path": "skills/cherry-pick/references/validate.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "cherry-pick.validate-scope-leak-rerun", "path": "skills/cherry-pick/references/validate.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "debug.ci-triage", "path": "skills/debug/references/ci-fix-orchestration.md", "count": 1, "routes": ["rca", "deep-rca"]},
+    {"id": "feedback.comment-fix-groups", "path": "skills/feedback/SKILL.md", "count": 1, "routes": ["implementation"]},
+    {"id": "planning.loop-summary", "path": "skills/planning/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "planning.loop-ownership", "path": "skills/planning/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "qa.fresh-validation", "path": "skills/qa/SKILL.md", "count": 1, "routes": ["review", "operations"]},
+    {"id": "review.pr-lenses", "path": "skills/review/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "review.local-primary-lanes", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "review.pr-batch", "path": "skills/review/references/pr-batch.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "testing.test-authoring", "path": "skills/testing/SKILL.md", "count": 1, "routes": ["implementation"]},
+    {"id": "workflows.feedback-fix-wave", "path": "skills/workflows/references/address-feedback.md", "count": 1, "routes": ["implementation"]},
+    {"id": "workflows.create-feature-moderate-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
+    {"id": "workflows.create-feature-moderate-handoff", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
+    {"id": "workflows.review-code-orchestration", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.watch-pr-poll", "path": "skills/workflows/references/watch-pr.md", "count": 1, "routes": ["operations"]},
+    {"id": "workflows.watch-pr-fix", "path": "skills/workflows/references/watch-pr.md", "count": 1, "routes": ["implementation"]}
+  ],
+  "dispatch_exemptions": [
+    {"path": "skills/review/references/adversarial-orchestration.md", "marker": "describes-reviewers-not-dispatch", "count": 1},
+    {"path": "skills/agent-setup-maintainer/lessons.md", "marker": "historical-handoff-lesson", "count": 1},
+    {"path": "skills/review/references/classify-diff.md", "marker": "describes-caller-owned-dispatch", "count": 1},
+    {"path": "skills/review/references/classify-diff.md", "marker": "explicitly-not-a-dispatch", "count": 1},
+    {"path": "skills/review/references/local-review.md", "marker": "pre-dispatch-condition", "count": 1},
+    {"path": "skills/review/references/local-review.md", "marker": "pre-launch-condition", "count": 1},
+    {"path": "skills/testing/rules.md", "marker": "test-runner-process-workers", "count": 1},
+    {"path": "skills/workflows/references/start.md", "marker": "preflight-before-later-dispatch", "count": 1},
+    {"path": "skills/workflows/references/watch-pr.md", "marker": "describes-prior-dispatch-payloads", "count": 1},
+    {"path": "skills/workflows/SKILL.md", "marker": "meta-routing-policy", "count": 1}
+  ]
+}

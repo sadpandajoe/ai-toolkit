@@ -20,7 +20,7 @@ When investigation identified files to exclude (CI configs, submodule pointers, 
 1. Switch to the target branch.
 2. Check whether the commit is a merge commit:
    ```bash
-   ${CLAUDE_SKILL_DIR}/scripts/detect-merge-commit.sh <commit>
+   <skill-dir>/scripts/detect-merge-commit.sh <commit>
    ```
    - 1 parent → `git cherry-pick -x <commit>`
    - 2+ parents → `git cherry-pick -x -m 1 <commit>`

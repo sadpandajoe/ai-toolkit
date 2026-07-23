@@ -1,6 +1,6 @@
 # Failure Postmortem
 
-Use for `/reflect failure`.
+Use for `reflect failure`.
 
 Record a structured postmortem after a workflow fails or produces a bad outcome. The output is a feedback memory with enough context to prevent recurrence.
 

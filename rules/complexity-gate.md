@@ -1,6 +1,8 @@
 # Complexity Gate
 
-Classification protocol for commands that branch on trivial, moderate, or standard paths. This defines the output block format and path rules. Signal tables are command-specific and stay in commands.
+Classification protocol for workflows that branch on trivial, moderate, or
+standard paths. This defines the output block format and path rules. Signal
+tables stay in the canonical workflow reference.
 
 ## Block Format
 
@@ -26,8 +28,8 @@ When classification is `TRIVIAL` and confidence is `8/10` or higher:
 
 When classification is `MODERATE` and confidence is `8/10` or higher:
 - Skip the formal planning phase and parallel investigation-lane subagents
-- Orchestrator scopes, investigates, or plans inline as the command requires
-- Still run one command-required review phase with at least one fresh reviewer — never review your own work. Review commands may launch all triggered lanes for the diff; feature work usually runs code review after implementation. Run plan review only when inline design uncovered real design uncertainty.
+- Orchestrator scopes, investigates, or plans inline as the workflow requires
+- Still run one workflow-required review phase with at least one fresh reviewer — never review your own work. Review workflows may launch all triggered lanes for the diff; feature work usually runs code review after implementation. Run plan review only when inline design uncovered real design uncertainty.
 - Still run tests and emit a Review Gate block
 - Spawn additional subagents only when parallelism provides a clear wall-clock win
 
@@ -43,27 +45,27 @@ MODERATE is the **default classification** — most real work lands here. Use TR
 
 When classification is `STANDARD` (or confidence is below `8/10` for any classification):
 - Full workflow: durable plan or investigation artifact as the command requires, reviewer subagents, and validation gates
-- Spawn subagents per command-specific steps and `rules/orchestration.md` reasoning-load boundaries
-- **Emit a Phase Plan block immediately after the Complexity Gate** (see below). This announces the cadence — including planned checkpoint/clear boundaries — upfront, before the first phase starts.
+- Use `fresh_subagent`/`parallel_fanout` only where the workflow and
+  `rules/orchestration.md` reasoning-load boundaries call for them.
+- **Emit a Phase Plan block immediately after the Complexity Gate** (see below). This announces the cadence — including planned checkpoint/context-reset boundaries — upfront, before the first phase starts.
 
 ## Phase Plan Block (STANDARD only)
 
-After emitting the Complexity Gate, emit a Phase Plan that names the remaining phases and where checkpoint/clear will fire. This makes context cadence predictable to the user instead of firing silently mid-workflow.
+After emitting the Complexity Gate, emit a Phase Plan that names the remaining phases and where checkpoint/context-reset will fire. This makes context cadence predictable to the user instead of firing silently mid-workflow.
 
 Format:
 
 ```markdown
 ## Phase Plan
 Phases: [phase 1] → [clear] → [phase 2] → [clear] → ... → [final phase]
-Checkpoints fire after: [list of durable artifacts that trigger /checkpoint --clear]
+Checkpoints fire after: [list of durable artifacts that trigger checkpoint + context_reset]
 Resume contract: PROJECT.md (+ manifest if any) carries state across clears.
 ```
 
-Pull the phase list from the command's STANDARD happy path. Pull the checkpoint/clear list from the command's Command Contract and `rules/context-management.md` Proactive Phase Reset Policy. Examples:
-
-- `/create-feature` STANDARD: `plan → clear → plan-review → clear → implement-slice(s) → clear → /review-code → clear → feature-validation → summary`
-- `/fix-bug` STANDARD: `RCA → RCA-review → clear → PLAN.md → clear → plan-review → clear → implement → /review-code → clear → QA → summary`
-- `/fix-ci` STANDARD: `triage → action-gate → clear → apply → verify → /review-code → clear → commit-recommendation`
+Pull the phase list from the selected workflow's STANDARD happy path. Pull the
+checkpoint/reset list from its contract and `rules/context-management.md`
+Proactive Phase Reset Policy. This rule owns the block shape only; it must not
+copy workflow-specific phase sequences.
 
 If the user's request is genuinely too small for STANDARD (≤2 phases after Complexity Gate), reclassify MODERATE rather than emit a degenerate Phase Plan.
 
@@ -94,4 +96,5 @@ Always emit the gate block above. Do not silently choose a path — the block mu
 
 ## Scope
 
-This rule defines an output contract. It does not define the signal tables (those are command-specific) or the path-specific steps (those are command-owned).
+This rule defines an output contract. It does not define signal tables or
+path-specific steps; those are owned by canonical workflow references.

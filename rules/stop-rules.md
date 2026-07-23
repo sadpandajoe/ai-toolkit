@@ -17,8 +17,12 @@ Stop the current loop when any of these are true:
 - User decision needed → `Status: user decision`
 - Same issue persists → `Status: blocked`
 
-Then hand control back to the calling command. "Stop" does not mean abandon the workflow — the caller owns next steps (commit, summary, handoff). See the Continuation Rule in `rules/review-gate.md`.
+Then hand control back to the calling workflow. "Stop" does not mean abandon
+the workflow; the caller owns next steps (commit, summary, handoff). See the
+Continuation Rule in `rules/review-gate.md`.
 
 ## Scope
 
-This rule applies to review/fix loops (`review/references/code-quality.md`), plan review iterations, and any other iterative quality loop. It does not override command-specific stop conditions that are stricter.
+This rule applies to review/fix loops (`review/references/code-quality.md`), plan
+review iterations, and any other iterative quality loop. It does not override
+stricter workflow-specific stop conditions.

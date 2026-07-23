@@ -1,6 +1,8 @@
-# /address-feedback Continuation Checkpoint Extension
+# Address-Feedback Continuation Details
 
-`/checkpoint` writes the generic `## Continuation Checkpoint` block (see [../SKILL.md](../SKILL.md) and [../../../commands/checkpoint.md](../../../commands/checkpoint.md)). When the detected top-level command is `/address-feedback`, replace the generic `Phase:` field with the `/address-feedback`-specific enum and add the PR identifier:
+The deterministic checkpoint API owns the machine block in
+[workflow-checkpoint.md](workflow-checkpoint.md). For `address-feedback`, add the
+following human-readable details below it:
 
 ```markdown
 - Phase: gather / complexity-gate / investigate / triage / fix / review / draft / post / summarize

@@ -1,8 +1,6 @@
 ---
 name: workstreams
-description: "Fan-in for parallel implementation subagents: collect handoffs, track slice status, merge branches in dependency order, surface failures."
-user-invocable: false
-disable-model-invocation: true
+description: "Use to collect parallel implementation handoffs, track slice status, and merge independent branches in dependency order. Do NOT use for single-threaded work, planning, or spawning the workstreams themselves."
 ---
 
 # Workstreams

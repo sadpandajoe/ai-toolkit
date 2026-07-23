@@ -1,0 +1,4 @@
+interface:
+  display_name: "Program Management Reports"
+  short_description: "Create program health and velocity reports"
+  default_prompt: "Use $pgm to create a current program health report."

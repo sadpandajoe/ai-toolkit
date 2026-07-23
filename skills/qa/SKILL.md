@@ -1,7 +1,6 @@
 ---
 name: qa
 description: Manual QA work — triage a loose bug report into a repro plan, validate a fix, assess change impact, discover or expand use cases, execute scenarios in a real environment, or file a bug report. Do NOT use for root-cause investigation (use debug/), writing automated tests (use testing/), or code review (use review/).
-user-invocable: false
 ---
 
 # QA
@@ -35,16 +34,17 @@ Most QA phases are checklist + output-template work the orchestrator does inline
 2. Follow its steps.
 3. Emit its output block into the conversation.
 
-When fresh context matters (long-running session, parallel work, separation from the implementation thread), spawn a `general-purpose` subagent and pass the reference content as the prompt. Each reference declares its recommended provider-neutral tier in frontmatter.
+<!-- aitk-model-route:qa.fresh-validation -->
+When fresh context matters (long-running session, parallel work, separation from the implementation thread), spawn a subagent on `review` for validation judgment or `operations` for deterministic evidence collection and pass the reference content as the prompt.
 
 ## Phase Composition
 
 Common combinations:
-- **Bug workflow** (`/fix-bug`): triage-bug → (implement) → validate-fix → optionally file-bug
-- **Feature workflow** (`/create-feature`): feature acceptance criteria → validate-feature
-- **Code review** (`/review-code`, `/review-pr`): assess-impact (always) → expand-scenarios (when reviewing a fix)
+- **Bug workflow** (`fix-bug`): triage-bug → (implement) → validate-fix → optionally file-bug
+- **Feature workflow** (`create-feature`): feature acceptance criteria → validate-feature
+- **Code review** (`review-code`, `review-pr`): assess-impact (always) → expand-scenarios (when reviewing a fix)
 - **Test plan**: analyze-use-cases → expand-scenarios → execute-use-cases
-- **PR smoke test** (`/test-pr`): test-pr/setup → assess-impact → pr-smoke-scenarios → test-pr/execute → test-pr/report
+- **PR smoke test** (`test-pr`): test-pr/setup → assess-impact → pr-smoke-scenarios → test-pr/execute → test-pr/report
 
 ## Notes
 

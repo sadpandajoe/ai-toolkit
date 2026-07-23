@@ -25,8 +25,11 @@ Scenario mix:
 - Guard/edge path that could break from the changed files.
 - One adjacent core workflow when impact is CORE.
 
-## Confirmation
+## Selection Boundary
 
-Show the scenario list before execution. Accept user edits before running the browser.
+Show the scenario list before execution, then proceed by default; invoking the
+workflow delegates non-destructive scenario selection on local or staging
+environments. When `--step` was supplied, pause here and accept user edits before
+running the browser.
 
 For very small or mechanical PRs, a 1-2 scenario smoke is acceptable when the impact assessment supports it.

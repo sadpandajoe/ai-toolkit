@@ -1,28 +1,65 @@
-# Claude Code Setup & Workflow Rules
+# AI Toolkit
 
-One-stop setup repo for AI-assisted coding with Claude Code and Codex CLI.
+A provider-portable toolkit for repeatable AI-assisted software delivery. Canonical workflows live in Agent Skills and run through natural-language routing or explicit skill invocation.
 
 ## Mental Model
 
-- **Rules** are always-on constraints and routing hints. Keep them short and use them as an index.
-- **Skills** are selected from their descriptions. Descriptions should say when to use the skill and when not to.
-- **Commands** expand prompts. They can reference skill paths to bias selection, but they do not directly call skills.
+- **Rules** are short, always-on safety and routing constraints.
+- **Skills** are the canonical provider-neutral workflows and domain procedures.
+- **Interfaces** declare the stable public workflow names in `interfaces/workflows.json`.
+- **Provider adapters** translate capabilities without duplicating workflow logic.
+- **`aitk`** builds path-resolved guidance and turns structural drift into deterministic failures.
+- **CI** runs the same `aitk check` gate on supported Python versions with SHA-pinned first-party actions.
+
+## Model and Effort Routing
+
+Keep the main coding session on a current Sol-or-newer or Opus workhorse at
+high effort. Spawned workers use stable routes, so normal skills choose the
+right family and effort without copying volatile model IDs into workflow text.
+
+| Job | Route | Automatic effort | Codex | Claude |
+|---|---|---|---|---|
+| Implementation | `implementation` | high | Sol | Opus |
+| Plan/code/test/PR review | `review` | high | Sol | Opus |
+| Architecture, security, adversarial, final cold review | `deep-review` | xhigh | Sol | Fable |
+| RCA | `rca` | high | Sol | Opus |
+| Ambiguous or cross-system RCA | `deep-rca` | xhigh | Sol | Fable |
+| Read-only evidence and deterministic operational summaries | `operations` | high | Sol | Sonnet |
+
+Sonnet does not perform development judgment or effects: no implementation,
+test execution/design, API/ticket mutation, diagnosis, RCA, or review. Fable is
+a read-only deep advisor for reviews and RCA. Automatic routing never selects max and never falls back
+to a weaker model or effort.
+
+Exact current selectors live only in `interfaces/model-routing.json`. A future
+Sol, Opus, Fable, or Sonnet promotion changes one catalog entry; route names,
+skills, and this table remain stable. Resolve the installed toolkit/package
+root, then use `<toolkit-root>/bin/aitk model-route` and
+`<toolkit-root>/bin/aitk model-run --boundary <marker-id>`.
+
+The runner proves the exact CLI request, absence of a fallback argument,
+successful provider exit, and a valid structured result. Current provider
+success formats do not attest the internal serving-model identity, so the
+toolkit does not claim post-hoc verification of provider-side substitution.
+Per-contract SHA-256 labels identify the inlined content for diagnostics; they
+are not an independently anchored integrity check.
 
 ## Quick Start
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/ai-toolkit.git ~/opt/code/ai-toolkit
+git clone https://github.com/sadpandajoe/ai-toolkit.git ~/opt/code/ai-toolkit
 cd ~/opt/code/ai-toolkit
 
 # 2. Install dependencies (claude, codex, tmux, node)
 ./setup.sh
 
-# 3. Link configs to ~/.claude/
+# 3. Build and link provider adapters without replacing personal config
 ./install.sh
 
-# 4. Start coding
-claude
+# 4. Verify both repository and installed state
+bin/aitk check
+bin/aitk doctor --installed --strict
 ```
 
 ## What Gets Installed
@@ -39,12 +76,20 @@ claude
 ### Configuration (via install.sh)
 | File | Purpose |
 |------|---------|
-| `~/.claude/CLAUDE.md` | Global instructions (auto-generated from config/CLAUDE.md) |
-| `~/.claude/commands/` | Custom slash commands |
-| `~/.claude/skills/` | Repo-managed Claude skills |
-| `~/.codex/skills/<skill>` | Repo-managed Codex skill links |
+| `~/.claude/CLAUDE.md` | Personal instructions with an idempotent toolkit-managed guidance block |
+| `${CODEX_HOME:-~/.codex}/AGENTS.md` | Codex personal instructions with the same non-destructive managed guidance model |
+| `~/.claude/skills/<skill>` | Per-skill Claude links; unrelated skills are preserved |
+| `~/.agents/skills/<skill>` | Canonical cross-provider Agent Skill links used by Codex |
+| `~/.ai-toolkit/install-state.json` | Mode-0600 ownership ledger and one-level rollback record |
 
-### Claude Code 2.1.x Features Used
+Only skills classified `public_router` or `public_direct` in
+`interfaces/skills.json` are linked into discovery locations. Internal support
+skills remain packaged for resolver-based use without becoming standalone
+public entrypoints.
+
+The repository root is also a validated Codex plugin package (`.codex-plugin/plugin.json`) with bundled core skills and lifecycle hooks. Use `install.sh` for source-linked local development; use the plugin form when publishing the core toolkit through a personal or team marketplace. The optional PGM extension is source-linked-only in version 0.2.0 because Codex plugin manifests expose one `skills/` tree; this boundary is explicit in `interfaces/support.json`. Codex supports both [Agent Skills locations](https://learn.chatgpt.com/docs/customization/skills) and [plugin distribution](https://learn.chatgpt.com/docs/build-plugins).
+
+### Claude Adapter Capabilities
 | Feature | Purpose |
 |---------|---------|
 | Task subagents | Explore, Plan, general-purpose for specialized work |
@@ -52,31 +97,43 @@ claude
 | Plan mode | EnterPlanMode/ExitPlanMode for structured planning |
 | Native tools | Read, Grep, Glob instead of bash equivalents |
 
+These names are isolated to the Claude adapter. Shared rules and skills use provider-neutral capability language.
+
 ## Repository Structure
 
 ```
 ai-toolkit/
+├── bin/aitk                # Deterministic build + doctor CLI
+├── aitk/                   # Standard-library implementation
+├── .codex-plugin/
+│   └── plugin.json         # Codex plugin package manifest
+├── interfaces/
+│   ├── workflows.json      # Stable core workflow manifest
+│   ├── contracts.json      # Safety, state, resume, and verification contracts
+│   ├── skills.json         # Total public/internal skill classification
+│   ├── providers.json      # Provider capability bindings
+│   ├── model-routing.json  # Exact selectors, effort policy, and dispatch inventory
+│   ├── guidance.json       # Shared always-on rule inventory
+│   └── support.json        # Supported release matrix
 ├── setup.sh                # Install tools (run once)
-├── install.sh              # Link configs to ~/.claude/
+├── install.sh              # Build and install provider adapters safely
 ├── PROJECT_TEMPLATE.md     # Template for project documentation
 ├── build/                  # Generated by install.sh (path-resolved copies)
-│   ├── config/             # Resolved config/CLAUDE.md
-│   └── commands/           # Resolved command files
+│   └── config/             # Resolved provider guidance
 ├── config/
-│   └── CLAUDE.md           # Source template (uses {{TOOLKIT_DIR}} placeholders)
+│   ├── CLAUDE.md           # Claude guidance adapter template
+│   ├── AGENTS.md           # Codex guidance adapter template
+│   └── providers/          # Capability bindings for Claude and Codex
 ├── rules/
 │   ├── universal.md        # Core principles (loaded first)
 │   ├── orchestration.md    # Multi-agent workflow rules
-│   ├── model-assignment.md # Provider-neutral model/effort tiers
+│   ├── model-assignment.md # Stable worker routes and family/effort policy
 │   ├── context-management.md   # Context depth thresholds and checkpoint protocol
+│   ├── durable-workflows.md    # Deterministic phase/effect checkpoint protocol
 │   ├── rule-maintenance.md     # How to strengthen, update, or extract rules
-│   ├── investigation.md    # Debugging & root cause
 │   ├── ci-evidence.md      # CI signals are summaries — open the artifact behind them
-│   ├── rca-writeups.md     # Root-cause write-up structure
 │   ├── implementation.md   # Code development
-│   ├── api-boundary-defense.md # Validation at API boundaries
 │   ├── testing.md          # Test strategy
-│   ├── troubleshooting.md  # Emergency recovery
 │   ├── resource-management.md  # Worktrees, Docker, heavy tasks
 │   ├── preset-environments.md  # Preset staging/prod envs, credentials, VPN reachability
 │   ├── code-review.md      # Review guidelines
@@ -87,7 +144,8 @@ ai-toolkit/
 │   ├── stop-rules.md       # Universal stop conditions for iterative loops
 │   ├── shortcut-api.md     # Shortcut REST API routing hint
 │   └── input-detection.md  # Route ticket/issue inputs to Shortcut or GitHub
-├── skills/                  # Directory skills with SKILL.md; references load lazily (see skills/README.md for anatomy)
+├── skills/                  # Canonical Agent Skills; references load lazily (see skills/README.md for anatomy)
+│   ├── workflows/          # Public daily-workflow router + canonical orchestration references
 │   ├── planning/            # Technical planning — plan-implementation, iterate-review, finalize, feedback-classify
 │   ├── pm/                  # Product management — create-feature-brief, plan-milestones, review-feature-brief, decompose-epic
 │   ├── plan-review/         # Plan-reviewer lenses — architecture, backend, frontend, implementation
@@ -100,17 +158,18 @@ ai-toolkit/
 │   ├── testing/             # Test-harness work — create/update suites, review tests + test plans
 │   ├── preflight/           # Pre-work environment checks — worktree setup + app-runnable env prep
 │   ├── cherry-pick/         # Cherry-pick workflow — investigate, gate, plan, apply, adapt, validate, batch-sequence
-│   ├── agent-setup-maintainer/ # Maintains commands, skills, rules, and agent workflow docs
+│   ├── agent-setup-maintainer/ # Maintains skills, rules, adapters, and agent workflow docs
 │   ├── action-gate/         # Shared proceed/stop decision helper
 │   ├── implement-change/    # Focused implementation
-│   ├── reporting/           # Structural rules + per-command summary/checkpoint templates
-│   ├── metrics-emit/        # Telemetry skill — final command-complete event
-│   ├── archive-project-file/ # Archive lifecycle command
+│   ├── reporting/           # Structural rules + per-workflow summary/checkpoint templates
+│   ├── metrics-emit/        # Telemetry skill — final workflow-complete event
+│   ├── archive-project-file/ # Archive lifecycle skill
 │   ├── shortcut/            # Shortcut REST fetch/report helpers
 │   ├── superset-local/      # Superset-specific local stack + Playwright helpers
 │   ├── preset-rbac-setup/   # Seed canonical RBAC test users on a staging workspace via the Manager API
 │   └── workstreams/         # Post-parallel-implementation fan-in and merge sequencing
 ├── hooks/
+│   ├── hooks.json                 # Codex plugin lifecycle-hook adapter
 │   ├── prevent-project-commit.sh  # Block unsafe git flags and local workflow state commits
 │   ├── pre-push-validate.sh       # Run repo-pinned ruff + targeted pytest on commits about to be pushed
 │   ├── check-resources.sh         # Warn on constrained resources before tests
@@ -119,235 +178,198 @@ ai-toolkit/
 │   └── test-prevent-project-commit.sh # Smoke tests for the git safety hook (not a productive hook)
 ├── extensions/
 │   └── pgm/                 # Program management (optional, install with --with-pgm)
-│       ├── commands/         # /create-status-report, /create-velocity-report
-│       ├── skills/           # pgm-comms.md
+│       ├── interfaces/       # Optional workflow manifest
+│       ├── skills/pgm/       # Canonical optional Agent Skill + references
 │       ├── rules/            # pgm.md (org-specific context)
-│       └── install.sh        # Extension installer
-├── install-hooks.sh          # Install hooks into settings.json (optional)
-└── commands/
-    ├── start.md            # Start or resume session
-    ├── fix-bug.md          # End-to-end bug workflow
-    ├── create-feature.md   # End-to-end feature workflow
-    ├── create-tests.md     # Create the first meaningful tests
-    ├── update-tests.md     # Improve an existing test suite
-    ├── run-test-plan.md    # Execute a reviewed validation plan
-    ├── test-pr.md          # Manual PR testing via Playwright browser
-    ├── fix-ci.md           # Diagnose and safely fix CI failures
-    ├── review-code.md      # Local review + autofix loop
-    ├── review-pr.md        # Review GitHub PRs
-    ├── address-feedback.md # Address PR feedback
-    ├── reflect.md               # Memory management — add, list, review, prune, propose rules
-    ├── create-pr.md             # Generate PR title + description from diff/commits
-    ├── review-code-adversarial.md # Red-team review for security and edge cases
-    ├── custom-skills-info.md    # Print toolkit reference card
-    ├── checkpoint.md            # Save workflow state, log progress, or full save-and-clear
-    ├── verify.md                # Run tests on changed files
-    ├── review-plan.md           # One-off plan review with iteration
-    ├── complete-project.md      # Project capstone summary
-    ├── metrics.md               # Workflow metrics summary
-    ├── show-cost.md             # Token usage and cost summary
-    ├── optimize-cost.md         # Usage pattern analysis and recommendations
-    ├── check-resources.md       # Local environment capacity check
-    └── toolkit-doctor.md        # Structural health check
+│       └── install.sh        # Compatibility wrapper for the main installer
+├── tests/                   # Safety, build, doctor, installer, and interface contracts
+└── install-hooks.sh         # Install Claude adapter hooks (optional)
 ```
 
-## Slash Commands
+## Public Workflows
 
-### Core Workflow
+The `workflows` skill is the canonical interface and works with natural-language requests across Agent Skills-compatible providers. Explicit requests use `$workflows <name>`; optional PGM requests use `$pgm <name>` after opt-in installation.
+
+The command-line interface is also stable and scriptable:
+
 | Command | Purpose |
-|---------|---------|
-| `/start` | Start session - load rules, check PROJECT.md |
-| `/fix-bug` | End-to-end bug workflow with QA triage, RCA, implementation, and validation |
-| `/create-feature` | End-to-end feature and planned refactor workflow with PM and developer planning |
+|---|---|
+| `bin/aitk list [--with-pgm] [--details]` | List workflows and optionally include contracts/gates |
+| `bin/aitk route [--with-pgm] "<request>"` | Deterministically suggest a workflow without forcing one |
+| `bin/aitk build [--check] [--with-pgm]` | Generate path-resolved guidance and validate workflow manifests |
+| `bin/aitk doctor [--strict] [--installed]` | Run structured repository and optional ownership-ledger checks |
+| `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Serialize durable phases and idempotent effects; use init `--replace` only to start a new completed/stale run |
+| `bin/aitk install [--with-pgm]` | Install/upgrade source links transactionally |
+| `bin/aitk uninstall` | Remove only ledger-owned artifacts and managed blocks |
+| `bin/aitk rollback` | Restore the exact previous lifecycle transaction once |
+| `bin/aitk pgm-preflight --workflow <name>` | Fail closed before optional PGM collection |
+| `bin/aitk check` | Run build drift, doctor, tests, and hook smoke tests |
 
-### Quality & Testing
-| Command | Purpose |
-|---------|---------|
-| `/create-tests` | Standalone test-only workflow for creating the first meaningful tests in an area |
-| `/update-tests` | End-to-end workflow for improving an existing suite, verifying it, and reviewing it |
-| `/run-test-plan` | Standalone validation workflow that derives or reviews a test plan, executes it, and summarizes findings |
-| `/test-pr` | Manual PR testing via Playwright browser against a running local app |
-| `/fix-ci` | Diagnose CI failures, apply safe fixes, and stop before commit |
-| `/review-code` | Adaptive team review: code quality + architecture + test check + optional second opinion |
-| `/review-code-adversarial` | Adversarial red-team with optional second opinion |
-| `/review-plan` | One-off plan review with fresh reviewers to 8/10 |
-| `/verify` | Run tests on changed files and report verification strength |
+See [Architecture](docs/ARCHITECTURE.md), [migration guidance](docs/MIGRATION.md),
+[telemetry support](docs/TELEMETRY.md), the [10/10 completion audit](docs/COMPLETION_AUDIT.md),
+and the [changelog](CHANGELOG.md).
 
-### Review & Branch Workflows
-| Command | Purpose |
-|---------|---------|
-| `/review-pr` | Adaptive team PR review: patterns, tests, architecture, RCA, auto-approve |
-| `/address-feedback` | Investigate PR comments, fix valid items, post replies |
-| `/watch-pr` | Babysit an open PR: loop CI to green and auto-handle incoming comments, escalating what needs judgment |
-| `/cherry-pick` | Plan, order, and safely apply one or more cross-branch cherry-picks (skill — also auto-triggers on natural-language requests) |
-| `/create-pr` | Generate PR title + description from diff, commits, and PROJECT.md |
+The Python package also exposes `aitk`. Run it anywhere inside a toolkit checkout (the root is discovered from parent directories), or pass `--root <checkout>` explicitly from elsewhere.
 
-### Project State
-| Command | Purpose |
-|---------|---------|
-| `/checkpoint` | Save workflow state to PROJECT.md (also for quick progress logs and full save-and-clear) |
-| `/complete-project` | Generate a project capstone summary when work wraps up |
-| `/archive-project-file` | Move completed phases to PROJECT_ARCHIVE.md (skill — also auto-triggers when archive intent is detected) |
+## Migrating from Slash Commands
 
-### Cost & Metrics
-| Command | Purpose |
-|---------|---------|
-| `/show-cost` | Token usage and cost summary for the current session |
-| `/optimize-cost` | Usage pattern analysis and cost-reduction recommendations |
-| `/metrics` | Aggregate workflow metrics from `.claude/metrics.jsonl` |
+AI Toolkit 0.2.0 removes its generated Claude slash aliases. Workflow behavior
+is unchanged: ask naturally or invoke the public router skill explicitly.
 
-### Environment
-| Command | Purpose |
-|---------|---------|
-| `/check-resources` | Local environment capacity check — running containers, stale ones, headroom verdict |
+| Before 0.2.0 | 0.2.0 and later |
+|---|---|
+| `/fix-bug <report>` | `Fix this bug: <report>` or `$workflows fix-bug <report>` |
+| `/create-feature <request>` | `Build this feature: <request>` or `$workflows create-feature <request>` |
+| `/review-code` | `Review my local changes` or `$workflows review-code` |
+| `/review-plan` | `Review this technical plan` or `$workflows review-plan` |
+| `/fix-ci` | `Fix the failing CI checks` or `$workflows fix-ci` |
+| `/test-pr <pr>` | `Test PR <pr>` or `$workflows test-pr <pr>` |
+| `/watch-pr <pr>` | `Watch PR <pr>` or `$workflows watch-pr <pr>` |
+| Any other core `/name [args]` | `$workflows name [args]` or its natural-language trigger |
+| `/create-status-report` | `$pgm create-status-report` after `--with-pgm` installation |
+| `/create-velocity-report` | `$pgm create-velocity-report` after `--with-pgm` installation |
 
-### Reflection & Memory
-| Command | Purpose |
-|---------|---------|
-| `/reflect` | Add a memory — capture workflow patterns, preferences, knowledge |
-| `/reflect list` | Show all memories with type, description, and staleness |
-| `/reflect review` | Assess memories for accuracy, staleness, and duplication |
-| `/reflect prune` | Remove outdated or redundant memories |
-| `/reflect propose-rule` | Extract a recurring pattern into a draft rule |
+Upgrading with `./install.sh` removes only old aliases recorded as toolkit-owned
+in `~/.ai-toolkit/install-state.json`. Personal files under
+`~/.claude/commands/` are left untouched. Claude's built-in `/review` remains
+available; use `$workflows review-code` for the toolkit's review/fix/verify loop.
+Ignored legacy `build/commands/` output may remain solely so one-level rollback
+can restore a working 0.1.x installation; 0.2.0 never installs or routes it.
 
-### Extension (PGM)
-| Command | Purpose |
-|---------|---------|
-| `/create-status-report` | Create a live program health report (install with `--with-pgm`) |
-| `/create-velocity-report` | Create a historical velocity report (install with `--with-pgm`) |
+The `agent-setup-maintainer` skill activates automatically when you edit agent
+setup files such as skills, rules, provider guidance, or hooks—see
+`hooks/agent-setup-edit-reminder.sh`.
 
-### Toolkit Maintenance
-| Command | Purpose |
-|---------|---------|
-| `/toolkit-doctor` | Validate symlinks, build output, imports, path portability, and README accuracy |
-| `/custom-skills-info` | Print reference card of all commands with gates |
-
-The `agent-setup-maintainer` skill activates automatically when you edit any agent-setup file (skills, commands, rules, CLAUDE.md, hooks) — see `hooks/agent-setup-edit-reminder.sh`.
-
-Claude's built-in `/review` is still available for review-only output; `/review-code` is the repo-standard wrapper when you want fix + verify loops.
-
-## Review Workflows
+## Canonical Invocation Examples
 
 ### Code Reviews
-```bash
+```text
 /review                     # Claude built-in review for uncommitted changes
 /review --branch main       # Review changes against main
 /review --commit abc123     # Review specific commit
-/review-code                # Wrap built-in /review with local fix + verify loop
+$workflows review-code      # Toolkit review/fix/verify workflow
 ```
 
 Use `/review` when you want review output only.
-Use `/review-code` when you want the repo-standard wrapper: review, fix, validate, and re-review until clean.
+Use `$workflows review-code` when you want the repo-standard wrapper: review, fix, validate, and re-review until clean.
 
 ### Feature Planning
-```bash
-/create-feature "bulk edit dashboards"
-/create-feature sc-12345
-/create-feature https://github.com/owner/repo/issues/123
+```text
+$workflows create-feature "bulk edit dashboards"
+$workflows create-feature sc-12345
+$workflows create-feature https://github.com/owner/repo/issues/123
 ```
 
-`/create-feature` owns the full planning loop:
+`$workflows create-feature` owns the full planning loop:
 - PM planning is conditional and iterates to 8/10 when scope or milestones need it
 - Developer planning iterates to 8/10 with shared reviewers from `skills/`
 - The internal finalize-plan skill is the last cold-read before implementation continues automatically
 
 ### Standalone Validation
-```bash
-/run-test-plan ./docs/test-plan.md
-/run-test-plan sql-lab
-/run-test-plan https://github.com/owner/repo/pull/123
+```text
+$workflows run-test-plan ./docs/test-plan.md
+$workflows run-test-plan sql-lab
+$workflows run-test-plan https://github.com/owner/repo/pull/123
 ```
 
-`/run-test-plan` owns the standalone QA validation loop:
+`$workflows run-test-plan` owns the standalone QA validation loop:
 - derive or normalize a compact runnable matrix
 - iterate it with `review-testplan` until it reaches 8/10 or blockers stop execution
 - execute it through QA helpers and summarize findings locally
 
 ### Plan Review
-```bash
-/review-plan                # Review PLAN.md or PROJECT.md-referenced plan with all applicable reviewers
-/review-plan --pm           # Include PM brief review
+```text
+$workflows review-plan                # Review PLAN.md or PROJECT.md-referenced plan
+$workflows review-plan --pm           # Include PM brief review
 ```
 
-`/review-plan` is standalone plan quality review — the same fresh-reviewer loop as `/create-feature` step 4, without the full workflow.
+`$workflows review-plan` is standalone plan quality review — the same fresh-reviewer loop as `create-feature` step 4, without the full workflow.
 
 ### PR Feedback Analysis
-```bash
-/address-feedback 123       # Address review comments for PR 123
-/address-feedback <pr-url>  # Address review comments by URL
-/address-feedback 123 --draft  # Local only, don't post
+```text
+$workflows address-feedback 123       # Address review comments for PR 123
+$workflows address-feedback <pr-url>  # Address review comments by URL
+$workflows address-feedback 123 --draft  # Local only, don't post
 ```
 
-`/address-feedback` is action-first: investigate comments, fix valid issues, post replies. Auto-pushes and auto-posts by default.
+`$workflows address-feedback` is action-first: investigate comments, fix valid issues, post replies. Its reference defines the exact authorization boundary.
 
 ### GitHub PR Reviews
-```bash
-/review-pr 123              # Review PR by number
-/review-pr https://github.com/owner/repo/pull/123  # Review by URL
-/review-pr 123 --draft      # Local only, don't post
+```text
+$workflows review-pr 123              # Review PR by number
+$workflows review-pr https://github.com/owner/repo/pull/123  # Review by URL
+$workflows review-pr 123 --draft      # Local only, don't post
 ```
 
 ## Workflow Rules
 
-| File | When to Read |
-|------|--------------|
-| `rules/universal.md` | Always (core principles) |
-| `rules/orchestration.md` | When coordinating helpers, reviewers, or parallel agents |
-| `rules/context-management.md` | Always (checkpoint protocol, loaded via CLAUDE.md) |
-| `rules/investigation.md` | `/fix-bug`, `/create-feature`, `/fix-ci` when RCA matters |
-| `rules/ci-evidence.md` | `/fix-ci`, `/watch-pr`, any CI triage (a check is a summary — open the artifact) |
-| `rules/rca-writeups.md` | `/fix-bug`, `/fix-ci` when writing up a root cause |
-| `rules/implementation.md` | `/fix-bug`, `/create-feature`, `/fix-ci` |
-| `rules/api-boundary-defense.md` | Code that validates or trusts data crossing an API boundary |
-| `rules/testing.md` | `/create-tests`, `/update-tests`, `/run-test-plan` |
-| `rules/troubleshooting.md` | Emergency recovery |
-| `rules/resource-management.md` | Always (Docker, worktrees, test workers — loaded via CLAUDE.md) |
-| `rules/preset-environments.md` | `/test-pr`, `/run-test-plan`, and anything reading a Preset repo or staging env |
-| `rules/code-review.md` | `/review-code`, `/review-pr`, `/address-feedback` |
-| `rules/complexity-gate.md` | `/create-feature`, `/fix-bug` (trivial vs standard routing) |
-| `rules/review-gate.md` | `/review-code`, `/create-feature`, `/fix-bug` (review output contract) |
-| `rules/scoring.md` | Review and plan-review scoring |
-| `rules/severity.md` | Classifying finding severity in reviews and QA |
-| `rules/stop-rules.md` | Any iterative loop (universal stop conditions) |
-| `rules/shortcut-api.md` | Commands that query Shortcut REST API |
-| `rules/input-detection.md` | Commands that accept Shortcut/GitHub ticket inputs |
-| `rules/model-assignment.md` | Worker dispatch and provider-neutral model/effort tiering |
-| `rules/rule-maintenance.md` | `/reflect propose-rule`, rule editing |
+The manifest owns direct workflow loading. Skill-owned and always-on loaders are
+described without workflow names so the table cannot imply manifest wiring that
+does not exist.
+
+| File | Owner / direct workflow loaders |
+|------|---------------------------------|
+| `rules/universal.md` | Always-on provider guidance |
+| `rules/orchestration.md` | Skill-owned orchestration policy |
+| `rules/context-management.md` | Always-on provider guidance |
+| `rules/durable-workflows.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests`, `watch-pr` |
+| `rules/ci-evidence.md` | Debug and watch skill loaders |
+| `rules/implementation.md` | Implementation skill loader |
+| `rules/testing.md` | Testing and implementation skill loaders |
+| `rules/resource-management.md` | Always-on provider guidance |
+| `rules/preset-environments.md` | `run-test-plan`, `test-pr` |
+| `rules/code-review.md` | Review skill loader |
+| `rules/complexity-gate.md` | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` |
+| `rules/review-gate.md` | Review and workflow reference loaders |
+| `rules/scoring.md` | Review and planning skill loaders |
+| `rules/severity.md` | Review, planning, and QA skill loaders |
+| `rules/stop-rules.md` | `review-plan` |
+| `rules/shortcut-api.md` | Shortcut skill loader |
+| `rules/input-detection.md` | `create-feature`, `fix-bug`, `run-test-plan`, `test-pr` |
+| `rules/model-assignment.md` | Routed worker contract |
+| `rules/rule-maintenance.md` | `reflect propose-rule`, rule editing |
 
 ## Hooks (optional)
 
-Hooks enforce toolkit rules at runtime via Claude Code's hook system. They are separate from `install.sh` because they modify `settings.json`.
+Hooks enforce toolkit rules at runtime. The shell guards are provider-neutral; only their registration is provider-specific.
 
 | Hook | Event | Behavior |
 |------|-------|----------|
 | `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, and commits of local workflow state files |
+| `pre-push-validate.sh` | PreToolUse (Bash) | Runs repository-pinned lint and targeted tests before a push |
 | `check-resources.sh` | PreToolUse (Bash) | Warns when running tests with constrained resources |
 | `check-plan-drift.sh` | Stop | Warns at turn end when PLAN.md outpaces PROJECT.md |
 | `agent-setup-edit-reminder.sh` | PostToolUse (Edit/Write/MultiEdit/NotebookEdit) | Reminds to load `agent-setup-maintainer` when an agent-setup file is edited |
 
 ```bash
-./install-hooks.sh           # Install hooks
-./install-hooks.sh --remove  # Remove hooks
+./install-hooks.sh           # Install Claude hooks
+./install-hooks.sh --remove  # Remove Claude hooks
 ```
+
+Codex hooks ship in the plugin at `hooks/hooks.json`. After enabling the plugin, review and trust them through `/hooks`; Codex deliberately requires trust again when a hook definition changes. A source-linked `install.sh` install provides skills and guidance but does not silently modify personal Codex hook configuration.
 
 ## Updating
 
-After pulling updates, re-run install to refresh configs:
+After pulling updates, re-run the transactional installer and verify its ledger:
 
 ```bash
 cd ~/opt/code/ai-toolkit
 git pull
 ./install.sh
+bin/aitk doctor --installed --strict
 ```
 
 ## Customization
 
-Edit files directly in this repo - changes take effect immediately since configs are symlinked:
+Edit files directly in this repo. Skills take effect through source links;
+provider guidance needs a rebuild because its portable paths are resolved:
 
-- **Add commands**: Create `.md` files in `commands/`
+- **Add a workflow**: Add its canonical reference under `skills/workflows/references/`, register it in `interfaces/workflows.json`, then run `bin/aitk build`
 - **Modify rules**: Edit files in `rules/`
 - **Add new rules**: Add `.md` files to `rules/`, re-run `./install.sh`
-- **Re-link after edits**: Re-run `./install.sh` to rebuild path-resolved copies
+- **Refresh adapters after edits**: Run `bin/aitk build`, then re-run `./install.sh` to refresh the
+  managed guidance block. A second unchanged run is a
+  no-op and preserves all unrelated configuration.
 
 ## Environment Variables
 
@@ -358,32 +380,37 @@ export GITHUB_TOKEN="your-github-token"
 export OPENAI_API_KEY="your-openai-key"  # For Codex CLI
 ```
 
-## Backup
+## Uninstall and Rollback
 
-The `install.sh` script automatically backs up existing configs to:
+Lifecycle state and the one available exact backup live under
+`~/.ai-toolkit/`. Use the supported APIs rather than deleting links manually:
+
+```bash
+bin/aitk uninstall
+bin/aitk rollback
 ```
-~/.claude/backup-YYYYMMDD-HHMMSS/
-```
+
+Uninstall removes only matching ledger-owned links and managed guidance blocks.
+Rollback refuses drift or a corrupt/missing backup and can be applied once.
 
 ## How It Works
 
 ```
-User: /create-feature
+User: "build bulk dashboard editing" (or `$workflows create-feature ...`)
 
-Claude Code:
-1. Rules auto-loaded via CLAUDE.md @-includes
-2. Reads commands/create-feature.md for workflow steps
-3. Builds PM and developer plans in PROJECT.md
-4. Uses shared reviewers in skills/ to iterate planning to 8/10
-5. Runs the internal finalize-plan skill, then continues into implementation unless a decision matters
+AI Toolkit:
+1. Routes to the provider-neutral `workflows` skill
+2. Loads only `skills/workflows/references/create-feature.md`
+3. Loads narrower PM, planning, implementation, QA, and review skills as needed
+4. Uses the provider adapter for tool-specific invocation details
+5. Persists resumable state and applies the same gates on every provider
 ```
 
-**Claude Code** = workflow orchestrator, planner, and implementer
-**Skills** = focused helpers for QA, development, review, branch work, and reporting
+**Skills** = canonical behavior. **Adapters** = provider syntax. **`aitk`** = deterministic build and validation.
 
 ## Extensions
 
-Extensions add domain-specific commands, skills, and rules. They are not installed by default.
+Extensions add domain-specific skills, manifests, and rules. They are not installed by default.
 
 | Extension | Purpose | Install |
 |-----------|---------|---------|

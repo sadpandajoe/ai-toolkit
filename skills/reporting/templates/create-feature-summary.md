@@ -1,4 +1,4 @@
-# /create-feature Summary Template
+# create-feature Summary Template
 
 Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether acceptance criteria are met (especially when the user provided a ticket).
 

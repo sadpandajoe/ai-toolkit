@@ -1,8 +1,6 @@
 ---
 name: preflight
-description: "Umbrella for pre-work readiness checks: worktree preflight (deps/env/build artifacts) and environment prep (services, seed data, feature flags)."
-user-invocable: false
-disable-model-invocation: true
+description: "Use for pre-work readiness checks and environment preparation before implementation or QA. Do NOT use to implement product changes or to replace workflow-specific verification."
 ---
 
 # Preflight

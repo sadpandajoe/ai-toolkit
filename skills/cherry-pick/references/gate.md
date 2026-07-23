@@ -1,6 +1,7 @@
 # Cherry-Pick Gate
 
-Decides whether a change should be cherry-picked at all, and sets the difficulty tier that controls model selection for downstream phases.
+Decides whether a change should be cherry-picked at all and selects the stable
+scope-audit route used after application.
 
 Consumes investigation output and produces the go/no-go decision plus tier classification.
 
@@ -86,18 +87,20 @@ Reject Criteria Hit: [list or "none"]
 Skip Reason: [e.g. "target not affected — <commit/path> not on <target>", or "none"]
 Force Override: YES / NO
 
-### Reasoning Tier
-Plan: standard / heavy
-Validate: standard / heavy
+### Worker Route
+Scope Audit: review / deep-review
 Adapt Required: YES / NO
 ```
 
-## Reasoning Tier Selection
+## Worker Route Selection
 
 | Phase | Trivial | Non-Trivial |
 |-------|---------|-------------|
-| Plan (subagent) | Standard | Heavy |
-| Plan Review | Main thread | Main thread |
-| Apply | Main thread, heavy effort | Main thread, heavy effort |
-| Adapt | skipped | Heavy |
-| Validate (subagent) | Standard | Heavy |
+| Plan | Main thread | Main thread |
+| Apply | Main thread | Main thread |
+| Adapt | skipped | Main thread |
+| Scope-leak audit | `review` | `deep-review` |
+| Correctness validation | Main thread | Main thread |
+
+The route names above are stable. Their exact selectors and `high`/`xhigh`
+effort values come only from `interfaces/model-routing.json`.

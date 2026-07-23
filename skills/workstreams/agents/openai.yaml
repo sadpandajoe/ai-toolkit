@@ -1,0 +1,6 @@
+interface:
+  display_name: "Workstreams"
+  short_description: "Help with Workstreams tasks"
+
+policy:
+  allow_implicit_invocation: false

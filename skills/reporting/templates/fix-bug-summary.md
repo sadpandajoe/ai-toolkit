@@ -1,4 +1,4 @@
-# /fix-bug Summary Template
+# fix-bug Summary Template
 
 Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether the user's reported symptom is fixed — answer the ticket question, not the workflow detail.
 

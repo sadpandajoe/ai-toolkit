@@ -1,8 +1,6 @@
 ---
 name: plan-review
-description: "Umbrella for reviewer lenses that critique a technical plan before implementation: architecture, backend, frontend, implementation feasibility."
-user-invocable: false
-disable-model-invocation: true
+description: "Use for reviewer lenses that critique a technical plan before implementation. Do NOT use for product scoping, finished-code review, or implementation."
 ---
 
 # Plan Review
@@ -19,7 +17,7 @@ Umbrella for reviewer lenses that critique a *technical plan* before implementat
 |----------|---------|------|
 | `plan-review/` (this skill) | Technical plan | During `planning/references/iterate-review.md` loop (pre-implementation) |
 | `pm/review-feature-brief` | Feature brief (scope/AC/milestones) | During PM iteration (pre-planning) |
-| `review/` | Shipped code | `/review-code`, `/review-pr` (post-implementation) |
+| `review/` | Shipped code | `review-code`, `review-pr` (post-implementation) |
 | `testing/review-tests` and `review-testplan` | Test code and test strategy | During review (code) or plan-review (strategy) |
 
 ## Reviewer Lenses
@@ -35,11 +33,9 @@ Umbrella for reviewer lenses that critique a *technical plan* before implementat
 
 ## Invocation
 
-Each reference is a subagent prompt. The `planning` skill's iterate-review reference dispatches them in parallel:
-
-```
-Agent(subagent_type: "general-purpose", prompt: "Tier: Heavy\n<reference contents>")
-```
+Each reference is an independent-review prompt. The `planning` skill's
+iterate-review reference dispatches them with `fresh_subagent` and
+`parallel_fanout`; provider bindings choose concrete syntax.
 
 Map the tier to the current runtime's actual model or reasoning-effort controls at dispatch time.
 

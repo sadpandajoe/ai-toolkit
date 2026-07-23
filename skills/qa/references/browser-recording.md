@@ -37,8 +37,8 @@ Reuse an existing Playwright install rather than installing fresh per run. A per
 
 ```bash
 mkdir -p ~/.qa-runner
-# Symlink to a known good Playwright install (e.g. one of the superset frontends)
-ln -sfn /Users/joeli/opt/code/superset-private/superset-frontend/node_modules ~/.qa-runner/node_modules
+# Symlink to a known good Playwright install for the current project
+ln -sfn <path-to-playwright-project>/node_modules ~/.qa-runner/node_modules
 ```
 
 The browser binaries cache at `~/Library/Caches/ms-playwright/` is shared across installs, so no extra download.

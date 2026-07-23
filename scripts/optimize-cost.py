@@ -1,30 +1,17 @@
 #!/usr/bin/env python3
-"""Analyze Claude Code usage patterns and produce actionable cost optimization insights."""
+"""Analyze local agent usage patterns and produce cost optimization insights."""
 
 import json
 import os
 import sys
 import glob
 import re
+from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-# Same pricing as show-cost.py
-PRICING = {
-    "claude-opus-4-6": {
-        "input": 15.00, "output": 75.00,
-        "cache_read": 1.50, "cache_create": 3.75,
-    },
-    "claude-sonnet-4-6": {
-        "input": 3.00, "output": 15.00,
-        "cache_read": 0.30, "cache_create": 0.75,
-    },
-    "claude-haiku-4-5": {
-        "input": 0.80, "output": 4.00,
-        "cache_read": 0.08, "cache_create": 0.20,
-    },
-}
-DEFAULT_PRICING = PRICING["claude-opus-4-6"]
+from aitk.pricing import compute_cost, get_pricing
+from aitk.workflows import load_workflows
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -33,25 +20,14 @@ RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
-
-
-def get_pricing(model):
-    if model in PRICING:
-        return PRICING[model]
-    for key in PRICING:
-        if model.startswith(key.rsplit("-", 1)[0]):
-            return PRICING[key]
-    return DEFAULT_PRICING
-
-
-def compute_cost(usage, model):
-    p = get_pricing(model)
-    return (
-        usage.get("input_tokens", 0) * p["input"] / 1_000_000
-        + usage.get("output_tokens", 0) * p["output"] / 1_000_000
-        + usage.get("cache_read_input_tokens", 0) * p["cache_read"] / 1_000_000
-        + usage.get("cache_creation_input_tokens", 0) * p["cache_create"] / 1_000_000
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW_NAMES = tuple(
+    sorted(
+        (workflow.name for workflow in load_workflows(ROOT, include_pgm=True)),
+        key=len,
+        reverse=True,
     )
+)
 
 
 def format_cost(c):
@@ -63,20 +39,22 @@ def format_cost(c):
 
 
 def shorten_project(name):
-    name = name.replace("-Users-joeli-", "").replace("-Users-joeli", "~")
+    encoded_home = "-" + "-".join(Path.home().parts[1:])
+    if name == encoded_home:
+        name = "~"
+    elif name.startswith(encoded_home + "-"):
+        name = name[len(encoded_home) + 1 :]
     if len(name) > 40:
         name = name[:37] + "..."
     return name or "~"
 
 
 def extract_commands(text):
-    """Extract /command invocations from user message text."""
+    """Extract canonical or deprecated explicit workflow invocations."""
     if not isinstance(text, str):
         return []
-    return re.findall(r'/(fix-bug|fix-ci|create-feature|review-code|review-pr|review-plan|'
-                       r'create-tests|update-tests|cherry-pick|verify|start|checkpoint|'
-                       r'show-cost|optimize-cost|learn|run-test-plan|toolkit-doctor|'
-                       r'review-code-adversarial|address-feedback)', text)
+    names = "|".join(re.escape(name) for name in WORKFLOW_NAMES)
+    return re.findall(rf"(?:/|\$(?:workflows|pgm)\s+)({names})\b", text)
 
 
 def parse_all_sessions(base_dir, since=None):
@@ -97,7 +75,6 @@ def parse_all_sessions(base_dir, since=None):
                 pass
 
         # Also check for subagent costs
-        subagent_dir = os.path.join(proj_path, "subagents") if False else None
         for jsonl_path in glob.glob(os.path.join(proj_path, "*/subagents/*.jsonl")):
             try:
                 sa = parse_session_detailed(jsonl_path, proj_dir, since)
@@ -112,9 +89,19 @@ def parse_all_sessions(base_dir, since=None):
 
 def parse_session_detailed(path, project, since):
     """Parse one session JSONL with per-message detail."""
-    messages = []
     commands_used = []
-    models_used = defaultdict(lambda: {"cost": 0.0, "input": 0, "output": 0, "cache_read": 0, "count": 0})
+    models_used = defaultdict(
+        lambda: {
+            "cost": 0.0,
+            "output_cost": 0.0,
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "count": 0,
+            "unpriced": 0,
+            "sonnet_equivalent_cost": 0.0,
+        }
+    )
     total_cost = 0.0
     total_input = 0
     total_output = 0
@@ -140,7 +127,7 @@ def parse_session_detailed(path, project, since):
             if not session_id:
                 session_id = obj.get("sessionId")
 
-            # Track commands from user messages
+            # Track explicit workflow invocations from user messages
             if obj.get("type") == "user":
                 msg = obj.get("message", {})
                 content = msg.get("content", "") if isinstance(msg, dict) else ""
@@ -166,7 +153,8 @@ def parse_session_detailed(path, project, since):
 
             model = msg.get("model", "unknown")
             usage = msg["usage"]
-            cost = compute_cost(usage, model)
+            pricing = get_pricing(model, ts, require_timestamp=True)
+            cost = compute_cost(usage, model, ts)
             inp = usage.get("input_tokens", 0)
             out = usage.get("output_tokens", 0)
             cr = usage.get("cache_read_input_tokens", 0)
@@ -180,16 +168,24 @@ def parse_session_detailed(path, project, since):
             message_count += 1
 
             models_used[model]["cost"] += cost
+            if pricing is not None:
+                models_used[model]["output_cost"] += out * pricing["output"] / 1_000_000
             models_used[model]["input"] += inp + cr + cc
             models_used[model]["output"] += out
             models_used[model]["cache_read"] += cr
             models_used[model]["count"] += 1
+            models_used[model]["unpriced"] += int(pricing is None)
+            models_used[model]["sonnet_equivalent_cost"] += compute_cost(
+                usage, "claude-sonnet-5", ts
+            )
 
     if message_count == 0:
         return None
 
     total_all_input = total_input + total_cache_read + total_cache_create
-    cache_rate = (total_cache_read / total_all_input * 100) if total_all_input > 0 else 0
+    cache_rate = (
+        (total_cache_read / total_all_input * 100) if total_all_input > 0 else 0
+    )
 
     # Estimate duration
     duration_min = 0
@@ -230,8 +226,6 @@ def analyze(sessions):
 
     main_sessions = [s for s in sessions if not s.get("is_subagent")]
     total_cost = sum(s["total_cost"] for s in main_sessions)
-    total_messages = sum(s["message_count"] for s in main_sessions)
-
     # 1. Model concentration
     model_costs = defaultdict(float)
     for s in main_sessions:
@@ -239,17 +233,26 @@ def analyze(sessions):
             model_costs[model] += data["cost"]
 
     opus_cost = sum(v for k, v in model_costs.items() if "opus" in k)
+    opus_sonnet_equivalent = sum(
+        data["sonnet_equivalent_cost"]
+        for session in main_sessions
+        for model, data in session["models"].items()
+        if "opus" in model
+    )
     opus_pct = (opus_cost / total_cost * 100) if total_cost > 0 else 0
     if opus_pct > 90:
-        sonnet_equiv = opus_cost * 0.2  # Sonnet is ~1/5 the cost
-        savings = opus_cost - sonnet_equiv
-        findings.append({
-            "severity": "high",
-            "title": "100% Opus usage — no model tiering",
-            "detail": (f"All {format_cost(total_cost)} is on Opus. If 60% of subagent work "
-                       f"moved to Sonnet, estimated savings: ~{format_cost(savings * 0.6)}/period."),
-            "action": "Apply model tiering per rules/orchestration.md — Sonnet for triage/review, Opus for hard planning only.",
-        })
+        savings = max(0.0, opus_cost - opus_sonnet_equivalent)
+        findings.append(
+            {
+                "severity": "high",
+                "title": "100% Opus usage — no model tiering",
+                "detail": (
+                    f"All {format_cost(total_cost)} is on Opus. If 60% of subagent work "
+                    f"moved to Sonnet, estimated savings: ~{format_cost(savings * 0.6)}/period."
+                ),
+                "action": "Apply model tiering per rules/orchestration.md — Sonnet for triage/review, Opus for hard planning only.",
+            }
+        )
 
     # 2. Expensive sessions (cost > $8 without checkpoint)
     expensive = [s for s in main_sessions if s["total_cost"] > 8]
@@ -257,51 +260,69 @@ def analyze(sessions):
         avg_expensive = sum(s["total_cost"] for s in expensive) / len(expensive)
         total_expensive = sum(s["total_cost"] for s in expensive)
         pct_of_total = (total_expensive / total_cost * 100) if total_cost > 0 else 0
-        findings.append({
-            "severity": "high",
-            "title": f"{len(expensive)} sessions exceeded $8 checkpoint threshold",
-            "detail": (f"These {len(expensive)} sessions account for {format_cost(total_expensive)} "
-                       f"({pct_of_total:.0f}% of total). Average: {format_cost(avg_expensive)}/session. "
-                       f"Top offender: {format_cost(max(s['total_cost'] for s in expensive))}."),
-            "action": "Auto-checkpoint at $8 per context-management.md. Each continuation saves ~30-50% vs continuing in a bloated session.",
-        })
+        findings.append(
+            {
+                "severity": "high",
+                "title": f"{len(expensive)} sessions exceeded $8 checkpoint threshold",
+                "detail": (
+                    f"These {len(expensive)} sessions account for {format_cost(total_expensive)} "
+                    f"({pct_of_total:.0f}% of total). Average: {format_cost(avg_expensive)}/session. "
+                    f"Top offender: {format_cost(max(s['total_cost'] for s in expensive))}."
+                ),
+                "action": "Auto-checkpoint at $8 per context-management.md. Each continuation saves ~30-50% vs continuing in a bloated session.",
+            }
+        )
 
     # 3. Long sessions (>150 messages)
     long_sessions = [s for s in main_sessions if s["message_count"] > 150]
     if long_sessions:
         avg_msgs = sum(s["message_count"] for s in long_sessions) / len(long_sessions)
-        findings.append({
-            "severity": "medium",
-            "title": f"{len(long_sessions)} sessions with >150 messages",
-            "detail": (f"Average {avg_msgs:.0f} messages. Long sessions pay quadratic cost — "
-                       f"each API call replays the full history."),
-            "action": "Checkpoint earlier. Cost-based trigger ($8) catches this automatically.",
-        })
+        findings.append(
+            {
+                "severity": "medium",
+                "title": f"{len(long_sessions)} sessions with >150 messages",
+                "detail": (
+                    f"Average {avg_msgs:.0f} messages. Long sessions pay quadratic cost — "
+                    f"each API call replays the full history."
+                ),
+                "action": "Checkpoint earlier. Cost-based trigger ($8) catches this automatically.",
+            }
+        )
 
     # 4. Cache efficiency
     overall_cache_read = sum(s["cache_read"] for s in main_sessions)
     overall_input = sum(s["total_input"] for s in main_sessions)
-    overall_cache_rate = (overall_cache_read / overall_input * 100) if overall_input > 0 else 0
+    overall_cache_rate = (
+        (overall_cache_read / overall_input * 100) if overall_input > 0 else 0
+    )
 
-    low_cache = [s for s in main_sessions if s["cache_rate"] < 70 and s["message_count"] > 10]
+    low_cache = [
+        s for s in main_sessions if s["cache_rate"] < 70 and s["message_count"] > 10
+    ]
     if low_cache:
-        findings.append({
-            "severity": "medium",
-            "title": f"{len(low_cache)} sessions with <70% cache hit rate",
-            "detail": (f"Overall cache rate: {overall_cache_rate:.0f}%. "
-                       f"Low-cache sessions waste tokens re-sending context that could be cached."),
-            "action": "Short sessions or sessions with rapidly changing context have lower cache rates. "
-                      "This is partly structural — checkpointing more frequently can help.",
-        })
+        findings.append(
+            {
+                "severity": "medium",
+                "title": f"{len(low_cache)} sessions with <70% cache hit rate",
+                "detail": (
+                    f"Overall cache rate: {overall_cache_rate:.0f}%. "
+                    f"Low-cache sessions waste tokens re-sending context that could be cached."
+                ),
+                "action": "Short sessions or sessions with rapidly changing context have lower cache rates. "
+                "This is partly structural — checkpointing more frequently can help.",
+            }
+        )
     elif overall_cache_rate > 85:
-        findings.append({
-            "severity": "good",
-            "title": f"Cache hit rate is strong at {overall_cache_rate:.0f}%",
-            "detail": "Most input tokens are served from cache, which is 10x cheaper than fresh input.",
-            "action": "No action needed. Keep sessions focused to maintain this.",
-        })
+        findings.append(
+            {
+                "severity": "good",
+                "title": f"Cache hit rate is strong at {overall_cache_rate:.0f}%",
+                "detail": "Most input tokens are served from cache, which is 10x cheaper than fresh input.",
+                "action": "No action needed. Keep sessions focused to maintain this.",
+            }
+        )
 
-    # 5. Command cost attribution
+    # 5. Explicit workflow cost attribution
     cmd_costs = defaultdict(lambda: {"cost": 0.0, "count": 0, "sessions": 0})
     for s in main_sessions:
         seen_cmds = set(s["commands"])
@@ -315,16 +336,22 @@ def analyze(sessions):
             cmd_costs[cmd]["count"] += 1
 
     if cmd_costs:
-        sorted_cmds = sorted(cmd_costs.items(), key=lambda x: x[1]["cost"], reverse=True)
+        sorted_cmds = sorted(
+            cmd_costs.items(), key=lambda x: x[1]["cost"], reverse=True
+        )
         top_cmd = sorted_cmds[0]
         if top_cmd[1]["cost"] > total_cost * 0.3:
-            findings.append({
-                "severity": "medium",
-                "title": f"/{top_cmd[0]} accounts for ~{format_cost(top_cmd[1]['cost'])} ({top_cmd[1]['cost']/total_cost*100:.0f}%)",
-                "detail": (f"Used {top_cmd[1]['count']} times across {top_cmd[1]['sessions']} sessions. "
-                           f"This is the biggest optimization target."),
-                "action": f"Review /{top_cmd[0]} for model tiering and checkpoint opportunities.",
-            })
+            findings.append(
+                {
+                    "severity": "medium",
+                    "title": f"Workflow {top_cmd[0]} accounts for ~{format_cost(top_cmd[1]['cost'])} ({top_cmd[1]['cost']/total_cost*100:.0f}%)",
+                    "detail": (
+                        f"Used {top_cmd[1]['count']} times across {top_cmd[1]['sessions']} sessions. "
+                        f"This is the biggest optimization target."
+                    ),
+                    "action": f"Review {top_cmd[0]} for model tiering and checkpoint opportunities.",
+                }
+            )
 
     # 6. Project hotspots
     proj_costs = defaultdict(lambda: {"cost": 0.0, "sessions": 0})
@@ -336,45 +363,61 @@ def analyze(sessions):
     sorted_projs = sorted(proj_costs.items(), key=lambda x: x[1]["cost"], reverse=True)
     if sorted_projs and sorted_projs[0][1]["cost"] > total_cost * 0.4:
         top_proj = sorted_projs[0]
-        findings.append({
-            "severity": "info",
-            "title": f"Project '{top_proj[0]}' accounts for {top_proj[1]['cost']/total_cost*100:.0f}% of cost",
-            "detail": f"{format_cost(top_proj[1]['cost'])} across {top_proj[1]['sessions']} sessions.",
-            "action": "Focus model tiering and checkpoint discipline on this project first for maximum impact.",
-        })
+        findings.append(
+            {
+                "severity": "info",
+                "title": f"Project '{top_proj[0]}' accounts for {top_proj[1]['cost']/total_cost*100:.0f}% of cost",
+                "detail": f"{format_cost(top_proj[1]['cost'])} across {top_proj[1]['sessions']} sessions.",
+                "action": "Focus model tiering and checkpoint discipline on this project first for maximum impact.",
+            }
+        )
 
     # 7. Output token ratio
     total_output_tokens = sum(s["total_output"] for s in main_sessions)
-    output_cost = total_output_tokens * 75.0 / 1_000_000  # Opus output pricing
+    output_cost = sum(
+        model["output_cost"]
+        for session in main_sessions
+        for model in session["models"].values()
+    )
     output_pct = (output_cost / total_cost * 100) if total_cost > 0 else 0
     if output_pct > 40:
-        findings.append({
-            "severity": "medium",
-            "title": f"Output tokens account for {output_pct:.0f}% of cost",
-            "detail": (f"Opus output is $75/MTok (5x input). {total_output_tokens/1_000_000:.1f}M output tokens "
-                       f"= {format_cost(output_cost)}."),
-            "action": "Verbose subagent responses and long explanations drive output cost. "
-                      "Instruct subagents to return structured data, not prose.",
-        })
+        findings.append(
+            {
+                "severity": "medium",
+                "title": f"Output tokens account for {output_pct:.0f}% of cost",
+                "detail": (
+                    f"{total_output_tokens/1_000_000:.1f}M output tokens account for "
+                    f"{format_cost(output_cost)} at each record's model and timestamp price."
+                ),
+                "action": "Verbose subagent responses and long explanations drive output cost. "
+                "Instruct subagents to return structured data, not prose.",
+            }
+        )
 
     # 8. Potential savings summary
     if total_cost > 0:
-        # Estimate savings from model tiering (60% of work to Sonnet = 80% cheaper on that portion)
-        tiering_savings = total_cost * 0.6 * 0.8
+        # Estimate only the measured Opus-to-Sonnet delta at each record's timestamp.
+        tiering_savings = max(0.0, opus_cost - opus_sonnet_equivalent) * 0.6
         # Estimate savings from checkpointing (expensive sessions could save 30%)
-        checkpoint_savings = sum(s["total_cost"] * 0.3 for s in expensive) if expensive else 0
+        checkpoint_savings = (
+            sum(s["total_cost"] * 0.3 for s in expensive) if expensive else 0
+        )
         total_savings = tiering_savings + checkpoint_savings
 
-        findings.append({
-            "severity": "summary",
-            "title": "Estimated savings potential",
-            "detail": (f"Model tiering: ~{format_cost(tiering_savings)} "
-                       f"({tiering_savings/total_cost*100:.0f}% reduction)\n"
-                       f"             Cost-based checkpointing: ~{format_cost(checkpoint_savings)}\n"
-                       f"             Combined: ~{format_cost(total_savings)} "
-                       f"({total_savings/total_cost*100:.0f}% reduction)"),
-            "action": "",
-        })
+        findings.append(
+            {
+                "severity": "summary",
+                "title": "Estimated savings potential",
+                "detail": (
+                    f"Model tiering: ~{format_cost(tiering_savings)} "
+                    f"({tiering_savings/total_cost*100:.0f}% reduction)\n"
+                    f"             Cost-based checkpointing: ~{format_cost(checkpoint_savings)}\n"
+                    f"             Combined: ~{format_cost(total_savings)} "
+                    f"({total_savings/total_cost*100:.0f}% reduction)"
+                ),
+                "action": "",
+            }
+        )
 
     return findings
 

@@ -41,5 +41,5 @@ Use this format at the end of every cherry-pick (single or batch). Lead with the
 - [Actionable residual items — e.g., "encoding bug likely affects target via different code path — needs separate fix"]
 - [Validation gaps — e.g., "run pytest tests/unit_tests/mcp_service/ before merging"]
 - [Pending PRs to monitor — e.g., "#38676 still open — pick when merged"]
-- [Unblock candidates from step 7c — e.g., "PR #39501 introduced StructuredContentStripper; #39636 wired it into middleware. Pick both first, then re-run /cherry-pick #39798."]
+- [Unblock candidates from step 7c — e.g., "PR #39501 introduced StructuredContentStripper; #39636 wired it into middleware. Pick both first, then re-run $cherry-pick #39798."]
 ```

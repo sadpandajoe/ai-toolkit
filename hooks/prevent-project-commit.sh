@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# prevent-project-commit.sh — Claude Code PreToolUse hook
+# prevent-project-commit.sh — provider-neutral PreToolUse hook
 #
 # Blocks unsafe git flags and git commit when local workflow state files are staged.
 # Fail-open: exits 0 on any unexpected state (never blocks on errors).
@@ -662,7 +662,19 @@ for action in actions:
         staged = git_output(action, ["diff", "--cached", "--name-only"])
         if staged is None:
             continue
-        protected = [line for line in staged.splitlines() if re.search(r"(^|/)(PROJECT|CHERRY_PICK|CI_FIX)\.md$", line)]
+        protected_names = {
+            "PROJECT.md",
+            "PROJECT_ARCHIVE.md",
+            "PLAN.md",
+            "WATCH.md",
+            "CHERRY_PICK.md",
+            "CI_FIX.md",
+        }
+        protected = [
+            line
+            for line in staged.splitlines()
+            if line.rsplit("/", 1)[-1] in protected_names
+        ]
         if protected:
             print(
                 "Local workflow state file(s) are staged for commit. These files contain session or batch state and should not be checked in.\n",

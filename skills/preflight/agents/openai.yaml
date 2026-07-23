@@ -1,0 +1,6 @@
+interface:
+  display_name: "Preflight"
+  short_description: "Help with Preflight tasks"
+
+policy:
+  allow_implicit_invocation: false

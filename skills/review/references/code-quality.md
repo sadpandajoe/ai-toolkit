@@ -4,7 +4,7 @@ tier: Heavy
 
 # Review Code Quality
 
-Use this phase when repo-tracked files have changed and need a code quality review/fix loop. Works for both local changes (`/review-code`) and PR reviews (`/review-pr`).
+Use this phase when repo-tracked files have changed and need a code quality review/fix loop. Works for both local changes (`review-code`) and PR reviews (`review-pr`).
 
 ## Required Context
 Read before starting: `rules/code-review.md`, `rules/review-gate.md`, `rules/stop-rules.md`
@@ -39,7 +39,13 @@ Wrap the available code-review mechanism in a repo-standard loop:
    - **Tests found**: Trigger the test quality reviewer (`testing/references/review-tests.md`) to evaluate whether they catch regressions, plus test suggestions for additional coverage.
 7. Fix all `[major]` and `[minor]` items directly — including adding tests for uncovered behavior.
 8. Re-run targeted tests after each fix to catch regressions.
-9. Re-run review on the changed files — including files you just fixed and tests you just added. Review your own fix as if someone else wrote it: check error paths, async ordering, state consistency, and boundary conditions. The re-review is not a formality.
+<!-- aitk-model-route:review.code-quality-final -->
+9. Dispatch a fresh-context reviewer for the changed files — including files
+   fixed and tests added during this loop. The main thread may synthesize and
+   apply findings, but it must not substitute self-review for this final pass.
+   Use `review` for a bounded pass and `deep-review` when the integrated diff is
+   cross-system, security-sensitive, adversarial, or otherwise high-risk. Check
+   error paths, async ordering, state consistency, and boundary conditions.
 10. **Pre-verdict claim check.** Before reporting "clean", name one claim the verdict rests on that the diff alone doesn't prove, and verify it with a cheap check: does the title/commit message match what changed; do docs or call sites still reference a surface this change removed; does a changed pin/version resolve to what's claimed; is anything that referenced a deleted symbol now dangling. State the check and its result. If the diff is self-contained, say so — don't skip the question. Apply the finding calibration in `rules/code-review.md` (scope-before-correctness, symmetry cap, convergent vs single-source) when grading what surfaces.
 
 ## Stop Rules
@@ -48,5 +54,5 @@ Apply stop rules from `rules/stop-rules.md`.
 
 ## Notes
 
-- Test-gap checks stay scoped to the changed files; broader scenario discovery belongs to the `qa` support workflows, not `/review-code`.
+- Test-gap checks stay scoped to the changed files; broader scenario discovery belongs to the `qa` support workflows, not `review-code`.
 - If a fix causes a regression, revert that fix and surface the trade-off instead of shipping it.

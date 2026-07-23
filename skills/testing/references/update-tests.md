@@ -17,7 +17,7 @@ Raise regression signal in the current suite with the smallest useful set of cha
 3. Update existing tests first; add tests only where they fit the suite naturally.
 4. Replace or remove low-signal tests only when the replacement is clearly stronger.
 5. Write the failing test first when feasible. If blocked, record why before changing the suite.
-6. Run targeted verification, then hand the changed files back for `/review-code`.
+6. Run targeted verification, then hand the changed files back for `review-code`.
 
 ## Output
 

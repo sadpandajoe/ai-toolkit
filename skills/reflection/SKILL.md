@@ -1,8 +1,6 @@
 ---
 name: reflection
-description: Memory management and rule-promotion workflows used by /reflect (add, list, review, prune, propose-rule, promote, failure postmortem).
-user-invocable: false
-disable-model-invocation: true
+description: Use for memory review, pruning, rule promotion, and workflow failure postmortems. Do NOT use for ordinary project notes, implementation retrospectives, or product documentation.
 ---
 
 # Reflection
@@ -11,7 +9,7 @@ disable-model-invocation: true
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 
-This skill owns memory management and rule-promotion workflows used by `/reflect`.
+This skill owns memory management and rule-promotion workflows used by `reflect`.
 
 ## Phases
 
@@ -24,7 +22,7 @@ This skill owns memory management and rule-promotion workflows used by `/reflect
 
 ## Notes
 
-- `/reflect` works with the configured agent memory directory. For Claude Code installs, this is usually `~/.claude/projects/<path>/memory/`.
+- The provider adapter resolves its configured memory directory. Do not hard-code one provider's storage path in the shared workflow.
 - Memory files use YAML frontmatter plus structured body.
 - Rule changes require confirmation.
 - A pattern seen once is a memory; a pattern seen across projects can become a rule candidate.

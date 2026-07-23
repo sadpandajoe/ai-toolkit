@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# check-plan-drift.sh — Claude Code Stop hook
+# check-plan-drift.sh — provider-neutral Stop hook
 #
 # Warns when PLAN.md has been modified significantly more recently than
 # PROJECT.md, suggesting active work that hasn't updated the state file.

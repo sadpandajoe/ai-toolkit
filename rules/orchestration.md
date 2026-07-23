@@ -11,25 +11,35 @@ The active coding agent is the primary orchestrator: planning, investigation, co
 | **Internal workers** | Subagents/workers | Exploration, planning, research |
 | **Domain reviewers** | Skill subagents | Architecture, implementation, testing, frontend, backend perspectives |
 
-## Reasoning Load And Effort
+## Model Routes And Effort
 
-Match subagent resources to the **actual reasoning load of this specific task**, not the category label. A trivial architecture review uses a standard reviewer; a gnarly multi-constraint planning task uses heavy reasoning regardless of role label.
+The active parent session is the orchestrator and keeps the user's selected
+workhorse configuration. Every spawned model worker uses a stable route from
+`rules/model-assignment.md`; the route resolver supplies the exact current
+selector, effort, permission boundary, and output contract.
 
-| Reasoning load | Effort boundary | Examples |
-|----------------|-----------------|----------|
-| Mechanical — no judgment, just retrieval or pattern-match | low | File search, symbol grep, listing definitions, fetching a known artifact |
-| Standard — apply known patterns, classify, review bounded change, single-file work | medium / high | Triage, RCA validation, single-file implementation, log classification, reviews where the diff or plan is small/well-scoped |
-| Heavy — multi-constraint trade-offs, novel design, deep adversarial probing across many files | high / xhigh | Cross-system plans, real architectural trade-offs, security-sensitive adversarial review, hard fix planning where the failure surface is unclear |
+Use the normal `implementation`, `review`, or `rca` route for bounded work. Use
+`deep-review` for architecture, security, adversarial analysis, and meaningful
+final cold reads. Use `deep-rca` when evidence is ambiguous, intermittent,
+history-dependent, or crosses systems. Use `operations` only for its narrow,
+non-development allowlist. Automatic implementation stays on the normal
+Sol/Opus workhorse route; Fable remains a read-only deep advisor.
 
-**The decision rule**: assess the *substance* of this specific task before choosing. Default to standard reasoning. Drop to mechanical only for purely mechanical work. Escalate to heavy only when this specific instance genuinely requires deep reasoning. Role labels do not auto-promote the task — the actual scope does.
+High is the automatic baseline; xhigh is reserved for deep routes. Automatic
+dispatch never selects max and never falls back to a weaker model or effort.
+Resolve the toolkit/package root from the installed skill. Resolve with
+`<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, then launch with
+`<toolkit-root>/bin/aitk model-run --boundary <marker-id>`.
 
-Provider mapping is runtime-specific. Keep reusable rules in neutral mechanical/standard/heavy terms, then translate to the platform's available model or reasoning-effort controls at invocation time.
+**Cherry-pick routing**: the cherry-pick gate classifies difficulty (TRIVIAL vs
+NON-TRIVIAL) and selects `review` or `deep-review` for the mandatory post-apply
+scope audit. Planning, application, adaptation, and correctness validation stay
+with the main thread. See `skills/cherry-pick/references/gate.md` for the route
+table; exact effort values remain manifest-owned.
 
-Use `rules/model-assignment.md` for the shared Light / Standard / Heavy / Orchestrator tier table when a command dispatches workers or chooses a cheaper classifier model.
-
-**Cherry-pick reasoning tiering**: Cherry-pick phases use gate-driven reasoning selection rather than the general reasoning-load heuristic above. The gate classifies difficulty (TRIVIAL vs NON-TRIVIAL) and that classification determines worker effort for plan, validate, and adapt phases. See `skills/cherry-pick/references/gate.md` for the tier table.
-
-The orchestrator may run on any model the user has selected. These tiers apply to **subagents/workers** spawned from it. A standard orchestrator escalating one genuinely hard subtask to a heavier worker is the canonical cost-efficient pattern.
+The orchestrator may run on any user-selected model that satisfies the user's
+workhorse policy. The stable routes apply to **subagents/workers** spawned from
+it and cannot retroactively change the parent session.
 
 ## Inline-First Principle
 
@@ -45,24 +55,29 @@ Do it inline when:
 - The orchestrator already has the relevant context loaded
 - The task is bounded and the result is short (triage, RCA for a single failure mode)
 
-When the complexity gate classifies work as MODERATE, default to inline for scoping, investigation, and planning, but still spawn a reviewer subagent. When STANDARD, use subagents per command-specific steps.
+When the complexity gate classifies work as MODERATE, default to inline for
+scoping, investigation, and planning, but still use `fresh_subagent` for the
+required reviewer. When STANDARD, follow the workflow's declared capability
+steps.
 
 ## Long-Running Workflow Pattern
 
 When a workflow may process many units, inspect large logs, or run across multiple phases, the main thread should stay as a thin orchestrator rather than becoming the durable memory for every raw detail.
 
 - **Main thread owns** ordering, dependency tracking, user decisions, checkpoint boundaries, and final synthesis.
-- **Durable state lives in files**: use `PROJECT.md`, `PLAN.md`, or a command-specific local manifest when chat history would otherwise become the state store.
+- **Durable state lives in files**: use `PROJECT.md`, `PLAN.md`, or a workflow-specific local manifest when chat history would otherwise become the state store.
 - **Subagents own bounded expensive context**: each receives only the unit, wave, or lane it needs plus the output contract.
 - **Subagents return compact handoffs**: status, evidence summary, blockers, verification, residual risk, and next-action implications. Do not return full logs or diffs unless blocked.
 - **The main thread updates durable state after every unit or wave** before starting the next one.
-- **Checkpoint between waves/phases** per `rules/context-management.md`. For STANDARD or expensive work, phase resets are proactive: clear after durable artifacts are updated, not only when context or cost is near a limit.
+- **Checkpoint between waves/phases** per `rules/context-management.md`. For STANDARD or expensive work, phase resets are proactive: apply `context_reset` after durable artifacts are updated, not only when context or cost is near a limit.
 
-Use command-specific manifests when the work has a natural table of units, for example large cherry-pick trains, multi-failure CI fixes, or batch PR reviews. Keep those files local-only unless the command explicitly says otherwise.
+Use workflow-specific manifests when the work has a natural table of units, for
+example large cherry-pick trains, multi-failure CI fixes, or batch PR reviews.
+Keep those files local-only unless the workflow explicitly says otherwise.
 
 ## Subagent Batch Rules
 
-Use these rules whenever a command delegates implementation, investigation lanes, review batches, cherry-pick waves, or CI failure groups.
+Use these rules whenever a workflow delegates implementation, investigation lanes, review batches, cherry-pick waves, or CI failure groups.
 
 - Start with one unit unless the plan already proves independence.
 - Batch 2-3 units only when ownership is disjoint and dependencies are clear.
@@ -73,11 +88,13 @@ Use these rules whenever a command delegates implementation, investigation lanes
 
 ## Subagent Context Loading
 
-Subagents load their own domain rules — commands should not `@import` rules that only subagents use.
+Workers load their own domain rules; public workflow references should not
+eagerly import rules used only by workers.
 
 - **Main thread imports**: rules the main thread directly evaluates (complexity gate, input routing, orchestration, planning)
 - **Subagent reads**: domain rules the subagent applies (code-review, testing, implementation, investigation, review-gate, stop-rules, shortcut-api)
 - **Skill files reference rules by path**: e.g., "Read and apply `rules/review-gate.md`"
-- **Commands tell subagents which files to read**: include the rule file path in the Agent tool prompt
+- **Workflows tell workers which files to read**: resolve the rule through the
+  manifest/root mapping and include its content or stable path in the bounded handoff
 
 Avoid redundantly loading the same rule in both contexts unless the main thread must evaluate a returned gate or handoff against that rule.

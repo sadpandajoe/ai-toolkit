@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archive Project File"
+  short_description: "Archive completed local workflow state"
+  default_prompt: "Use $archive-project-file to archive completed project state safely."

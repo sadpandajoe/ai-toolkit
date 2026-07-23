@@ -1,10 +1,10 @@
-# /complete-project Summary Template
+# complete-project Summary Template
 
 Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with project name and final status.
 
 ```markdown
 ## Complete-Project Done
-[One line: project name/goal and final status]
+[One line: project nameprovider goal state and final status]
 
 ### Accomplished
 - [Key deliverables — 3-5 bullets]

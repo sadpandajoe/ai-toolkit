@@ -1,0 +1,6 @@
+interface:
+  display_name: "QA"
+  short_description: "Plan and run manual QA workflows"
+
+policy:
+  allow_implicit_invocation: false

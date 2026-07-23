@@ -1,0 +1,27 @@
+{
+  "name": "ai-toolkit",
+  "version": "0.2.0",
+  "description": "Provider-portable workflows for AI-assisted software delivery",
+  "author": {
+    "name": "Joe Li",
+    "url": "https://github.com/sadpandajoe"
+  },
+  "homepage": "https://github.com/sadpandajoe/ai-toolkit",
+  "repository": "https://github.com/sadpandajoe/ai-toolkit",
+  "keywords": ["codex", "software-delivery", "workflows", "skills"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AI Toolkit",
+    "shortDescription": "Portable software delivery workflows",
+    "longDescription": "Run repeatable feature, bug, CI, testing, QA, review, pull request, and project-state workflows with durable safety and verification gates.",
+    "developerName": "Joe Li",
+    "category": "Developer Tools",
+    "capabilities": ["Skills", "Hooks"],
+    "websiteURL": "https://github.com/sadpandajoe/ai-toolkit",
+    "defaultPrompt": [
+      "Build this feature end to end.",
+      "Diagnose and fix this bug safely.",
+      "Review and verify my current changes."
+    ]
+  }
+}

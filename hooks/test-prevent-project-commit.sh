@@ -31,6 +31,15 @@ GIT_CONFIG_GLOBAL="$TMP_GLOBAL_CONFIG" git config --global alias.bad "commit --n
 printf 'state\n' >"$TMP_DIR/PROJECT.md"
 git -C "$TMP_DIR" add PROJECT.md
 
+# Every toolkit workflow-state filename must be protected, including when a
+# command selects a non-default index.
+for state_file in PROJECT.md PROJECT_ARCHIVE.md PLAN.md WATCH.md CHERRY_PICK.md CI_FIX.md; do
+    printf 'state\n' > "$TMP_DIR/$state_file"
+    state_index="$TMP_DIR/${state_file}.index"
+    GIT_INDEX_FILE="$state_index" git -C "$TMP_DIR" read-tree --empty
+    GIT_INDEX_FILE="$state_index" git -C "$TMP_DIR" add "$state_file"
+done
+
 run_hook() {
     local command="$1"
     printf '{"tool_input":{"command":%s},"cwd":%s}\n' \
@@ -86,6 +95,9 @@ expect_block "git -c alias.ci=commit ci -m state"
 expect_block "git ci -m state"
 expect_block 'f(){ git "$@"; }; f commit -m state'
 expect_block 'g=git; $g commit -m state'
+for state_file in PROJECT.md PROJECT_ARCHIVE.md PLAN.md WATCH.md CHERRY_PICK.md CI_FIX.md; do
+    expect_block "GIT_INDEX_FILE=$TMP_DIR/${state_file}.index git commit -m state"
+done
 git -C "$TMP_DIR" rm --cached -q PROJECT.md
 GIT_INDEX_FILE="$TMP_INDEX" git -C "$TMP_DIR" add PROJECT.md
 expect_block "GIT_INDEX_FILE=$TMP_INDEX git commit -m state"

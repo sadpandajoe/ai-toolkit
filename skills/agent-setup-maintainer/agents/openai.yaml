@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Setup Maintainer"
+  short_description: "Maintain portable coding-agent setup"
+  default_prompt: "Use $agent-setup-maintainer to audit and improve this agent setup."

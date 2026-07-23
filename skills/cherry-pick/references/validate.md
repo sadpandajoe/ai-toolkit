@@ -7,7 +7,8 @@ Validate is two distinct jobs:
 - **Scope-leak audit (7a)** — runs as a subagent, mandatory for every cherry, no exceptions. Catches the silent failure mode that build/test cannot catch.
 - **Correctness validation (7b)** — runs on the main thread. Build/type-check/tests fail loudly when the cherry is broken; no fresh context required.
 
-**Reasoning-effort selection** for the scope-leak subagent: set by the gate (standard for trivial, heavy for non-trivial). The caller spawns the subagent with the correct available model or reasoning effort for the runtime.
+<!-- aitk-model-route:cherry-pick.validate-scope-leak -->
+**Route selection** for the scope-leak subagent: the caller spawns the subagent on `review` for trivial or `deep-review` for non-trivial changes.
 
 ## Goal
 
@@ -23,11 +24,12 @@ Consume risk signals from investigate and adaptation signals from adapt. Do not 
 
 **Subagent must produce** (orchestrator refuses `Applied` status without all three):
 
-1. Literal stdout of `${CLAUDE_SKILL_DIR}/scripts/scope-audit.sh <source-commit>` — pasted verbatim, not summarized.
+1. Literal stdout of `<skill-dir>/scripts/scope-audit.sh <source-commit>` — pasted verbatim, not summarized. Resolve `<skill-dir>` from the currently installed cherry-pick skill.
 2. Per-hunk audit verdict from Step 2 below — explicit list of extra hunks (or "none") with origin classification for each.
 3. Final recommendation: `CLEAN` / `LEAK — revert <hunks>` / `ESCALATE — <reason>`.
 
-If the subagent returns `LEAK`, the main thread reverts the named hunks, amends, and re-spawns the subagent on the amended commit. Loop until `CLEAN` or `ESCALATE`.
+<!-- aitk-model-route:cherry-pick.validate-scope-leak-rerun -->
+If the subagent returns `LEAK`, the main thread reverts the named hunks, amends, and re-spawns the subagent on the same route on the amended commit. Loop until `CLEAN` or `ESCALATE`.
 
 The subagent does **not** run build/test. Correctness is the main thread's job (7b).
 
@@ -40,7 +42,7 @@ Run **before** build/test validation. A clean build doesn't catch unrelated chan
 Run the bundled script:
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/scope-audit.sh <source-commit>
+<skill-dir>/scripts/scope-audit.sh <source-commit>
 ```
 
 This produces a mechanical comparison (file list, line counts) — no LLM judgment. It outputs:
@@ -112,7 +114,7 @@ pre-commit run --files <changed-file-1> <changed-file-2>
 # or, if pre-commit isn't the repo's tool, use the equivalent CI lint/format command
 ```
 
-`/cherry-pick` authorizes local amend of the in-progress cherry-pick commit for validation-only cleanup before any push. Do not amend older commits, rebase, or push unless the calling command separately authorizes that boundary.
+`$cherry-pick` authorizes local amend of the in-progress cherry-pick commit for validation-only cleanup before any push. Do not amend older commits, rebase, or push unless the calling workflow separately authorizes that boundary.
 
 **If pre-commit auto-fixes files** (ruff-format, end-of-files, trailing whitespace, etc.):
 ```bash

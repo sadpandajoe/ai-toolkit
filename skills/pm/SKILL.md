@@ -1,8 +1,6 @@
 ---
 name: pm
-description: "Umbrella for product scoping before technical planning: feature briefs, acceptance criteria, milestones, brief review, epic decomposition."
-user-invocable: false
-disable-model-invocation: true
+description: "Use for product scoping before technical planning: briefs, acceptance criteria, milestones, and epic decomposition. Do NOT use for implementation planning, coding, or shipped-code review."
 ---
 
 # PM
@@ -32,7 +30,7 @@ PM is strategic; planning is engineering. PM output feeds the planning phase.
 
 ## When to Skip PM
 
-Not every `/create-feature` input needs a PM layer. Skip when:
+Not every `create-feature` input needs a PM layer. Skip when:
 - The work is a single tightly-scoped change with obvious AC
 - User provided a complete ticket with clear scope/AC/milestones already
 - Trivial/moderate complexity gate classification

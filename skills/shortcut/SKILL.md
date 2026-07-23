@@ -1,8 +1,6 @@
 ---
 name: shortcut
-description: "Shortcut REST API operations: fetch story/epic/iteration data, post comments, upload evidence, link PRs."
-user-invocable: false
-disable-model-invocation: true
+description: "Use for Shortcut story, epic, iteration, comment, evidence, and PR-link operations. Do NOT use for GitHub-only work, local project state, or product-code changes."
 ---
 
 # Shortcut

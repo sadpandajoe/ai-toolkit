@@ -4,7 +4,7 @@ tier: Standard
 
 # PR Review Batch
 
-Use when `/review-pr` receives multiple PR numbers or `--all-open`.
+Use when `review-pr` receives multiple PR numbers or `--all-open`.
 
 ## Batch Contract
 
@@ -23,7 +23,8 @@ The main thread must not accumulate full diffs or full review transcripts for ev
 
 ## Dispatch
 
-For each PR, dispatch a subagent with:
+<!-- aitk-model-route:review.pr-batch -->
+For each PR, dispatch a subagent on `review`/`deep-review` with:
 - PR number/ref
 - flags (draft/summary by default; pass `--auto` only when the user explicitly requested auto-posting)
 - pointer to [pr-review.md](pr-review.md)
@@ -59,7 +60,7 @@ PRs: [#101, #102, #103]
 Next wave: [PR numbers OR "aggregate"]
 ```
 
-For batches of 4+ PRs, `/checkpoint --clear` after each wave block is written. The main thread resumes by reading the wave entries in PROJECT.md, not by replaying per-PR diffs. Without this write, the per-PR posting state and residual risks are lost.
+For batches of 4+ PRs, checkpoint + context_reset after each wave block is written. The main thread resumes by reading the wave entries in PROJECT.md, not by replaying per-PR diffs. Without this write, the per-PR posting state and residual risks are lost.
 
 ## Aggregate
 

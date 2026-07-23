@@ -1,7 +1,6 @@
 ---
 name: preset-rbac-setup
 description: Seeding the canonical RBAC test users (workspace roles + data access roles) on a fresh Preset staging workspace via the Manager API, before RBAC-related QA. Do NOT use for changing roles on real customer workspaces, creating new test accounts (the seven test logins must already exist), or generic team administration.
-user-invocable: false
 ---
 
 # Preset RBAC Setup
@@ -11,7 +10,13 @@ Seeds the canonical seven test users with workspace roles and (where applicable)
 ## Inputs
 
 - **Workspace URL or hostname** — e.g. `https://7b412530.us1a.app-stg.preset.io/` → host `7b412530.us1a.app-stg.preset.io`. Take this as the only positional arg.
-- **Manager URL** — derive from workspace host: `app-stg` workspaces → `https://manage.app-stg.preset.io`, `app-dev` → `https://manage.app-dev.preset.io`, `app.preset.io` → `https://manage.app.preset.io`. Confirm with the user if the pattern doesn't match.
+- **Mode** — dry-run by default. `--apply` authorizes the exact role and DAR
+  changes shown in the dry-run plan. `--replace-existing` additionally authorizes
+  deletion of toolkit-owned DARs listed in that plan; it is invalid without
+  `--apply`.
+- **Manager URL** — derive only from approved non-production hosts:
+  `app-stg` workspaces → `https://manage.app-stg.preset.io`; `app-dev` →
+  `https://manage.app-dev.preset.io`. Refuse any other pattern.
 - **Bot creds** — `PRESET_STG_BOT_LOGIN` / `PRESET_STG_BOT_PASSWORD` (env vars; staging only). Bot must be a member of the team that owns the workspace, with sufficient privilege to update memberships and create permissions.
 
 ## Canonical user → role mapping
@@ -85,11 +90,17 @@ DAR body shape (`type: "data_access_role"`):
 }
 ```
 
-The `dar:` prefix and the `acl` shape are required. The role name (`ROLES <random>`) is arbitrary but should be unique per call; the random suffix avoids collisions on rerun.
+The `dar:` prefix and the `acl` shape are required. Use a deterministic,
+toolkit-owned role name derived from the workspace and canonical test user. This
+lets reruns update the same permission instead of creating duplicates.
 
 **Empty DAR variant** — `grantees: []` and `grants: []`. Used by `createEmptyDataAccessRoleByTeamNameAndHostApi` as a placeholder paired with a separately-created RLS rule. Don't create one for plain seeding; only relevant if the request specifically pairs an empty DAR with RLS.
 
-**Permission install is async** — after POST/PUT, the permission goes through `SYNCING` → `APPLIED` (or `FAILED`/`TIMEOUT`). Poll `GET /permissions/{name}` until `status === "APPLIED"` if the next step depends on the permission being live (e.g. then immediately logging in as that user and asserting access). For pure seeding it's usually fine to fire-and-forget. Cypress polls every ~5s up to 12 retries.
+**Permission install is async** — after POST/PUT, the permission goes through
+`SYNCING` → `APPLIED` (or `FAILED`/`TIMEOUT`). Poll
+`GET /permissions/{name}` every ~5 seconds for up to 12 retries and report the
+terminal status. Do not report successful seeding from an unobserved
+fire-and-forget request.
 
 ## Auth model (the gotcha)
 
@@ -113,28 +124,46 @@ Persist `storageState` at `~/.qa-runner/storage/manage.<env>.preset.io.json` so 
 
 ## Procedure
 
-1. Launch Chromium with `storageState` (reuse if exists, else fresh login flow above). Save state after login.
-2. `page.evaluate` to read `localStorage.access_token`. If null, read the `csrf_access_token` cookie via `context.cookies()`. Abort if neither exists.
-3. GET `/api/v1/teams/`. For each team, GET `/api/v1/teams/{slug}/workspaces/` and search the payload for `hostname === <target host>`. The first match is `targetTeamSlug` + `workspace`.
-4. GET `/api/v1/teams/{targetTeamSlug}/memberships/`. Build `Map<emailLowercase, user>`.
-5. For each user in the canonical mapping:
+1. Normalize the target hostname. Refuse `app.preset.io`,
+   `manage.app.preset.io`, and any hostname that is not an approved staging or
+   development test-workspace pattern. There is no production override in this
+   skill.
+2. Launch Chromium with `storageState` (reuse if exists, else fresh login flow above). Save state after login.
+3. `page.evaluate` to read `localStorage.access_token`. If null, read the `csrf_access_token` cookie via `context.cookies()`. Abort if neither exists.
+4. GET `/api/v1/teams/`. For each team, GET `/api/v1/teams/{slug}/workspaces/` and search the payload for `hostname === <target host>`. The first match is `targetTeamSlug` + `workspace`.
+5. GET `/api/v1/teams/{targetTeamSlug}/memberships/`. Build `Map<emailLowercase, user>`.
+6. For each user in the canonical mapping, build a proposed change without mutating anything:
    - Skip with a `NOT_A_MEMBER` log line if email isn't in memberships (user must be invited to the team first; this skill doesn't invite).
-   - **Pre-clean** (recommended on reseed): GET `/api/v1/teams/{slug}/permissions/?workspace_name={ws.name}&grantee_identifier={user.username}` and DELETE every returned permission. Mirrors the cypress `deletePermissionsByEmail` helper that `setupRbacTests` always runs first. Skip on a true first-time seed.
-   - PUT membership with `{role_identifier, user_id: user.id}`.
-   - If `dar: true`, POST `/api/v1/teams/{slug}/permissions/` with the DAR body using `user.username` as grantee identifier.
-6. Print a summary table with status per user (`OK`, `OK_NO_DAR`, `NOT_A_MEMBER`, `ROLE_FAILED`, `DAR_FAILED`).
+   - GET current permissions for the workspace and grantee. Classify each as
+     toolkit-owned (stable `AI Toolkit RBAC` name prefix) or unrelated.
+   - Plan a membership PUT only when the role differs.
+   - For `dar: true`, plan a PUT to the stable toolkit-owned DAR when present,
+     otherwise a POST with the stable name. Never replace unrelated DARs.
+   - For `dar: false`, leave unrelated DARs untouched. A stale toolkit-owned DAR
+     is a deletion candidate only with `--replace-existing`.
+7. Print the dry-run table: user, current role, proposed role, DAR action,
+   permission name, and any deletion candidate. Stop here unless `--apply` was
+   supplied.
+8. With `--apply`, execute only the displayed non-destructive PUT/POST changes.
+   Execute displayed toolkit-owned deletions only when `--replace-existing` was
+   also supplied. Abort if discovery changed between plan and apply.
+9. Print a result table with status per user (`UNCHANGED`, `UPDATED`,
+   `NOT_A_MEMBER`, `ROLE_FAILED`, `DAR_FAILED`) and a count of every mutation.
 
 ## Idempotency notes
 
 - **PUT membership** is idempotent — safe to rerun without cleanup.
-- **POST permissions** is *not* idempotent — every call creates a new DAR. Without the pre-clean step, reruns leave orphan DARs piled up on each user (working but messy in the Manager UI). Default to pre-cleaning unless the user explicitly says "first-time seed".
-- **PUT permissions** can also update an existing DAR by name if you want to mutate grants in place rather than recreating.
+- **POST permissions** is *not* idempotent. Use a stable toolkit-owned DAR name,
+  then PUT that named permission on rerun. Never generate a new random name for
+  routine seeding.
+- Unrelated existing permissions are outside this skill's ownership and must not
+  be deleted or rewritten.
 
 ## Where to put the runnable script
 
 Drop the standalone Node script at `~/.qa-runner/setup-rbac.mjs` (works across all worktrees, no repo coupling, sits next to existing QA recording scripts). Use `import { chromium } from 'playwright'` — `~/.qa-runner/node_modules` already has Playwright.
 
-Invocation: `node ~/.qa-runner/setup-rbac.mjs <workspace-host-or-url>`.
+Invocation: `node ~/.qa-runner/setup-rbac.mjs <workspace-host-or-url> [--apply] [--replace-existing]`.
 
 ## Out of scope
 
@@ -144,5 +173,7 @@ Invocation: `node ~/.qa-runner/setup-rbac.mjs <workspace-host-or-url>`.
 
 ## Sanity check before running
 
-- Is the workspace genuinely a *test* workspace (e.g. ends with `app-stg.preset.io` and has a hex-style slug)? Refuse to run against `app.preset.io` (production) without explicit confirmation.
+- Is the workspace genuinely a *test* workspace (e.g. ends with
+  `app-stg.preset.io` and has a hex-style slug)? Refuse all production hosts;
+  this skill has no confirmation-based production escape hatch.
 - Does the user list match what the user asked for, or are they asking for a custom subset? The seven canonical users are the default — if they only want some, take a list.

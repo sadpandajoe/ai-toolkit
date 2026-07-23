@@ -8,7 +8,7 @@ Derive a focused, runnable smoke-test scenario list from a PR diff and descripti
 
 ## When to Use
 
-- Called by `/test-pr` before browser execution
+- Called by `test-pr` before browser execution
 - When you need a quick, targeted scenario set for a specific change — not a full QA matrix
 
 ## Input

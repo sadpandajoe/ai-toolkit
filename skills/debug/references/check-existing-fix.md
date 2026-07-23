@@ -6,7 +6,7 @@ tier: Standard
 
 Use this helper when a workflow needs to know whether a reported bug is already fixed in `master`, pending in an open PR, or still unfixed.
 
-This is a shared helper for `developer`, `release-engineer`, and workflows such as `/fix-bug` and `/cherry-pick`.
+This is a shared helper for `developer`, `release-engineer`, and workflows such as `fix-bug` and `$cherry-pick`.
 
 ## When to Skip
 

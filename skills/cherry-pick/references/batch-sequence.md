@@ -54,7 +54,7 @@ For each `NEEDS_INVESTIGATION` candidate from the pre-flight table, run these an
    - Inspect intent and nearby history just enough to order and triage.
 
 2. **Dependency and overlap analysis**
-   - Run `${CLAUDE_SKILL_DIR}/scripts/batch-deps.sh <sha1> <sha2> ...` to get the mechanical signals: per-SHA file lists, SHA pairs sharing files, per-file coverage (×N count), author-date order, and a list of fully-independent SHAs eligible for parallel investigation.
+   - Resolve the installed cherry-pick skill directory as `<skill-dir>`, then run `<skill-dir>/scripts/batch-deps.sh <sha1> <sha2> ...` to get the mechanical signals: per-SHA file lists, SHA pairs sharing files, per-file coverage (×N count), author-date order, and a list of fully-independent SHAs eligible for parallel investigation.
    - Read the output: every "[×2]" or higher entry in per-file coverage is a dependency point. The pairs above each describe an edge in the dependency graph.
    - Detect imports, APIs, or modules introduced by one change and consumed by another — the script's per-SHA file list surfaces this; verify by inspecting hunks for any pair flagged with shared files.
 
@@ -68,7 +68,8 @@ For each `NEEDS_INVESTIGATION` candidate from the pre-flight table, run these an
 
 - Build the dependency graph from `batch-deps.sh` output: nodes = SHAs, edges = pairs flagged as sharing files.
 - Topologically sort. Author-date order from the script is a valid topo-sort *iff* no later commit reverts or replaces content from an earlier one — verify by inspecting any pair where the later commit is a `chore: remove`, `revert`, or `refactor` of code touched by the earlier commit. If you find a revert/replace pattern, swap those two.
-- Independent SHAs (the script's "Independence Check" section) may be investigated in parallel — the orchestrator should spawn one subagent per island concurrently.
+<!-- aitk-model-route:cherry-pick.batch-investigation -->
+- Independent SHAs (the script's "Independence Check" section) may be investigated in parallel — the orchestrator should spawn one subagent per island concurrently on `rca` or `deep-rca` according to gate difficulty.
 - Actual cherry-pick application on the target branch remains sequential.
 - Flag circular dependencies or ambiguous prerequisite chains as requiring user decision.
 - Do not optimize only for throughput. Prefer smaller waves when conflicts, shared files, dependency manifests, migrations, generated files, or API-shape changes appear.

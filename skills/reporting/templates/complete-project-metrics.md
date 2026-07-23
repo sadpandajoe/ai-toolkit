@@ -1,6 +1,6 @@
-# /complete-project Metrics Summary Template
+# complete-project Metrics Summary Template
 
-Filter `.claude/metrics.jsonl` events to those relevant to this project (timestamp range or referenced commands), then aggregate.
+Filter `.ai-toolkit/metrics.jsonl` events to those relevant to this project (timestamp range or referenced workflows), then aggregate. Fall back to legacy `.claude/metrics.jsonl` only when the canonical file does not exist.
 
 ```markdown
 ## Project Metrics Summary

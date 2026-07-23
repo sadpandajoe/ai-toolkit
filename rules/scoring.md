@@ -13,7 +13,7 @@ Shared scoring scale for all review skills that output `Score: X/10`.
 
 ## Iteration Threshold
 
-Review commands (`/review-plan`, `/create-feature`) iterate until all reviewers reach **8/10 or better**. A score of 6-7 is a pass-with-reservations — it does not block but signals meaningful gaps. Below 6 is a blocking signal that requires revision.
+Review commands (`review-plan`, `create-feature`) iterate until all reviewers reach **8/10 or better**. A score of 6-7 is a pass-with-reservations — it does not block but signals meaningful gaps. Below 6 is a blocking signal that requires revision.
 
 ## Component Scoring
 

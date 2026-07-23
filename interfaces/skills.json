@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": [
+    {"name": "action-gate", "path": "skills/action-gate", "classification": "internal_support"},
+    {"name": "agent-setup-maintainer", "path": "skills/agent-setup-maintainer", "classification": "public_direct"},
+    {"name": "archive-project-file", "path": "skills/archive-project-file", "classification": "public_direct"},
+    {"name": "cherry-pick", "path": "skills/cherry-pick", "classification": "public_direct"},
+    {"name": "debug", "path": "skills/debug", "classification": "internal_support"},
+    {"name": "feedback", "path": "skills/feedback", "classification": "internal_support"},
+    {"name": "implement-change", "path": "skills/implement-change", "classification": "internal_support"},
+    {"name": "metrics-emit", "path": "skills/metrics-emit", "classification": "internal_support"},
+    {"name": "pgm", "path": "extensions/pgm/skills/pgm", "classification": "public_router"},
+    {"name": "plan-review", "path": "skills/plan-review", "classification": "internal_support"},
+    {"name": "planning", "path": "skills/planning", "classification": "internal_support"},
+    {"name": "pm", "path": "skills/pm", "classification": "internal_support"},
+    {"name": "pr-watch", "path": "skills/pr-watch", "classification": "internal_support"},
+    {"name": "preflight", "path": "skills/preflight", "classification": "internal_support"},
+    {"name": "preset-rbac-setup", "path": "skills/preset-rbac-setup", "classification": "internal_support"},
+    {"name": "qa", "path": "skills/qa", "classification": "internal_support"},
+    {"name": "reflection", "path": "skills/reflection", "classification": "internal_support"},
+    {"name": "reporting", "path": "skills/reporting", "classification": "internal_support"},
+    {"name": "review", "path": "skills/review", "classification": "internal_support"},
+    {"name": "shortcut", "path": "skills/shortcut", "classification": "internal_support"},
+    {"name": "superset-local", "path": "skills/superset-local", "classification": "internal_support"},
+    {"name": "testing", "path": "skills/testing", "classification": "internal_support"},
+    {"name": "workflows", "path": "skills/workflows", "classification": "public_router"},
+    {"name": "workstreams", "path": "skills/workstreams", "classification": "internal_support"}
+  ]
+}

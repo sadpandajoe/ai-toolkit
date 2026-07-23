@@ -21,4 +21,4 @@ Recurring workarounds or repeated feedback across conversations signal a missing
 - Keep it small — one concern per file, 20-40 lines
 
 ## Scope
-Rule updates are limited to the `rules/` directory in this toolkit. Do not modify project-level CLAUDE.md files or Anthropic system behavior. Rule changes should be proposed to the user during the summary phase, not applied silently mid-workflow.
+Rule updates are limited to the `rules/` directory in this toolkit. Do not modify project-level provider guidance or vendor system behavior. Rule changes should be proposed to the user during the summary phase, not applied silently mid-workflow.
