@@ -212,7 +212,7 @@
     {"id": "planning.loop-ownership", "path": "skills/planning/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "qa.fresh-validation", "path": "skills/qa/SKILL.md", "count": 1, "routes": ["review", "operations"]},
     {"id": "review.pr-lenses", "path": "skills/review/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "review.code-judo", "path": "skills/review/SKILL.md", "count": 1, "routes": ["deep-review"]},
+    {"id": "review.code-judo", "path": "skills/review/references/code-judo.md", "count": 1, "routes": ["deep-review"]},
     {"id": "review.local-primary-lanes", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "review.pr-batch", "path": "skills/review/references/pr-batch.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "testing.test-authoring", "path": "skills/testing/SKILL.md", "count": 1, "routes": ["implementation"]},

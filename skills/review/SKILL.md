@@ -75,10 +75,7 @@ Map the tier to the current runtime's actual model or reasoning-effort controls 
 
 ### Code-judo (deep tier)
 
-The `code-judo` lens is the one exception to tier-routing: it is pinned to the deep tier regardless of the diff's complexity.
-
-<!-- aitk-model-route:review.code-judo -->
-When `classify-diff` triggers the Code-judo lane, dispatch a single code-judo agent through the `deep-review` route — the generative restructuring pass always runs on the deepest reasoning tier, never the standard `review` route. The `review.code-judo` boundary allows only `deep-review`, so a mistaken standard-route request fails closed rather than silently downgrading the model.
+The `code-judo` lens is the one exception to tier-routing: it is pinned to the deep tier regardless of the diff's complexity. When `classify-diff` triggers the Code-judo lane, it runs on the `deep-review` route per [references/code-judo.md](references/code-judo.md) — the generative restructuring pass always runs on the deepest reasoning tier, never the standard `review` route. The `review.code-judo` boundary allows only `deep-review`, so a mistaken standard-route request fails closed rather than silently downgrading the model.
 
 Run Code-judo **outside** the six-lane findings fan-out (see [references/workflow-review.md](references/workflow-review.md)): its output is unscored restructuring *proposals*, not severity-tagged findings, so it bypasses the dedup + adversarial-verification pipeline and lands in a dedicated **Restructuring Proposals** section of the Review Record rather than the findings table.
 

@@ -1188,7 +1188,7 @@ def _argv(
         "--safe-mode",
         "--strict-mcp-config",
         "--mcp-config",
-        "{}",
+        '{"mcpServers": {}}',
         "--model",
         route.selector,
         "--effort",

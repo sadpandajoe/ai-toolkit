@@ -4,7 +4,7 @@ tier: Heavy
 
 # Code-Judo (Structural Restructuring Proposal)
 
-A **generative** pass, not a findings pass. Where `references/deep-quality.md`
+A **generative** pass, not a findings pass. Where `skills/review/references/deep-quality.md`
 *finds* structural problems, this pass *proposes* a concrete behavior-preserving
 restructuring that makes the change dramatically simpler.
 
@@ -15,6 +15,12 @@ explicitly, by `ultra`/`max` effort, or by a `^refactor`-titled change. A merely
 refactor-*shaped* diff (churn/rename signals without a refactor title, explicit
 ask, or deep effort) is **advisory only** — the classifier recommends a judo
 pass rather than auto-firing it, since the `deep-review` route is expensive.
+
+<!-- aitk-model-route:review.code-judo -->
+Dispatch a single code-judo agent on the `deep-review` route — never the
+standard `review` route. The `review.code-judo` boundary allows only
+`deep-review`, so a mistaken standard-route request fails closed rather than
+silently downgrading the model.
 
 ## Required Context
 

@@ -96,6 +96,27 @@ class ModelRoutingTests(unittest.TestCase):
                 boundary="review.code-quality-final",
             )
 
+    def test_deep_lens_route_boundaries_enforce_tier(self) -> None:
+        # Code-judo is pinned to the deep tier: it accepts deep-review, rejects
+        # the standard review route, and inlines its own narrow lens contract.
+        judo = resolve_route(
+            ROOT, "deep-review", "claude", boundary="review.code-judo"
+        )
+        self.assertEqual("review.code-judo", judo.boundary)
+        self.assertIn(
+            "skills/review/references/code-judo.md", judo.required_contracts
+        )
+        with self.assertRaisesRegex(ModelRouteError, "not allowed at boundary"):
+            resolve_route(ROOT, "review", "claude", boundary="review.code-judo")
+        # A moderate PR lane must accept both the standard and the deep route so
+        # deep-tier escalation can reroute it without introducing a new binding.
+        for responsibility in ("review", "deep-review"):
+            with self.subTest(responsibility=responsibility):
+                resolved = resolve_route(
+                    ROOT, responsibility, "claude", boundary="review.pr-moderate"
+                )
+                self.assertEqual("review.pr-moderate", resolved.boundary)
+
     def test_boundary_closure_includes_owner_and_responsibility_skills(self) -> None:
         resolved = resolve_route(
             ROOT,
@@ -435,6 +456,12 @@ class ModelRoutingTests(unittest.TestCase):
         self.assertIn("--disallowedTools", argv)
         self.assertIn("--safe-mode", argv)
         self.assertIn("--strict-mcp-config", argv)
+        # The Claude worker must be pinned to an empty MCP server set — assert the
+        # exact payload, not just the flag's presence, so a regression to a
+        # non-empty or malformed config is caught.
+        self.assertEqual(
+            '{"mcpServers": {}}', argv[argv.index("--mcp-config") + 1]
+        )
         tool_start = argv.index("--tools") + 1
         tool_end = argv.index("--json-schema")
         self.assertEqual(["Read", "Grep", "Glob"], argv[tool_start:tool_end])

@@ -43,6 +43,12 @@ Finding counts:
 Residual risk:
 ```
 
+Batch mode runs the **findings** lenses only — the Code-judo generative pass is
+disabled here. Its unscored restructuring *proposals* have no slot in the compact
+per-PR return contract above, and the `deep-review` route is too expensive to fan
+out across a batch. When a specific PR warrants a Code-judo pass, run a single-PR
+deep review ([review-pr](../../workflows/references/review-pr.md)) instead.
+
 Concurrency: run up to 3-5 PR reviews in parallel. Lower concurrency if PRs are unusually large, share code ownership, or the repo is resource constrained.
 
 ## Per-Wave PROJECT.md Persistence (Hard Gate Before Clear)
