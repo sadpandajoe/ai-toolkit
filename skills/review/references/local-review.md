@@ -93,7 +93,12 @@ Use triggered references from `classify-diff.md`, including:
 - [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md)
 - [../../plan-review/references/backend.md](../../plan-review/references/backend.md)
 
-If `classify-diff` reports **Deep-tier escalation: YES** (`ultra`/`max` effort or a "deep review" ask), follow the review SKILL's *Deep review mode* and *Code-judo* sections: route every triggered lens through `deep-review`, and dispatch the [code-judo.md](code-judo.md) generative pass separately (outside the findings fan-out) via the `review.code-judo` boundary — its proposals go in the Restructuring Proposals section, not the findings table.
+`classify-diff` reports two independent fields; read each one separately, and follow the review SKILL's *Deep review mode* and *Code-judo* sections:
+
+- **Deep-tier escalation: YES** — route every triggered lens through `deep-review` instead of its default route.
+- **Code-judo lane: YES** — dispatch the [code-judo.md](code-judo.md) generative pass separately (outside the findings fan-out) via the `review.code-judo` boundary. Its proposals go in the Restructuring Proposals section, not the findings table.
+
+These do not imply each other. A `^refactor`-titled change or an explicit Code-judo ask sets `Code-judo lane: YES` with `Deep-tier escalation: NO` — dispatch the judo pass anyway (still on `deep-review`, which that boundary pins) while the findings lenses stay on their default routes.
 
 <!-- aitk-model-route:review.local-independent-second-opinion -->
 Launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
@@ -177,7 +182,7 @@ Write or update this compact record before fixing findings or clearing context. 
 | R1 | major/minor/nitpick | path:line | concise issue | open/fixed/deferred/user-decision |
 
 ### Restructuring Proposals
-<!-- Only when a code-judo pass ran (deep review mode). These are unscored, behavior-preserving proposals, not severity findings — never fold them into the Fix Queue automatically. Omit the section entirely when no judo pass ran or it found no move. -->
+<!-- Only when a code-judo pass ran (`Code-judo lane: YES` — deep review mode is one way in, a `^refactor` title or explicit ask is another). These are unscored, behavior-preserving proposals, not severity findings — never fold them into the Fix Queue automatically. Omit the section entirely when no judo pass ran or it found no move. -->
 - P1 — <one-line restructuring> — deletes <what>, reframing <how>; behavior-preservation risk: <the one weak point>.
 
 ### Fix Queue

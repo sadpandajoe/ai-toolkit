@@ -19,7 +19,9 @@ pinned to the deeper `deep-review` route. This findings lens runs on the normal
 Activates on a refactor-shaped change (title/commit says refactor, high churn
 with net-neutral or negative line count, renames without new public surface,
 tests unchanged) or any STANDARD-tier diff; always fires under `max`/`ultra`
-effort or an explicit "deep quality" ask. TRIVIAL and MODERATE feature diffs do
+effort or an explicit "deep quality" ask. That bare lens ask fires *this lens
+only* — it is not one of `classify-diff`'s deep-tier phrases and does not
+escalate the review's route or add a Code-judo pass. TRIVIAL and MODERATE feature diffs do
 not trigger it unless the change is refactor-shaped or it is explicitly
 requested. It is a default lens for STANDARD-tier review, running on the cheap
 `review` route alongside baseline code quality.

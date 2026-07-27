@@ -31,7 +31,9 @@ when at least three independent reviewer lanes trigger.
 ## Bounds
 
 - The classifier selects lenses; never run all lenses by default.
-- **Code-judo runs outside this fan-out.** In deep review mode the code-judo
+- **Code-judo runs outside this fan-out.** Whenever `classify-diff` reports
+  `Code-judo lane: YES` — in deep review mode or from a `^refactor` title or
+  explicit ask alone — the code-judo
   generative pass is not one of the six findings lanes and does not pass through
   dedup or adversarial verification — its output is unscored, behavior-preserving
   *proposals*, not severity findings. Dispatch it separately via the

@@ -82,13 +82,17 @@ Standard:
 - Adversarial lane only with `--adversarial` or security-sensitive detection.
 
 **Deep review mode.** When `classify-diff` reports **Deep-tier escalation: YES**
-(`ultra`/`max` effort or an explicit "deep review" / "deep quality" ask), follow
-the review SKILL's *Deep review mode* and *Code-judo* sections: route every
-triggered lens through `deep-review` — both `review.pr-moderate` and
-`review.pr-standard` permit it — and dispatch the code-judo generative pass
-separately via `review.code-judo`. Code-judo returns unscored restructuring
-**proposals**; surface them in their own section, not the scored findings/
-component table.
+(`ultra`/`max` effort or a deep-tier phrase — that skill owns the phrase list),
+follow the review SKILL's *Deep review mode* section and route every triggered
+lens through `deep-review`; both `review.pr-moderate` and `review.pr-standard`
+permit it.
+
+**Code-judo lane.** Dispatch the code-judo generative pass separately via
+`review.code-judo` whenever `classify-diff` reports **Code-judo lane: YES** —
+which a `^refactor` PR title or an explicit ask can set on its own, with
+`Deep-tier escalation: NO`. Do not gate judo dispatch on the escalation field.
+Code-judo returns unscored restructuring **proposals**; surface them in their own
+section, not the scored findings/component table.
 
 ## Synthesize and Score
 
