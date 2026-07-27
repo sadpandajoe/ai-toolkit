@@ -110,6 +110,91 @@ class ConformanceTests(unittest.TestCase):
                 offenders.append(str(reference.relative_to(ROOT)))
         self.assertEqual([], offenders)
 
+    def test_deep_tier_phrase_list_stays_canonical_and_single_owner(self) -> None:
+        # The one-word gap between "deep quality" (one cheap lens) and "deep
+        # quality review" (whole review at deep tier) is load-bearing, and the
+        # phrase list must live in exactly one file so the predicate cannot drift
+        # between the classifier and the orchestrators that read it.
+        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        section = re.search(
+            r"^### Deep-tier phrases.*?(?=^#{2,3} )",
+            classifier,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(section, "classify-diff.md lost its Deep-tier phrases section")
+        quoted = re.findall(
+            r'"([^"]+)"',
+            "\n".join(
+                line for line in section.group(0).splitlines() if line.startswith(">")
+            ),
+        )
+        self.assertEqual(
+            {"deep review", "deep quality review", "thermonuclear"}, set(quoted)
+        )
+        # Scan the toolkit's own content roots only — build output and local
+        # worktrees under .claude/ are copies, not second owners.
+        candidates = [path for path in ROOT.glob("*.md") if path.is_file()]
+        for content_root in ("skills", "rules", "config", "docs", "extensions"):
+            candidates.extend(
+                path
+                for path in (ROOT / content_root).glob("**/*.md")
+                if path.is_file() and not path.is_symlink()
+            )
+        owners = [
+            str(path.relative_to(ROOT))
+            for path in sorted(candidates)
+            if "thermonuclear" in path.read_text()
+        ]
+        self.assertEqual(["skills/review/references/classify-diff.md"], owners)
+
+    def test_classifier_emits_two_independent_deep_lens_fields(self) -> None:
+        # Deep-tier escalation picks the route; Code-judo lane decides whether the
+        # generative pass runs at all. Orchestrators must key judo dispatch on the
+        # lane field, since a `^refactor` title sets it with escalation NO.
+        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        # The Output section embeds a fenced sample whose own `##` headings must
+        # not terminate the match, so anchor the end on the next real section.
+        output = re.search(
+            r"^## Output\b(.*?)(?=^## Notes\b|\Z)",
+            classifier,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(output, "classify-diff.md lost its Output section")
+        for field in ("Deep-tier escalation:", "Code-judo lane:"):
+            self.assertIn(field, output.group(0))
+        for consumer in (
+            "skills/review/SKILL.md",
+            "skills/review/references/local-review.md",
+            "skills/review/references/pr-review.md",
+            "skills/review/references/workflow-review.md",
+        ):
+            with self.subTest(consumer=consumer):
+                self.assertIn("Code-judo lane", (ROOT / consumer).read_text())
+
+    def test_batch_code_judo_suppression_travels_with_the_dispatch(self) -> None:
+        # Batch review is the sole exception to "dispatch judo on Code-judo lane:
+        # YES". A per-PR worker sees only its payload, so the suppression has to
+        # be an explicit dispatch field and the receiving contracts must gate on
+        # it — otherwise the umbrella rule and the batch rule contradict.
+        suppression = "Batch mode: Code-judo suppressed"
+        for contract in (
+            "skills/review/references/pr-batch.md",
+            "skills/review/references/pr-review.md",
+            "skills/review/references/workflow-review.md",
+            "skills/review/SKILL.md",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(suppression, (ROOT / contract).read_text())
+        batch = (ROOT / "skills/review/references/pr-batch.md").read_text()
+        dispatch = re.search(r"^## Dispatch.*?(?=^## )", batch, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(dispatch, "pr-batch.md lost its Dispatch section")
+        self.assertIn(suppression, dispatch.group(0))
+        self.assertIn("suppressed (batch)", dispatch.group(0))
+        self.assertIn(
+            "suppressed (batch)",
+            (ROOT / "skills/workflows/references/review-pr.md").read_text(),
+        )
+
     def test_optional_pgm_workflows_do_not_embed_provider_primitives(self) -> None:
         forbidden = re.compile(
             r"\b(?:Claude|Codex|Anthropic|OpenAI)\b|"

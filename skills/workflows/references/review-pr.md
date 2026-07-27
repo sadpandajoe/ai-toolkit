@@ -95,7 +95,7 @@ Before emitting the chat summary, append a `## PR Review — #N` entry per revie
 Verdict: [approve / request-changes / comment]
 Top finding: [one-liner, or "none"]
 Severity counts: [critical N, major N, minor N, nit N]
-Restructuring proposals: [count, or "none" — populated whenever the Code-judo lane ran, whether from deep review mode, a `^refactor` title, or an explicit ask]
+Restructuring proposals: [count, or "none" — populated whenever the Code-judo lane ran, whether from deep review mode, a `^refactor` title, or an explicit ask; write "suppressed (batch)" for PRs reviewed in a batch, where the lane never runs]
 Posted: [yes / draft / no — reason]
 Residual risk: [one-liner, or "none"]
 ```

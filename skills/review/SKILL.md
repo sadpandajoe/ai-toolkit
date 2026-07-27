@@ -79,6 +79,14 @@ Deep review mode is an explicit **escalation**, not a route name. In this mode, 
 
 The `code-judo` lens is the one exception to tier-routing: it is pinned to the deep tier regardless of the diff's complexity **and regardless of whether deep review mode is active**. Whenever `classify-diff` reports `Code-judo lane: YES` — including on an otherwise standard-tier `^refactor`-titled change with `Deep-tier escalation: NO` — it runs on the `deep-review` route per [references/code-judo.md](references/code-judo.md) — the generative restructuring pass always runs on the deepest reasoning tier, never the standard `review` route. The `review.code-judo` boundary allows only `deep-review`, so a mistaken standard-route request fails closed rather than silently downgrading the model.
 
+**Batch exception.** Multi-PR batch review ([references/pr-batch.md](references/pr-batch.md))
+is the one documented exception: it runs the findings lenses only and suppresses
+the judo pass even on `Code-judo lane: YES`. Because each per-PR review sees only
+its own payload, the batch orchestrator must include the literal line
+`Batch mode: Code-judo suppressed` in that payload; a payload without it follows
+the default rule above. `classify-diff` still reports the lane truthfully — the
+exception lives in the caller, not the classifier.
+
 Run Code-judo **outside** the six-lane findings fan-out (see [references/workflow-review.md](references/workflow-review.md)): its output is unscored restructuring *proposals*, not severity-tagged findings, so it bypasses the dedup + adversarial-verification pipeline and lands in a dedicated **Restructuring Proposals** section of the Review Record rather than the findings table.
 
 ## Notes

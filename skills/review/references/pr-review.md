@@ -88,11 +88,17 @@ lens through `deep-review`; both `review.pr-moderate` and `review.pr-standard`
 permit it.
 
 **Code-judo lane.** Dispatch the code-judo generative pass separately via
-`review.code-judo` whenever `classify-diff` reports **Code-judo lane: YES** —
-which a `^refactor` PR title or an explicit ask can set on its own, with
+`review.code-judo` whenever `classify-diff` reports **Code-judo lane: YES** *and*
+the dispatching caller did not pass `Batch mode: Code-judo suppressed` — which a
+`^refactor` PR title or an explicit ask can set on its own, with
 `Deep-tier escalation: NO`. Do not gate judo dispatch on the escalation field.
 Code-judo returns unscored restructuring **proposals**; surface them in their own
 section, not the scored findings/component table.
+
+When the payload carries `Batch mode: Code-judo suppressed`
+([pr-batch.md](pr-batch.md)), skip the judo lane even on `Code-judo lane: YES`,
+run the findings lenses only, and record the proposals slot as
+`suppressed (batch)` rather than `none`.
 
 ## Synthesize and Score
 

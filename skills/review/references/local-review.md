@@ -98,7 +98,7 @@ Use triggered references from `classify-diff.md`, including:
 - **Deep-tier escalation: YES** — route every triggered lens through `deep-review` instead of its default route.
 - **Code-judo lane: YES** — dispatch the [code-judo.md](code-judo.md) generative pass separately (outside the findings fan-out) via the `review.code-judo` boundary. Its proposals go in the Restructuring Proposals section, not the findings table.
 
-These do not imply each other. A `^refactor`-titled change or an explicit Code-judo ask sets `Code-judo lane: YES` with `Deep-tier escalation: NO` — dispatch the judo pass anyway (still on `deep-review`, which that boundary pins) while the findings lenses stay on their default routes.
+These do not imply each other. A `^refactor`-titled change or an explicit Code-judo ask sets `Code-judo lane: YES` with `Deep-tier escalation: NO` — dispatch the judo pass anyway (still on `deep-review`, which that boundary pins) while the findings lenses stay on their default routes. The only documented exception is multi-PR batch review, which passes `Batch mode: Code-judo suppressed` in its dispatch payload ([pr-batch.md](pr-batch.md)); local review is never dispatched that way, so the rule above is unconditional here.
 
 <!-- aitk-model-route:review.local-independent-second-opinion -->
 Launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.

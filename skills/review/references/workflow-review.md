@@ -31,15 +31,16 @@ when at least three independent reviewer lanes trigger.
 ## Bounds
 
 - The classifier selects lenses; never run all lenses by default.
-- **Code-judo runs outside this fan-out.** Whenever `classify-diff` reports
-  `Code-judo lane: YES` — in deep review mode or from a `^refactor` title or
-  explicit ask alone — the code-judo
-  generative pass is not one of the six findings lanes and does not pass through
-  dedup or adversarial verification — its output is unscored, behavior-preserving
-  *proposals*, not severity findings. Dispatch it separately via the
-  `review.code-judo` boundary and route its proposals to a dedicated
-  Restructuring Proposals section of the Review Record; never coerce them into
-  the schema-shaped findings pipeline.
+- **Code-judo runs outside this fan-out.** The code-judo generative pass is never
+  one of the six findings lanes and does not pass through dedup or adversarial
+  verification — its output is unscored, behavior-preserving *proposals*, not
+  severity findings. Dispatch it separately via the `review.code-judo` boundary
+  whenever `classify-diff` reports `Code-judo lane: YES` — in deep review mode or
+  from a `^refactor` title or explicit ask alone — *and* the dispatching caller
+  did not pass `Batch mode: Code-judo suppressed` ([pr-batch.md](pr-batch.md)),
+  which is the sole exception. Route its proposals to a dedicated Restructuring
+  Proposals section of the Review Record; never coerce them into the
+  schema-shaped findings pipeline.
 - A security-sensitive finding may use a three-vote independent panel.
 - Provider adapters may execute fan-out sequentially only through the declared
   fallback; they may not weaken fresh-context or evidence requirements.

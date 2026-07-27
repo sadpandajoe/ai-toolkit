@@ -27,6 +27,9 @@ The main thread must not accumulate full diffs or full review transcripts for ev
 For each PR, dispatch a subagent on `review`/`deep-review` with:
 - PR number/ref
 - flags (draft/summary by default; pass `--auto` only when the user explicitly requested auto-posting)
+- the literal line `Batch mode: Code-judo suppressed` — a per-PR review sees only
+  its own payload plus the pointers below, so this suppression must travel in the
+  payload; without it the default `Code-judo lane: YES` rule applies
 - pointer to [pr-review.md](pr-review.md)
 - pointer to [pr-posting.md](pr-posting.md)
 - compact return contract
@@ -44,12 +47,25 @@ Residual risk:
 ```
 
 Batch mode runs the **findings** lenses only — the Code-judo generative pass is
-disabled here unconditionally, including when `classify-diff` reports
+suppressed here unconditionally, including when `classify-diff` reports
 `Code-judo lane: YES` for a PR in the batch (a `^refactor` title alone sets that
 field, so expect it routinely). Its unscored restructuring *proposals* have no slot in the compact
 per-PR return contract above, and the `deep-review` route is too expensive to fan
 out across a batch. When a specific PR warrants a Code-judo pass, run a single-PR
 deep review ([review-pr](../../workflows/references/review-pr.md)) instead.
+
+This is the **one** documented exception to the umbrella rule "dispatch judo on
+`Code-judo lane: YES`" (see the review SKILL's *Code-judo* section). It holds only
+because the dispatch above passes `Batch mode: Code-judo suppressed` explicitly —
+the exception belongs to the caller, not to the lane classifier, which still
+reports the field truthfully.
+
+The suppression is the main thread's own decision, so the main thread also owns
+recording it: when it writes the per-PR `## PR Review — #N` entry (or folds it
+into the wave block below), the proposals slot reads `suppressed (batch)`, never
+`none` — the latter falsely implies a judo pass ran and found no move. The
+compact return contract above needs no proposals slot for this; a batch-mode
+review never produces proposals to report.
 
 Concurrency: run up to 3-5 PR reviews in parallel. Lower concurrency if PRs are unusually large, share code ownership, or the repo is resource constrained.
 
