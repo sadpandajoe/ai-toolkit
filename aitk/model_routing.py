@@ -464,6 +464,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                     root,
                     str(boundary.get("path")),
                     str(route_item.get("responsibility")),
+                    identifier,
                 )
             except ModelRouteError as error:
                 problems.append(str(error))
@@ -748,7 +749,7 @@ def resolve_route(
         if route not in boundary_item["routes"]:
             raise ModelRouteError(f"{route} is not allowed at boundary {boundary}")
         required_contracts = _required_contract_paths(
-            root, boundary_item["path"], str(item["responsibility"])
+            root, boundary_item["path"], str(item["responsibility"]), boundary
         )
     else:
         required_contracts = ()
@@ -798,7 +799,7 @@ def _contracts(root: Path, values: tuple[str, ...]) -> tuple[tuple[str, str, str
 
 
 def _required_contract_paths(
-    root: Path, boundary_path: str, responsibility: str
+    root: Path, boundary_path: str, responsibility: str, boundary_id: str
 ) -> tuple[str, ...]:
     """Derive the exact inline contract closure for one dispatch boundary."""
     path = Path(boundary_path)
@@ -824,7 +825,7 @@ def _required_contract_paths(
         path.as_posix(),
     )
     return _contract_closure(
-        root, tuple(dict.fromkeys(values)), path.as_posix(), responsibility
+        root, tuple(dict.fromkeys(values)), path.as_posix(), responsibility, boundary_id
     )
 
 
@@ -833,6 +834,7 @@ def _contract_closure(
     seeds: tuple[str, ...],
     boundary_path: str,
     responsibility: str,
+    boundary_id: str,
 ) -> tuple[str, ...]:
     """Follow required and review-lens Markdown dependencies in stable order."""
     root = root.resolve()
@@ -863,8 +865,15 @@ def _contract_closure(
                     sibling_value = sibling.relative_to(root).as_posix()
                     if sibling_value not in seen and sibling_value not in queued:
                         queued.append(sibling_value)
+        # Reviewer lanes need the lens references named at their own dispatch
+        # site, but a boundary document usually declares several lanes. Scan the
+        # marker's own section only, so one lane never inherits another lane's
+        # lenses; the Required Context section is unioned in because a lens file
+        # keeps its shared rules there, outside any marker span.
         dependency_text = (
-            content
+            _marker_span_text(content, boundary_id)
+            + "\n"
+            + _required_context_text(content)
             if value == boundary_path and responsibility == "review"
             else _required_context_text(content)
         )
@@ -932,6 +941,30 @@ def _contract_closure(
                         f"missing contract dependency from {value}: {target_text}"
                     )
     return tuple(result)
+
+
+def _marker_span_text(content: str, boundary_id: str) -> str:
+    """Return the dispatch prose owned by one route marker.
+
+    The span runs from the marker to the next route/exemption marker or the next
+    Markdown heading, whichever comes first. A boundary whose marker is missing
+    contributes nothing here; `validate_dispatch_boundaries` owns that failure.
+    """
+    selected: list[str] = []
+    in_span = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        route_marker = ROUTE_MARKER.fullmatch(stripped)
+        if route_marker is not None:
+            in_span = route_marker.group(1) == boundary_id
+            continue
+        if in_span and (
+            EXEMPT_MARKER.fullmatch(stripped) is not None or stripped.startswith("#")
+        ):
+            break
+        if in_span:
+            selected.append(line)
+    return "\n".join(selected)
 
 
 def _required_context_text(content: str) -> str:

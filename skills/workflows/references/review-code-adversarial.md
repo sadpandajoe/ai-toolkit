@@ -32,7 +32,7 @@ Within that flow:
 <!-- aitk-model-route:workflows.adversarial-primary -->
 - Use [skills/review/references/adversarial.md](../../review/references/adversarial.md) for the primary adversarial reviewer on `deep-review`.
 <!-- aitk-model-route:workflows.adversarial-second-opinion -->
-- Use an optional second-opinion adversarial reviewer on `deep-review` only when available.
+- Use an optional second-opinion adversarial reviewer on `deep-review` only when available, running the same [skills/review/references/adversarial.md](../../review/references/adversarial.md) lens as the primary.
 - Use `review-code` style Review Gate semantics for final status.
 
 ## Gates

@@ -74,7 +74,7 @@ That reference owns:
 - synthesis, scoring, and recommendation
 
 <!-- aitk-model-route:workflows.review-pr-fresh -->
-Use fresh reviewer subagents for each single-PR review pass. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, or substantial multi-system lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
+Use fresh reviewer subagents for each single-PR review pass. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, or substantial multi-system lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass. The pass follows [../../review/references/pr-review.md](../../review/references/pr-review.md) and posts through [../../review/references/pr-posting.md](../../review/references/pr-posting.md).
 
 ### 3. Post or Draft
 

@@ -4,17 +4,20 @@ tier: Heavy
 
 # Code-Judo (Structural Restructuring Proposal)
 
-A **generative** pass, not a findings pass. Where `skills/review/references/deep-quality.md`
+A **generative** pass, not a findings pass. Where the deep-quality findings lens
 *finds* structural problems, this pass *proposes* a concrete behavior-preserving
-restructuring that makes the change dramatically simpler.
+restructuring that makes the change dramatically simpler. The two lenses are
+deliberately separate contracts: naming that sibling file here would pull its
+severity-graded findings rules into this lane's inline closure.
 
 Pinned to the `deep-review` route (see the review SKILL Invocation section) —
 this is deliberately the deepest-reasoning tier because reframing an
-architecture requires holding an alternative design in view. Runs when triggered
-explicitly, by `ultra`/`max` effort, or by a `^refactor`-titled change. A merely
-refactor-*shaped* diff (churn/rename signals without a refactor title, explicit
-ask, or deep effort) is **advisory only** — the classifier recommends a judo
-pass rather than auto-firing it, since the `deep-review` route is expensive.
+architecture requires holding an alternative design in view. This pass runs iff
+`classify-diff` reports `Code-judo lane: YES`; that file owns the trigger
+predicate (see its *Code-judo* row and *Deep-tier escalation* rule) and this
+lens never re-derives it. The lane is deliberately conservative because the
+`deep-review` route is expensive — a merely refactor-*shaped* diff is advisory
+there, not an auto-fire.
 
 <!-- aitk-model-route:review.code-judo -->
 Dispatch a single code-judo agent on the `deep-review` route — never the
@@ -27,7 +30,8 @@ silently downgrading the model.
 Read before starting: `rules/code-review.md`, `rules/stop-rules.md`.
 Input: the diff (uncommitted, committed range, or PR) and, when available, the
 change title / commit subjects. This lens emits unscored **proposals**, not
-severity-tagged findings, so it does not use `rules/severity.md`.
+severity-tagged findings, so the toolkit severity scale is deliberately absent
+from this contract — do not import it, and do not tag proposals with severities.
 
 ## The Task
 
@@ -103,3 +107,25 @@ Frame every proposal as a **recommendation requiring behavior-preserving
 verification**, never an assertion that the current code is wrong. If a proposal
 cannot be shown behavior-preserving from the diff alone, say so and name what
 would need to be checked. Apply the stop rules in `rules/stop-rules.md`.
+
+### Routed result mapping
+
+This lane runs through `model-run`, whose result contract is the same four fields
+every route returns — `status`, `summary`, `findings`, `verification`. That
+contract has no proposals field, so pin the mapping here rather than leaving each
+worker to guess:
+
+- `summary` — the proposal blocks above, verbatim and in full, concatenated when
+  there are two. A clean result puts the "no structural simplification found"
+  sentence here instead.
+- `findings` — **always empty**. Proposals are unscored; a proposal written into
+  `findings` becomes a severity-graded finding in every consumer downstream, which
+  is precisely what this lens's separation from the findings lenses exists to
+  prevent. Emitting a non-empty `findings` array from this lane is a contract
+  violation, not a formatting choice.
+- `verification` — the behavior-preservation checks a reader must run before
+  acting on a proposal, including the ones this pass could not complete from the
+  diff alone.
+
+The caller keeps that split when it ingests the result: `summary` goes to the
+Restructuring Proposals section of the Review Record, never the findings table.

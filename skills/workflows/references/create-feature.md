@@ -91,7 +91,7 @@ There is no `COMPLEX` classification. Larger efforts stay STANDARD with explicit
 4. Load technical planning, produce slices, write `PLAN.md`, update PROJECT.md, and emit `PLAN.md Written`.
 5. Checkpoint, request `context_reset`, then resume from `PLAN.md` and PROJECT.md before plan review.
 <!-- aitk-model-route:workflows.create-feature-plan-review -->
-6. Launch fresh reviewer subagents through the plan-review loop on `review` or `deep-review` as specified by that loop; they return findings and scores, and the main thread updates the plan until material findings are resolved and the Action Gate says proceed.
+6. Launch fresh reviewer subagents through the plan-review loop ([../../planning/references/iterate-review.md](../../planning/references/iterate-review.md)) on `review` or `deep-review` as specified by that loop; they return findings and scores, and the main thread updates the plan until material findings are resolved and the Action Gate says proceed.
 <!-- aitk-model-route:workflows.create-feature-implementation -->
 7. Dispatch one bounded implementation subagent on `implementation` only when isolation or parallelism clearly helps; first checkpoint and request `context_reset`, otherwise implement the slice or wave inline. Any subagent returns `Implementation Handoff` blocks only.
 8. Main thread updates `PLAN.md`/PROJECT.md, runs fan-in if needed, then runs `verify` or equivalent pre-flight checks. **Hard gate before the next checkpoint + context_reset**: append a `## Slice N Complete` block to PROJECT.md (slice name, files changed, tests added/updated, acceptance result, next slice or "ready for review"). Do not invoke checkpoint + context_reset until this block is written:

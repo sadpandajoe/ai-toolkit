@@ -115,6 +115,8 @@ The subagent must:
 2. Run the LLM hunk-level audit comparing source diff vs cherry-pick result diff.
 3. Return a structured report containing the literal `scope-audit.sh` output, per-hunk verdict, and a clear `LEAK / CLEAN / ESCALATE` recommendation.
 
+The subagent contract, LLM audit procedure, and status labels live in [references/validate.md](references/validate.md).
+
 <!-- aitk-model-route:cherry-pick.scope-leak-rereview -->
 The orchestrator may not mark a cherry `Applied` without this report. If the subagent finds leaks, revert leaked hunks and amend on the main thread, then re-spawn the subagent on the same `review`/`deep-review` route on the amended commit.
 

@@ -93,17 +93,22 @@ Use triggered references from `classify-diff.md`, including:
 - [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md)
 - [../../plan-review/references/backend.md](../../plan-review/references/backend.md)
 
-`classify-diff` reports two independent fields; read each one separately, and follow the review SKILL's *Deep review mode* and *Code-judo* sections:
-
-- **Deep-tier escalation: YES** — route every triggered lens through `deep-review` instead of its default route.
-- **Code-judo lane: YES** — dispatch the [code-judo.md](code-judo.md) generative pass separately (outside the findings fan-out) via the `review.code-judo` boundary. Its proposals go in the Restructuring Proposals section, not the findings table.
-
-These do not imply each other. A `^refactor`-titled change or an explicit Code-judo ask sets `Code-judo lane: YES` with `Deep-tier escalation: NO` — dispatch the judo pass anyway (still on `deep-review`, which that boundary pins) while the findings lenses stay on their default routes. The only documented exception is multi-PR batch review, which passes `Batch mode: Code-judo suppressed` in its dispatch payload ([pr-batch.md](pr-batch.md)); local review is never dispatched that way, so the rule above is unconditional here.
+`classify-diff` reports a **Deep-tier escalation** field for this fan-out: on
+**YES**, route every triggered lens through `deep-review` instead of its default
+route. Read it independently of the Code-judo lane field below — neither implies
+the other.
 
 <!-- aitk-model-route:review.local-independent-second-opinion -->
 Launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
 
-Collect findings from all primary lanes and the independent lane, dedupe, sort by severity, and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing.
+Collect findings from all primary lanes and the independent lane, dedupe, sort by the `rules/severity.md` scale, and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing.
+
+### Code-Judo Lane (Dispatched at Its Own Boundary)
+
+<!-- aitk-model-route-exempt:judo-dispatched-at-own-boundary -->
+This section dispatches no reviewer agents of its own: the code-judo pass runs at the `review.code-judo` boundary, which pins the `deep-review` route and derives its own contract closure. When `classify-diff` reports **Code-judo lane: YES**, run that generative pass separately from the findings fan-out per [code-judo.md](code-judo.md), and put its proposals in the Restructuring Proposals section, never the findings table.
+
+A `^refactor`-titled change or an explicit Code-judo ask sets `Code-judo lane: YES` with `Deep-tier escalation: NO` — run the judo pass anyway while the findings lenses stay on their default routes. The only documented exception is multi-PR batch review, which passes `Batch mode: Code-judo suppressed` in its dispatch payload ([pr-batch.md](pr-batch.md)); local review is never dispatched that way, so the rule above is unconditional here.
 
 ## Re-Verify + Iterate
 
@@ -128,7 +133,7 @@ Trigger signals (any one is enough):
 Skip the final pass only when **all** fix-queue items were: pure deletions, one-line reverts, formatting, or comment-only.
 
 <!-- aitk-model-route:review.local-final-pass -->
-Use fresh reviewer subagents on `deep-review` for the final pass — never the ones who reviewed the original diff. Its scope is `base..HEAD` of the integrated branch, not the fix-queue commits in isolation. If the final pass surfaces majors, treat them as a new review round and iterate.
+Use fresh reviewer subagents on `deep-review` for the final pass — never the ones who reviewed the original diff. Its scope is `base..HEAD` of the integrated branch, not the fix-queue commits in isolation. If the final pass surfaces majors, treat them as a new review round and iterate. The pass runs the findings lenses the integrated diff still triggers — at minimum [code-quality.md](code-quality.md), plus [deep-quality.md](deep-quality.md) when the fix queue changed structure.
 
 ## Independent Second Opinion (capability-based)
 
@@ -143,7 +148,7 @@ Launch the runtime's configured `independent-review` capability on `review` conc
 
 The adapter returns normalized findings with `severity`, `file`, `line`, `evidence`, and `recommendation`. If the capability is unavailable or errors, record `Independent review: skipped (unavailable)` in the Review Gate and continue with the primary lanes.
 
-Map independent findings into the toolkit severity scale, then dedupe against the primary lanes:
+Map independent findings into the toolkit severity scale (`rules/severity.md`), then dedupe against the primary lanes:
 
 - Must fix / critical → `[major]`
 - Should fix / improvement → `[minor]`

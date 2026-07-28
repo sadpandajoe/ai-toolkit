@@ -9,6 +9,12 @@ description: "Use for reviewing implemented code through orchestration, classifi
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 
+## Required Context
+
+Read before starting: `rules/code-review.md`, `rules/stop-rules.md`. Every lane
+on a review route shares these two; the severity scale belongs to the individual
+findings lenses, so the generative Code-judo lane does not inherit it.
+
 Umbrella for code-review work — review of *shipped code*, not plans. References
 are grouped by role so workflows load only the phase they are entering.
 
@@ -53,7 +59,18 @@ are grouped by role so workflows load only the phase they are entering.
 The `review-code` workflow dispatches through `classify-diff`, which chooses lenses from this umbrella **and** the `testing/` umbrella when tests are in scope.
 
 <!-- aitk-model-route:review.pr-lenses -->
-The `review-pr` workflow uses `pr-review`, `pr-batch`, and `pr-posting` for PR-specific context gathering and GitHub interaction, then dispatches the same reviewer lenses on `review`/`deep-review` as `review-code`.
+The `review-pr` workflow uses `pr-review`, `pr-batch`, and `pr-posting` for PR-specific context gathering and GitHub interaction, then dispatches the same reviewer lenses on `review`/`deep-review` as `review-code`:
+
+- [references/code-quality.md](references/code-quality.md)
+- [references/deep-quality.md](references/deep-quality.md)
+- [../testing/references/review-tests.md](../testing/references/review-tests.md)
+- [../testing/references/review-testplan.md](../testing/references/review-testplan.md)
+- [../plan-review/references/architecture.md](../plan-review/references/architecture.md)
+- [../plan-review/references/frontend.md](../plan-review/references/frontend.md)
+- [../plan-review/references/backend.md](../plan-review/references/backend.md)
+
+Code-judo is not in that fan-out: it dispatches at the `review.code-judo`
+boundary, which carries its own contract closure.
 
 ## Invocation
 

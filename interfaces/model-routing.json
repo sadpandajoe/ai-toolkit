@@ -228,6 +228,7 @@
     {"path": "skills/agent-setup-maintainer/lessons.md", "marker": "historical-handoff-lesson", "count": 1},
     {"path": "skills/review/references/classify-diff.md", "marker": "describes-caller-owned-dispatch", "count": 1},
     {"path": "skills/review/references/classify-diff.md", "marker": "explicitly-not-a-dispatch", "count": 1},
+    {"path": "skills/review/references/local-review.md", "marker": "judo-dispatched-at-own-boundary", "count": 1},
     {"path": "skills/review/references/local-review.md", "marker": "pre-dispatch-condition", "count": 1},
     {"path": "skills/review/references/local-review.md", "marker": "pre-launch-condition", "count": 1},
     {"path": "skills/testing/rules.md", "marker": "test-runner-process-workers", "count": 1},

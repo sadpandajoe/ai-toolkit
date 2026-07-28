@@ -13,6 +13,36 @@ from aitk.workflows import load_workflows
 
 ROOT = Path(__file__).resolve().parents[1]
 
+JUDO_SUBJECT = re.compile(r"code-judo|judo (?:pass|lane)", re.IGNORECASE)
+DISPATCH_VERB = re.compile(
+    r"\b(?:dispatch|dispatches|dispatched|run|runs|launch|launches|spawn|spawns)\b",
+    re.IGNORECASE,
+)
+
+
+def _judo_dispatch_sentences(content: str) -> list[str]:
+    """Sentences that both name the judo lane and tell a caller to run it."""
+    flat = re.sub(r"\s+", " ", content)
+    return [
+        sentence
+        for sentence in re.split(r"(?<=[.!?]) ", flat)
+        if JUDO_SUBJECT.search(sentence) and DISPATCH_VERB.search(sentence)
+    ]
+
+
+def _markdown_table_rows(block: str) -> list[list[str]]:
+    """Split a Markdown table into cell lists, dropping the alignment row."""
+    rows = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if all(set(cell) <= {"-", ":"} and cell for cell in cells):
+            continue
+        rows.append(cells)
+    return rows
+
 
 class ConformanceTests(unittest.TestCase):
     def test_behavior_and_resume_contracts_are_satisfied(self) -> None:
@@ -162,6 +192,10 @@ class ConformanceTests(unittest.TestCase):
         self.assertIsNotNone(output, "classify-diff.md lost its Output section")
         for field in ("Deep-tier escalation:", "Code-judo lane:"):
             self.assertIn(field, output.group(0))
+        # Substring presence proves nothing about the predicate a consumer gates
+        # on, so check the sentences that actually dispatch judo: each consumer
+        # must gate at least one of them on the lane field, and none may gate on
+        # deep-tier escalation, which is a route choice rather than a lane.
         for consumer in (
             "skills/review/SKILL.md",
             "skills/review/references/local-review.md",
@@ -169,7 +203,21 @@ class ConformanceTests(unittest.TestCase):
             "skills/review/references/workflow-review.md",
         ):
             with self.subTest(consumer=consumer):
-                self.assertIn("Code-judo lane", (ROOT / consumer).read_text())
+                dispatches = _judo_dispatch_sentences((ROOT / consumer).read_text())
+                self.assertTrue(
+                    dispatches, f"{consumer} no longer dispatches the judo lane"
+                )
+                self.assertTrue(
+                    any("Code-judo lane" in sentence for sentence in dispatches),
+                    f"{consumer} dispatches judo without gating on the lane field",
+                )
+                escalation_gated = [
+                    sentence
+                    for sentence in dispatches
+                    if "Deep-tier escalation: YES" in sentence
+                    and "Code-judo lane" not in sentence
+                ]
+                self.assertEqual([], escalation_gated)
 
     def test_batch_code_judo_suppression_travels_with_the_dispatch(self) -> None:
         # Batch review is the sole exception to "dispatch judo on Code-judo lane:
@@ -194,6 +242,47 @@ class ConformanceTests(unittest.TestCase):
             "suppressed (batch)",
             (ROOT / "skills/workflows/references/review-pr.md").read_text(),
         )
+        # The wave block is where a batch survives context_reset, so the state
+        # has to be representable there: a proposals column whose sample rows
+        # carry the suppressed value, not a prose mention elsewhere in the file.
+        wave = re.search(
+            r"^## Review-PR Batch Wave N$.*?^Next wave:", batch, re.MULTILINE | re.DOTALL
+        )
+        self.assertIsNotNone(wave, "pr-batch.md lost its wave block template")
+        rows = _markdown_table_rows(wave.group(0))
+        self.assertTrue(rows, "the wave block template lost its table")
+        header = [cell.lower() for cell in rows[0]]
+        self.assertIn("proposals", header)
+        column = header.index("proposals")
+        self.assertTrue(len(rows) > 1, "the wave block template lost its sample rows")
+        for row in rows[1:]:
+            self.assertEqual("suppressed (batch)", row[column])
+
+    def test_code_judo_pins_its_proposals_to_a_worker_result_slot(self) -> None:
+        # A routed judo worker returns the same four fields as every other lane,
+        # so the lens itself has to say which slot proposals land in. Without the
+        # mapping a worker is free to emit them as findings, scoring the one
+        # output this lens exists to keep unscored.
+        judo = (ROOT / "skills/review/references/code-judo.md").read_text()
+        mapping = re.search(
+            r"^### Routed result mapping$.*?(?=^## |\Z)",
+            judo,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(mapping, "code-judo.md lost its routed result mapping")
+        slots = dict(
+            re.findall(
+                r"^- `(\w+)` — (.*?)(?=^- `|\Z)",
+                mapping.group(0),
+                re.MULTILINE | re.DOTALL,
+            )
+        )
+        self.assertEqual({"summary", "findings", "verification"}, set(slots))
+        self.assertIn("proposal", slots["summary"].lower())
+        # A bare "empty", not the "non-empty ... is a contract violation" prose
+        # further down the bullet: the slot has to state the required value, so
+        # rewording the directive away can't be masked by the rationale.
+        self.assertRegex(slots["findings"].lower(), r"(?<!non-)\bempty\b")
 
     def test_optional_pgm_workflows_do_not_embed_provider_primitives(self) -> None:
         forbidden = re.compile(

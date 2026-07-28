@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -10,7 +12,9 @@ from unittest import mock
 
 from aitk.model_routing import (
     ModelRouteError,
+    _marker_span_text,
     _safe_path,
+    _valid_worker,
     parse_claude_output,
     parse_codex_output,
     resolve_route,
@@ -99,12 +103,21 @@ class ModelRoutingTests(unittest.TestCase):
     def test_deep_lens_route_boundaries_enforce_tier(self) -> None:
         # Code-judo is pinned to the deep tier: it accepts deep-review, rejects
         # the standard review route, and inlines its own narrow lens contract.
+        # The closure is asserted exactly — an extra file here is how the
+        # generative lane silently reacquires the findings lens's severity rules.
         judo = resolve_route(
             ROOT, "deep-review", "claude", boundary="review.code-judo"
         )
         self.assertEqual("review.code-judo", judo.boundary)
-        self.assertIn(
-            "skills/review/references/code-judo.md", judo.required_contracts
+        self.assertEqual(
+            (
+                "rules/code-review.md",
+                "rules/model-assignment.md",
+                "rules/stop-rules.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/code-judo.md",
+            ),
+            tuple(sorted(judo.required_contracts)),
         )
         with self.assertRaisesRegex(ModelRouteError, "not allowed at boundary"):
             resolve_route(ROOT, "review", "claude", boundary="review.code-judo")
@@ -116,6 +129,172 @@ class ModelRoutingTests(unittest.TestCase):
                     ROOT, responsibility, "claude", boundary="review.pr-moderate"
                 )
                 self.assertEqual("review.pr-moderate", resolved.boundary)
+
+    def test_reviewer_lane_closures_do_not_cross_contaminate(self) -> None:
+        # One boundary document declares several lanes, so the closure has to be
+        # scoped to each marker: a findings reviewer that inlines the generative
+        # judo contract (or a judo worker that inlines severity-graded findings
+        # rules) receives two conflicting job descriptions in one prompt.
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        judo_lens = "skills/review/references/code-judo.md"
+        checked_judo = False
+        for boundary in payload["dispatch_boundaries"]:
+            for route in boundary["routes"]:
+                with self.subTest(boundary=boundary["id"], route=route):
+                    contracts = resolve_route(
+                        ROOT, route, "claude", boundary=boundary["id"]
+                    ).required_contracts
+                    if boundary["id"] == "review.code-judo":
+                        checked_judo = True
+                        self.assertNotIn(
+                            "skills/review/references/deep-quality.md", contracts
+                        )
+                        self.assertNotIn("rules/severity.md", contracts)
+                    else:
+                        self.assertNotIn(judo_lens, contracts)
+        self.assertTrue(checked_judo, "review.code-judo left the boundary manifest")
+        # Scoping narrows every lane on a multi-lane document, so pin all of
+        # them exactly. Isolation that starves a lane is the same regression in
+        # the other direction: the worker silently loses a lens it is told to
+        # run, and a negative-membership assertion alone stays green.
+        expected = {
+            # The findings fan-out still carries every lens it dispatches.
+            "review.local-primary-lanes": (
+                "rules/code-review.md",
+                "rules/model-assignment.md",
+                "rules/review-gate.md",
+                "rules/scoring.md",
+                "rules/severity.md",
+                "rules/stop-rules.md",
+                "skills/plan-review/references/architecture.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/code-quality.md",
+                "skills/review/references/deep-quality.md",
+                "skills/review/references/local-review.md",
+                "skills/testing/references/review-testplan.md",
+                "skills/testing/references/review-tests.md",
+            ),
+            # The final pass re-runs only the two lenses its span names.
+            "review.local-final-pass": (
+                "rules/code-review.md",
+                "rules/model-assignment.md",
+                "rules/review-gate.md",
+                "rules/severity.md",
+                "rules/stop-rules.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/code-quality.md",
+                "skills/review/references/deep-quality.md",
+                "skills/review/references/local-review.md",
+            ),
+            # The independent lanes launch an external capability rather than a
+            # lens, so their closure stays near the seeds — but both grade
+            # findings, so both keep the severity scale.
+            "review.local-independent-second-opinion": (
+                "rules/code-review.md",
+                "rules/model-assignment.md",
+                "rules/severity.md",
+                "rules/stop-rules.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/local-review.md",
+            ),
+            "review.local-independent-capability": (
+                "rules/code-review.md",
+                "rules/model-assignment.md",
+                "rules/review-gate.md",
+                "rules/severity.md",
+                "rules/stop-rules.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/local-review.md",
+            ),
+            "review.code-quality-final": (
+                "rules/code-review.md",
+                "rules/model-assignment.md",
+                "rules/review-gate.md",
+                "rules/severity.md",
+                "rules/stop-rules.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/code-quality.md",
+            ),
+        }
+        allowed = {
+            boundary["id"]: boundary["routes"]
+            for boundary in payload["dispatch_boundaries"]
+        }
+        for identifier, contracts in expected.items():
+            for route in allowed[identifier]:
+                with self.subTest(boundary=identifier, route=route):
+                    resolved = resolve_route(
+                        ROOT, route, "claude", boundary=identifier
+                    )
+                    self.assertEqual(
+                        contracts, tuple(sorted(resolved.required_contracts))
+                    )
+
+    def test_no_marker_span_is_starved_of_a_contract_it_names(self) -> None:
+        # Structural counterpart to the exact closures above: whatever a span
+        # tells its worker to read must reach that worker. This holds for
+        # boundaries nobody thought to pin, including ones added later.
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        for boundary in payload["dispatch_boundaries"]:
+            document = Path(boundary["path"])
+            span = _marker_span_text(
+                (ROOT / document).read_text(), boundary["id"]
+            )
+            named = {
+                (document.parent / target).as_posix()
+                for target in re.findall(r"\]\(([^)]+\.md)\)", span)
+            }
+            named = {
+                path
+                for path in (os.path.normpath(item) for item in named)
+                if (ROOT / path).is_file()
+            }
+            if not named:
+                continue
+            for route in boundary["routes"]:
+                with self.subTest(boundary=boundary["id"], route=route):
+                    contracts = set(
+                        resolve_route(
+                            ROOT, route, "claude", boundary=boundary["id"]
+                        ).required_contracts
+                    )
+                    self.assertEqual(set(), named - contracts)
+
+    def test_marker_span_scopes_dependencies_to_one_dispatch(self) -> None:
+        document = "\n".join(
+            [
+                "# Doc",
+                "",
+                "<!-- aitk-model-route:demo.first -->",
+                "Dispatch reviewers with [alpha.md](alpha.md).",
+                "",
+                "<!-- aitk-model-route:demo.second -->",
+                "Dispatch reviewers with [beta.md](beta.md).",
+                "",
+                "## Later",
+                "",
+                "Unscoped prose naming [gamma.md](gamma.md).",
+            ]
+        )
+        first = _marker_span_text(document, "demo.first")
+        self.assertIn("alpha.md", first)
+        self.assertNotIn("beta.md", first)
+        second = _marker_span_text(document, "demo.second")
+        self.assertIn("beta.md", second)
+        self.assertNotIn("gamma.md", second)
+        self.assertNotIn("alpha.md", second)
+        self.assertEqual("", _marker_span_text(document, "demo.missing").strip())
+        exempted = "\n".join(
+            [
+                "<!-- aitk-model-route:demo.first -->",
+                "Dispatch reviewers with [alpha.md](alpha.md).",
+                "<!-- aitk-model-route-exempt:not-a-dispatch -->",
+                "Prose naming [beta.md](beta.md).",
+            ]
+        )
+        self.assertNotIn("beta.md", _marker_span_text(exempted, "demo.first"))
 
     def test_boundary_closure_includes_owner_and_responsibility_skills(self) -> None:
         resolved = resolve_route(
@@ -334,6 +513,55 @@ class ModelRoutingTests(unittest.TestCase):
             parse_codex_output(json.dumps({"type": "turn.failed"}), json.dumps(RESULT))
         with self.assertRaises(ModelRouteError):
             parse_claude_output(json.dumps({"type": "result", "is_error": True}))
+
+    def test_code_judo_proposals_round_trip_without_becoming_findings(self) -> None:
+        # The judo lane emits unscored proposals, but the shared worker contract
+        # carries only summary/findings/verification. code-judo.md pins proposals
+        # to `summary` with `findings` empty; this proves that shape survives both
+        # providers' parse paths, and that the tempting alternative — a proposals
+        # key of its own — is rejected by the transport rather than smuggled.
+        proposal = (
+            "### Proposal: collapse the two dispatch paths into one\n"
+            "Deletes: the mode branch at runner.py:88 and its helper\n"
+            "Reframing: a single dispatcher keyed by responsibility\n"
+            "Behavior preserved because: both paths already resolve the same"
+            " route — weakest point: the batch caller\n"
+            "Effort / blast radius: one module, no callers change\n"
+        )
+        judo = {
+            "status": "completed",
+            "summary": proposal,
+            "findings": [],
+            "verification": ["re-run the routing suite before acting on this"],
+        }
+        self.assertTrue(_valid_worker(judo))
+        codex = json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": json.dumps(judo)},
+            }
+        )
+        claude = json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "structured_output": judo,
+            }
+        )
+        for provider, parsed in (
+            ("codex", parse_codex_output(codex, json.dumps(judo))),
+            ("claude", parse_claude_output(claude)),
+        ):
+            with self.subTest(provider=provider):
+                self.assertEqual(judo, parsed)
+                self.assertEqual([], parsed["findings"])
+                self.assertIn("Behavior preserved because:", parsed["summary"])
+                self.assertIn("Deletes:", parsed["summary"])
+        # A worker that invents its own proposals field fails closed instead of
+        # having the field silently dropped, which is why the mapping in
+        # code-judo.md has to name an existing slot.
+        self.assertFalse(_valid_worker({**judo, "proposals": [proposal]}))
 
     def test_dry_run_preflights_and_emits_exact_codex_controls(self) -> None:
         calls: list[list[str]] = []

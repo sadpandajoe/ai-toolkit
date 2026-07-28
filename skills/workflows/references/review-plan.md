@@ -24,6 +24,21 @@ review-plan --pm
 
 `--pm`: Include PM brief review (`pm/references/review-feature-brief.md`) in addition to technical reviewers.
 
+## Required Context
+
+The reviewer lanes launched by this workflow run these lenses, selected per the
+scope table below:
+
+- `plan-review/references/architecture.md`
+- `plan-review/references/implementation.md`
+- `plan-review/references/frontend.md`
+- `plan-review/references/backend.md`
+- `testing/references/review-testplan.md`
+- `pm/references/review-feature-brief.md` — `--pm` only
+- `planning/references/finalize.md` — cold-read gate
+
+Scores use `rules/scoring.md`.
+
 ## Command Contract
 
 This workflow owns one-off plan review only. It does not create the plan,

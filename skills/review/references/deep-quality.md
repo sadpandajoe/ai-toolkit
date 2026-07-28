@@ -16,15 +16,16 @@ pinned to the deeper `deep-review` route. This findings lens runs on the normal
 
 ## Triggers
 
-Activates on a refactor-shaped change (title/commit says refactor, high churn
-with net-neutral or negative line count, renames without new public surface,
-tests unchanged) or any STANDARD-tier diff; always fires under `max`/`ultra`
-effort or an explicit "deep quality" ask. That bare lens ask fires *this lens
-only* — it is not one of `classify-diff`'s deep-tier phrases and does not
-escalate the review's route or add a Code-judo pass. TRIVIAL and MODERATE feature diffs do
-not trigger it unless the change is refactor-shaped or it is explicitly
-requested. It is a default lens for STANDARD-tier review, running on the cheap
-`review` route alongside baseline code quality.
+`classify-diff` owns the trigger predicate — see its *Deep quality* row,
+*Detect refactor shape* step, and *Deep-tier phrases* list. This lens activates
+whenever that classifier lists it under Triggered Reviewers, and never
+re-derives the conditions here.
+
+Two route facts belong to this lens rather than the classifier: it runs on the
+cheap `review` route alongside baseline code quality (only deep-tier escalation
+reroutes it to `deep-review`), and a bare "deep quality" ask fires *this lens
+only* — that ask is not a deep-tier phrase, so it neither escalates the
+review's route nor adds a Code-judo pass.
 
 ## Required Context
 

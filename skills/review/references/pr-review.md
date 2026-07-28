@@ -70,12 +70,28 @@ Trivial:
 Moderate:
 <!-- aitk-model-route:review.pr-moderate -->
 - Launch only the triggered reviewer lenses needed by the diff classification.
+  Triggered lenses come from this set: [code-quality.md](code-quality.md),
+  [deep-quality.md](deep-quality.md),
+  [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
+  [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
+  [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md),
+  [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md),
+  [../../plan-review/references/backend.md](../../plan-review/references/backend.md).
+  Code-judo is not one of them — it dispatches at its own boundary below.
 - Keep the main thread compact: collect findings, recommendation, confidence, and any premise uncertainty.
 - Escalate to Standard only when reviewers find cross-cutting risk, unclear ownership, or security-sensitive behavior.
 
 Standard:
 <!-- aitk-model-route:review.pr-standard -->
 - Launch triggered reviewer lenses in parallel.
+  Triggered lenses come from this set: [code-quality.md](code-quality.md),
+  [deep-quality.md](deep-quality.md),
+  [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
+  [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
+  [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md),
+  [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md),
+  [../../plan-review/references/backend.md](../../plan-review/references/backend.md).
+  Code-judo is not one of them — it dispatches at its own boundary below.
 - Use `review` for bounded PR lanes and `deep-review` for architecture,
   security-sensitive, adversarial, or substantial multi-system lanes.
 - Optional second opinion when available.

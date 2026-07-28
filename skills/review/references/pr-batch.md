@@ -62,8 +62,8 @@ reports the field truthfully.
 
 The suppression is the main thread's own decision, so the main thread also owns
 recording it: when it writes the per-PR `## PR Review — #N` entry (or folds it
-into the wave block below), the proposals slot reads `suppressed (batch)`, never
-`none` — the latter falsely implies a judo pass ran and found no move. The
+into the wave block below, whose `Proposals` column exists for exactly this), the
+proposals slot reads `suppressed (batch)`, never `none` — the latter falsely implies a judo pass ran and found no move. The
 compact return contract above needs no proposals slot for this; a batch-mode
 review never produces proposals to report.
 
@@ -76,11 +76,11 @@ After each wave of ≤3 PRs completes, before launching the next wave, append a 
 ```markdown
 ## Review-PR Batch Wave N
 PRs: [#101, #102, #103]
-| PR | Recommendation | Posted | Top Finding | Residual Risk |
-|----|----------------|--------|-------------|---------------|
-| #101 | approve | draft | none | none |
-| #102 | request-changes | no | [...] | [...] |
-| #103 | comment | yes | [...] | [...] |
+| PR | Recommendation | Posted | Top Finding | Proposals | Residual Risk |
+|----|----------------|--------|-------------|-----------|---------------|
+| #101 | approve | draft | none | suppressed (batch) | none |
+| #102 | request-changes | no | [...] | suppressed (batch) | [...] |
+| #103 | comment | yes | [...] | suppressed (batch) | [...] |
 Next wave: [PR numbers OR "aggregate"]
 ```
 
