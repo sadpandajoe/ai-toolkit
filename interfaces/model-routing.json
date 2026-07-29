@@ -204,6 +204,11 @@
       "skills/plan-review/references/frontend.md",
       "skills/plan-review/references/backend.md"
     ]},
+    {"id": "review.local-resolved-audit", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"], "contracts": [
+      "rules/code-review.md",
+      "rules/severity.md",
+      "skills/review/references/classify-diff.md"
+    ]},
     {"id": "review.local-independent-capability", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"], "contracts": ["rules/review-gate.md"]},
     {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md"], "lens_fanout": "code", "lenses": [
       "skills/review/references/code-quality.md",

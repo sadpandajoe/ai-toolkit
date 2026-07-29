@@ -365,6 +365,247 @@ class ConformanceTests(unittest.TestCase):
         # renamed lens would silently lose its floor while the entry lingered.
         self.assertLessEqual(set(floors), menus)
 
+    def test_security_predicate_covers_agent_capability_surfaces(self) -> None:
+        """The classifier must call a change to its own routing security-sensitive.
+
+        The predicate shipped with the standard web-application list, so a diff
+        that lets a worker resolve a cheaper model, receive a contract it was not
+        granted, or skip a fail-closed check answered `Security-sensitive: NO` on
+        every row. The adversarial lens fires on that answer, which means the one
+        lens that would have read those changes adversarially was the lens they
+        could not trigger. The categories are written as file signals rather than
+        prose so this test can self-apply them.
+        """
+        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        step = re.search(
+            r"^4\. \*\*Assess security sensitivity\*\*.*?(?=^## )",
+            classifier,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(step, "classify-diff.md lost its security-sensitivity step")
+        body = step.group(0)
+        for category in (
+            "Agent capability configuration",
+            "Worker context assembly",
+            "Trust boundary changes",
+        ):
+            with self.subTest(category=category):
+                self.assertIn(category, body)
+        # Self-application, which is the part a keyword check cannot do: the paths
+        # the predicate names must exist, and this toolkit's own dispatch surfaces
+        # must be among them. A predicate that named `auth/` and nothing else would
+        # pass the category check above while still missing the diff that produced
+        # this test.
+        # Only the backticked tokens that are *shaped* like paths -- the section
+        # also quotes field values like `NO`, and demanding those exist on disk
+        # would make the check fail for the wrong reason.
+        named = {
+            token
+            for token in re.findall(r"`([^`]+)`", body)
+            if "/" in token or re.search(r"\.[a-z]+$", token)
+        }
+        self.assertTrue(named, "the predicate names no concrete file signal")
+        for signal in sorted(named):
+            with self.subTest(signal=signal):
+                self.assertTrue(
+                    (ROOT / signal).exists(), f"{signal} is not a real path"
+                )
+        for surface in ("interfaces/model-routing.json", "aitk/model_routing.py"):
+            self.assertIn(surface, named)
+
+    def test_review_rounds_measure_scope_against_the_recorded_base(self) -> None:
+        """Round 2 must review the same span as round 1, not the fix delta.
+
+        `rules/code-review.md` tells reviewers to drop a finding whose `file:line`
+        is unchanged by the change set. Measured against the last fix instead of
+        the review's own base, that rule inverts: a defect this review introduced
+        and committed in round 1 is "unchanged code" from round 2 onward, so the
+        rule meant to keep reviewers honest becomes the reason the review cannot
+        report what it created. The base is therefore recorded state, and the
+        record template is where that becomes checkable.
+        """
+        rule = (ROOT / "rules/code-review.md").read_text()
+        scope = [
+            paragraph
+            for paragraph in rule.split("\n- ")
+            if paragraph.startswith("**Scope is upstream of correctness.**")
+        ]
+        self.assertEqual(1, len(scope), "the scope rule is missing or duplicated")
+        # The rule must not stop at "in the diff" -- it has to say which diff, or a
+        # reviewer applying it literally per round is following it correctly and
+        # still going blind to earlier rounds.
+        recorded = [
+            paragraph
+            for paragraph in rule.split("\n- ")
+            if "recorded review base" in paragraph or "recorded span" in paragraph
+        ]
+        self.assertTrue(
+            recorded, "code-review.md defines diff scope without pinning the base"
+        )
+        local = (ROOT / "skills/review/references/local-review.md").read_text()
+        # Recorded, not merely mentioned: the base has to survive a context reset,
+        # which means a field in the PROJECT.md record and in the emitted gate.
+        record = re.search(
+            r"^## Current Code Review$.*?^### Resume Notes",
+            local,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(record, "local-review.md lost its Review Record template")
+        self.assertRegex(record.group(0), re.compile(r"^\*\*Base:\*\*", re.MULTILINE))
+        gate = re.search(r"^## Review Gate$.*?^Status:", local, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(gate, "local-review.md lost its Review Gate block")
+        self.assertRegex(gate.group(0), re.compile(r"^Base:", re.MULTILINE))
+        # And every later round has to say it reuses that base. The iterate section
+        # is the one that ran on the fix delta.
+        # Stop at the first `###`. The subsections below it (final pass,
+        # resolved-state audit) also say "recorded base", so matching to the next
+        # `##` would let the re-run itself keep measuring the fix delta while a
+        # sibling section satisfied the assertion.
+        iterate = re.search(
+            r"^## Re-Verify \+ Iterate$.*?(?=^###? )", local, re.MULTILINE | re.DOTALL
+        )
+        self.assertIsNotNone(iterate, "local-review.md lost its Re-Verify + Iterate section")
+        self.assertIn("recorded base", iterate.group(0))
+
+    def test_the_independent_lane_is_not_narrowed_by_the_primary_scope_filter(
+        self,
+    ) -> None:
+        """A second opinion confined to the primary scope is a second pass.
+
+        The scope mapping handed this lane `working-tree` on `--uncommitted` and
+        the primary path filter otherwise, so the one reviewer with an independent
+        model and context was pointed at exactly the files the user was already
+        iterating on -- and structurally could not report that the problem was in
+        a file the filter excluded.
+        """
+        local = (ROOT / "skills/review/references/local-review.md").read_text()
+        section = re.search(
+            r"^## Independent Second Opinion.*?(?=^## )",
+            local,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(section, "local-review.md lost its second-opinion section")
+        body = section.group(0)
+        # The old mapping is the specific thing that must not come back: a line
+        # that sends this lane a narrowed scope because the caller passed a filter.
+        narrowing = [
+            line
+            for line in body.splitlines()
+            if re.search(r"`--(?:uncommitted|committed)`.*(?:→|->)", line)
+            or re.search(r"(?:→|->)\s*`working-tree`", line)
+        ]
+        self.assertEqual(
+            [], narrowing, "the independent lane still follows the primary scope filter"
+        )
+        self.assertIn("does not follow the primary filter", body)
+        # `working-tree` stays reachable, but only where there is no base to use --
+        # otherwise "always branch" is a rule with no defined behavior on a
+        # repository that cannot produce one.
+        self.assertIn("working-tree", body)
+        self.assertIn("no base", body)
+        # Divergent scopes have to be visible, or a finding outside the primary
+        # scope looks like the reviewer ignored the filter.
+        record = re.search(
+            r"^## Current Code Review$.*?^### Findings",
+            local,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(record, "local-review.md lost its Review Record template")
+        self.assertRegex(
+            record.group(0),
+            re.compile(r"^\*\*Independent scope:\*\*", re.MULTILINE),
+        )
+
+    def test_the_resolved_state_audit_is_dispatchable_with_a_wide_closure(self) -> None:
+        """The lane that re-reads the findings ledger needs more than one lens.
+
+        Every other lane reads a slice: one lens, one diff. Nothing re-read the
+        record to ask whether a finding marked `fixed` was fixed, or whether the
+        class it described recurs elsewhere in the branch -- which is how nine
+        findings of one shape survived several review rounds. This lane is not a
+        lens, so its closure is declared wide on purpose, and that width is the
+        property worth pinning: narrowed to a single lens it becomes another
+        findings pass.
+        """
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        audit = next(
+            (
+                boundary
+                for boundary in payload["dispatch_boundaries"]
+                if boundary["id"] == "review.local-resolved-audit"
+            ),
+            None,
+        )
+        self.assertIsNotNone(audit, "the resolved-state audit boundary is gone")
+        self.assertEqual("skills/review/references/local-review.md", audit["path"])
+        # Deep route only. Auditing whether a defect class recurs across a branch
+        # is the reasoning `rules/model-assignment.md` reserves for `deep-review`,
+        # and a boundary listing both routes is how the cheap one gets picked.
+        self.assertEqual(["deep-review"], audit["routes"])
+        # Not a fan-out: one worker holding the whole ledger. Fanning this out by
+        # lens would give each worker a slice of the ledger, which is the shape it
+        # exists to correct.
+        self.assertNotIn("lens_fanout", audit)
+        self.assertNotIn("lenses", audit)
+        for contract in (
+            "rules/code-review.md",
+            "rules/severity.md",
+            "skills/review/references/classify-diff.md",
+        ):
+            self.assertIn(contract, audit["contracts"])
+        local = (ROOT / "skills/review/references/local-review.md").read_text()
+        section = re.search(
+            r"^### Resolved-State Audit$.*?(?=^## )", local, re.MULTILINE | re.DOTALL
+        )
+        self.assertIsNotNone(section, "local-review.md lost its resolved-state audit")
+        body = section.group(0)
+        self.assertIn("<!-- aitk-model-route:review.local-resolved-audit -->", body)
+        # Branch-wide, from the recorded base -- an audit of the fix commits alone
+        # cannot answer the recurrence question.
+        self.assertIn("recorded base", body)
+        # The symmetry cap normally holds a "same problem in file X" finding to
+        # `[minor]`. This lane is the documented exception, and saying so here is
+        # what stops the cap from silently demoting every recurrence it finds.
+        self.assertIn("symmetry", body)
+        # Its result must be recordable, or "the audit ran and was clean" is
+        # indistinguishable from "the audit never ran".
+        self.assertIn("Resolved-state audit:", local)
+
+    def test_missing_test_findings_name_the_assertion_that_locks_them(self) -> None:
+        """A coverage finding has to say what would fail.
+
+        "Add tests for X" is graded by whether a test file grew, which any
+        always-green test satisfies -- and `rules/code-review.md` already calls
+        always-green tests noise. Naming the assertion makes the finding checkable
+        by someone other than the reviewer who raised it.
+        """
+        rule = (ROOT / "rules/code-review.md").read_text()
+        calibration = re.search(
+            r"^### Test Coverage Severity Calibration$.*?(?=^## )",
+            rule,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(rule, "code-review.md lost its coverage calibration")
+        body = calibration.group(0)
+        self.assertIn("Name the locking assertion", body)
+        # An unnameable assertion needs a defined outcome. Without one the
+        # requirement is unenforceable in the only case that matters -- the
+        # reviewer who cannot name one just omits the column.
+        self.assertIn("cannot be named", body)
+        local = (ROOT / "skills/review/references/local-review.md").read_text()
+        findings = re.search(
+            r"^### Findings$.*?(?=^###)", local, re.MULTILINE | re.DOTALL
+        )
+        self.assertIsNotNone(findings, "local-review.md lost its Findings table")
+        rows = _markdown_table_rows(findings.group(0))
+        self.assertTrue(rows, "the Findings table template lost its header")
+        header = [cell.lower() for cell in rows[0]]
+        self.assertIn("locking assertion", header)
+        # Status must stay the last column: the template is read positionally by
+        # anyone updating a row, and appending the new column after Status would
+        # put the assertion where readers look for open/fixed.
+        self.assertEqual("status", header[-1])
+
     def test_batch_code_judo_suppression_travels_with_the_dispatch(self) -> None:
         # Batch review is the sole exception to "dispatch judo on Code-judo lane:
         # YES". A per-PR worker sees only its payload, so the suppression has to

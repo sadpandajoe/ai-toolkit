@@ -45,6 +45,19 @@ Missing tests are not always the same severity. Calibrate based on what the chan
 | Rename, move, reformatting | No test | Not a finding | Mechanical change — compiler/linter covers this |
 | One-liner typo fix in non-logic code | No test | Not a finding | Test would be testing a string literal |
 
+**Name the locking assertion.** A missing-test finding must state the assertion
+that fails on today's code and passes once the change is correct — the specific
+condition, not "add tests for X". Record it in the finding's *Locking assertion*
+column. This is what makes the finding checkable: without it the fix is graded by
+whether a test file grew, which any always-green test satisfies, and the reviewer
+who raised the finding is the only one who knows what it was supposed to prove.
+
+A finding whose assertion cannot be named is usually not a coverage finding.
+Either the behavior is not actually observable — in which case say that, since an
+unobservable behavior is the more serious finding — or the concern is a
+preference about test structure, which caps at `[nitpick]`. Drop it one severity
+level and move it to the summary's Remaining section rather than blocking on it.
+
 **Impact escalation**: When the impact assessment (from the `qa` skill's `references/assess-impact.md`) is CORE, shift all "missing test" findings up one severity level. A config change with no test is normally `[minor]` — but if it touches a CORE workflow (login, auth, payment), it becomes `[major]`.
 
 When reviewing, **assess what the PR does before scoring test coverage**. A blanket "no tests = major" penalizes trivial PRs unfairly and lets risky PRs hide behind a few token tests.
@@ -60,6 +73,7 @@ When reviewing, **assess what the PR does before scoring test coverage**. A blan
 Rules of thumb for grading and triaging findings. They apply to every review path — single-reviewer, adversarial, and multi-reviewer synthesis.
 
 - **Scope is upstream of correctness.** Before grading whether a finding is a real bug, confirm its `file:line` is actually in the diff. If the cited code is unchanged by the change set, drop the finding regardless of whether it's correct — it's a pre-existing-code observation, not a review of this change. Adjudicate correctness only for in-scope findings.
+- **"The diff" means the recorded review base to HEAD, in every round.** The span is fixed when review round 1 resolves its base; later rounds keep it. Applied to the last fix delta instead, the rule above inverts: work this review itself introduced and committed in an earlier round is "unchanged code" by round 2, so the one rule meant to keep reviewers honest becomes the reason a defect the review created can never be reported. Findings against any commit in the recorded span are in scope no matter which round produced it.
 - **Symmetry findings cap at `[minor]`.** "The same problem exists in sibling path X" is at most `[minor]`, and only if the change's stated scope plausibly covers X *or* the change worsened X. If X is unchanged and not worsened, it's a follow-up-PR suggestion masquerading as a finding — note it in the summary's Remaining section, don't grade it. Symmetry findings feel rigorous ("I traced all N call sites") but reward breadth over the risk the change actually introduced.
 - **Convergent beats single-source.** When two independent reviewers (different model, fresh context) surface the same finding without prompting, treat it as high-confidence and keep its severity. A finding only one reviewer raised is worth investigating but rarely worth blocking on alone — verify before promoting it past `[minor]`.
 - **History audit before grading a "wrong semantics" finding.** When a change reverses or amends prior behavior, scan recent history of the touched files (`git log --follow -p <file> | head -200`) for the PR it's undoing. A change that looks like a regression is often a conscious reversal the history already justifies.
