@@ -186,6 +186,7 @@ def _model_route(arguments: argparse.Namespace) -> int:
             arguments.model_route,
             arguments.provider,
             arguments.boundary,
+            arguments.lens,
         )
     except ModelRouteError as error:
         if arguments.json:
@@ -212,6 +213,9 @@ def _model_route(arguments: argparse.Namespace) -> int:
             "selector",
             "effort",
             "responsibility",
+            # An unscored lane must return an empty findings array or the run
+            # fails, so an operator reading this output needs to see it.
+            "unscored",
             "controls",
         ):
             value = payload[key]
@@ -236,6 +240,7 @@ def _model_run(arguments: argparse.Namespace) -> int:
             Path(arguments.cwd) if arguments.cwd else None,
             arguments.timeout_seconds,
             arguments.dry_run,
+            lens=arguments.lens,
         )
     except ModelRouteError as error:
         print(
@@ -484,6 +489,10 @@ def parser() -> argparse.ArgumentParser:
     model_route.add_argument("model_route")
     model_route.add_argument("--provider", required=True, choices=("codex", "claude"))
     model_route.add_argument("--boundary")
+    model_route.add_argument(
+        "--lens",
+        help="repo-relative reviewer lens to narrow a fan-out boundary to",
+    )
     model_route.add_argument("--json", action="store_true")
     model_route.set_defaults(handler=_model_route)
 
@@ -497,6 +506,10 @@ def parser() -> argparse.ArgumentParser:
     model_run.add_argument("--cwd")
     model_run.add_argument("--timeout-seconds", type=int, default=1800)
     model_run.add_argument("--dry-run", action="store_true")
+    model_run.add_argument(
+        "--lens",
+        help="repo-relative reviewer lens to narrow a fan-out boundary to",
+    )
     model_run.set_defaults(handler=_model_run)
 
     checkpoint = subparsers.add_parser(

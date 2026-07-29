@@ -27,11 +27,13 @@ silently downgrading the model.
 
 ## Required Context
 
-Read before starting: `rules/code-review.md`, `rules/stop-rules.md`.
+Read before starting: `rules/stop-rules.md`.
 Input: the diff (uncommitted, committed range, or PR) and, when available, the
 change title / commit subjects. This lens emits unscored **proposals**, not
-severity-tagged findings, so the toolkit severity scale is deliberately absent
-from this contract — do not import it, and do not tag proposals with severities.
+severity-tagged findings, so the toolkit grading contracts (code-review,
+severity, scoring) are deliberately absent here — named without backticked paths
+so this section does not inline the very contracts it excludes. Do not import
+them, and do not tag proposals with severities.
 
 ## The Task
 
@@ -113,7 +115,9 @@ would need to be checked. Apply the stop rules in `rules/stop-rules.md`.
 This lane runs through `model-run`, whose result contract is the same four fields
 every route returns — `status`, `summary`, `findings`, `verification`. That
 contract has no proposals field, so pin the mapping here rather than leaving each
-worker to guess:
+worker to guess. The `review.code-judo` boundary is declared `unscored` in
+`interfaces/model-routing.json`, so the `findings` rule below is enforced by the
+runner, not merely documented — a non-empty array fails the run:
 
 - `summary` — the proposal blocks above, verbatim and in full, concatenated when
   there are two. A clean result puts the "no structural simplification found"
@@ -122,7 +126,8 @@ worker to guess:
   `findings` becomes a severity-graded finding in every consumer downstream, which
   is precisely what this lens's separation from the findings lenses exists to
   prevent. Emitting a non-empty `findings` array from this lane is a contract
-  violation, not a formatting choice.
+  violation, not a formatting choice: `model-run` rejects the result outright, so
+  a malformed proposal never reaches the scored fix pipeline.
 - `verification` — the behavior-preservation checks a reader must run before
   acting on a proposal, including the ones this pass could not complete from the
   diff alone.

@@ -89,8 +89,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual("plan", payload["controls"]["permission_mode"])
         for contract in (
             "rules/model-assignment.md",
+            "rules/stop-rules.md",
             "skills/workflows/SKILL.md",
-            "skills/review/SKILL.md",
             "skills/workflows/references/review-plan.md",
             "skills/plan-review/references/architecture.md",
             "skills/testing/references/review-testplan.md",
@@ -98,6 +98,11 @@ class CliTests(unittest.TestCase):
             "rules/severity.md",
         ):
             self.assertIn(contract, payload["required_contracts"])
+        # This boundary reviews *plans*. It rides the review route but is owned
+        # by the workflows skill, so the shipped-code review umbrella — and the
+        # code-review grading contract it used to drag along — must not reach it.
+        for leaked in ("skills/review/SKILL.md", "rules/code-review.md"):
+            self.assertNotIn(leaked, payload["required_contracts"])
 
         rejected = self.run_cli(
             "model-route", "unknown", "--provider", "codex", "--json"

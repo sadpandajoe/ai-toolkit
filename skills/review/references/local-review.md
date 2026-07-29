@@ -6,6 +6,18 @@ tier: Heavy
 
 Use for `review-code` on local uncommitted, staged, committed, or path-filtered changes.
 
+## Required Context
+
+Read before grading: `rules/code-review.md` and `rules/severity.md`. Every lane
+that dispatches from this file produces or triages severity-tagged code-review
+findings, and the calibration in `rules/code-review.md` applies to every review
+path — single-reviewer, adversarial, and multi-reviewer synthesis. The review
+umbrella deliberately no longer supplies these (it is also carried by plan, PM,
+and QA routes), so the lanes with no reviewer lens in their closure — the
+independent second opinion and the independent-review capability — would
+otherwise map an adapter's findings onto the toolkit scale with no calibration
+contract at all.
+
 ## Gather Changed Files
 
 Default scope is **branch-wide**: combine `<base>..HEAD` (committed) with `git diff --name-only` and `git diff --cached --name-only` (uncommitted). This avoids the common re-invocation where a user reviews a branch and the first pass only sees uncommitted work.
@@ -72,6 +84,12 @@ high-risk final lanes use `deep-review`. Resolve and launch the route through
 `model-run`; an unrouteable lane is
 unavailable and must not silently fall back to a generic worker.
 
+Lens fan-out boundaries take **one dispatch per lens**, each resolved with
+`--lens <repo-relative lens path>`. That flag is required there and the boundary
+fails closed without it: one worker must receive one reviewer contract, never the
+whole menu the marker names. A lens the marker does not name is rejected, so
+resolve each triggered lens separately rather than batching them into one call.
+
 **STANDARD tier (or ≥3 triggered lanes): dispatch via [workflow-review.md](workflow-review.md)** — lens fan-out, dedup, and adversarial verification run off-thread; the main thread ingests only confirmed findings, then resumes at the Review Record step below. TRIVIAL/MODERATE continue with direct spawns:
 
 <!-- aitk-model-route:review.local-primary-lanes -->
@@ -95,8 +113,10 @@ Use triggered references from `classify-diff.md`, including:
 
 `classify-diff` reports a **Deep-tier escalation** field for this fan-out: on
 **YES**, route every triggered lens through `deep-review` instead of its default
-route. Read it independently of the Code-judo lane field below — neither implies
-the other.
+route. Escalation is *sufficient* to add the Code-judo lane below but not
+necessary — that lane also fires on a `^refactor` title or an explicit ask with
+escalation **NO**, so dispatch it on `Code-judo lane: YES` and never gate it on
+the escalation field.
 
 <!-- aitk-model-route:review.local-independent-second-opinion -->
 Launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.

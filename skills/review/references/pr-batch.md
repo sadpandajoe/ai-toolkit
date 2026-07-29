@@ -32,6 +32,9 @@ For each PR, dispatch a subagent on `review`/`deep-review` with:
   payload; without it the default `Code-judo lane: YES` rule applies
 - pointer to [pr-review.md](pr-review.md)
 - pointer to [pr-posting.md](pr-posting.md)
+- pointer to [classify-diff.md](classify-diff.md) — the per-PR worker is a nested
+  orchestrator, not a lens: it picks its own review team, so it needs the
+  classifier in its own contract closure rather than inheriting a team choice
 - compact return contract
 
 Return contract:

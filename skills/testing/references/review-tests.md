@@ -6,6 +6,14 @@ tier: Heavy
 
 # Review Tests
 
+## Required Context
+
+Read before starting: `rules/code-review.md`, `rules/severity.md`,
+`rules/stop-rules.md`.
+Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
+
+## Goal
+
 Evaluate the tests related to the current change.
 
 If PROJECT.md exists, read it first to understand the issue, root cause, and expected behavior. If it does not exist, use the in-conversation context, plan, or diff as primary source.

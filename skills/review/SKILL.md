@@ -11,9 +11,14 @@ Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 
 ## Required Context
 
-Read before starting: `rules/code-review.md`, `rules/stop-rules.md`. Every lane
-on a review route shares these two; the severity scale belongs to the individual
-findings lenses, so the generative Code-judo lane does not inherit it.
+Read before starting: `rules/stop-rules.md`. That is the only contract *every*
+lane on a review route shares. The grading contracts (code-review, severity,
+scoring) belong to the individual findings lenses and are named in each lens
+file's own Required Context — deliberately not here, and deliberately without
+backticked paths, because anything this section names is inlined into every lane
+that resolves through this umbrella. That includes the generative Code-judo lane
+and the non-code-review routes (QA validation, PM brief review, plan review)
+that also carry this file.
 
 Umbrella for code-review work — review of *shipped code*, not plans. References
 are grouped by role so workflows load only the phase they are entering.
@@ -69,6 +74,13 @@ The `review-pr` workflow uses `pr-review`, `pr-batch`, and `pr-posting` for PR-s
 - [../plan-review/references/frontend.md](../plan-review/references/frontend.md)
 - [../plan-review/references/backend.md](../plan-review/references/backend.md)
 
+Those lanes grade shipped code, so they read `rules/code-review.md` and
+`rules/severity.md` before scoring. The lens files that carry code-review tags
+name both themselves; the two plan-review lenses above are reused here on code
+rather than on a plan, so this boundary supplies the calibration they would
+otherwise lack. Naming it in this span rather than in Required Context above
+keeps it out of the non-code-review routes that also carry this umbrella.
+
 Code-judo is not in that fan-out: it dispatches at the `review.code-judo`
 boundary, which carries its own contract closure.
 
@@ -85,6 +97,14 @@ Dispatch mode is tier-routed:
   dedup → adversarial verify; only confirmed findings return to the session.
 
 Map the tier to the current runtime's actual model or reasoning-effort controls at dispatch time.
+
+The lens fan-out boundaries (`review.local-primary-lanes`, `review.pr-moderate`,
+`review.pr-standard`, `review.pr-lenses`, `review.local-final-pass`) declare
+`lens_fanout`, so each dispatch must name its lens: resolve one route per
+triggered lens with `--lens <repo-relative lens path>`. Resolving a fan-out
+boundary without `--lens` fails closed rather than handing a single reviewer all
+seven sibling lens contracts. Non-fan-out boundaries — the Code-judo lane, the
+independent-capability lanes, and `review.pr-batch` — take no `--lens`.
 
 ### Deep review mode (tier override)
 

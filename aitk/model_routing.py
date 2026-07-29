@@ -114,12 +114,14 @@ class ResolvedRoute:
     restrictions: tuple[str, ...]
     controls: dict[str, object]
     minimum_cli: str
+    unscored: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
             "route": self.name,
             "boundary": self.boundary,
             "required_contracts": self.required_contracts,
+            "unscored": self.unscored,
             "provider": self.provider,
             "family": self.family,
             "selector": self.selector,
@@ -430,12 +432,14 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         exemptions_value = []
     seen_ids: set[str] = set()
     for boundary in boundaries:
-        if not isinstance(boundary, dict) or set(boundary) != {
-            "id",
-            "path",
-            "count",
-            "routes",
-        }:
+        if (
+            not isinstance(boundary, dict)
+            or not {"id", "path", "count", "routes"} <= set(boundary)
+            or not set(boundary)
+            <= {"id", "path", "count", "routes", "unscored", "lens_fanout"}
+            or type(boundary.get("unscored", False)) is not bool
+            or type(boundary.get("lens_fanout", False)) is not bool
+        ):
             problems.append("invalid dispatch boundary entry")
             continue
         identifier = boundary.get("id")
@@ -459,11 +463,21 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             continue
         for route_name in routes_value:
             route_item = _route_map(payload).get(route_name, {})
+            responsibility = str(route_item.get("responsibility"))
+            # Narrowing a fan-out span to one lens only happens on the review
+            # route. A fan-out boundary on any other route would demand `--lens`
+            # at dispatch, never scan its span, and drop the named lens without
+            # a word -- reject the combination here rather than shipping it.
+            if boundary.get("lens_fanout", False) and responsibility != "review":
+                problems.append(f"lens_fanout boundary is not a review lane: {identifier}")
             try:
+                # `lens` is deliberately omitted: check time verifies that the
+                # unnarrowed union resolves, so every lens the span names is
+                # reachable. Dispatch time is where exactly one gets selected.
                 required_contracts = _required_contract_paths(
                     root,
                     str(boundary.get("path")),
-                    str(route_item.get("responsibility")),
+                    responsibility,
                     identifier,
                 )
             except ModelRouteError as error:
@@ -616,11 +630,16 @@ def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[
 
 
 def _markdown_lines(path: Path) -> list[tuple[int, str]]:
+    return _markdown_content_lines(path.read_text())
+
+
+def _markdown_content_lines(text: str) -> list[tuple[int, str]]:
+    """Return numbered Markdown lines outside frontmatter and fenced blocks."""
     result: list[tuple[int, str]] = []
     fence_character: str | None = None
     fence_length = 0
     frontmatter = False
-    for number, line in enumerate(path.read_text().splitlines(), 1):
+    for number, line in enumerate(text.splitlines(), 1):
         stripped = line.lstrip()
         if number == 1 and stripped == "---":
             frontmatter = True
@@ -728,6 +747,7 @@ def resolve_route(
     route: str,
     provider: str,
     boundary: str | None = None,
+    lens: str | None = None,
 ) -> ResolvedRoute:
     payload = load_model_routing(root)
     if provider not in PROVIDERS:
@@ -748,11 +768,32 @@ def resolve_route(
             raise ModelRouteError(f"unknown dispatch boundary: {boundary}")
         if route not in boundary_item["routes"]:
             raise ModelRouteError(f"{route} is not allowed at boundary {boundary}")
+        # A fan-out boundary dispatches one worker per selected lens. Resolving
+        # it without naming the lens would hand that worker the whole menu, so
+        # require the selection rather than defaulting to the union. The guard
+        # runs both ways: a boundary that does not fan out has no menu to
+        # narrow, and its span names ordinary dependencies rather than lenses,
+        # so accepting `--lens` there would silently drop every span dependency
+        # the flag does not match -- the same quiet-shrink failure the fan-out
+        # requirement exists to prevent.
+        fans_out = boundary_item.get("lens_fanout", False)
+        if fans_out and lens is None:
+            raise ModelRouteError(
+                f"boundary {boundary} fans out over reviewer lenses; "
+                "pass --lens to select exactly one"
+            )
+        if lens is not None and not fans_out:
+            raise ModelRouteError(
+                f"boundary {boundary} does not fan out over reviewer lenses; "
+                "--lens is not accepted here"
+            )
         required_contracts = _required_contract_paths(
-            root, boundary_item["path"], str(item["responsibility"]), boundary
+            root, boundary_item["path"], str(item["responsibility"]), boundary, lens
         )
+        unscored = bool(boundary_item.get("unscored", False))
     else:
         required_contracts = ()
+        unscored = False
     mapping = item["providers"][provider]
     family = mapping["model"]
     provider_config = payload["providers"][provider]
@@ -768,6 +809,7 @@ def resolve_route(
         restrictions=tuple(item["restrictions"]),
         controls=dict(mapping),
         minimum_cli=provider_config["minimum_cli"],
+        unscored=unscored,
     )
 
 
@@ -799,7 +841,11 @@ def _contracts(root: Path, values: tuple[str, ...]) -> tuple[tuple[str, str, str
 
 
 def _required_contract_paths(
-    root: Path, boundary_path: str, responsibility: str, boundary_id: str
+    root: Path,
+    boundary_path: str,
+    responsibility: str,
+    boundary_id: str,
+    lens: str | None = None,
 ) -> tuple[str, ...]:
     """Derive the exact inline contract closure for one dispatch boundary."""
     path = Path(boundary_path)
@@ -810,9 +856,24 @@ def _required_contract_paths(
         owner = Path(*parts[:4]) / "SKILL.md"
     else:
         raise ModelRouteError(f"dispatch boundary has no skill owner: {boundary_path}")
+    review_umbrella = "skills/review/SKILL.md"
     route_contract = {
         "implementation": "skills/implement-change/SKILL.md",
-        "review": "skills/review/SKILL.md",
+        # The review umbrella is the discipline contract for shipped-code
+        # review, and the predicate here is ownership, not discipline: only a
+        # boundary the review skill itself owns gets it. That is deliberately
+        # blunt. It keeps the reviewer-lens table and Code-judo dispatch rules
+        # away from the QA, PM, plan-review, and cherry-pick scope-leak lanes
+        # that ride the review *route* without grading code -- but it also
+        # drops the umbrella from code-review lanes another skill owns
+        # (`workflows.review-code-*`, `workflows.review-pr-fresh`,
+        # `workflows.adversarial-*`). Those stay correct because each reaches
+        # the contracts it needs through its own span: the orchestration
+        # references and the adversarial lens name their grading contracts in
+        # their own Required Context. Adding a review-owned boundary is safe;
+        # adding a code-review boundary under another owner means checking that
+        # its span or Required Context still names the grading contracts.
+        "review": review_umbrella if owner.as_posix() == review_umbrella else owner.as_posix(),
         "rca": "skills/debug/SKILL.md",
         "operations": owner.as_posix(),
     }.get(responsibility)
@@ -820,12 +881,27 @@ def _required_contract_paths(
         raise ModelRouteError(f"unknown contract responsibility: {responsibility}")
     values = (
         "rules/model-assignment.md",
+        # Every lane on the review route stops the same way, whatever it grades.
+        # This used to ride in on the review umbrella's Required Context, which
+        # is why the umbrella had to be injected everywhere; seeding it here is
+        # what let the umbrella narrow to the lanes that actually own it. The
+        # seed stays scoped to the review route: stop-rules is a review/fix-loop
+        # contract that directs the worker to emit a Review Gate and cites
+        # severity and review-gate, none of which reach an implementation, RCA,
+        # or operations closure -- shipping it there would hand those workers
+        # instructions pointing at documents they do not have.
+        *(("rules/stop-rules.md",) if responsibility == "review" else ()),
         owner.as_posix(),
         route_contract,
         path.as_posix(),
     )
     return _contract_closure(
-        root, tuple(dict.fromkeys(values)), path.as_posix(), responsibility, boundary_id
+        root,
+        tuple(dict.fromkeys(values)),
+        path.as_posix(),
+        responsibility,
+        boundary_id,
+        lens,
     )
 
 
@@ -835,6 +911,7 @@ def _contract_closure(
     boundary_path: str,
     responsibility: str,
     boundary_id: str,
+    lens: str | None = None,
 ) -> tuple[str, ...]:
     """Follow required and review-lens Markdown dependencies in stable order."""
     root = root.resolve()
@@ -865,27 +942,49 @@ def _contract_closure(
                     sibling_value = sibling.relative_to(root).as_posix()
                     if sibling_value not in seen and sibling_value not in queued:
                         queued.append(sibling_value)
+        if value == boundary_path:
+            # The boundary document must carry its own marker. Without this the
+            # span scan below returns nothing, the closure silently shrinks to
+            # the seed contracts, and `resolve_route` still hands the caller a
+            # launchable route -- `validate_dispatch_boundaries` catches the
+            # same defect, but only at check time, never on the dispatch path.
+            if not _marker_present(content, boundary_id):
+                raise ModelRouteError(
+                    f"missing route marker: {boundary_path}/{boundary_id}"
+                )
         # Reviewer lanes need the lens references named at their own dispatch
         # site, but a boundary document usually declares several lanes. Scan the
         # marker's own section only, so one lane never inherits another lane's
         # lenses; the Required Context section is unioned in because a lens file
         # keeps its shared rules there, outside any marker span.
-        dependency_text = (
-            _marker_span_text(content, boundary_id)
-            + "\n"
-            + _required_context_text(content)
-            if value == boundary_path and responsibility == "review"
-            else _required_context_text(content)
-        )
-        candidates: list[tuple[str, bool]] = []
-        candidates.extend(
-            (match.group(1), True) for match in MARKDOWN_LINK.finditer(dependency_text)
-        )
-        candidates.extend(
-            (match.group(1), False)
-            for match in BACKTICK_MARKDOWN_PATH.finditer(dependency_text)
-        )
-        for raw_target, is_link in candidates:
+        scan_span = value == boundary_path and responsibility == "review"
+        span_text = _marker_span_text(content, boundary_id) if scan_span else ""
+        context_text = _required_context_text(content)
+        candidates: list[tuple[str, bool, bool]] = []
+        for text, from_span in ((span_text, True), (context_text, False)):
+            candidates.extend(
+                (match.group(1), True, from_span)
+                for match in MARKDOWN_LINK.finditer(text)
+            )
+            candidates.extend(
+                (match.group(1), False, from_span)
+                for match in BACKTICK_MARKDOWN_PATH.finditer(text)
+            )
+        # A fan-out marker names every lens the orchestrator may pick from, but
+        # one dispatch launches exactly one lens. Without this filter each worker
+        # is handed all seven sibling reviewer contracts and reviews under
+        # conflicting instructions.
+        #
+        # Only the span's *links* are narrowed. A lens menu is written as a list
+        # of Markdown links, so that is the set with siblings to drop; a
+        # backticked path in the surrounding prose is a shared dependency of the
+        # lane rather than a menu entry, and dropping it would delete the same
+        # contract from all seven closures at once. Required Context is likewise
+        # never narrowed -- it holds the boundary document's own shared rules.
+        # The invariant a fan-out span must hold is therefore the narrow one:
+        # every Markdown link inside it is a lens.
+        lens_selected = False
+        for raw_target, is_link, from_span in candidates:
             target_text = raw_target.strip().strip("<>").split("#", 1)[0]
             if (
                 not target_text
@@ -924,6 +1023,10 @@ def _contract_closure(
                     and resolved.suffix == ".md"
                 ):
                     relative_text = relative.as_posix()
+                    if lens is not None and from_span and is_link:
+                        if relative_text != lens:
+                            break
+                        lens_selected = True
                     if relative_text not in seen and relative_text not in queued:
                         queued.append(relative_text)
                     break
@@ -940,19 +1043,38 @@ def _contract_closure(
                     raise ModelRouteError(
                         f"missing contract dependency from {value}: {target_text}"
                     )
+        # Fail closed: a lens the dispatch site never names is not a lane this
+        # boundary can launch, so silently returning the unnarrowed closure would
+        # reintroduce exactly the leak the filter exists to stop.
+        if lens is not None and scan_span and not lens_selected:
+            raise ModelRouteError(
+                f"lens {lens} is not named at boundary {boundary_id}"
+            )
     return tuple(result)
+
+
+def _marker_present(content: str, boundary_id: str) -> bool:
+    """Report whether a boundary document carries its own route marker."""
+    return any(
+        (match := ROUTE_MARKER.fullmatch(line.strip())) is not None
+        and match.group(1) == boundary_id
+        for _, line in _markdown_content_lines(content)
+    )
 
 
 def _marker_span_text(content: str, boundary_id: str) -> str:
     """Return the dispatch prose owned by one route marker.
 
     The span runs from the marker to the next route/exemption marker or the next
-    Markdown heading, whichever comes first. A boundary whose marker is missing
-    contributes nothing here; `validate_dispatch_boundaries` owns that failure.
+    Markdown heading, whichever comes first. Headings and markers inside fenced
+    examples are documentation, not span structure, so the scan runs over
+    fence-stripped lines. A boundary whose marker is missing contributes nothing
+    here; callers on the dispatch path check `_marker_present` first so a missing
+    marker fails closed instead of silently shrinking the closure.
     """
     selected: list[str] = []
     in_span = False
-    for line in content.splitlines():
+    for _, line in _markdown_content_lines(content):
         stripped = line.strip()
         route_marker = ROUTE_MARKER.fullmatch(stripped)
         if route_marker is not None:
@@ -1282,10 +1404,11 @@ def run_model(
     timeout_seconds: int = DEFAULT_TIMEOUT,
     dry_run: bool = False,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    lens: str | None = None,
 ) -> tuple[int, dict[str, object]]:
     if not boundary:
         raise ModelRouteError("model-run requires a dispatch boundary")
-    route = resolve_route(root, route_name, provider, boundary)
+    route = resolve_route(root, route_name, provider, boundary, lens)
     if not route.required_contracts:
         raise ModelRouteError("dispatch boundary has no required contracts")
     contracts = _contracts(root, route.required_contracts)
@@ -1444,6 +1567,17 @@ def run_model(
                 result = parse_codex_output(process.stdout, last_message)
             else:
                 result = parse_claude_output(process.stdout)
+            # An unscored lane emits proposals, not severity-graded findings.
+            # Anything it puts in `findings` is treated as a scored finding by
+            # every downstream consumer, so a non-empty array is a contract
+            # violation rather than a formatting slip -- fail the run instead of
+            # letting it enter the fix queue.
+            if route.unscored and result["findings"]:
+                raise ModelRouteError(
+                    f"unscored boundary {route.boundary} returned "
+                    f"{len(result['findings'])} findings; this lane must return "
+                    "an empty findings array"
+                )
         except (ModelRouteError, json.JSONDecodeError) as error:
             return 3, _outer(
                 route,

@@ -6,6 +6,14 @@ tier: Heavy
 
 # Adversarial Code Review
 
+## Required Context
+
+Read before starting: `rules/code-review.md`, `rules/severity.md`,
+`rules/scoring.md`, `rules/stop-rules.md`.
+Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
+
+## Goal
+
 Review changed code with the assumption that it is broken. Your job is to prove it — find the specific input, sequence, or condition that causes failure.
 
 ## Posture Self-Check
