@@ -42,27 +42,35 @@ When the caller provides PM context:
 ### 2. Technical Plan Review
 
 <!-- aitk-model-route:planning.technical-plan-review -->
-Launch all applicable technical reviewers **in parallel** as subagents using the routes below. Always-on reviewers:
+Launch the applicable technical reviewers **in parallel** — one dispatch per lens,
+each naming its own. This boundary fans out over the plan-lens menu declared in
+`interfaces/model-routing.json`, so a worker receives exactly the one lens named
+for it and none of the others. Always-on reviewers:
 
-- `plan-review/references/architecture.md`
-- `plan-review/references/implementation.md`
-- `testing/references/review-testplan.md`
+- [architecture.md](../../plan-review/references/architecture.md)
+- [implementation.md](../../plan-review/references/implementation.md)
+- [review-testplan.md](../../testing/references/review-testplan.md)
 
 Add conditional reviewers when the plan touches their area:
 
-- `plan-review/references/frontend.md` — React, CSS, UI components
-- `plan-review/references/backend.md` — API, database, migrations
+- [frontend.md](../../plan-review/references/frontend.md) — React, CSS, UI components
+- [backend.md](../../plan-review/references/backend.md) — API, database, migrations
 
 **Model routing** (see `rules/model-assignment.md`):
 
-- PM, implementation, and test-plan lanes use `review`.
-- Architecture, security-sensitive, adversarial, and final cold-read lanes use `deep-review`.
+- Implementation and test-plan lanes use `review`.
+- Architecture, security-sensitive, adversarial, and final cold-read lanes use
+  `deep-review`. The architecture lens carries that requirement as a route floor
+  in the manifest, so a dispatch that asks for `review` fails closed instead of
+  quietly grading architecture on the cheap route.
 - Re-run a shallow lane on `deep-review`; do not invent a different model or effort override.
 
 Each reviewer:
 - Reads the plan from the location provided by the caller
-- Receives the exact inventoried reviewer contract closure inline from the route runner
-- Produces a scored review block (X/10 with strengths, issues, suggestions)
+- Receives the exact inventoried reviewer contract closure inline from the route
+  runner — its own lens, not the four beside it
+- Produces a scored review block (X/10 with strengths, issues, suggestions); this
+  is a **plan** fan-out, so lenses shared with code review use their plan-mode output
 
 ### 3. Iterate Until Threshold
 

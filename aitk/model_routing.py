@@ -54,6 +54,11 @@ ROUTE_RESTRICTIONS = {
         "Do not perform external mutations, execute tests, design tests, diagnose failures, perform RCA, review, decide fixes, or modify product code.",
     ),
 }
+LENS_DOMAINS = ("code", "plan")
+# The classifier's Review Domain table is the reviewer-lens universe: it decides
+# which lenses a changeset can trigger, independently of which boundaries offer
+# them. Menu checks read it so they are not validating data against itself.
+LENS_CATALOG = "skills/review/references/classify-diff.md"
 ROUTE_ERROR = "MODEL_ROUTE_INVALID"
 UNAVAILABLE_ERROR = "MODEL_ROUTE_UNAVAILABLE"
 PROMPT_LIMIT = 1024 * 1024
@@ -115,6 +120,16 @@ class ResolvedRoute:
     controls: dict[str, object]
     minimum_cli: str
     unscored: bool = False
+    lens: str | None = None
+    # Which artefact this dispatch grades: `code` for shipped code, `plan` for a
+    # written plan, `None` off a fan-out boundary. Several lenses sit in both a
+    # code menu and a plan menu -- architecture review and test review most
+    # obviously -- and the two want different output: severity tags for code,
+    # scores for a plan. A document's Required Context cannot vary by dispatch,
+    # so the mode travels here and the dual-use lens keys its output section on
+    # it. Without it those lenses had to pick one vocabulary and be wrong at the
+    # other boundary.
+    lens_domain: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -122,6 +137,8 @@ class ResolvedRoute:
             "boundary": self.boundary,
             "required_contracts": self.required_contracts,
             "unscored": self.unscored,
+            "lens": self.lens,
+            "lens_domain": self.lens_domain,
             "provider": self.provider,
             "family": self.family,
             "selector": self.selector,
@@ -219,6 +236,66 @@ def _lens_menu(boundary: dict[str, object]) -> tuple[str, ...]:
     return tuple(lenses) if isinstance(lenses, list) else ()
 
 
+def _boundary_contracts(boundary: dict[str, object]) -> tuple[str, ...]:
+    """Return the contracts this one dispatch lane declares for itself.
+
+    A document's `## Required Context` is the right channel for what every lane
+    in that document needs, and it stays the primary channel. It cannot express
+    a *per-lane* dependency, because several documents host more than one
+    boundary: `local-review.md` hosts four, `cherry-pick/SKILL.md` three.
+    Declaring one lane's contract at document level pushes it into every sibling
+    lane's closure, which is exactly the defect that handing every plan reviewer
+    all six sibling lenses was. These are per-boundary, so the adversarial lane
+    can require the adversarial lens without the three lanes beside it inheriting
+    it. This field does not suppress `## Required Context`; the closure seeds are
+    the union.
+    """
+    contracts = boundary.get("contracts")
+    return tuple(str(item) for item in contracts) if isinstance(contracts, list) else ()
+
+
+def _valid_boundary_contracts(root: Path, boundary: dict[str, object]) -> bool:
+    """Check the declared per-lane contracts are distinct, existing Markdown files."""
+    contracts = boundary.get("contracts")
+    if contracts is None:
+        return True
+    if not isinstance(contracts, list) or not contracts:
+        return False
+    if len(set(map(repr, contracts))) != len(contracts):
+        return False
+    for contract in contracts:
+        if not isinstance(contract, str) or not contract.endswith(".md"):
+            return False
+        safe = _safe_path(root, contract)
+        if safe is None or not _contract_dependency_allowed(safe):
+            return False
+    return True
+
+
+def _lens_domain(boundary: dict[str, object]) -> str | None:
+    """Return which artefact a fan-out grades -- shipped `code` or a written `plan`.
+
+    The value doubles as the fan-out flag, so there is no second field that has
+    to agree with it. Lenses shared by both domains (architecture review, test
+    review) read it to pick their output vocabulary: `code` means the severity
+    tags in `rules/code-review.md`, `plan` means the scores in `rules/scoring.md`.
+    """
+    domain = boundary.get("lens_fanout")
+    return domain if isinstance(domain, str) and domain in LENS_DOMAINS else None
+
+
+def _lens_routes(payload: dict[str, object]) -> dict[str, tuple[str, ...]]:
+    """Return each lens's declared minimum-route set, keyed by lens path."""
+    floors = payload.get("lens_routes")
+    if not isinstance(floors, dict):
+        return {}
+    return {
+        str(lens): tuple(str(route) for route in routes)
+        for lens, routes in floors.items()
+        if isinstance(routes, list)
+    }
+
+
 def _route_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
     routes = payload.get("routes")
     if not isinstance(routes, list):
@@ -228,6 +305,88 @@ def _route_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
         for item in routes
         if isinstance(item, dict) and isinstance(item.get("name"), str)
     }
+
+
+def _lens_route_problems(
+    payload: dict[str, object],
+    declared_routes: set[str],
+    menu_owners: dict[str, list[tuple[str, tuple[str, ...]]]],
+) -> list[str]:
+    """Check that every declared route floor is satisfiable where its lens is offered.
+
+    A floor that no boundary can honour is worse than no floor: the lens is on
+    the menu, so an orchestrator picks it, and every dispatch then fails at
+    resolve time. Catching it here keeps the failure at check time.
+    """
+    floors = payload.get("lens_routes")
+    if floors is None:
+        return []
+    if not isinstance(floors, dict):
+        return ["lens_routes must be an object"]
+    problems: list[str] = []
+    for lens, allowed in floors.items():
+        if (
+            not isinstance(lens, str)
+            or not isinstance(allowed, list)
+            or not allowed
+            or len(set(allowed)) != len(allowed)
+            or any(route not in declared_routes for route in allowed)
+        ):
+            problems.append(f"invalid lens route floor: {lens}")
+            continue
+        if lens not in menu_owners:
+            problems.append(f"lens route floor names no menu lens: {lens}")
+            continue
+        for identifier, routes_value in menu_owners[lens]:
+            if not set(allowed) & set(routes_value):
+                problems.append(
+                    f"boundary {identifier} offers lens {lens} but allows none of "
+                    f"its required routes: {', '.join(allowed)}"
+                )
+    return problems
+
+
+def _seed_only_problems(
+    root: Path,
+    boundary: dict[str, object],
+    responsibility: str,
+    identifier: str,
+    closure: tuple[str, ...],
+) -> list[str]:
+    """Reject a review lane whose closure is nothing but its structural seeds.
+
+    A review worker needs a grading contract: the lens it applies, or the
+    procedure it follows, or the severity vocabulary it reports in. The
+    structural seeds carry none of that -- they are the policy rules, the owning
+    skill, and the boundary document. A lane that adds nothing to them was
+    dispatched with no instructions about what to look for, and it will still
+    exit 0 and return confident-sounding prose, which is why this is checked
+    rather than left to show up as a weak review.
+
+    This is the check whose absence let thirteen boundaries lose their real
+    contracts silently when span traversal narrowed: each kept resolving, kept
+    passing validation, and only a full closure diff revealed the loss.
+
+    A lane whose boundary document genuinely *is* its grading contract -- the
+    Code-judo lens, the QA skill -- satisfies this by naming that document in its
+    own `contracts`. The declaration adds nothing to the closure, which is the
+    point: it turns "this lane needs nothing else" from an accident of the seed
+    arithmetic into a claim someone wrote down and a reviewer can disagree with.
+    """
+    if (
+        responsibility != "review"
+        or _lens_domain(boundary) is not None
+        or _boundary_contracts(boundary)
+    ):
+        return []
+    seeds = set(_structural_seeds(root, str(boundary.get("path")), responsibility))
+    if set(closure) <= seeds:
+        return [
+            f"review boundary resolves to structural seeds only: {identifier} "
+            "-- declare its grading contracts in the boundary's `contracts` or "
+            "the document's `## Required Context`"
+        ]
+    return []
 
 
 def _validate_payload(root: Path, payload: object) -> list[str]:
@@ -242,6 +401,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "routes",
             "dispatch_boundaries",
             "dispatch_exemptions",
+            "lens_routes",
         }
         or type(payload.get("version")) is not int
         or payload.get("version") != 1
@@ -462,14 +622,28 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         problems.append("dispatch_exemptions must be a list")
         exemptions_value = []
     seen_ids: set[str] = set()
+    seed_only_reported: set[str] = set()
+    menu_owners: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
     for boundary in boundaries:
         if (
             not isinstance(boundary, dict)
             or not {"id", "path", "count", "routes"} <= set(boundary)
             or not set(boundary)
-            <= {"id", "path", "count", "routes", "unscored", "lens_fanout", "lenses"}
+            <= {
+                "id",
+                "path",
+                "count",
+                "routes",
+                "unscored",
+                "lens_fanout",
+                "lenses",
+                "contracts",
+            }
             or type(boundary.get("unscored", False)) is not bool
-            or type(boundary.get("lens_fanout", False)) is not bool
+            # `lens_fanout` carries the graded artefact, not a bare yes: absent
+            # means no fan-out, and a present value must name a known domain so
+            # a shared lens can tell which output vocabulary this lane expects.
+            or boundary.get("lens_fanout", "code") not in LENS_DOMAINS
         ):
             problems.append("invalid dispatch boundary entry")
             continue
@@ -500,6 +674,9 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         if not _valid_lens_menu(root, boundary):
             problems.append(f"invalid dispatch boundary lens menu: {identifier}")
             continue
+        if not _valid_boundary_contracts(root, boundary):
+            problems.append(f"invalid dispatch boundary contracts: {identifier}")
+            continue
         for route_name in routes_value:
             route_item = _route_map(payload).get(route_name, {})
             responsibility = str(route_item.get("responsibility"))
@@ -520,6 +697,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                     identifier,
                     None,
                     _lens_menu(boundary),
+                    _boundary_contracts(boundary),
                 )
             except ModelRouteError as error:
                 problems.append(str(error))
@@ -529,7 +707,21 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                 for contract in required_contracts
             ):
                 problems.append(f"missing required boundary contract: {identifier}")
+            # Every route at a boundary shares its responsibility in practice, so
+            # report the lane once rather than once per route it offers.
+            if identifier not in seed_only_reported:
+                seed_only = _seed_only_problems(
+                    root, boundary, responsibility, identifier, required_contracts
+                )
+                if seed_only:
+                    seed_only_reported.add(identifier)
+                    problems.extend(seed_only)
         seen_ids.add(identifier)
+        for lens in _lens_menu(boundary):
+            menu_owners.setdefault(str(lens), []).append(
+                (identifier, tuple(str(route) for route in routes_value))
+            )
+    problems.extend(_lens_route_problems(payload, declared_routes, menu_owners))
     seen_exemptions: set[tuple[str, str]] = set()
     for exemption in exemptions_value:
         if not isinstance(exemption, dict) or set(exemption) != {
@@ -805,19 +997,51 @@ def _span_link_targets(root: Path, boundary: dict[str, object]) -> set[str]:
     return targets
 
 
+def _catalog_lenses(root: Path) -> tuple[set[str], list[str]]:
+    """Read the reviewer-lens universe from the classifier's Review Domain table.
+
+    The universe has to come from outside the menus being checked. Deriving it
+    from those menus made the check self-referential: a lens dropped from every
+    menu left the universe at the same time, so nothing could observe that it had
+    stopped being routable anywhere. The classifier table is the independent
+    source -- it is what decides a lens should run at all.
+    """
+    source = root / LENS_CATALOG
+    try:
+        content = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return set(), [f"reviewer lens catalog could not be read: {LENS_CATALOG}"]
+    table = re.search(
+        r"^\| Review Domain \| Trigger \| Skill \|.*?(?=\n\n)",
+        content,
+        re.MULTILINE | re.DOTALL,
+    )
+    if table is None:
+        return set(), [f"reviewer lens catalog lost its Review Domain table: {LENS_CATALOG}"]
+    lenses: set[str] = set()
+    for line in table.group(0).splitlines()[2:]:
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        candidate = cells[2].strip("`")
+        if candidate.endswith(".md"):
+            lenses.add(f"skills/{candidate}")
+    return lenses, []
+
+
 def _lens_menu_problems(root: Path, declared: dict[str, dict[str, object]]) -> list[str]:
     """Report drift between declared reviewer menus and the dispatch prose.
 
     Both directions matter and they fail differently. A lens the manifest names
     but the span does not link cannot be dispatched -- `_contract_closure` fails
     closed on it, but only when someone happens to select it. A lens the span
-    links but the manifest omits is worse and quieter: narrowing skips it, so it
-    rides into *every* worker's closure as a shared dependency and each reviewer
-    runs under two lens contracts at once. Neither shows up in a passing route
-    resolution, so both are caught here instead.
+    links but the manifest omits is worse and quieter: it used to ride into every
+    worker's closure as a shared dependency, and now it is dropped from all of
+    them, so the lane exists in prose and in no contract. Neither shows up in a
+    passing route resolution, so both are caught here instead.
     """
-    problems: list[str] = []
-    every_lens = {
+    catalog, problems = _catalog_lenses(root)
+    every_lens = catalog | {
         lens
         for boundary in declared.values()
         for lens in _lens_menu(boundary)
@@ -853,6 +1077,14 @@ def resolve_route(
     item = _route_map(payload).get(route)
     if item is None:
         raise ModelRouteError(f"unknown or nonspawnable route: {route}")
+    # `--lens` only means something relative to a boundary's declared menu.
+    # Accepting it without one used to resolve a route that silently ignored the
+    # flag and exited 0, so a caller that meant to dispatch the adversarial lens
+    # got an unnarrowed route and no signal that its selection was discarded.
+    if lens is not None and boundary is None:
+        raise ModelRouteError(
+            "--lens names a lens of one dispatch boundary; pass --boundary too"
+        )
     if boundary is not None:
         boundary_item = next(
             (
@@ -891,6 +1123,19 @@ def resolve_route(
                 f"lens {lens} is not named at boundary {boundary}; "
                 f"declared lenses: {', '.join(menu)}"
             )
+        # A boundary's `routes` list is the union its lanes may use, so set
+        # membership alone lets an expensive lens resolve to the cheap route:
+        # every fan-out boundary allows both `review` and `deep-review`, and the
+        # adversarial lens -- whose own contract states it runs on `deep-review`
+        # -- resolved to Opus/high without complaint. The floor is per lens and
+        # lives in the manifest so the requirement is data the resolver enforces
+        # rather than prose a dispatcher is trusted to have read.
+        allowed = _lens_routes(payload).get(lens) if lens is not None else None
+        if allowed is not None and route not in allowed:
+            raise ModelRouteError(
+                f"lens {lens} requires one of: {', '.join(allowed)}; "
+                f"{route} is below its declared floor"
+            )
         required_contracts = _required_contract_paths(
             root,
             boundary_item["path"],
@@ -898,11 +1143,14 @@ def resolve_route(
             boundary,
             lens,
             menu,
+            _boundary_contracts(boundary_item),
         )
         unscored = bool(boundary_item.get("unscored", False))
+        lens_domain = _lens_domain(boundary_item)
     else:
         required_contracts = ()
         unscored = False
+        lens_domain = None
     mapping = item["providers"][provider]
     family = mapping["model"]
     provider_config = payload["providers"][provider]
@@ -919,6 +1167,8 @@ def resolve_route(
         controls=dict(mapping),
         minimum_cli=provider_config["minimum_cli"],
         unscored=unscored,
+        lens=lens,
+        lens_domain=lens_domain,
     )
 
 
@@ -949,15 +1199,19 @@ def _contracts(root: Path, values: tuple[str, ...]) -> tuple[tuple[str, str, str
     return tuple(result)
 
 
-def _required_contract_paths(
+def _structural_seeds(
     root: Path,
     boundary_path: str,
     responsibility: str,
-    boundary_id: str,
-    lens: str | None = None,
-    lens_menu: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
-    """Derive the exact inline contract closure for one dispatch boundary."""
+    """Return the seeds every boundary of this shape gets, before any declaration.
+
+    These are derived from the boundary's path and route responsibility alone:
+    the always-on policy rules, the owning skill, the route's discipline
+    contract, and the boundary document itself. Nothing here is specific to what
+    the lane reviews, which is why a closure equal to this set means the lane
+    declared no contract of its own -- see `_seed_only_problems`.
+    """
     path = Path(boundary_path)
     parts = path.parts
     if len(parts) >= 2 and parts[0] == "skills":
@@ -1005,10 +1259,30 @@ def _required_contract_paths(
         route_contract,
         path.as_posix(),
     )
+    return tuple(dict.fromkeys(values))
+
+
+def _required_contract_paths(
+    root: Path,
+    boundary_path: str,
+    responsibility: str,
+    boundary_id: str,
+    lens: str | None = None,
+    lens_menu: tuple[str, ...] = (),
+    declared: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    """Derive the exact inline contract closure for one dispatch boundary.
+
+    Seeds are the union of three channels, in this order: the structural seeds
+    above, this lane's own `contracts` from the manifest, and -- on a fan-out
+    boundary -- the one selected lens reached through the dispatch span. Every
+    seed is then closed transitively over `## Required Context`.
+    """
+    seeds = _structural_seeds(root, boundary_path, responsibility) + declared
     return _contract_closure(
         root,
-        tuple(dict.fromkeys(values)),
-        path.as_posix(),
+        tuple(dict.fromkeys(seeds)),
+        Path(boundary_path).as_posix(),
         responsibility,
         boundary_id,
         lens,
@@ -1069,7 +1343,18 @@ def _contract_closure(
         # marker's own section only, so one lane never inherits another lane's
         # lenses; the Required Context section is unioned in because a lens file
         # keeps its shared rules there, outside any marker span.
-        scan_span = value == boundary_path and responsibility == "review"
+        #
+        # Only a fan-out span is scanned. Dispatch prose is navigation as much as
+        # instruction -- "when a PR warrants a judo pass, run a single-PR deep
+        # review instead" links a document the worker must never load -- so on a
+        # boundary with no menu to select from, every span link was becoming an
+        # executable contract dependency. `## Required Context` is the explicit
+        # channel for those; a link in running prose is not a declaration.
+        scan_span = (
+            value == boundary_path
+            and responsibility == "review"
+            and bool(lens_menu)
+        )
         span_text = _marker_span_text(content, boundary_id) if scan_span else ""
         context_text = _required_context_text(content)
         candidates: list[tuple[str, bool, bool]] = []
@@ -1088,13 +1373,14 @@ def _contract_closure(
         # conflicting instructions.
         #
         # The menu is the manifest's declared `lenses` list, not "whatever the
-        # span links to". Only a span link that the manifest names as a lens of
-        # *this* boundary is narrowed away; every other span link stays in the
-        # closure as an ordinary shared dependency. Required Context is likewise
-        # never narrowed -- it holds the boundary document's own shared rules.
-        # `validate_dispatch_boundaries` keeps the two in step, so a lens the
-        # doc gained but the manifest did not is a check-time failure rather
-        # than a contract silently demoted to a dependency of all eight workers.
+        # span links to". A fan-out span contributes *only* its declared lenses,
+        # and only the selected one: a span link the manifest does not name as a
+        # lens is prose navigation, and treating it as a shared dependency is how
+        # the batch-PR document reached the adversarial worker's closure. Every
+        # real shared dependency belongs in `## Required Context`, which is never
+        # narrowed. `validate_dispatch_boundaries` keeps menu and span in step,
+        # so a lens the doc gained but the manifest did not is a check-time
+        # failure rather than a contract silently dropped from every worker.
         menu = frozenset(lens_menu)
         lens_selected = False
         for raw_target, is_link, from_span in candidates:
@@ -1136,7 +1422,9 @@ def _contract_closure(
                     and resolved.suffix == ".md"
                 ):
                     relative_text = relative.as_posix()
-                    if from_span and is_link and relative_text in menu:
+                    if from_span:
+                        if relative_text not in menu:
+                            break
                         if lens is not None and relative_text != lens:
                             break
                         lens_selected = True
@@ -1244,6 +1532,10 @@ def worker_prompt(
         f"provider={route.provider}\nfamily={route.family}\n"
         f"selector={route.selector}\neffort={route.effort}\n"
         f"responsibility={route.responsibility}\nrestrictions={restrictions}\n"
+        # A dual-use lens reads these to choose its output vocabulary. They are
+        # always emitted, including as `-`, so a worker never has to distinguish
+        # "not a fan-out lane" from "header field the runner forgot".
+        f"lens={route.lens or '-'}\nlens_domain={route.lens_domain or '-'}\n"
         f"workspace={workspace if workspace is not None else '<caller-workspace>'}\n"
         "INLINE_CONTRACTS_BEGIN\n"
     )

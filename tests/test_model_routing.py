@@ -28,21 +28,45 @@ from aitk.model_routing import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL_CATALOG = json.loads((ROOT / "interfaces/model-routing.json").read_text())[
-    "providers"
-]
+_MANIFEST = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+MODEL_CATALOG = _MANIFEST["providers"]
+MODEL_ROUTE_FLOORS = {
+    lens: tuple(routes) for lens, routes in _MANIFEST.get("lens_routes", {}).items()
+}
 
 
-def _links_named_at(boundary: dict[str, object]) -> list[str]:
-    """Repo-relative Markdown links inside one boundary's own marker span."""
+def _declared_at(boundary: dict[str, object]) -> list[str]:
+    """What this lane is *told* to read: manifest `contracts` + Required Context.
+
+    Deliberately not "every Markdown link in the span". A link is navigation, and
+    treating one as a contract dependency is the defect that shipped the
+    deep-quality gate into every closure whose span happened to link the
+    classifier. Starvation is therefore measured against declarations -- the two
+    channels a document actually uses to say a worker needs something -- so this
+    check keeps catching workers starved of their instructions without reviving
+    "linked from" as a dependency edge.
+    """
     document = Path(str(boundary["path"]))
-    span = _marker_span_text(
-        (ROOT / document).read_text(), str(boundary["id"])
+    section = re.search(
+        r"^## Required Context.*?(?=^## |\Z)",
+        (ROOT / document).read_text(),
+        re.MULTILINE | re.DOTALL,
     )
-    named = {
-        os.path.normpath((document.parent / target).as_posix())
-        for target in re.findall(r"\]\(([^)]+\.md)\)", span)
-    }
+    named: set[str] = set()
+    if section is not None:
+        # Both spellings are declarations here. Backticks name a repo-relative
+        # path; a Markdown link inside this section is document-relative and is
+        # how a reference points at its siblings without the reader guessing the
+        # path. Only *inside* this section -- the same link in running prose below
+        # is navigation.
+        named |= set(re.findall(r"`([^`]+\.md)`", section.group(0)))
+        named |= {
+            os.path.normpath((document.parent / target).as_posix())
+            for target in re.findall(r"\]\(([^)]+\.md)\)", section.group(0))
+        }
+    contracts = boundary.get("contracts")
+    if isinstance(contracts, list):
+        named |= {str(item) for item in contracts}
     return sorted(path for path in named if (ROOT / path).is_file())
 
 
@@ -63,6 +87,23 @@ def _a_lens_named_at(boundary: dict[str, object]) -> str | None:
     if not boundary.get("lens_fanout", False):
         return None
     return _lenses_named_at(boundary)[0]
+
+
+def _routes_for(boundary: dict[str, object], lens: str | None) -> list[str]:
+    """The routes this lane can actually resolve, after the lens's route floor.
+
+    A boundary's `routes` list is the union its lanes may use; a lens with a
+    declared floor narrows it further. Sweeping the raw union asks the resolver
+    for combinations it is *supposed* to refuse -- an architecture or adversarial
+    lane on the cheap route -- so these sweeps would report the floor working as
+    a failure.
+    """
+    floors = MODEL_ROUTE_FLOORS.get(lens or "")
+    return [
+        route
+        for route in (str(item) for item in boundary["routes"])
+        if floors is None or route in floors
+    ]
 RESULT = {
     "status": "completed",
     "summary": "done",
@@ -180,14 +221,15 @@ class ModelRoutingTests(unittest.TestCase):
         judo_lens = "skills/review/references/code-judo.md"
         checked_judo = False
         for boundary in payload["dispatch_boundaries"]:
-            for route in boundary["routes"]:
+            lens = _a_lens_named_at(boundary)
+            for route in _routes_for(boundary, lens):
                 with self.subTest(boundary=boundary["id"], route=route):
                     contracts = resolve_route(
                         ROOT,
                         route,
                         "claude",
                         boundary=boundary["id"],
-                        lens=_a_lens_named_at(boundary),
+                        lens=lens,
                     ).required_contracts
                     if boundary["id"] == "review.code-judo":
                         checked_judo = True
@@ -256,7 +298,10 @@ class ModelRoutingTests(unittest.TestCase):
                 "skills/review/references/code-quality.md",
             ),
             # The batch worker is a nested orchestrator, not a lens: it picks its
-            # own team, so the classifier must reach it.
+            # own team, so the classifier must reach it. It gets the classifier
+            # and *not* the lenses the classifier can name -- `deep-quality.md`
+            # used to arrive here only because the classifier links to it, which
+            # handed the orchestrator a lens it never applies itself.
             ("review.pr-batch", None): (
                 "rules/code-review.md",
                 "rules/model-assignment.md",
@@ -264,19 +309,16 @@ class ModelRoutingTests(unittest.TestCase):
                 "rules/stop-rules.md",
                 "skills/review/SKILL.md",
                 "skills/review/references/classify-diff.md",
-                "skills/review/references/deep-quality.md",
                 "skills/review/references/pr-batch.md",
                 "skills/review/references/pr-posting.md",
                 "skills/review/references/pr-review.md",
-                "skills/workflows/references/review-pr.md",
             ),
         }
         allowed = {
-            boundary["id"]: boundary["routes"]
-            for boundary in payload["dispatch_boundaries"]
+            boundary["id"]: boundary for boundary in payload["dispatch_boundaries"]
         }
         for (identifier, lens), contracts in expected.items():
-            for route in allowed[identifier]:
+            for route in _routes_for(allowed[identifier], lens):
                 with self.subTest(boundary=identifier, route=route):
                     resolved = resolve_route(
                         ROOT, route, "claude", boundary=identifier, lens=lens
@@ -286,51 +328,56 @@ class ModelRoutingTests(unittest.TestCase):
                     )
 
     def test_no_marker_span_is_starved_of_a_contract_it_names(self) -> None:
-        # Structural counterpart to the exact closures above: whatever a span
-        # tells its worker to read must reach that worker. This holds for
+        # Structural counterpart to the exact closures above: whatever a boundary
+        # declares its worker must read has to reach that worker. This holds for
         # boundaries nobody thought to pin, including ones added later.
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
         for boundary in payload["dispatch_boundaries"]:
-            linked = set(_links_named_at(boundary))
+            linked = set(_declared_at(boundary))
             if not linked:
                 continue
             menu = set(_lenses_named_at(boundary))
             fanout = bool(boundary.get("lens_fanout", False))
-            for route in boundary["routes"]:
-                with self.subTest(boundary=boundary["id"], route=route):
-                    if not fanout:
+            if not fanout:
+                for route in _routes_for(boundary, None):
+                    with self.subTest(boundary=boundary["id"], route=route):
                         contracts = set(
                             resolve_route(
                                 ROOT, route, "claude", boundary=boundary["id"]
                             ).required_contracts
                         )
                         self.assertEqual(set(), linked - contracts)
-                        continue
-                    # A fan-out marker names a menu, and one dispatch takes one
-                    # item off it. The starvation invariant still has to hold per
-                    # lens: every lens the span offers must be selectable and
-                    # must arrive when selected. Asserting only the union would
-                    # go green on a filter that silently dropped the choice.
-                    #
-                    # Non-menu links in the span are the other half. They are
-                    # shared references, so narrowing must leave them alone --
-                    # the failure this catches is a filter that treats every
-                    # link as a sibling to drop and starves all eight workers of
-                    # the same document at once.
-                    for lens in sorted(menu):
-                        with self.subTest(lens=lens):
-                            contracts = set(
-                                resolve_route(
-                                    ROOT,
-                                    route,
-                                    "claude",
-                                    boundary=boundary["id"],
-                                    lens=lens,
-                                ).required_contracts
-                            )
-                            self.assertIn(lens, contracts)
-                            self.assertEqual(set(), (menu - {lens}) & contracts)
-                            self.assertEqual(set(), (linked - menu) - contracts)
+                continue
+            # A fan-out marker names a menu, and one dispatch takes one item off
+            # it. The starvation invariant still has to hold per lens: every lens
+            # the span offers must be selectable and must arrive when selected.
+            # Asserting only the union would go green on a filter that silently
+            # dropped the choice.
+            #
+            # The document-level and per-lane declarations are the other half.
+            # They apply to every lane, so narrowing must leave them alone -- the
+            # failure this catches is a filter that treats every seed as a sibling
+            # to drop and starves all eight workers of the same contract at once.
+            for lens in sorted(menu):
+                routes = _routes_for(boundary, lens)
+                # A floor that leaves a lens with no route at all is starvation
+                # of a different kind: the lane is on the menu and nothing can
+                # dispatch it.
+                self.assertTrue(routes, f"{lens} has no route left at {boundary['id']}")
+                for route in routes:
+                    with self.subTest(boundary=boundary["id"], route=route, lens=lens):
+                        contracts = set(
+                            resolve_route(
+                                ROOT,
+                                route,
+                                "claude",
+                                boundary=boundary["id"],
+                                lens=lens,
+                            ).required_contracts
+                        )
+                        self.assertIn(lens, contracts)
+                        self.assertEqual(set(), (menu - {lens}) & contracts)
+                        self.assertEqual(set(), (linked - menu) - contracts)
 
     def test_marker_span_scopes_dependencies_to_one_dispatch(self) -> None:
         document = "\n".join(
@@ -493,6 +540,13 @@ class ModelRoutingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = self.fixture(directory)
             manifest = root / "interfaces/model-routing.json"
+            # Each subtest starts from the pristine manifest. Reading back the
+            # file the previous subtest corrupted meant subtest N validated N
+            # stacked mutations, and any one of them raising satisfied the regex
+            # -- so every case after the first proved nothing about its own
+            # mutation, and a rule that stopped rejecting it would stay green.
+            pristine = manifest.read_text()
+            self.assertEqual([], validate_model_routing(root))
             for identifier, mutation in (
                 ("review.pr-batch", {"lenses": ["skills/review/SKILL.md"]}),
                 ("review.pr-standard", {"lenses": ["skills/review/SKILL.md"]}),
@@ -500,7 +554,7 @@ class ModelRoutingTests(unittest.TestCase):
                 ("review.pr-standard", {"lenses": []}),
             ):
                 with self.subTest(boundary=identifier, mutation=mutation):
-                    payload = json.loads(manifest.read_text())
+                    payload = json.loads(pristine)
                     for item in payload["dispatch_boundaries"]:
                         if item["id"] == identifier:
                             item.update(mutation)
@@ -509,6 +563,7 @@ class ModelRoutingTests(unittest.TestCase):
                         ModelRouteError, "invalid dispatch boundary lens menu"
                     ):
                         load_model_routing(root)
+            manifest.write_text(pristine)
 
     def test_every_grading_lane_carries_the_code_review_contract(self) -> None:
         """A lane that emits severity-tagged findings must ship its calibration.
@@ -552,7 +607,7 @@ class ModelRoutingTests(unittest.TestCase):
             boundary = boundaries[identifier]
             lenses = _lenses_named_at(boundary) if boundary.get("lens_fanout") else [None]
             for lens in lenses:
-                for route in boundary["routes"]:
+                for route in _routes_for(boundary, lens):
                     with self.subTest(boundary=identifier, route=route, lens=lens):
                         contracts = resolve_route(
                             ROOT, route, "claude", boundary=identifier, lens=lens

@@ -6,36 +6,67 @@ tier: Standard
 
 Use when `review-pr` receives multiple PR numbers or `--all-open`.
 
+## Required Context
+
+- [pr-review.md](pr-review.md) — the per-PR review procedure the worker applies
+- [classify-diff.md](classify-diff.md) — the per-PR worker is a nested
+  orchestrator, not a lens: it picks its own review team, so it needs the
+  classifier in its own contract closure rather than inheriting a team choice
+- [pr-posting.md](pr-posting.md) — read by the **main thread**, which owns posting
+
+These are declared here rather than left to the dispatch prose below. A link in
+running prose is navigation; this section is the contract the route runner inlines.
+
 ## Batch Contract
 
 The main thread is a thin orchestrator:
 - resolve the PR list
-- dispatch bounded single-PR reviews
+- collect each PR's evidence
+- dispatch bounded single-PR reviews over that evidence
 - collect compact results
-- post aggregate summary
+- post per-PR and aggregate comments
 
 The main thread must not accumulate full diffs or full review transcripts for every PR.
+
+**Every side effect belongs to the main thread.** Review routes are read-only by
+construction — no `Write`/`Edit`, `plan` permission mode on Claude, and a
+network-less `read-only` sandbox on Codex. A worker therefore cannot run
+`gh pr view` and cannot post a comment. A dispatch that tells it to do either
+fails on one provider and silently does nothing useful on the other, so the fetch
+and post steps stay here where the capability actually exists.
 
 ## Resolve PRs
 
 - `--all-open`: run `gh pr list --json number,title --state open`
 - Multiple numbers: parse provided refs
 
+## Collect Per-PR Evidence
+
+For each PR, before dispatching, the main thread gathers and holds the payload for
+exactly one worker at a time:
+
+```bash
+gh pr view <N> --json number,title,body,baseRefName,headRefName,author,files
+gh pr diff <N>
+```
+
+Pass the diff by value in the dispatch payload, or write it to a scratch file and
+pass the path when it is large. Discard it once that worker returns — holding every
+PR's diff is the accumulation this procedure exists to avoid.
+
 ## Dispatch
 
 <!-- aitk-model-route:review.pr-batch -->
-For each PR, dispatch a subagent on `review`/`deep-review` with:
-- PR number/ref
+For each PR, dispatch a read-only subagent on `review`/`deep-review` with:
+- PR number/ref, title, and base/head refs
+- the PR diff and file list collected above — the worker reads, it does not fetch
 - flags (draft/summary by default; pass `--auto` only when the user explicitly requested auto-posting)
 - the literal line `Batch mode: Code-judo suppressed` — a per-PR review sees only
-  its own payload plus the pointers below, so this suppression must travel in the
-  payload; without it the default `Code-judo lane: YES` rule applies
-- pointer to [pr-review.md](pr-review.md)
-- pointer to [pr-posting.md](pr-posting.md)
-- pointer to [classify-diff.md](classify-diff.md) — the per-PR worker is a nested
-  orchestrator, not a lens: it picks its own review team, so it needs the
-  classifier in its own contract closure rather than inheriting a team choice
-- compact return contract
+  its own payload plus its inlined contract closure, so this suppression must
+  travel in the payload; without it the default `Code-judo lane: YES` rule applies
+- the compact return contract below
+
+The worker returns findings and a recommendation. It does not post them.
 
 Return contract:
 
@@ -43,11 +74,18 @@ Return contract:
 PR:
 Title:
 Recommendation: approve | request-changes | comment
-Posted: yes | no | draft
+Comment body: <the exact Markdown the main thread should post, or "none">
 Top finding:
 Finding counts:
 Residual risk:
 ```
+
+## Post
+
+The main thread posts each worker's `Comment body` per [pr-posting.md](pr-posting.md),
+honouring the draft/summary/`--auto` flag it passed down, and records the result in
+the wave table's `Posted` column. `Posted` is the main thread's own observation of
+its own `gh` call — never a value a worker reported.
 
 Batch mode runs the **findings** lenses only — the Code-judo generative pass is
 suppressed here unconditionally, including when `classify-diff` reports

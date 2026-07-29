@@ -181,14 +181,20 @@
     }
   ],
   "dispatch_boundaries": [
-    {"id": "planning.pm-brief-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "planning.technical-plan-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "workflows.create-feature-plan-review", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "planning.pm-brief-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/pm/references/review-feature-brief.md"]},
+    {"id": "planning.technical-plan-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md"], "lens_fanout": "plan", "lenses": [
+      "skills/plan-review/references/architecture.md",
+      "skills/plan-review/references/implementation.md",
+      "skills/plan-review/references/frontend.md",
+      "skills/plan-review/references/backend.md",
+      "skills/testing/references/review-testplan.md"
+    ]},
+    {"id": "workflows.create-feature-plan-review", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/planning/references/iterate-review.md"]},
     {"id": "workflows.create-feature-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
     {"id": "workflows.fix-bug-implementation", "path": "skills/workflows/references/fix-bug.md", "count": 1, "routes": ["implementation"]},
     {"id": "review.code-quality-final", "path": "skills/review/references/code-quality.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "review.local-independent-second-opinion", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"]},
-    {"id": "review.local-final-pass", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"], "lens_fanout": true, "lenses": [
+    {"id": "review.local-final-pass", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"], "contracts": ["rules/code-review.md"], "lens_fanout": "code", "lenses": [
       "skills/review/references/code-quality.md",
       "skills/review/references/deep-quality.md",
       "skills/review/references/adversarial.md",
@@ -198,8 +204,8 @@
       "skills/plan-review/references/frontend.md",
       "skills/plan-review/references/backend.md"
     ]},
-    {"id": "review.local-independent-capability", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"]},
-    {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "lens_fanout": true, "lenses": [
+    {"id": "review.local-independent-capability", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"], "contracts": ["rules/review-gate.md"]},
+    {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md"], "lens_fanout": "code", "lenses": [
       "skills/review/references/code-quality.md",
       "skills/review/references/deep-quality.md",
       "skills/review/references/adversarial.md",
@@ -209,7 +215,7 @@
       "skills/plan-review/references/frontend.md",
       "skills/plan-review/references/backend.md"
     ]},
-    {"id": "review.pr-standard", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "lens_fanout": true, "lenses": [
+    {"id": "review.pr-standard", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md"], "lens_fanout": "code", "lenses": [
       "skills/review/references/code-quality.md",
       "skills/review/references/deep-quality.md",
       "skills/review/references/adversarial.md",
@@ -219,26 +225,40 @@
       "skills/plan-review/references/frontend.md",
       "skills/plan-review/references/backend.md"
     ]},
-    {"id": "workflows.adversarial-primary", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"]},
-    {"id": "workflows.adversarial-second-opinion", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"]},
-    {"id": "workflows.review-code-fresh", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "workflows.review-plan-fresh", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "workflows.review-plan-selected", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "workflows.review-pr-fresh", "path": "skills/workflows/references/review-pr.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.adversarial-primary", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"], "contracts": ["skills/review/references/adversarial.md"]},
+    {"id": "workflows.adversarial-second-opinion", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"], "contracts": ["skills/review/references/adversarial.md"]},
+    {"id": "workflows.review-code-fresh", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/local-review.md"]},
+    {"id": "workflows.review-plan-fresh", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md"], "lens_fanout": "plan", "lenses": [
+      "skills/plan-review/references/architecture.md",
+      "skills/plan-review/references/implementation.md",
+      "skills/plan-review/references/frontend.md",
+      "skills/plan-review/references/backend.md",
+      "skills/testing/references/review-testplan.md",
+      "skills/pm/references/review-feature-brief.md"
+    ]},
+    {"id": "workflows.review-plan-selected", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md"], "lens_fanout": "plan", "lenses": [
+      "skills/plan-review/references/architecture.md",
+      "skills/plan-review/references/implementation.md",
+      "skills/plan-review/references/frontend.md",
+      "skills/plan-review/references/backend.md",
+      "skills/testing/references/review-testplan.md",
+      "skills/pm/references/review-feature-brief.md"
+    ]},
+    {"id": "workflows.review-pr-fresh", "path": "skills/workflows/references/review-pr.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/pr-review.md", "skills/review/references/pr-posting.md"]},
     {"id": "pgm.status-collection", "path": "extensions/pgm/skills/pgm/references/create-status-report.md", "count": 1, "routes": ["operations"]},
-    {"id": "cherry-pick.scope-leak-review", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "cherry-pick.scope-leak-rereview", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "cherry-pick.unblock-discovery", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review"]},
+    {"id": "cherry-pick.scope-leak-review", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/cherry-pick/references/validate.md"]},
+    {"id": "cherry-pick.scope-leak-rereview", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/cherry-pick/references/validate.md"]},
+    {"id": "cherry-pick.unblock-discovery", "path": "skills/cherry-pick/SKILL.md", "count": 1, "routes": ["review"], "contracts": ["skills/cherry-pick/references/unblock-discovery.md"]},
     {"id": "cherry-pick.batch-investigation", "path": "skills/cherry-pick/references/batch-sequence.md", "count": 1, "routes": ["rca", "deep-rca"]},
     {"id": "cherry-pick.headless-implementation", "path": "skills/cherry-pick/references/headless-trivial.md", "count": 1, "routes": ["implementation"]},
     {"id": "cherry-pick.validate-scope-leak", "path": "skills/cherry-pick/references/validate.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "cherry-pick.validate-scope-leak-rerun", "path": "skills/cherry-pick/references/validate.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "debug.ci-triage", "path": "skills/debug/references/ci-fix-orchestration.md", "count": 1, "routes": ["rca", "deep-rca"]},
     {"id": "feedback.comment-fix-groups", "path": "skills/feedback/SKILL.md", "count": 1, "routes": ["implementation"]},
-    {"id": "planning.loop-summary", "path": "skills/planning/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "planning.loop-ownership", "path": "skills/planning/SKILL.md", "count": 1, "routes": ["review", "deep-review"]},
-    {"id": "qa.fresh-validation", "path": "skills/qa/SKILL.md", "count": 1, "routes": ["review", "operations"]},
-    {"id": "review.pr-lenses", "path": "skills/review/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "lens_fanout": true, "lenses": [
+    {"id": "planning.loop-summary", "path": "skills/planning/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/planning/references/iterate-review.md"]},
+    {"id": "planning.loop-ownership", "path": "skills/planning/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/planning/references/iterate-review.md"]},
+    {"id": "qa.fresh-validation", "path": "skills/qa/SKILL.md", "count": 1, "routes": ["review", "operations"], "contracts": ["skills/qa/SKILL.md"]},
+    {"id": "review.pr-lenses", "path": "skills/review/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md"], "lens_fanout": "code", "lenses": [
       "skills/review/references/code-quality.md",
       "skills/review/references/deep-quality.md",
       "skills/review/references/adversarial.md",
@@ -248,8 +268,8 @@
       "skills/plan-review/references/frontend.md",
       "skills/plan-review/references/backend.md"
     ]},
-    {"id": "review.code-judo", "path": "skills/review/references/code-judo.md", "count": 1, "routes": ["deep-review"], "unscored": true},
-    {"id": "review.local-primary-lanes", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"], "lens_fanout": true, "lenses": [
+    {"id": "review.code-judo", "path": "skills/review/references/code-judo.md", "count": 1, "routes": ["deep-review"], "unscored": true, "contracts": ["skills/review/references/code-judo.md"]},
+    {"id": "review.local-primary-lanes", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md"], "lens_fanout": "code", "lenses": [
       "skills/review/references/code-quality.md",
       "skills/review/references/deep-quality.md",
       "skills/review/references/adversarial.md",
@@ -264,10 +284,14 @@
     {"id": "workflows.feedback-fix-wave", "path": "skills/workflows/references/address-feedback.md", "count": 1, "routes": ["implementation"]},
     {"id": "workflows.create-feature-moderate-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
     {"id": "workflows.create-feature-moderate-handoff", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
-    {"id": "workflows.review-code-orchestration", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"]},
+    {"id": "workflows.review-code-orchestration", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/local-review.md", "rules/review-gate.md"]},
     {"id": "workflows.watch-pr-poll", "path": "skills/workflows/references/watch-pr.md", "count": 1, "routes": ["operations"]},
     {"id": "workflows.watch-pr-fix", "path": "skills/workflows/references/watch-pr.md", "count": 1, "routes": ["implementation"]}
   ],
+  "lens_routes": {
+    "skills/review/references/adversarial.md": ["deep-review"],
+    "skills/plan-review/references/architecture.md": ["deep-review"]
+  },
   "dispatch_exemptions": [
     {"path": "skills/review/references/adversarial-orchestration.md", "marker": "describes-reviewers-not-dispatch", "count": 1},
     {"path": "skills/agent-setup-maintainer/lessons.md", "marker": "historical-handoff-lesson", "count": 1},

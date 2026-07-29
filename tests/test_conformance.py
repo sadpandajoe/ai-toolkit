@@ -146,8 +146,13 @@ class ConformanceTests(unittest.TestCase):
         # phrase list must live in exactly one file so the predicate cannot drift
         # between the classifier and the orchestrators that read it.
         classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        # The section is a top-level `##` deliberately. As a `###` it fell inside
+        # `## Required Context`, whose extent runs to the next `##`, so the route
+        # runner read its navigation links as declared contract dependencies and
+        # shipped `deep-quality.md` into every closure that contained the
+        # classifier. Match `##` only — a `###` here is the defect, not a variant.
         section = re.search(
-            r"^### Deep-tier phrases.*?(?=^#{2,3} )",
+            r"^## Deep-tier phrases.*?(?=^## )",
             classifier,
             re.MULTILINE | re.DOTALL,
         )
@@ -253,13 +258,24 @@ class ConformanceTests(unittest.TestCase):
         own_boundary = {"skills/review/references/code-judo.md"}
         self.assertLessEqual(own_boundary, triggerable)
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
-        fanouts = [
+        # The classifier grades *diffs*, so it is the universe for `code`
+        # fan-outs only. `plan` fan-outs select from the plan-review lens set and
+        # are checked against their own universe below; folding the two together
+        # would make every plan menu look like it named untriggerable lanes.
+        code_fanouts = [
             boundary
             for boundary in payload["dispatch_boundaries"]
-            if boundary.get("lens_fanout", False)
+            if boundary.get("lens_fanout") == "code"
         ]
-        self.assertTrue(fanouts, "no lens fan-out boundaries left to check")
-        for boundary in fanouts:
+        plan_fanouts = [
+            boundary
+            for boundary in payload["dispatch_boundaries"]
+            if boundary.get("lens_fanout") == "plan"
+        ]
+        self.assertTrue(code_fanouts, "no code lens fan-out boundaries left to check")
+        self.assertTrue(plan_fanouts, "no plan lens fan-out boundaries left to check")
+        fannable = triggerable - own_boundary
+        for boundary in code_fanouts:
             with self.subTest(boundary=boundary["id"]):
                 menu = set(boundary.get("lenses", []))
                 # Containment, not equality. A boundary is allowed to offer a
@@ -267,13 +283,87 @@ class ConformanceTests(unittest.TestCase):
                 # scoping a lane means. What is never allowed is a menu entry
                 # the classifier cannot name, which is a lane no classification
                 # can reach.
-                self.assertLessEqual(menu, triggerable - own_boundary)
+                self.assertLessEqual(menu, fannable)
                 # Adversarial is pinned separately because breadth is not the
                 # property that failed. It was named by `--adversarial` and by
                 # security-sensitive detection in every review procedure while
                 # being absent from every menu, so it has to be dispatchable
                 # wherever findings lenses fan out, at any tier.
                 self.assertIn("skills/review/references/adversarial.md", menu)
+        # The other direction, and the one the containment check cannot see: a
+        # lens the classifier can trigger but no menu offers is a lane that gets
+        # selected and then cannot be dispatched. Asserting only containment made
+        # this test satisfiable by deleting lenses from every menu at once.
+        offered = {lens for boundary in code_fanouts for lens in boundary["lenses"]}
+        self.assertEqual(
+            set(),
+            fannable - offered,
+            "classifier can trigger lenses that no code fan-out offers",
+        )
+        # Plan lenses come from the plan-review skill plus two declared
+        # cross-skill lanes. The point of checking is the reverse leak: a
+        # code-only lens (deep-quality, code-judo, adversarial) in a plan menu
+        # would grade a written plan with a diff lens.
+        plan_universe = {
+            path.relative_to(ROOT).as_posix()
+            for path in (ROOT / "skills/plan-review/references").glob("*.md")
+        } | {
+            "skills/testing/references/review-testplan.md",
+            "skills/pm/references/review-feature-brief.md",
+        }
+        for boundary in plan_fanouts:
+            with self.subTest(boundary=boundary["id"]):
+                self.assertLessEqual(set(boundary["lenses"]), plan_universe)
+
+    def test_deep_review_lenses_carry_the_route_floor_the_rule_promises(self) -> None:
+        """The routing rule's `deep-review` row must be enforced as data.
+
+        `rules/model-assignment.md` states which kinds of review run on
+        `deep-review`, and every fan-out boundary lists both routes, so nothing
+        stopped an architecture or adversarial dispatch from resolving to
+        Opus/high. The manifest's `lens_routes` is where that row becomes
+        enforceable, and this test is the join: a lens whose subject matter the
+        rule reserves for `deep-review` must carry the floor, and a floor must not
+        exist for a lens the rule does not reserve.
+        """
+        rule = (ROOT / "rules/model-assignment.md").read_text()
+        row = re.search(r"^\| `deep-review` \|([^|]+)\|", rule, re.MULTILINE)
+        self.assertIsNotNone(row, "model-assignment.md lost its `deep-review` row")
+        # "Architecture, security, adversarial, or final cold review" — the words
+        # come out of the rule rather than being restated here, so rewording the
+        # row to drop a category fails this test instead of quietly widening what
+        # may run cheap.
+        reserved = {
+            word for word in re.findall(r"[a-z]+", row.group(1).lower()) if len(word) > 3
+        } - {"final", "review", "or"}
+        self.assertIn("architecture", reserved)
+        self.assertIn("adversarial", reserved)
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        floors = payload.get("lens_routes", {})
+        menus = {
+            lens
+            for boundary in payload["dispatch_boundaries"]
+            for lens in boundary.get("lenses", [])
+        }
+        self.assertTrue(menus, "no fan-out menus left to check")
+        for lens in sorted(menus):
+            stem = Path(lens).stem.replace("-", " ").split()
+            with self.subTest(lens=lens):
+                if reserved & set(stem):
+                    self.assertEqual(
+                        ["deep-review"],
+                        floors.get(lens),
+                        f"{lens} is reserved for deep-review by the rule but has "
+                        "no matching floor in the manifest",
+                    )
+                else:
+                    # A floor on an unreserved lens is drift the other way: the
+                    # manifest would be denying a route the rule allows, with no
+                    # written justification anyone can find.
+                    self.assertNotIn(lens, floors)
+        # No floor may name a path that is not a dispatchable lens, which is how a
+        # renamed lens would silently lose its floor while the entry lingered.
+        self.assertLessEqual(set(floors), menus)
 
     def test_batch_code_judo_suppression_travels_with_the_dispatch(self) -> None:
         # Batch review is the sole exception to "dispatch judo on Code-judo lane:
@@ -293,7 +383,14 @@ class ConformanceTests(unittest.TestCase):
         dispatch = re.search(r"^## Dispatch.*?(?=^## )", batch, re.MULTILINE | re.DOTALL)
         self.assertIsNotNone(dispatch, "pr-batch.md lost its Dispatch section")
         self.assertIn(suppression, dispatch.group(0))
-        self.assertIn("suppressed (batch)", dispatch.group(0))
+        # The suppression flag is a dispatch field; recording it as
+        # `suppressed (batch)` is the main thread's job after the worker returns,
+        # so it lives with the posting step rather than inside Dispatch. Both must
+        # still exist — a suppression nobody records reads as "judo ran, found
+        # nothing" in the wave table.
+        post = re.search(r"^## Post.*?(?=^## )", batch, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(post, "pr-batch.md lost its Post section")
+        self.assertIn("suppressed (batch)", batch)
         self.assertIn(
             "suppressed (batch)",
             (ROOT / "skills/workflows/references/review-pr.md").read_text(),

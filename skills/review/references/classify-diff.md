@@ -19,7 +19,7 @@ The caller provides:
 - The requested review effort, if the command supplied one (`high` / `max` / `ultra`). Treat an explicit **deep-tier phrase** as `ultra` — these are escalation phrases, not route names.
 - The change title / commit subjects, when available (PR title or commit messages)
 
-### Deep-tier phrases (canonical list)
+## Deep-tier phrases (canonical list)
 
 The deep-tier phrase list is exactly:
 
