@@ -1,0 +1,297 @@
+"""Routing vocabulary: the values, shapes, and errors every other layer speaks.
+
+Owns what a route *is* -- the enumerations a manifest is checked against, the
+selector and marker patterns, the error type, the resolved-route record, and the
+accessors that read one dispatch boundary's own fields. It depends on nothing else
+in the routing subsystem, which is what lets validation, closure derivation, and
+transport share one vocabulary instead of three restatements of it.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+import re
+
+
+PROVIDERS = {"codex", "claude"}
+
+
+REASONING = {"standard", "deep"}
+
+
+RESPONSIBILITIES = {"implementation", "review", "rca", "operations"}
+
+
+SANDBOXES = {"read-only", "workspace-write"}
+
+
+PERMISSION_MODES = {"plan", "acceptEdits", "dontAsk"}
+
+
+DISALLOWED_TOOLS = {"Write", "Edit", "NotebookEdit"}
+
+
+ROUTE_NAMES = {
+    "implementation",
+    "review",
+    "deep-review",
+    "rca",
+    "deep-rca",
+    "operations",
+}
+
+
+ROUTE_RESTRICTIONS = {
+    "implementation": (
+        "Implement only the bounded task contract.",
+        "Do not commit, push, publish, or widen scope.",
+    ),
+    "review": (
+        "Perform an independent read-only review.",
+        "Do not edit files or mutate external state.",
+    ),
+    "deep-review": (
+        "Perform an independent read-only architecture, security, adversarial, or cold review.",
+        "Do not edit files or mutate external state.",
+    ),
+    "rca": (
+        "Synthesize root cause from supplied evidence.",
+        "Do not edit files, decide implementation scope, or mutate external state.",
+    ),
+    "deep-rca": (
+        "Synthesize ambiguous, intermittent, history-dependent, or cross-system root cause from supplied evidence.",
+        "Do not edit files, decide implementation scope, or mutate external state.",
+    ),
+    "operations": (
+        "Collect read-only evidence, produce deterministic reports, or prepare already-authored API, ticket, or Playwright steps for parent execution.",
+        "Do not perform external mutations, execute tests, design tests, diagnose failures, perform RCA, review, decide fixes, or modify product code.",
+    ),
+}
+
+
+LENS_DOMAINS = ("code", "plan")
+
+
+LENS_CATALOG = "skills/review/references/classify-diff.md"
+
+
+ROUTE_ERROR = "MODEL_ROUTE_INVALID"
+
+
+UNAVAILABLE_ERROR = "MODEL_ROUTE_UNAVAILABLE"
+
+
+PROMPT_LIMIT = 1024 * 1024
+
+
+DEFAULT_TIMEOUT = 1800
+
+
+PREFLIGHT_TIMEOUT = 15
+
+
+BLOCKED_EXIT = 4
+
+
+FAILED_EXIT = 5
+
+
+VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?")
+
+
+CODEX_SELECTOR = re.compile(r"gpt-[0-9]+\.[0-9]+(?:\.[0-9]+)?-sol")
+
+
+CLAUDE_SELECTOR = re.compile(r"claude-(opus|fable|sonnet)-[0-9]+(?:-[0-9]+)*")
+
+
+DISPATCH_PATTERN = re.compile(
+    r"(?:"
+    r"^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:automatically\s+)?"
+    r"(?:ask|use)\b.*\b(?:agents?|subagents?|workers?|reviewers?)\b"
+    r"|"
+    r"\b(?:spawn(?:s|ed|ing)?|launch(?:es|ed|ing)?|dispatch(?:es|ed|ing)?|"
+    r"delegat(?:e|es|ed|ing)|hand(?:s|ed|ing)?\s+off|send(?:s|ing)?|sent|"
+    r"fan\s+out)\b.*\b(?:agents?|subagents?|workers?|reviewers?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+ROUTE_MARKER = re.compile(r"^<!-- aitk-model-route:([a-z0-9]+(?:[.-][a-z0-9]+)*) -->$")
+
+
+EXEMPT_MARKER = re.compile(r"^<!-- aitk-model-route-exempt:(.+) -->$")
+
+
+MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+
+
+BACKTICK_MARKDOWN_PATH = re.compile(r"`([^`\n]+\.md(?:#[^`\n]+)?)`")
+
+
+WORKER_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["status", "summary", "findings", "verification"],
+    "properties": {
+        "status": {"enum": ["completed", "blocked", "failed"]},
+        "summary": {"type": "string", "minLength": 1},
+        "findings": {"type": "array", "items": {"type": "string"}},
+        "verification": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
+class ModelRouteError(ValueError):
+    """A model route is invalid or cannot be honored."""
+
+    def __init__(self, message: str, code: str = ROUTE_ERROR) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class ResolvedRoute:
+    name: str
+    boundary: str | None
+    required_contracts: tuple[str, ...]
+    provider: str
+    family: str
+    selector: str
+    effort: str
+    responsibility: str
+    restrictions: tuple[str, ...]
+    controls: dict[str, object]
+    minimum_cli: str
+    unscored: bool = False
+    lens: str | None = None
+    # Which artefact this dispatch grades: `code` for shipped code, `plan` for a
+    # written plan, `None` off a fan-out boundary. Several lenses sit in both a
+    # code menu and a plan menu -- architecture review and test review most
+    # obviously -- and the two want different output: severity tags for code,
+    # scores for a plan. A document's Required Context cannot vary by dispatch,
+    # so the mode travels here and the dual-use lens keys its output section on
+    # it. Without it those lenses had to pick one vocabulary and be wrong at the
+    # other boundary.
+    lens_domain: str | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "route": self.name,
+            "boundary": self.boundary,
+            "required_contracts": self.required_contracts,
+            "unscored": self.unscored,
+            "lens": self.lens,
+            "lens_domain": self.lens_domain,
+            "provider": self.provider,
+            "family": self.family,
+            "selector": self.selector,
+            "effort": self.effort,
+            "responsibility": self.responsibility,
+            "controls": self.controls,
+        }
+
+
+def _load(path: Path) -> object:
+    return json.loads(path.read_text())
+
+
+def _safe_path(root: Path, value: object) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts or path == Path("."):
+        return None
+    target = root / path
+    current = root
+    for part in path.parts:
+        current /= part
+        if current.is_symlink():
+            return None
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved_target = target.resolve(strict=True)
+        resolved_target.relative_to(resolved_root)
+    except (OSError, ValueError):
+        return None
+    return path if resolved_target.is_file() else None
+
+
+def _safe_dispatch_path(root: Path, value: object) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts or path == Path("."):
+        return None
+    target = root / path
+    if target.exists():
+        return _safe_path(root, value)
+    if (
+        len(path.parts) >= 3
+        and path.parts[0] == "extensions"
+        and not (root / "extensions" / path.parts[1]).exists()
+    ):
+        return path
+    return None
+
+
+def _lens_menu(boundary: dict[str, object]) -> tuple[str, ...]:
+    """Return the boundary's declared reviewer menu, empty when it does not fan out."""
+    lenses = boundary.get("lenses")
+    return tuple(lenses) if isinstance(lenses, list) else ()
+
+
+def _boundary_contracts(boundary: dict[str, object]) -> tuple[str, ...]:
+    """Return the contracts this one dispatch lane declares for itself.
+
+    A document's `## Required Context` is the right channel for what every lane
+    in that document needs, and it stays the primary channel. It cannot express
+    a *per-lane* dependency, because several documents host more than one
+    boundary: `local-review.md` hosts four, `cherry-pick/SKILL.md` three.
+    Declaring one lane's contract at document level pushes it into every sibling
+    lane's closure, which is exactly the defect that handing every plan reviewer
+    all six sibling lenses was. These are per-boundary, so the adversarial lane
+    can require the adversarial lens without the three lanes beside it inheriting
+    it. This field does not suppress `## Required Context`; the closure seeds are
+    the union.
+    """
+    contracts = boundary.get("contracts")
+    return tuple(str(item) for item in contracts) if isinstance(contracts, list) else ()
+
+
+def _lens_domain(boundary: dict[str, object]) -> str | None:
+    """Return which artefact a fan-out grades -- shipped `code` or a written `plan`.
+
+    The value doubles as the fan-out flag, so there is no second field that has
+    to agree with it. Lenses shared by both domains (architecture review, test
+    review) read it to pick their output vocabulary: `code` means the severity
+    tags in `rules/code-review.md`, `plan` means the scores in `rules/scoring.md`.
+    """
+    domain = boundary.get("lens_fanout")
+    return domain if isinstance(domain, str) and domain in LENS_DOMAINS else None
+
+
+def _lens_routes(payload: dict[str, object]) -> dict[str, tuple[str, ...]]:
+    """Return each lens's declared minimum-route set, keyed by lens path."""
+    floors = payload.get("lens_routes")
+    if not isinstance(floors, dict):
+        return {}
+    return {
+        str(lens): tuple(str(route) for route in routes)
+        for lens, routes in floors.items()
+        if isinstance(routes, list)
+    }
+
+
+def _route_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
+    routes = payload.get("routes")
+    if not isinstance(routes, list):
+        return {}
+    return {
+        str(item.get("name")): item
+        for item in routes
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
