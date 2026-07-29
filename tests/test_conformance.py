@@ -570,6 +570,18 @@ class ConformanceTests(unittest.TestCase):
         # Its result must be recordable, or "the audit ran and was clean" is
         # indistinguishable from "the audit never ran".
         self.assertIn("Resolved-state audit:", local)
+        # STANDARD tier hands the fan-out off-thread and gets back a list of the
+        # steps the main thread still owns. The audit is mandatory on that tier,
+        # so a hand-back list without it is the same unreachable-lane shape the
+        # lens menus already had: named by the procedure that requires it, absent
+        # from the enumeration the caller actually follows.
+        handback = re.search(
+            r"^5\. Return confirmed.*?(?=^## )",
+            (ROOT / "skills/review/references/workflow-review.md").read_text(),
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(handback, "workflow-review.md lost its hand-back step")
+        self.assertIn("review.local-resolved-audit", handback.group(0))
 
     def test_missing_test_findings_name_the_assertion_that_locks_them(self) -> None:
         """A coverage finding has to say what would fail.
