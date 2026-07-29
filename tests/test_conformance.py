@@ -219,6 +219,62 @@ class ConformanceTests(unittest.TestCase):
                 ]
                 self.assertEqual([], escalation_gated)
 
+    def test_every_classified_reviewer_can_actually_be_dispatched(self) -> None:
+        """Each lens the classifier can trigger must resolve at every fan-out.
+
+        The classifier's Review Domain table is the contract between "which
+        reviewers apply" and "which reviewers can run". Nothing previously tied
+        the two together, and they drifted: the adversarial lens was named by
+        `--adversarial` and by security-sensitive detection in the PR and local
+        procedures, appeared in neither the classifier table nor any fan-out
+        menu, and so was unroutable at every review boundary. A test pinning one
+        lens to one boundary would not have caught that and will not catch the
+        next omission, so assert the whole mapping instead.
+        """
+        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        table = re.search(
+            r"^\| Review Domain \| Trigger \| Skill \|.*?(?=\n\n)",
+            classifier,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(table, "classify-diff.md lost its Review Domain table")
+        triggerable = {
+            f"skills/{cells[2].strip('`')}"
+            for cells in _markdown_table_rows(table.group(0))
+            if cells[0] != "Review Domain"
+        }
+        for path in sorted(triggerable):
+            self.assertTrue(
+                (ROOT / path).is_file(), f"classifier names a missing lens: {path}"
+            )
+        # Code-judo is the one classified domain that is deliberately not a
+        # fan-out lens: it returns unscored proposals and dispatches at its own
+        # boundary, which the orchestration references state explicitly.
+        own_boundary = {"skills/review/references/code-judo.md"}
+        self.assertLessEqual(own_boundary, triggerable)
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        fanouts = [
+            boundary
+            for boundary in payload["dispatch_boundaries"]
+            if boundary.get("lens_fanout", False)
+        ]
+        self.assertTrue(fanouts, "no lens fan-out boundaries left to check")
+        for boundary in fanouts:
+            with self.subTest(boundary=boundary["id"]):
+                menu = set(boundary.get("lenses", []))
+                # Containment, not equality. A boundary is allowed to offer a
+                # narrower menu than the classifier can trigger — that is what
+                # scoping a lane means. What is never allowed is a menu entry
+                # the classifier cannot name, which is a lane no classification
+                # can reach.
+                self.assertLessEqual(menu, triggerable - own_boundary)
+                # Adversarial is pinned separately because breadth is not the
+                # property that failed. It was named by `--adversarial` and by
+                # security-sensitive detection in every review procedure while
+                # being absent from every menu, so it has to be dispatchable
+                # wherever findings lenses fan out, at any tier.
+                self.assertIn("skills/review/references/adversarial.md", menu)
+
     def test_batch_code_judo_suppression_travels_with_the_dispatch(self) -> None:
         # Batch review is the sole exception to "dispatch judo on Code-judo lane:
         # YES". A per-PR worker sees only its payload, so the suppression has to

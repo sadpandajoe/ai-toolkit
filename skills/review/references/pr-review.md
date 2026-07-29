@@ -88,6 +88,7 @@ Moderate:
 - Launch only the triggered reviewer lenses needed by the diff classification.
   Triggered lenses come from this set: [code-quality.md](code-quality.md),
   [deep-quality.md](deep-quality.md),
+  [adversarial.md](adversarial.md),
   [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
   [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
   [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md),
@@ -102,6 +103,7 @@ Standard:
 - Launch triggered reviewer lenses in parallel.
   Triggered lenses come from this set: [code-quality.md](code-quality.md),
   [deep-quality.md](deep-quality.md),
+  [adversarial.md](adversarial.md),
   [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
   [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
   [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md),
@@ -112,6 +114,16 @@ Standard:
   security-sensitive, adversarial, or substantial multi-system lanes.
 - Optional second opinion when available.
 - Adversarial lane only with `--adversarial` or security-sensitive detection.
+  It is one of the fan-out lenses above, so dispatch it like any other — its own
+  `--lens` selection, on `deep-review` per the route rule above. That rule is
+  orchestrator guidance, not a manifest constraint: these boundaries permit both
+  routes for every lens, so resolving adversarial on `review` succeeds and simply
+  buys a cheaper pass than the lane is worth. Choose the route here. On a
+  TRIVIAL PR the flag escalates the tier to Moderate, because TRIVIAL runs a
+  single pass with no fan-out boundary to launch it from; security-sensitive
+  detection escalates to Standard under the existing rule. Its findings are
+  severity-tagged, so they merge with the other lanes rather than getting their
+  own section — that split belongs to Code-judo alone.
 
 **Deep review mode.** When `classify-diff` reports **Deep-tier escalation: YES**
 (`ultra`/`max` effort or a deep-tier phrase — that skill owns the phrase list),
@@ -128,8 +140,7 @@ Code-judo returns unscored restructuring **proposals**; surface them in their ow
 section, not the scored findings/component table.
 
 When the payload carries `Batch mode: Code-judo suppressed` (set by the batch
-orchestrator in `pr-batch.md` — named without a link because every Markdown link
-inside a fan-out span is treated as a selectable lens), skip the judo lane even
+orchestrator in [pr-batch.md](pr-batch.md)), skip the judo lane even
 on `Code-judo lane: YES`,
 run the findings lenses only, and record the proposals slot as
 `suppressed (batch)` rather than `none`.

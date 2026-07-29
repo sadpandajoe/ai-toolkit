@@ -68,6 +68,7 @@ The `review-pr` workflow uses `pr-review`, `pr-batch`, and `pr-posting` for PR-s
 
 - [references/code-quality.md](references/code-quality.md)
 - [references/deep-quality.md](references/deep-quality.md)
+- [references/adversarial.md](references/adversarial.md)
 - [../testing/references/review-tests.md](../testing/references/review-tests.md)
 - [../testing/references/review-testplan.md](../testing/references/review-testplan.md)
 - [../plan-review/references/architecture.md](../plan-review/references/architecture.md)

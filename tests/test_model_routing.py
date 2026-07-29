@@ -16,10 +16,12 @@ from aitk.model_routing import (
     _marker_span_text,
     _safe_path,
     _valid_worker,
+    load_model_routing,
     parse_claude_output,
     parse_codex_output,
     resolve_route,
     run_model,
+    validate_dispatch_boundaries,
     validate_model_routing,
     worker_prompt,
 )
@@ -31,7 +33,7 @@ MODEL_CATALOG = json.loads((ROOT / "interfaces/model-routing.json").read_text())
 ]
 
 
-def _lenses_named_at(boundary: dict[str, object]) -> list[str]:
+def _links_named_at(boundary: dict[str, object]) -> list[str]:
     """Repo-relative Markdown links inside one boundary's own marker span."""
     document = Path(str(boundary["path"]))
     span = _marker_span_text(
@@ -42,6 +44,18 @@ def _lenses_named_at(boundary: dict[str, object]) -> list[str]:
         for target in re.findall(r"\]\(([^)]+\.md)\)", span)
     }
     return sorted(path for path in named if (ROOT / path).is_file())
+
+
+def _lenses_named_at(boundary: dict[str, object]) -> list[str]:
+    """The boundary's declared reviewer menu -- the manifest, not the prose.
+
+    A span link is no longer proof of lens-hood: the manifest declares the menu
+    and `validate_dispatch_boundaries` holds the prose to it, which is what lets
+    a fan-out span link an ordinary shared reference without that reference
+    becoming a selectable lane.
+    """
+    lenses = boundary.get("lenses")
+    return sorted(lenses) if isinstance(lenses, list) else []
 
 
 def _a_lens_named_at(boundary: dict[str, object]) -> str | None:
@@ -277,9 +291,10 @@ class ModelRoutingTests(unittest.TestCase):
         # boundaries nobody thought to pin, including ones added later.
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
         for boundary in payload["dispatch_boundaries"]:
-            named = set(_lenses_named_at(boundary))
-            if not named:
+            linked = set(_links_named_at(boundary))
+            if not linked:
                 continue
+            menu = set(_lenses_named_at(boundary))
             fanout = bool(boundary.get("lens_fanout", False))
             for route in boundary["routes"]:
                 with self.subTest(boundary=boundary["id"], route=route):
@@ -289,14 +304,20 @@ class ModelRoutingTests(unittest.TestCase):
                                 ROOT, route, "claude", boundary=boundary["id"]
                             ).required_contracts
                         )
-                        self.assertEqual(set(), named - contracts)
+                        self.assertEqual(set(), linked - contracts)
                         continue
                     # A fan-out marker names a menu, and one dispatch takes one
                     # item off it. The starvation invariant still has to hold per
                     # lens: every lens the span offers must be selectable and
                     # must arrive when selected. Asserting only the union would
                     # go green on a filter that silently dropped the choice.
-                    for lens in sorted(named):
+                    #
+                    # Non-menu links in the span are the other half. They are
+                    # shared references, so narrowing must leave them alone --
+                    # the failure this catches is a filter that treats every
+                    # link as a sibling to drop and starves all eight workers of
+                    # the same document at once.
+                    for lens in sorted(menu):
                         with self.subTest(lens=lens):
                             contracts = set(
                                 resolve_route(
@@ -308,7 +329,8 @@ class ModelRoutingTests(unittest.TestCase):
                                 ).required_contracts
                             )
                             self.assertIn(lens, contracts)
-                            self.assertEqual(set(), (named - {lens}) & contracts)
+                            self.assertEqual(set(), (menu - {lens}) & contracts)
+                            self.assertEqual(set(), (linked - menu) - contracts)
 
     def test_marker_span_scopes_dependencies_to_one_dispatch(self) -> None:
         document = "\n".join(
@@ -412,6 +434,81 @@ class ModelRoutingTests(unittest.TestCase):
                 "review.pr-batch",
                 lens="skills/review/references/pr-review.md",
             )
+
+    def test_declared_lens_menu_and_dispatch_prose_must_agree(self) -> None:
+        # The menu used to be implicit: whatever the span linked was a lens.
+        # Declaring it in the manifest only helps if the two are held together,
+        # and each direction of drift fails differently — a manifest-only lens
+        # cannot be dispatched, a prose-only lens is silently demoted to a
+        # shared dependency and reaches every worker at once. Neither shows up
+        # in a passing route resolution.
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            payload = json.loads(manifest.read_text())
+            boundary = next(
+                item
+                for item in payload["dispatch_boundaries"]
+                if item["id"] == "review.pr-standard"
+            )
+            self.assertEqual([], validate_dispatch_boundaries(root, payload))
+            lens = "skills/review/references/adversarial.md"
+
+            declared_only = json.loads(manifest.read_text())
+            document = root / "skills/review/references/pr-review.md"
+            original = document.read_text()
+            document.write_text(
+                original.replace("  [adversarial.md](adversarial.md),\n", "", 1)
+            )
+            problems = validate_dispatch_boundaries(root, declared_only)
+            self.assertIn(
+                f"declared lens is not linked in the dispatch span: "
+                f"review.pr-moderate/{lens}",
+                problems,
+            )
+            document.write_text(original)
+
+            prose_only = json.loads(manifest.read_text())
+            for item in prose_only["dispatch_boundaries"]:
+                if item["id"] == "review.pr-standard":
+                    item["lenses"] = [
+                        value for value in item["lenses"] if value != lens
+                    ]
+            problems = validate_dispatch_boundaries(root, prose_only)
+            self.assertIn(
+                f"reviewer lens linked in the dispatch span but not declared: "
+                f"review.pr-standard/{lens}",
+                problems,
+            )
+            # And the manifest-only half is unroutable rather than mis-scoped:
+            # dropping it from the menu takes the lane away entirely.
+            manifest.write_text(json.dumps(prose_only))
+            with self.assertRaisesRegex(ModelRouteError, "is not named at boundary"):
+                resolve_route(root, "deep-review", "claude", boundary["id"], lens=lens)
+
+    def test_lens_menu_shape_is_tied_to_the_fanout_flag(self) -> None:
+        # A menu on a boundary that refuses `--lens` describes a selection
+        # nothing can make, and a one-entry menu is a fan-out with nothing to
+        # choose between — both are half-finished edits rather than designs.
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            for identifier, mutation in (
+                ("review.pr-batch", {"lenses": ["skills/review/SKILL.md"]}),
+                ("review.pr-standard", {"lenses": ["skills/review/SKILL.md"]}),
+                ("review.pr-standard", {"lenses": ["skills/review/nonexistent.md"] * 2}),
+                ("review.pr-standard", {"lenses": []}),
+            ):
+                with self.subTest(boundary=identifier, mutation=mutation):
+                    payload = json.loads(manifest.read_text())
+                    for item in payload["dispatch_boundaries"]:
+                        if item["id"] == identifier:
+                            item.update(mutation)
+                    manifest.write_text(json.dumps(payload))
+                    with self.assertRaisesRegex(
+                        ModelRouteError, "invalid dispatch boundary lens menu"
+                    ):
+                        load_model_routing(root)
 
     def test_every_grading_lane_carries_the_code_review_contract(self) -> None:
         """A lane that emits severity-tagged findings must ship its calibration.

@@ -50,6 +50,7 @@ Those three phrases, plus `max`/`ultra` effort, are the *only* things that set `
 | Code quality | Always | `review/references/code-quality.md` |
 | Deep quality | Refactor-shaped diff (see step 3a) OR any STANDARD-tier diff; always under deep-tier escalation or a bare "deep quality" lens ask. Strict structural findings on the cheap `review` route. | `review/references/deep-quality.md` |
 | Code-judo | Deep-tier escalation OR title matches `^refactor` OR an explicit Code-judo ask. Generative restructuring proposal — routes to `deep-review` (see review SKILL Invocation). A `^refactor` title auto-fires; the refactor **shape signal alone** (step 3a, no `^refactor` title) is **advisory** — recommend it, do not auto-fire. | `review/references/code-judo.md` |
+| Adversarial | Security-sensitive diff (step 4) OR an explicit `--adversarial` / red-team ask. Severity-tagged findings on the `deep-review` route. | `review/references/adversarial.md` |
 | Architecture | STANDARD + logic changes in source files; MODERATE only when ownership/design placement is unclear | `plan-review/references/architecture.md` |
 | Tests | MODERATE or STANDARD + test files exist in diff OR test files exist for changed source files | `testing/references/review-tests.md` |
 | Test plan | MODERATE or STANDARD + behavior changed AND no test files exist in diff AND no test files found for changed source files | `testing/references/review-testplan.md` |
@@ -73,6 +74,8 @@ Rules:
 - Frontend and Backend are additive for MODERATE/STANDARD diffs — both can trigger on the same diff.
 - Tests and Test Plan are mutually exclusive — if tests exist, use Tests; if not, use Test Plan.
 - Security-sensitive diffs escalate to STANDARD handling even when initial size signals look MODERATE.
+- **Adversarial is a findings lens, not a separate workflow.** It sits inside the reviewer fan-out on the `deep-review` route, so its `[major]`/`[minor]` findings merge and dedupe with the other lanes — unlike Code-judo, which returns unscored proposals at its own boundary. The `review-code-adversarial` workflow is a different thing: a whole review run made of adversarial lanes. Triggering this row does not start that workflow.
+- The Adversarial row fires on any tier — a one-line auth change is exactly the TRIVIAL diff that wants it. Local review dispatches it at its own TRIVIAL fan-out; PR review's Trivial path is a single pass with no fan-out boundary, so that procedure bumps an explicitly-asked adversarial PR to Moderate rather than dropping the lane. Security sensitivity escalates to STANDARD under the rule above either way.
 
 4. **Assess security sensitivity**: Flag as security-sensitive if the diff touches:
    - Authentication or authorization logic

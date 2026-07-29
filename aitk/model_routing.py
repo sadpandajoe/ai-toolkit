@@ -188,6 +188,37 @@ def _safe_dispatch_path(root: Path, value: object) -> Path | None:
     return None
 
 
+def _valid_lens_menu(root: Path, boundary: dict[str, object]) -> bool:
+    """Check the declared reviewer menu against the boundary's fan-out flag.
+
+    A fan-out boundary must name at least two distinct, existing reviewer lens
+    documents; a single-entry menu is a fan-out with nothing to select between
+    and is almost always a half-finished edit. A boundary that does not fan out
+    must not carry a menu at all -- `resolve_route` rejects `--lens` there, so a
+    menu would describe a selection nothing can make.
+    """
+    lenses = boundary.get("lenses")
+    if not boundary.get("lens_fanout", False):
+        return lenses is None
+    if not isinstance(lenses, list) or len(lenses) < 2:
+        return False
+    if len(set(map(repr, lenses))) != len(lenses):
+        return False
+    for lens in lenses:
+        if not isinstance(lens, str) or not lens.endswith(".md"):
+            return False
+        safe = _safe_path(root, lens)
+        if safe is None or not _contract_dependency_allowed(safe):
+            return False
+    return True
+
+
+def _lens_menu(boundary: dict[str, object]) -> tuple[str, ...]:
+    """Return the boundary's declared reviewer menu, empty when it does not fan out."""
+    lenses = boundary.get("lenses")
+    return tuple(lenses) if isinstance(lenses, list) else ()
+
+
 def _route_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
     routes = payload.get("routes")
     if not isinstance(routes, list):
@@ -436,7 +467,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             not isinstance(boundary, dict)
             or not {"id", "path", "count", "routes"} <= set(boundary)
             or not set(boundary)
-            <= {"id", "path", "count", "routes", "unscored", "lens_fanout"}
+            <= {"id", "path", "count", "routes", "unscored", "lens_fanout", "lenses"}
             or type(boundary.get("unscored", False)) is not bool
             or type(boundary.get("lens_fanout", False)) is not bool
         ):
@@ -461,6 +492,14 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ):
             problems.append(f"invalid dispatch boundary: {identifier}")
             continue
+        # A fan-out boundary declares its reviewer menu here rather than leaving
+        # it implicit in the dispatch prose. The span scan below still has to
+        # agree with this list, but the manifest is what `resolve_route` checks
+        # `--lens` against, so an omitted lens is a rejected dispatch instead of
+        # a lane that quietly does not exist.
+        if not _valid_lens_menu(root, boundary):
+            problems.append(f"invalid dispatch boundary lens menu: {identifier}")
+            continue
         for route_name in routes_value:
             route_item = _route_map(payload).get(route_name, {})
             responsibility = str(route_item.get("responsibility"))
@@ -479,6 +518,8 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                     str(boundary.get("path")),
                     responsibility,
                     identifier,
+                    None,
+                    _lens_menu(boundary),
                 )
             except ModelRouteError as error:
                 problems.append(str(error))
@@ -739,6 +780,63 @@ def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list
             problems.append(
                 f"route exemption does not precede a dispatch: {key[0]}/{key[1]}"
             )
+    problems.extend(_lens_menu_problems(root, declared))
+    return problems
+
+
+def _span_link_targets(root: Path, boundary: dict[str, object]) -> set[str]:
+    """Resolve the Markdown links inside one boundary's marker span."""
+    source = root / str(boundary["path"])
+    try:
+        content = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return set()
+    targets: set[str] = set()
+    span = _marker_span_text(content, str(boundary["id"]))
+    for match in MARKDOWN_LINK.finditer(span):
+        target = match.group(1).strip().strip("<>").split("#", 1)[0]
+        if not target or "://" in target:
+            continue
+        try:
+            relative = (source.parent / target).resolve().relative_to(root.resolve())
+        except (OSError, ValueError):
+            continue
+        targets.add(relative.as_posix())
+    return targets
+
+
+def _lens_menu_problems(root: Path, declared: dict[str, dict[str, object]]) -> list[str]:
+    """Report drift between declared reviewer menus and the dispatch prose.
+
+    Both directions matter and they fail differently. A lens the manifest names
+    but the span does not link cannot be dispatched -- `_contract_closure` fails
+    closed on it, but only when someone happens to select it. A lens the span
+    links but the manifest omits is worse and quieter: narrowing skips it, so it
+    rides into *every* worker's closure as a shared dependency and each reviewer
+    runs under two lens contracts at once. Neither shows up in a passing route
+    resolution, so both are caught here instead.
+    """
+    problems: list[str] = []
+    every_lens = {
+        lens
+        for boundary in declared.values()
+        for lens in _lens_menu(boundary)
+    }
+    for identifier, boundary in sorted(declared.items()):
+        menu = set(_lens_menu(boundary))
+        if not menu:
+            continue
+        linked = _span_link_targets(root, boundary)
+        for missing in sorted(menu - linked):
+            problems.append(
+                f"declared lens is not linked in the dispatch span: "
+                f"{identifier}/{missing}"
+            )
+        for undeclared in sorted((linked & every_lens) - menu):
+            problems.append(
+                f"reviewer lens linked in the dispatch span but not declared: "
+                f"{identifier}/{undeclared}"
+            )
     return problems
 
 
@@ -777,6 +875,7 @@ def resolve_route(
         # the flag does not match -- the same quiet-shrink failure the fan-out
         # requirement exists to prevent.
         fans_out = boundary_item.get("lens_fanout", False)
+        menu = _lens_menu(boundary_item)
         if fans_out and lens is None:
             raise ModelRouteError(
                 f"boundary {boundary} fans out over reviewer lenses; "
@@ -787,8 +886,18 @@ def resolve_route(
                 f"boundary {boundary} does not fan out over reviewer lenses; "
                 "--lens is not accepted here"
             )
+        if lens is not None and lens not in menu:
+            raise ModelRouteError(
+                f"lens {lens} is not named at boundary {boundary}; "
+                f"declared lenses: {', '.join(menu)}"
+            )
         required_contracts = _required_contract_paths(
-            root, boundary_item["path"], str(item["responsibility"]), boundary, lens
+            root,
+            boundary_item["path"],
+            str(item["responsibility"]),
+            boundary,
+            lens,
+            menu,
         )
         unscored = bool(boundary_item.get("unscored", False))
     else:
@@ -846,6 +955,7 @@ def _required_contract_paths(
     responsibility: str,
     boundary_id: str,
     lens: str | None = None,
+    lens_menu: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     """Derive the exact inline contract closure for one dispatch boundary."""
     path = Path(boundary_path)
@@ -902,6 +1012,7 @@ def _required_contract_paths(
         responsibility,
         boundary_id,
         lens,
+        lens_menu,
     )
 
 
@@ -912,6 +1023,7 @@ def _contract_closure(
     responsibility: str,
     boundary_id: str,
     lens: str | None = None,
+    lens_menu: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     """Follow required and review-lens Markdown dependencies in stable order."""
     root = root.resolve()
@@ -972,17 +1084,18 @@ def _contract_closure(
             )
         # A fan-out marker names every lens the orchestrator may pick from, but
         # one dispatch launches exactly one lens. Without this filter each worker
-        # is handed all seven sibling reviewer contracts and reviews under
+        # is handed all eight sibling reviewer contracts and reviews under
         # conflicting instructions.
         #
-        # Only the span's *links* are narrowed. A lens menu is written as a list
-        # of Markdown links, so that is the set with siblings to drop; a
-        # backticked path in the surrounding prose is a shared dependency of the
-        # lane rather than a menu entry, and dropping it would delete the same
-        # contract from all seven closures at once. Required Context is likewise
+        # The menu is the manifest's declared `lenses` list, not "whatever the
+        # span links to". Only a span link that the manifest names as a lens of
+        # *this* boundary is narrowed away; every other span link stays in the
+        # closure as an ordinary shared dependency. Required Context is likewise
         # never narrowed -- it holds the boundary document's own shared rules.
-        # The invariant a fan-out span must hold is therefore the narrow one:
-        # every Markdown link inside it is a lens.
+        # `validate_dispatch_boundaries` keeps the two in step, so a lens the
+        # doc gained but the manifest did not is a check-time failure rather
+        # than a contract silently demoted to a dependency of all eight workers.
+        menu = frozenset(lens_menu)
         lens_selected = False
         for raw_target, is_link, from_span in candidates:
             target_text = raw_target.strip().strip("<>").split("#", 1)[0]
@@ -1023,8 +1136,8 @@ def _contract_closure(
                     and resolved.suffix == ".md"
                 ):
                     relative_text = relative.as_posix()
-                    if lens is not None and from_span and is_link:
-                        if relative_text != lens:
+                    if from_span and is_link and relative_text in menu:
+                        if lens is not None and relative_text != lens:
                             break
                         lens_selected = True
                     if relative_text not in seen and relative_text not in queued:
@@ -1043,8 +1156,9 @@ def _contract_closure(
                     raise ModelRouteError(
                         f"missing contract dependency from {value}: {target_text}"
                     )
-        # Fail closed: a lens the dispatch site never names is not a lane this
-        # boundary can launch, so silently returning the unnarrowed closure would
+        # Fail closed: `resolve_route` already rejects a lens outside the
+        # declared menu, so reaching here means the menu named a lens the
+        # dispatch prose does not link. Returning the unnarrowed closure would
         # reintroduce exactly the leak the filter exists to stop.
         if lens is not None and scan_span and not lens_selected:
             raise ModelRouteError(
