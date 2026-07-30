@@ -19,6 +19,13 @@ Detail level scales with complexity and findings.
 
 Reasoning, confidence, and internal evidence shown to the user are not posted to GitHub. GitHub gets clean finding descriptions only.
 
+- **Severity labels are internal metadata.** Keep the canonical `[major]`,
+  `[minor]`, and `[nitpick]` tags — plus aliases such as `[critical]` or
+  `[nit]` — in local synthesis and summaries. Never include scores or confidence
+  anywhere in posted GitHub review prose. Never include severity labels in
+  inline comments, top-level comments, or review bodies unless the user
+  explicitly requests labeled comments.
+
 Use `gh api repos/{owner}/{repo}/pulls/{number}/files --paginate` for accurate diff positions.
 
 ## Voice
