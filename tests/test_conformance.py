@@ -50,6 +50,62 @@ class ConformanceTests(unittest.TestCase):
     def test_unrelated_small_request_does_not_force_a_workflow(self) -> None:
         self.assertIsNone(route_workflow(ROOT, "What does this function return?"))
 
+    def test_pr_review_comment_requests_use_specific_triggers(self) -> None:
+        cases = {
+            "Add review comments to pull request 42": (
+                "add review comments to pull request"
+            ),
+            "Post PR review comments on pull request 42": "post pr review comments",
+        }
+        for request, trigger in cases.items():
+            with self.subTest(request=request):
+                match = route_workflow(ROOT, request)
+                self.assertIsNotNone(match)
+                self.assertEqual("review-pr", match.workflow.name)
+                self.assertEqual(trigger, match.trigger)
+
+    def test_generic_pr_comment_requests_remain_unrouted(self) -> None:
+        for request in (
+            "Add comments to pull request 42",
+            "Post comments on PR 42",
+        ):
+            with self.subTest(request=request):
+                self.assertIsNone(route_workflow(ROOT, request))
+
+    def test_pr_posting_keeps_severity_labels_internal(self) -> None:
+        posting = (
+            ROOT / "skills/review/references/pr-posting.md"
+        ).read_text()
+        normalized_posting = " ".join(posting.split())
+        self.assertIn("Severity labels are internal metadata", posting)
+        for label in (
+            "`[major]`",
+            "`[minor]`",
+            "`[nitpick]`",
+            "`[critical]`",
+            "`[nit]`",
+        ):
+            with self.subTest(label=label):
+                self.assertIn(label, posting)
+        self.assertIn(
+            "Never include scores or confidence anywhere in posted GitHub "
+            "review prose",
+            normalized_posting,
+        )
+        self.assertIn(
+            "Never include severity labels in inline comments, top-level comments, "
+            "or review bodies unless the user explicitly requests labeled comments",
+            normalized_posting,
+        )
+        for review_surface in (
+            "inline comments",
+            "top-level comments",
+            "review bodies",
+        ):
+            with self.subTest(review_surface=review_surface):
+                self.assertIn(review_surface, normalized_posting)
+        self.assertIn("explicitly requests labeled comments", posting)
+
     def test_optional_pgm_requests_route_only_when_enabled(self) -> None:
         request = "Create a current program health report"
         self.assertIsNone(route_workflow(ROOT, request))
