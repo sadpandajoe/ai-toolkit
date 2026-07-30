@@ -115,10 +115,11 @@ Standard:
 - Optional second opinion when available.
 - Adversarial lane only with `--adversarial` or security-sensitive detection.
   It is one of the fan-out lenses above, so dispatch it like any other — its own
-  `--lens` selection, on `deep-review` per the route rule above. That rule is
-  orchestrator guidance, not a manifest constraint: these boundaries permit both
-  routes for every lens, so resolving adversarial on `review` succeeds and simply
-  buys a cheaper pass than the lane is worth. Choose the route here. On a
+  `--lens` selection, on `deep-review` per the route rule above. That rule is a
+  manifest constraint, not just orchestrator guidance: the boundary's `routes`
+  list permits both routes for the lane as a whole, but `lens_routes` declares a
+  per-lens floor, so `--lens adversarial` on `review` is rejected at resolve time
+  rather than buying a cheaper pass than the lane is worth. On a
   TRIVIAL PR the flag escalates the tier to Moderate, because TRIVIAL runs a
   single pass with no fan-out boundary to launch it from; security-sensitive
   detection escalates to Standard under the existing rule. Its findings are

@@ -26,13 +26,17 @@ when at least three independent reviewer lanes trigger.
    in fresh context. A verifier must read the cited code and attempt to refute
    the claim. Nitpicks may pass through without a verifier.
 5. Return confirmed and refuted arrays only. The main thread writes durable
-   review state, applies fixes, re-verifies, runs the **resolved-state audit**
-   at the `review.local-resolved-audit` boundary once the fix queue is drained,
-   and emits the Review Gate. That audit is mandatory on this tier
-   ([local-review.md](local-review.md)), so it belongs in this hand-back list:
-   an off-thread fan-out that enumerates the remaining main-thread steps and
-   omits it is how the lane silently stops running on exactly the reviews that
-   require it.
+   review state, applies fixes, re-verifies, and emits the Review Gate.
+   On **`review-code`** that hand-back has one more step: run the
+   **resolved-state audit** at the `review.local-resolved-audit` boundary once
+   the local fix queue is drained. It is mandatory on that path
+   ([local-review.md](local-review.md)), so it belongs in this list — an
+   off-thread fan-out that enumerates the remaining main-thread steps and omits
+   it is how the lane silently stops running on exactly the reviews that require
+   it. On **`review-pr`** it does not run: that boundary's contract reads the
+   local Review Record and fix queue, and a PR review writes neither, so
+   requiring it there names a step whose inputs do not exist. The PR path closes
+   out by posting per [pr-posting.md](pr-posting.md) instead.
 
 ## Bounds
 

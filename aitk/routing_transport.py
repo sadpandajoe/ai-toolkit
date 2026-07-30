@@ -20,8 +20,10 @@ from typing import Callable
 from aitk.routing_policy import (
     BLOCKED_EXIT,
     DEFAULT_TIMEOUT,
+    DOMAIN_SEVERITIES,
     FAILED_EXIT,
     ModelRouteError,
+    PLAN_SCORE_PATTERN,
     PREFLIGHT_TIMEOUT,
     PROMPT_LIMIT,
     ResolvedRoute,
@@ -40,6 +42,15 @@ def worker_prompt(
     workspace: Path | None = None,
 ) -> str:
     restrictions = json.dumps(route.restrictions, separators=(",", ":"))
+    # The vocabulary the result is checked against, stated to the worker that has
+    # to produce it. `_domain_problem` rejects an untagged or unscored fan-out
+    # result, and a rule enforced without being stated is a trap rather than a
+    # contract.
+    grading = "-"
+    if route.lens_domain is not None:
+        grading = "/".join(DOMAIN_SEVERITIES[route.lens_domain])
+        if route.lens_domain == "plan":
+            grading += " + Score: X/10 in summary"
     prefix = (
         "AI_TOOLKIT_MODEL_ROUTE_V1\n"
         f"route={route.name}\nboundary={route.boundary}\n"
@@ -50,6 +61,7 @@ def worker_prompt(
         # always emitted, including as `-`, so a worker never has to distinguish
         # "not a fan-out lane" from "header field the runner forgot".
         f"lens={route.lens or '-'}\nlens_domain={route.lens_domain or '-'}\n"
+        f"grading={grading}\n"
         f"workspace={workspace if workspace is not None else '<caller-workspace>'}\n"
         "INLINE_CONTRACTS_BEGIN\n"
     )
@@ -82,6 +94,44 @@ def _valid_worker(value: object) -> bool:
             for key in ("findings", "verification")
         )
     )
+
+
+def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | None:
+    """Check a fan-out lane's result against its lens domain's grading vocabulary.
+
+    `_valid_worker` only proves the envelope is well-formed: every string passes.
+    But the domain decides how the caller *consumes* the result -- code findings
+    dedupe and escalate by `[major]`/`[minor]`/`[nitpick]`, plan findings iterate
+    against a `X/10` score -- so an untagged or cross-tagged finding is silently
+    dropped by the aggregator rather than rejected here. Enforcing the vocabulary
+    at the boundary is what makes `lens_domain` more than prompt prose.
+
+    Only `completed` results are graded. A `blocked` or `failed` worker is
+    reporting why it could not review, and demanding severity tags on that
+    explanation would turn a legible failure into an unparseable one.
+    """
+    if route.lens_domain is None or result.get("status") != "completed":
+        return None
+    tags = DOMAIN_SEVERITIES[route.lens_domain]
+    untagged = [
+        item
+        for item in result["findings"]
+        if not any(tag in str(item) for tag in tags)
+    ]
+    if untagged:
+        return (
+            f"{route.lens_domain}-domain boundary {route.boundary} returned "
+            f"{len(untagged)} finding(s) without a {'/'.join(tags)} tag; "
+            f"the first is: {str(untagged[0])[:120]}"
+        )
+    if route.lens_domain == "plan" and not PLAN_SCORE_PATTERN.search(
+        str(result["summary"])
+    ):
+        return (
+            f"plan-domain boundary {route.boundary} returned no X/10 score in its "
+            "summary; plan review iterates against that score"
+        )
+    return None
 
 
 def parse_codex_output(output: str, last_message: str) -> dict[str, object]:
@@ -498,6 +548,9 @@ def run_model(
                     f"{len(result['findings'])} findings; this lane must return "
                     "an empty findings array"
                 )
+            domain_problem = _domain_problem(route, result)
+            if domain_problem is not None:
+                raise ModelRouteError(domain_problem)
         except (ModelRouteError, json.JSONDecodeError) as error:
             return 3, _outer(
                 route,

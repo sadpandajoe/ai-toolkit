@@ -31,6 +31,7 @@ from aitk.routing_policy import (
     SANDBOXES,
     _boundary_contracts,
     _lens_domain,
+    _lens_floors,
     _lens_menu,
     _load,
     _route_map,
@@ -128,6 +129,13 @@ def _lens_route_problems(
             not isinstance(lens, str)
             or not isinstance(allowed, list)
             or not allowed
+            # Element type first, and only then the duplicate and membership
+            # checks. `set(allowed)` raises on an unhashable member, so a floor
+            # written as `{"a.md": [{"route": "deep-review"}]}` used to crash the
+            # validator with a TypeError instead of being reported as the
+            # malformed manifest it is -- fail-closed means a bad manifest gets a
+            # problem string, not a traceback.
+            or not all(isinstance(route, str) for route in allowed)
             or len(set(allowed)) != len(allowed)
             or any(route not in declared_routes for route in allowed)
         ):
@@ -142,6 +150,53 @@ def _lens_route_problems(
                     f"boundary {identifier} offers lens {lens} but allows none of "
                     f"its required routes: {', '.join(allowed)}"
                 )
+    return problems
+
+
+def _lens_floor_problems(root: Path, payload: dict[str, object]) -> list[str]:
+    """Check that every fan-out menu contains its domain's declared lens floor.
+
+    Containment against the classifier's universe plus completeness across the
+    union of all menus leaves one hole: drop a lens from one boundary and the
+    sibling menus keep the union whole, so the lane is unreachable in exactly one
+    workflow and nothing complains. The floor closes it per boundary.
+    """
+    raw = payload.get("lens_floors")
+    if raw is None:
+        return []
+    if not isinstance(raw, dict):
+        return ["lens_floors must be an object"]
+    problems: list[str] = []
+    floors = _lens_floors(payload)
+    for domain, declared in raw.items():
+        if (
+            not isinstance(domain, str)
+            or domain not in LENS_DOMAINS
+            or not isinstance(declared, list)
+            or not declared
+            or not all(isinstance(lens, str) for lens in declared)
+            or len(set(declared)) != len(declared)
+            or any(
+                _safe_dispatch_path(root, lens) is None for lens in declared
+            )
+        ):
+            problems.append(f"invalid lens floor: {domain}")
+    boundaries = payload.get("dispatch_boundaries")
+    if not isinstance(boundaries, list):
+        return problems
+    for boundary in boundaries:
+        if not isinstance(boundary, dict):
+            continue
+        domain = _lens_domain(boundary)
+        floor = floors.get(domain) if domain is not None else None
+        if not floor or f"invalid lens floor: {domain}" in problems:
+            continue
+        missing = sorted(set(floor) - set(_lens_menu(boundary)))
+        if missing:
+            problems.append(
+                f"boundary {boundary.get('id')} omits {domain} lens floor entries: "
+                f"{', '.join(missing)}"
+            )
     return problems
 
 
@@ -201,6 +256,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "dispatch_boundaries",
             "dispatch_exemptions",
             "lens_routes",
+            "lens_floors",
         }
         or type(payload.get("version")) is not int
         or payload.get("version") != 1
@@ -521,6 +577,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                 (identifier, tuple(str(route) for route in routes_value))
             )
     problems.extend(_lens_route_problems(payload, declared_routes, menu_owners))
+    problems.extend(_lens_floor_problems(root, payload))
     seen_exemptions: set[tuple[str, str]] = set()
     for exemption in exemptions_value:
         if not isinstance(exemption, dict) or set(exemption) != {

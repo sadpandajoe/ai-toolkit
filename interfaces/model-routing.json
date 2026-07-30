@@ -297,6 +297,25 @@
     "skills/review/references/adversarial.md": ["deep-review"],
     "skills/plan-review/references/architecture.md": ["deep-review"]
   },
+  "lens_floors": {
+    "code": [
+      "skills/review/references/code-quality.md",
+      "skills/review/references/deep-quality.md",
+      "skills/review/references/adversarial.md",
+      "skills/testing/references/review-tests.md",
+      "skills/testing/references/review-testplan.md",
+      "skills/plan-review/references/architecture.md",
+      "skills/plan-review/references/frontend.md",
+      "skills/plan-review/references/backend.md"
+    ],
+    "plan": [
+      "skills/plan-review/references/architecture.md",
+      "skills/plan-review/references/implementation.md",
+      "skills/plan-review/references/frontend.md",
+      "skills/plan-review/references/backend.md",
+      "skills/testing/references/review-testplan.md"
+    ]
+  },
   "dispatch_exemptions": [
     {"path": "skills/review/references/adversarial-orchestration.md", "marker": "describes-reviewers-not-dispatch", "count": 1},
     {"path": "skills/agent-setup-maintainer/lessons.md", "marker": "historical-handoff-lesson", "count": 1},

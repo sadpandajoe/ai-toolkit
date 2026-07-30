@@ -84,11 +84,13 @@ Rules:
    - SQL queries or ORM calls with dynamic input
    - Secret management, token handling, or credential files
    - Permission checks or access control
-   - **Agent capability configuration** — which model, effort, permission mode, sandbox, or tool allow/deny list a routed worker runs under: `interfaces/model-routing.json`, `aitk/model_routing.py`, agent and subagent definitions, hook registrations, MCP server config
-   - **Worker context assembly** — the code or data deciding what a routed worker is allowed to read or receive, and any change that widens it
-   - **Trust boundary changes** — what a component is permitted to do: publish/push authorization, CI credentials, sandbox and read-only enforcement, fail-closed checks becoming advisory
+   - **Agent capability configuration** — which model, effort, permission mode, sandbox, or tool allow/deny list a routed worker runs under: `interfaces/model-routing.json`, `aitk/model_routing.py`, `aitk/routing_*.py`, agent and subagent definitions, hook registrations, MCP server config
+   - **Worker context assembly** — the code or data deciding what a routed worker is allowed to read or receive, and any change that widens it: `aitk/routing_closure.py`, `aitk/routing_markdown.py`
+   - **Trust boundary changes** — what a component is permitted to do: publish/push authorization, CI credentials, sandbox and read-only enforcement, fail-closed checks becoming advisory: `aitk/routing_manifest.py`, `aitk/routing_resolver.py`, `aitk/routing_transport.py`
 
    The last three rows exist because a change can be security-relevant while containing no auth code at all. A diff that lets a worker resolve a cheaper model, read a contract it was not granted, or skip a fail-closed check is a privilege change; the first six rows would all read `NO` on it. Those rows name concrete file signals rather than describing a category so a repo can check its own dispatch surfaces are covered rather than deciding case by case.
+
+   **Name the implementation, not only the entry point.** `aitk/model_routing.py` is a re-export facade; the fail-closed logic lives in the `aitk/routing_*.py` layers behind it. A predicate that names only the facade reads as covering the subsystem while every diff that actually changes a trust boundary lands in a file it never mentions — which is how the split that produced these layers classified itself as not security-sensitive. When a subsystem named here is decomposed, extend the signals in the same commit.
 
 ## Output
 

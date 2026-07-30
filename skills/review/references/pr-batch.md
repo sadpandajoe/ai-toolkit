@@ -9,9 +9,10 @@ Use when `review-pr` receives multiple PR numbers or `--all-open`.
 ## Required Context
 
 - [pr-review.md](pr-review.md) — the per-PR review procedure the worker applies
-- [classify-diff.md](classify-diff.md) — the per-PR worker is a nested
-  orchestrator, not a lens: it picks its own review team, so it needs the
-  classifier in its own contract closure rather than inheriting a team choice
+- [classify-diff.md](classify-diff.md) — the per-PR worker selects its own lens
+  set from its own payload, so it needs the classifier in its own contract
+  closure rather than inheriting a team choice. Selecting is not orchestrating:
+  the worker then *applies* those lenses itself (see *Dispatch* below)
 - [pr-posting.md](pr-posting.md) — read by the **main thread**, which owns posting
 
 These are declared here rather than left to the dispatch prose below. A link in
@@ -68,23 +69,47 @@ For each PR, dispatch a read-only subagent on `review`/`deep-review` with:
 
 The worker returns findings and a recommendation. It does not post them.
 
-Return contract:
+**The worker is a single reviewer, not a nested orchestrator.** A review route
+has no subagent capability — `plan` permission mode on Claude, a network-less
+`read-only` sandbox on Codex — so where [pr-review.md](pr-review.md) says
+*launch* the triggered lenses in parallel, that instruction belongs to a main
+thread. A batch worker instead **applies** each triggered lens procedure itself,
+sequentially, in its own single context, and returns one merged result. This is
+the whole reason the classifier is in its closure: it selects the lens set the
+worker then works through, not a fan-out it dispatches. A dispatch that tells
+the worker to fan out describes a lane no provider can run.
 
-```markdown
-PR:
-Title:
-Recommendation: approve | request-changes | comment
-Comment body: <the exact Markdown the main thread should post, or "none">
-Top finding:
-Finding counts:
-Residual risk:
-```
+Return contract — a routed worker returns the **generic worker envelope**
+(`status`, `summary`, `findings`, `verification`) and nothing else. There is no
+per-boundary result shape: the route runner validates every result against that
+schema with `additionalProperties: false`, so a boundary that declares its own
+Markdown hand-back describes a dispatch that always fails. The batch fields
+travel inside the envelope:
+
+- `status` — `completed`, or `blocked`/`failed` when the payload was unusable
+- `summary` — three labelled lines:
+
+  ```
+  PR: #<N> <title>
+  Recommendation: approve | request-changes | comment
+  Residual risk: <one line, or none>
+  ```
+
+- `findings` — canonical `[major]`/`[minor]`/`[nitpick]` findings, highest
+  severity first. The top finding is the first entry; the counts are the array.
+- `verification` — the checks the worker actually ran (pre-verdict gate, test
+  evidence), one per entry.
+
+The worker returns no comment body. The main thread renders the comment from
+`summary` and `findings` per [pr-posting.md](pr-posting.md), which is in the main
+thread's context and not the worker's — a worker-authored body would be the one
+artifact of the review that the posting contract never saw.
 
 ## Post
 
-The main thread posts each worker's `Comment body` per [pr-posting.md](pr-posting.md),
-honouring the draft/summary/`--auto` flag it passed down, and records the result in
-the wave table's `Posted` column. `Posted` is the main thread's own observation of
+The main thread renders each worker's `summary` and `findings` into a comment per
+[pr-posting.md](pr-posting.md) and posts it, honouring the draft/summary/`--auto`
+flag it passed down, and records the result in the wave table's `Posted` column. `Posted` is the main thread's own observation of
 its own `gh` call — never a value a worker reported.
 
 Batch mode runs the **findings** lenses only — the Code-judo generative pass is

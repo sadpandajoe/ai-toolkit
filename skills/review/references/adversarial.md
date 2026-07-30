@@ -71,10 +71,14 @@ State the check you ran and its result. If no claim needs external proof (the di
 
 ## Output Format
 
-For each finding, construct a specific failure scenario:
+For each finding, construct a specific failure scenario. The leading tag is the
+canonical severity from `rules/severity.md` — this lens sits inside the reviewer
+fan-out, so its findings dedupe and escalate alongside every other lane's, and a
+finding whose only tag is a failure *kind* has no severity to merge on. Name the
+kind after it, where it is description rather than vocabulary:
 
 ```markdown
-### [vulnerability|edge-case|race-condition|missing-validation] — {title}
+### [major|minor|nitpick] {vulnerability|edge-case|race-condition|missing-validation} — {title}
 
 **File:** {path}:{line}
 **Scenario:** {Specific input, sequence, or condition that triggers the failure}

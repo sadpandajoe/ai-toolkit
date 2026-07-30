@@ -74,6 +74,25 @@ ROUTE_RESTRICTIONS = {
 LENS_DOMAINS = ("code", "plan")
 
 
+# The output vocabulary each lens domain grades in (`rules/severity.md`), and the
+# score a plan lane must carry (`rules/scoring.md`). These exist as data because
+# `lens_domain` used to reach only the worker prompt: a code lane could return
+# `[High]` findings and a plan lane could return no score at all, and both passed
+# the generic envelope check. The domain is the contract the aggregator relies on
+# -- code findings dedupe by severity tag, plan findings iterate to 8/10 -- so it
+# is enforced on the result, not just described in the prompt.
+CODE_SEVERITIES = ("[major]", "[minor]", "[nitpick]")
+
+
+PLAN_SEVERITIES = ("[High]", "[Medium]", "[Low]")
+
+
+DOMAIN_SEVERITIES = {"code": CODE_SEVERITIES, "plan": PLAN_SEVERITIES}
+
+
+PLAN_SCORE_PATTERN = re.compile(r"\b(?:10|[1-9])\s*/\s*10\b")
+
+
 LENS_CATALOG = "skills/review/references/classify-diff.md"
 
 
@@ -283,6 +302,28 @@ def _lens_routes(payload: dict[str, object]) -> dict[str, tuple[str, ...]]:
         str(lens): tuple(str(route) for route in routes)
         for lens, routes in floors.items()
         if isinstance(routes, list)
+    }
+
+
+def _lens_floors(payload: dict[str, object]) -> dict[str, tuple[str, ...]]:
+    """Return the lenses every fan-out of a domain must offer, keyed by domain.
+
+    `lens_routes` is a floor on *which route* a lens may run on; this is a floor
+    on *which lenses a menu must contain*. Without it, per-boundary menus were
+    checked for containment only and completeness was checked across their union,
+    so a lens could vanish from one workflow's menu while a sibling menu still
+    listed it and the union stayed whole. Narrowing a menu is still allowed --
+    that is what scoping a lane means -- but it now costs an edit here, where the
+    consequence is visible for every boundary at once, instead of one quiet
+    deletion in one boundary's list.
+    """
+    floors = payload.get("lens_floors")
+    if not isinstance(floors, dict):
+        return {}
+    return {
+        str(domain): tuple(str(lens) for lens in lenses)
+        for domain, lenses in floors.items()
+        if isinstance(lenses, list)
     }
 
 

@@ -214,8 +214,13 @@ def _model_route(arguments: argparse.Namespace) -> int:
             "effort",
             "responsibility",
             # An unscored lane must return an empty findings array or the run
-            # fails, so an operator reading this output needs to see it.
+            # fails, so an operator reading this output needs to see it. The lens
+            # domain is here for the same reason: it decides which severity
+            # vocabulary the result is checked against, so a lane resolved
+            # without it is a lane whose findings will not be graded.
             "unscored",
+            "lens",
+            "lens_domain",
             "controls",
         ):
             value = payload[key]

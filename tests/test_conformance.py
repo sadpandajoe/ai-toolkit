@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from aitk.conformance import route_workflow, validate_contracts
+from aitk.routing_policy import DOMAIN_SEVERITIES, WORKER_SCHEMA
 from aitk.workflows import load_workflows
 
 
@@ -275,30 +276,40 @@ class ConformanceTests(unittest.TestCase):
         self.assertTrue(code_fanouts, "no code lens fan-out boundaries left to check")
         self.assertTrue(plan_fanouts, "no plan lens fan-out boundaries left to check")
         fannable = triggerable - own_boundary
+        # The floor is declared once per domain and enforced on every boundary of
+        # that domain, which is the part per-boundary containment plus a
+        # union-wide completeness check could not do: a lens dropped from one
+        # menu left the union whole, so the lane was unreachable in exactly one
+        # workflow and both assertions stayed green.
+        code_floor = set(payload["lens_floors"]["code"])
+        plan_floor = set(payload["lens_floors"]["plan"])
         for boundary in code_fanouts:
             with self.subTest(boundary=boundary["id"]):
                 menu = set(boundary.get("lenses", []))
-                # Containment, not equality. A boundary is allowed to offer a
-                # narrower menu than the classifier can trigger — that is what
-                # scoping a lane means. What is never allowed is a menu entry
-                # the classifier cannot name, which is a lane no classification
-                # can reach.
+                # Containment upward, floor downward. A menu entry the classifier
+                # cannot name is a lane no classification can reach; a floor
+                # entry the menu omits is a lane a classification reaches and
+                # cannot dispatch.
                 self.assertLessEqual(menu, fannable)
-                # Adversarial is pinned separately because breadth is not the
-                # property that failed. It was named by `--adversarial` and by
-                # security-sensitive detection in every review procedure while
-                # being absent from every menu, so it has to be dispatchable
-                # wherever findings lenses fan out, at any tier.
-                self.assertIn("skills/review/references/adversarial.md", menu)
+                self.assertLessEqual(code_floor, menu)
+        for boundary in plan_fanouts:
+            with self.subTest(boundary=boundary["id"]):
+                self.assertLessEqual(plan_floor, set(boundary.get("lenses", [])))
+        # Adversarial is pinned in the floor itself, because breadth is not the
+        # property that failed. It was named by `--adversarial` and by
+        # security-sensitive detection in every review procedure while being
+        # absent from every menu, so it has to be dispatchable wherever findings
+        # lenses fan out, at any tier — and narrowing that now means editing one
+        # declaration whose effect is visible for every boundary at once.
+        self.assertIn("skills/review/references/adversarial.md", code_floor)
         # The other direction, and the one the containment check cannot see: a
         # lens the classifier can trigger but no menu offers is a lane that gets
         # selected and then cannot be dispatched. Asserting only containment made
         # this test satisfiable by deleting lenses from every menu at once.
-        offered = {lens for boundary in code_fanouts for lens in boundary["lenses"]}
         self.assertEqual(
             set(),
-            fannable - offered,
-            "classifier can trigger lenses that no code fan-out offers",
+            fannable - code_floor,
+            "classifier can trigger code lenses that the lens floor does not require",
         )
         # Plan lenses come from the plan-review skill plus two declared
         # cross-skill lanes. The point of checking is the reverse leak: a
@@ -314,6 +325,22 @@ class ConformanceTests(unittest.TestCase):
         for boundary in plan_fanouts:
             with self.subTest(boundary=boundary["id"]):
                 self.assertLessEqual(set(boundary["lenses"]), plan_universe)
+        # Floor completeness for plan, which the per-boundary check above cannot
+        # give: without it, dropping a lens from one menu *and* from the floor
+        # passes, which is the masking shape one level up. The plan-review skill's
+        # own references are the universe that must stay dispatchable everywhere;
+        # the two cross-skill lanes are not, since `review-feature-brief` is
+        # deliberately offered by the workflow menus and not the planning one.
+        own_plan_lenses = {
+            path.relative_to(ROOT).as_posix()
+            for path in (ROOT / "skills/plan-review/references").glob("*.md")
+        }
+        self.assertTrue(own_plan_lenses, "the plan-review lens references moved")
+        self.assertEqual(
+            set(),
+            own_plan_lenses - plan_floor,
+            "a plan-review lens is not required by the plan lens floor",
+        )
 
     def test_deep_review_lenses_carry_the_route_floor_the_rule_promises(self) -> None:
         """The routing rule's `deep-review` row must be enforced as data.
@@ -399,19 +426,56 @@ class ConformanceTests(unittest.TestCase):
         # Only the backticked tokens that are *shaped* like paths -- the section
         # also quotes field values like `NO`, and demanding those exist on disk
         # would make the check fail for the wrong reason.
+        # Signals come from the predicate's own rows, not from the paragraphs that
+        # explain them. The prose below the rows quotes `aitk/routing_*.py` while
+        # arguing that the rows must name it -- counting that mention as coverage
+        # would let every row signal be deleted while the argument for having them
+        # kept the test green.
+        rows = "\n".join(re.findall(r"^\s+- .*$", body, re.MULTILINE))
         named = {
             token
-            for token in re.findall(r"`([^`]+)`", body)
+            for token in re.findall(r"`([^`]+)`", rows)
             if "/" in token or re.search(r"\.[a-z]+$", token)
         }
         self.assertTrue(named, "the predicate names no concrete file signal")
         for signal in sorted(named):
             with self.subTest(signal=signal):
-                self.assertTrue(
-                    (ROOT / signal).exists(), f"{signal} is not a real path"
+                # A signal may be a glob -- `aitk/routing_*.py` names a family
+                # whose membership changes as the subsystem is split, and pinning
+                # six literal paths would rot at the next extraction. It still
+                # has to resolve to something that exists, or it is a predicate
+                # naming a surface this repo does not have.
+                matches = (
+                    sorted(ROOT.glob(signal))
+                    if any(char in signal for char in "*?[")
+                    else [ROOT / signal]
                 )
+                self.assertTrue(
+                    matches and all(path.exists() for path in matches),
+                    f"{signal} matches no real path",
+                )
+        # Expanded, because the facade is not the implementation. `model_routing.py`
+        # became a re-export shim and every fail-closed check moved into the
+        # `routing_*` layers behind it, so a predicate that named only the shim
+        # would have read `NO` on the diff that moved them -- and did.
+        covered = {
+            path.relative_to(ROOT).as_posix()
+            for signal in named
+            for path in (
+                ROOT.glob(signal) if any(c in signal for c in "*?[") else [ROOT / signal]
+            )
+        }
         for surface in ("interfaces/model-routing.json", "aitk/model_routing.py"):
-            self.assertIn(surface, named)
+            self.assertIn(surface, covered)
+        layers = {
+            path.relative_to(ROOT).as_posix() for path in ROOT.glob("aitk/routing_*.py")
+        }
+        self.assertTrue(layers, "the routing layers moved without this test noticing")
+        self.assertEqual(
+            set(),
+            layers - covered,
+            "the security predicate misses routing layers that hold the trust boundary",
+        )
 
     def test_review_rounds_measure_scope_against_the_recorded_base(self) -> None:
         """Round 2 must review the same span as round 1, not the fix delta.
@@ -581,7 +645,106 @@ class ConformanceTests(unittest.TestCase):
             re.MULTILINE | re.DOTALL,
         )
         self.assertIsNotNone(handback, "workflow-review.md lost its hand-back step")
-        self.assertIn("review.local-resolved-audit", handback.group(0))
+        step = handback.group(0)
+        self.assertIn("review.local-resolved-audit", step)
+        # And conditional on the caller, which is the half a plain `assertIn`
+        # cannot see. `workflow-review.md` serves `review-code` *and*
+        # `review-pr`, while the audit's contract reads the local Review Record
+        # and fix queue that only the local path writes. An unconditional
+        # requirement here is not a stricter rule, it is a step whose inputs do
+        # not exist on half the callers -- so the qualifier has to precede the
+        # boundary id, and the PR path has to say what it does instead.
+        qualifier = step.split("review.local-resolved-audit")[0]
+        self.assertIn(
+            "`review-code`",
+            qualifier,
+            "the audit is required without naming the path that can satisfy it",
+        )
+        self.assertIn(
+            "`review-pr`", step, "the hand-back never says what the PR path does"
+        )
+
+    def test_boundary_return_contracts_are_the_generic_worker_envelope(self) -> None:
+        """A dispatch document may not invent its own result shape.
+
+        `run_model` validates every worker result against `WORKER_SCHEMA` with
+        `additionalProperties: false`. A boundary document that specifies a
+        Markdown hand-back instead is not merely inconsistent — it describes a
+        dispatch that fails at the runner on both providers, which is how batch
+        PR review shipped non-executable while reading as complete. The same
+        document class is also where "the worker launches reviewer lanes" hides,
+        and a read-only review route has no subagent capability to launch with.
+        """
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        envelope = tuple(WORKER_SCHEMA["required"])
+        checked = 0
+        for path in sorted({boundary["path"] for boundary in payload["dispatch_boundaries"]}):
+            text = (ROOT / path).read_text()
+            for section in re.findall(
+                r"^\*{0,2}Return contract.*?(?=^#{1,3} )", text, re.MULTILINE | re.DOTALL
+            ):
+                checked += 1
+                with self.subTest(path=path):
+                    for field in envelope:
+                        self.assertIn(
+                            f"`{field}`",
+                            section,
+                            f"{path} declares a return contract that is not the "
+                            "generic worker envelope",
+                        )
+        self.assertTrue(checked, "no boundary document declares a return contract")
+        # The other half of the same finding: the batch worker's payload must say
+        # it applies its lenses rather than dispatching them, because the
+        # procedure it inlines (`pr-review.md`) says "launch ... in parallel" to
+        # whoever reads it, and the worker reads it.
+        batch = (ROOT / "skills/review/references/pr-batch.md").read_text()
+        span = re.search(
+            r"<!-- aitk-model-route:review\.pr-batch -->.*?(?=^## )",
+            batch,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(span, "pr-batch.md lost its dispatch span")
+        self.assertIn("no subagent capability", span.group(0))
+
+    def test_lens_finding_templates_lead_with_the_domain_severity(self) -> None:
+        """A lens may not teach its worker a vocabulary the runner rejects.
+
+        `_domain_problem` rejects a `code` result whose findings carry no
+        `[major]`/`[minor]`/`[nitpick]` tag, so a lens whose finding template
+        leads with a failure *kind* instead — `### [vulnerability] ...`, which is
+        how the adversarial lens shipped — describes a worker that fails at the
+        runner while reading as complete. It also cannot dedupe or escalate
+        against the other lanes it fans out beside. Written as a sweep over the
+        declared menus so a lens added later is covered without editing this
+        test.
+        """
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        menus: dict[str, set[str]] = {}
+        for boundary in payload["dispatch_boundaries"]:
+            domain = boundary.get("lens_fanout")
+            if domain is not None:
+                menus.setdefault(domain, set()).update(boundary.get("lenses", []))
+        self.assertTrue(menus, "no fan-out boundary declares a lens menu")
+        checked: set[str] = set()
+        for domain, lenses in sorted(menus.items()):
+            expected = {tag.strip("[]") for tag in DOMAIN_SEVERITIES[domain]}
+            for lens in sorted(lenses):
+                text = (ROOT / lens).read_text()
+                # Only headings that already lead with a bracketed tag are finding
+                # templates. A lens that formats findings some other way is not in
+                # scope here; a lens that leads with the *wrong* bracket is.
+                for tag in re.findall(r"^#{2,4} \[([^\]]+)\]", text, re.MULTILINE):
+                    checked.add(lens)
+                    with self.subTest(lens=lens, tag=tag):
+                        self.assertEqual(
+                            expected,
+                            {option.strip() for option in tag.split("|")},
+                            f"{lens} templates findings as [{tag}], which is not the "
+                            f"{domain} severity vocabulary the runner enforces",
+                        )
+        # Pin the lens the drift was found in, so the sweep cannot pass by finding
+        # nothing to sweep.
+        self.assertIn("skills/review/references/adversarial.md", checked)
 
     def test_missing_test_findings_name_the_assertion_that_locks_them(self) -> None:
         """A coverage finding has to say what would fail.
