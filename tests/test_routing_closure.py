@@ -116,21 +116,34 @@ class RoutingClosureTests(RoutingTestCase):
                 "skills/review/SKILL.md",
                 "skills/review/references/code-quality.md",
             ),
-            # The batch worker is a nested orchestrator, not a lens: it picks its
-            # own team, so the classifier must reach it. It gets the classifier
-            # and *not* the lenses the classifier can name -- `deep-quality.md`
-            # used to arrive here only because the classifier links to it, which
-            # handed the orchestrator a lens it never applies itself.
+            # The batch worker is a single reviewer that applies its own lenses,
+            # so the classifier *and* the lenses it may select both have to reach
+            # it. They arrive as declared boundary contracts rather than as an
+            # accident of what the classifier links to: the document says the
+            # worker applies every triggered lens, and a closure carrying none of
+            # them described a worker instructed to run procedures it could not
+            # read. `adversarial.md` and `architecture.md` are deliberately
+            # absent -- both carry a `deep-review` route floor, and this lane runs
+            # on `review` too, so inlining them here would defeat the floor rather
+            # than honour it. `pr-posting.md` is absent because the worker never
+            # posts; that contract belongs to the main thread alone.
             ("review.pr-batch", None): (
                 "rules/code-review.md",
                 "rules/model-assignment.md",
+                "rules/review-gate.md",
+                "rules/scoring.md",
                 "rules/severity.md",
                 "rules/stop-rules.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
                 "skills/review/SKILL.md",
                 "skills/review/references/classify-diff.md",
+                "skills/review/references/code-quality.md",
+                "skills/review/references/deep-quality.md",
                 "skills/review/references/pr-batch.md",
-                "skills/review/references/pr-posting.md",
                 "skills/review/references/pr-review.md",
+                "skills/testing/references/review-testplan.md",
+                "skills/testing/references/review-tests.md",
             ),
         }
         allowed = {
@@ -156,7 +169,7 @@ class RoutingClosureTests(RoutingTestCase):
             if not linked:
                 continue
             menu = set(_lenses_named_at(boundary))
-            fanout = bool(boundary.get("lens_fanout", False))
+            fanout = bool(menu)
             if not fanout:
                 for route in _routes_for(boundary, None):
                     with self.subTest(boundary=boundary["id"], route=route):
@@ -298,7 +311,7 @@ class RoutingClosureTests(RoutingTestCase):
         self.assertLessEqual(grading_boundaries, set(boundaries))
         for identifier in sorted(grading_boundaries):
             boundary = boundaries[identifier]
-            lenses = _lenses_named_at(boundary) if boundary.get("lens_fanout") else [None]
+            lenses = _lenses_named_at(boundary) or [None]
             for lens in lenses:
                 for route in _routes_for(boundary, lens):
                     with self.subTest(boundary=identifier, route=route, lens=lens):

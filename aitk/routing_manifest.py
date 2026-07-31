@@ -20,6 +20,8 @@ from aitk.routing_policy import (
     DISPATCH_PATTERN,
     EXEMPT_MARKER,
     LENS_DOMAINS,
+    LENS_DOMAIN_FLOORS,
+    LENS_ROUTE_FLOORS,
     ModelRouteError,
     PERMISSION_MODES,
     PROVIDERS,
@@ -29,10 +31,12 @@ from aitk.routing_policy import (
     ROUTE_NAMES,
     ROUTE_RESTRICTIONS,
     SANDBOXES,
+    SUMMARY_FORMS,
     _boundary_contracts,
     _lens_domain,
     _lens_floors,
     _lens_menu,
+    _lens_routes,
     _load,
     _route_map,
     _safe_dispatch_path,
@@ -65,18 +69,24 @@ def load_model_routing(root: Path) -> dict[str, object]:
 
 
 def _valid_lens_menu(root: Path, boundary: dict[str, object]) -> bool:
-    """Check the declared reviewer menu against the boundary's fan-out flag.
+    """Check the declared reviewer menu, which is what makes a boundary fan out.
 
-    A fan-out boundary must name at least two distinct, existing reviewer lens
-    documents; a single-entry menu is a fan-out with nothing to select between
-    and is almost always a half-finished edit. A boundary that does not fan out
-    must not carry a menu at all -- `resolve_route` rejects `--lens` there, so a
-    menu would describe a selection nothing can make.
+    A boundary with a menu must name at least two distinct, existing reviewer
+    lens documents; a single-entry menu is a fan-out with nothing to select
+    between and is almost always a half-finished edit. It must also declare the
+    domain it grades, because a menu is the one place a lens is selected by name
+    and a dual-use lens has no other signal for which vocabulary to answer in.
+
+    A boundary with no menu is fine -- it simply does not fan out, and
+    `resolve_route` rejects `--lens` there. It may still declare a domain: a lane
+    that applies its lenses itself grades the same artefact a fan-out would.
     """
     lenses = boundary.get("lenses")
-    if not boundary.get("lens_fanout", False):
-        return lenses is None
+    if lenses is None:
+        return True
     if not isinstance(lenses, list) or len(lenses) < 2:
+        return False
+    if _lens_domain(boundary) is None:
         return False
     if len(set(map(repr, lenses))) != len(lenses):
         return False
@@ -117,13 +127,27 @@ def _lens_route_problems(
     A floor that no boundary can honour is worse than no floor: the lens is on
     the menu, so an orchestrator picks it, and every dispatch then fails at
     resolve time. Catching it here keeps the failure at check time.
+
+    The map is required and is checked against `LENS_ROUTE_FLOORS`. Treating it
+    as optional meant `null`, `{}`, and a deleted entry each validated cleanly,
+    so the guarantee "the adversarial lens never runs on the cheap route" could
+    be removed by deleting the line that states it -- the one edit no reviewer
+    reads as a change in behaviour. Widening a floor is the failure direction, so
+    the manifest's allowed set for a pinned lens must stay within the pinned one;
+    narrowing it further (or flooring an additional lens) is still free.
     """
     floors = payload.get("lens_routes")
-    if floors is None:
-        return []
     if not isinstance(floors, dict):
         return ["lens_routes must be an object"]
+    if not floors:
+        return ["lens_routes must not be empty"]
     problems: list[str] = []
+    for lens, pinned in sorted(LENS_ROUTE_FLOORS.items()):
+        declared = floors.get(lens)
+        if not isinstance(declared, list) or not set(declared) <= set(pinned):
+            problems.append(
+                f"lens route floor for {lens} must stay within: {', '.join(pinned)}"
+            )
     for lens, allowed in floors.items():
         if (
             not isinstance(lens, str)
@@ -160,14 +184,28 @@ def _lens_floor_problems(root: Path, payload: dict[str, object]) -> list[str]:
     union of all menus leaves one hole: drop a lens from one boundary and the
     sibling menus keep the union whole, so the lane is unreachable in exactly one
     workflow and nothing complains. The floor closes it per boundary.
+
+    The map is required, must cover every domain, and is checked against
+    `LENS_DOMAIN_FLOORS`. Optional floors made the whole check self-deleting: an
+    absent key, an empty object, or a dropped domain all validated, so the answer
+    to "which lenses must every code menu offer?" could become "none" without a
+    single check failing. Narrowing is the failure direction here -- the reverse
+    of `lens_routes` -- so a declared floor must contain the pinned one.
     """
     raw = payload.get("lens_floors")
-    if raw is None:
-        return []
     if not isinstance(raw, dict):
         return ["lens_floors must be an object"]
+    if not raw:
+        return ["lens_floors must not be empty"]
     problems: list[str] = []
     floors = _lens_floors(payload)
+    for domain in LENS_DOMAINS:
+        pinned = LENS_DOMAIN_FLOORS.get(domain, ())
+        if not set(pinned) <= set(floors.get(domain, ())):
+            missing = sorted(set(pinned) - set(floors.get(domain, ())))
+            problems.append(
+                f"lens floor for {domain} drops pinned lenses: {', '.join(missing)}"
+            )
     for domain, declared in raw.items():
         if (
             not isinstance(domain, str)
@@ -188,16 +226,54 @@ def _lens_floor_problems(root: Path, payload: dict[str, object]) -> list[str]:
         if not isinstance(boundary, dict):
             continue
         domain = _lens_domain(boundary)
+        menu = _lens_menu(boundary)
+        # The floor is a floor on *menus*. A lane that grades a domain without
+        # fanning out has no menu to floor -- demanding it list all eight code
+        # lenses would demand a selection nothing can make.
+        if not menu:
+            continue
         floor = floors.get(domain) if domain is not None else None
         if not floor or f"invalid lens floor: {domain}" in problems:
             continue
-        missing = sorted(set(floor) - set(_lens_menu(boundary)))
+        missing = sorted(set(floor) - set(menu))
         if missing:
             problems.append(
                 f"boundary {boundary.get('id')} omits {domain} lens floor entries: "
                 f"{', '.join(missing)}"
             )
     return problems
+
+
+def _closure_floor_problems(
+    payload: dict[str, object],
+    boundary: dict[str, object],
+    identifier: str,
+    route_name: str,
+    closure: tuple[str, ...],
+) -> list[str]:
+    """Apply each lens's route floor to a lane that inlines the lens directly.
+
+    `resolve_route` enforces `lens_routes` against the lens named by `--lens`,
+    which only exists on a fan-out boundary. A lane that applies its lenses
+    itself never passes `--lens`, so it inlined the adversarial lens and ran it
+    on `review` with nothing objecting -- the floor was bypassed not by
+    overriding it but by taking a code path it was never wired into.
+
+    Only menu-less lanes are checked. On a fan-out boundary, check-time closure
+    is computed with `lens=None` and deliberately contains *every* menu lens, so
+    the same rule there would demand each boundary satisfy the strictest floor on
+    its menu and reject all four fan-out lanes. Those are already covered per
+    dispatch by the resolver, which is where exactly one lens is selected.
+    """
+    if _lens_menu(boundary):
+        return []
+    floors = _lens_routes(payload)
+    return [
+        f"boundary {identifier} inlines {contract} on {route_name}, below its "
+        f"declared floor: {', '.join(floors[contract])}"
+        for contract in closure
+        if contract in floors and route_name not in floors[contract]
+    ]
 
 
 def _seed_only_problems(
@@ -229,7 +305,7 @@ def _seed_only_problems(
     """
     if (
         responsibility != "review"
-        or _lens_domain(boundary) is not None
+        or _lens_menu(boundary)
         or _boundary_contracts(boundary)
     ):
         return []
@@ -490,15 +566,20 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                 "count",
                 "routes",
                 "unscored",
-                "lens_fanout",
+                "lens_domain",
                 "lenses",
                 "contracts",
+                "summary_form",
             }
             or type(boundary.get("unscored", False)) is not bool
-            # `lens_fanout` carries the graded artefact, not a bare yes: absent
-            # means no fan-out, and a present value must name a known domain so
-            # a shared lens can tell which output vocabulary this lane expects.
-            or boundary.get("lens_fanout", "code") not in LENS_DOMAINS
+            # A present `lens_domain` must name a known domain so a shared lens
+            # can tell which output vocabulary this lane expects. Absent means
+            # the lane grades nothing the runner can check.
+            or boundary.get("lens_domain", "code") not in LENS_DOMAINS
+            # `summary_form` names a grammar authored in `routing_policy.py`; a
+            # name with no grammar behind it would be a contract the boundary
+            # declares and the runner silently never applies.
+            or boundary.get("summary_form", next(iter(SUMMARY_FORMS))) not in SUMMARY_FORMS
         ):
             problems.append("invalid dispatch boundary entry")
             continue
@@ -539,8 +620,8 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             # route. A fan-out boundary on any other route would demand `--lens`
             # at dispatch, never scan its span, and drop the named lens without
             # a word -- reject the combination here rather than shipping it.
-            if boundary.get("lens_fanout", False) and responsibility != "review":
-                problems.append(f"lens_fanout boundary is not a review lane: {identifier}")
+            if _lens_domain(boundary) is not None and responsibility != "review":
+                problems.append(f"graded lens boundary is not a review lane: {identifier}")
             try:
                 # `lens` is deliberately omitted: check time verifies that the
                 # unnarrowed union resolves, so every lens the span names is
@@ -562,6 +643,11 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                 for contract in required_contracts
             ):
                 problems.append(f"missing required boundary contract: {identifier}")
+            problems.extend(
+                _closure_floor_problems(
+                    payload, boundary, identifier, route_name, required_contracts
+                )
+            )
             # Every route at a boundary shares its responsibility in practice, so
             # report the lane once rather than once per route it offers.
             if identifier not in seed_only_reported:

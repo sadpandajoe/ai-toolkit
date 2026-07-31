@@ -90,7 +90,134 @@ PLAN_SEVERITIES = ("[High]", "[Medium]", "[Low]")
 DOMAIN_SEVERITIES = {"code": CODE_SEVERITIES, "plan": PLAN_SEVERITIES}
 
 
-PLAN_SCORE_PATTERN = re.compile(r"\b(?:10|[1-9])\s*/\s*10\b")
+def _severity_pattern(tags: tuple[str, ...]) -> re.Pattern[str]:
+    """Compile the anchored form of one domain's severity vocabulary.
+
+    A finding must *open* with its tag. Substring containment accepted anything
+    that mentioned a tag anywhere, so a plan finding reading
+    `[High] ... compare to a [major] code defect` satisfied a code-domain check
+    on the incidental word in its prose, and an untagged finding satisfied it by
+    quoting one. The tag is the sort key the aggregator reads off the front of
+    the string, so the front is where it has to be.
+
+    A leading list or heading marker and surrounding emphasis are formatting,
+    not content, so they may precede the tag. The line drawn is "the tag opens
+    the finding", not "the finding is unstyled": rejecting `**[major]** ...`
+    would fail a worker that answered correctly and teach the next one to strip
+    Markdown rather than to tag.
+    """
+    alternatives = "|".join(re.escape(tag) for tag in tags)
+    return re.compile(
+        rf"^[ \t]*(?:[-*+][ \t]+|#{{1,6}}[ \t]+)?[*_]{{0,2}}"
+        rf"(?:{alternatives})[*_]{{0,2}}(?=[ \t:]|$)"
+    )
+
+
+DOMAIN_FINDING_PATTERNS = {
+    domain: _severity_pattern(tags) for domain, tags in DOMAIN_SEVERITIES.items()
+}
+
+
+# The labelled score line `rules/scoring.md` defines, anchored to its own line.
+# An unanchored `\b(?:10|[1-9])/10\b` matched any incidental ratio -- "7/10 of
+# the call sites", "covers 3/10 branches" -- so a plan review that never scored
+# itself passed as long as it mentioned a fraction somewhere. Emphasis around
+# the label is formatting, for the same reason `_severity_pattern` allows it.
+PLAN_SCORE_PATTERN = re.compile(
+    r"^[ \t]*[*_]{0,2}Score:[*_]{0,2}[ \t]*(?:10|[1-9])[ \t]*/[ \t]*10[ \t]*$",
+    re.MULTILINE,
+)
+
+
+# The named summary shapes a boundary may require of its worker. A domain fixes
+# the vocabulary of the `findings` array; it says nothing about `summary`, which
+# most lanes are right to leave as prose. A few lanes are not: the batch PR
+# reviewer's summary is the *only* place the PR number, the recommendation, and
+# the residual risk travel, and the main thread renders a GitHub comment from
+# them. Stated as prose alone, a worker that returned a paragraph passed the
+# envelope check and the main thread had nothing to post. The patterns live here
+# rather than in the manifest for the same reason `ROUTE_RESTRICTIONS` does:
+# JSON is where a lane declares *which* contract it takes, not where the
+# contract's grammar is authored.
+SUMMARY_FORMS: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
+    "pr-batch": (
+        (
+            "PR: #<N> <title>",
+            re.compile(
+                r"^[ \t]*[*_]{0,2}PR:[*_]{0,2}[ \t]*#\d+[ \t]+\S.*$",
+                re.MULTILINE,
+            ),
+        ),
+        (
+            "Recommendation: approve | request-changes | comment",
+            re.compile(
+                r"^[ \t]*[*_]{0,2}Recommendation:[*_]{0,2}[ \t]*"
+                r"[*_]{0,2}(?:approve|request-changes|comment)[*_]{0,2}[ \t]*$",
+                re.MULTILINE,
+            ),
+        ),
+        (
+            "Residual risk: <one line, or none>",
+            re.compile(
+                r"^[ \t]*[*_]{0,2}Residual risk:[*_]{0,2}[ \t]*\S.*$",
+                re.MULTILINE,
+            ),
+        ),
+        # The batch lane inlines six of the eight code lenses; the classifier it
+        # also inlines can still trigger the two it does not carry. Without a
+        # slot for that, a worker's only options are to skip the lens silently
+        # or to improvise it from the classifier's one-line description, and the
+        # main thread never learns which PR needs escalating. `none` is a real
+        # answer here, so the value is required rather than the line.
+        (
+            "Deferred lenses: <names, or none>",
+            re.compile(
+                r"^[ \t]*[*_]{0,2}Deferred lenses:[*_]{0,2}[ \t]*\S.*$",
+                re.MULTILINE,
+            ),
+        ),
+    ),
+}
+
+
+# The floors `interfaces/model-routing.json` must honour, pinned here for the
+# same reason the route table is: `_lens_route_problems` and
+# `_lens_floor_problems` used to accept `null` and `{}`, so deleting the
+# adversarial route floor or emptying the plan menu floor validated cleanly and
+# the protection each exists to give disappeared with one quiet manifest edit.
+#
+# The two comparisons run in opposite directions, because the two floors fail in
+# opposite directions. A *route* floor is breached by widening -- adding `review`
+# to the adversarial lens lets the expensive lens run cheap -- so the manifest's
+# allowed set must stay within the pinned one. A *menu* floor is breached by
+# narrowing -- dropping a lens from a domain makes that lane unreachable -- so
+# the manifest's floor must contain the pinned one. Either may still be edited;
+# it just costs an edit here, where every boundary's exposure is visible at once.
+LENS_ROUTE_FLOORS: dict[str, tuple[str, ...]] = {
+    "skills/review/references/adversarial.md": ("deep-review",),
+    "skills/plan-review/references/architecture.md": ("deep-review",),
+}
+
+
+LENS_DOMAIN_FLOORS: dict[str, tuple[str, ...]] = {
+    "code": (
+        "skills/review/references/code-quality.md",
+        "skills/review/references/deep-quality.md",
+        "skills/review/references/adversarial.md",
+        "skills/testing/references/review-tests.md",
+        "skills/testing/references/review-testplan.md",
+        "skills/plan-review/references/architecture.md",
+        "skills/plan-review/references/frontend.md",
+        "skills/plan-review/references/backend.md",
+    ),
+    "plan": (
+        "skills/plan-review/references/architecture.md",
+        "skills/plan-review/references/implementation.md",
+        "skills/plan-review/references/frontend.md",
+        "skills/plan-review/references/backend.md",
+        "skills/testing/references/review-testplan.md",
+    ),
+}
 
 
 LENS_CATALOG = "skills/review/references/classify-diff.md"
@@ -196,6 +323,9 @@ class ResolvedRoute:
     # it. Without it those lenses had to pick one vocabulary and be wrong at the
     # other boundary.
     lens_domain: str | None = None
+    # Which named summary grammar (`SUMMARY_FORMS`) this lane's result is checked
+    # against, or `None` for the lanes whose summary is free prose.
+    summary_form: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -205,6 +335,7 @@ class ResolvedRoute:
             "unscored": self.unscored,
             "lens": self.lens,
             "lens_domain": self.lens_domain,
+            "summary_form": self.summary_form,
             "provider": self.provider,
             "family": self.family,
             "selector": self.selector,
@@ -282,15 +413,28 @@ def _boundary_contracts(boundary: dict[str, object]) -> tuple[str, ...]:
 
 
 def _lens_domain(boundary: dict[str, object]) -> str | None:
-    """Return which artefact a fan-out grades -- shipped `code` or a written `plan`.
+    """Return which artefact a lane grades -- shipped `code` or a written `plan`.
 
-    The value doubles as the fan-out flag, so there is no second field that has
-    to agree with it. Lenses shared by both domains (architecture review, test
-    review) read it to pick their output vocabulary: `code` means the severity
-    tags in `rules/code-review.md`, `plan` means the scores in `rules/scoring.md`.
+    Lenses shared by both domains (architecture review, test review) read it to
+    pick their output vocabulary: `code` means the severity tags in
+    `rules/code-review.md`, `plan` means the scores in `rules/scoring.md`.
+
+    This used to be spelled `lens_fanout` and doubled as the fan-out flag. The
+    two are not the same property. A lane can grade code without fanning out --
+    the batch PR reviewer applies its lenses sequentially in one context,
+    precisely because a review route cannot dispatch -- and conflating them left
+    that lane with `lens_domain=None`, so every result check keyed on the domain
+    skipped it and its findings went ungraded. Fan-out is now what it always
+    described in the data: the presence of a `lenses` menu (`_lens_menu`).
     """
-    domain = boundary.get("lens_fanout")
+    domain = boundary.get("lens_domain")
     return domain if isinstance(domain, str) and domain in LENS_DOMAINS else None
+
+
+def _summary_form(boundary: dict[str, object]) -> str | None:
+    """Return the named `SUMMARY_FORMS` grammar this lane requires of its summary."""
+    form = boundary.get("summary_form")
+    return form if isinstance(form, str) and form in SUMMARY_FORMS else None
 
 
 def _lens_routes(payload: dict[str, object]) -> dict[str, tuple[str, ...]]:

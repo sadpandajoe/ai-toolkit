@@ -74,7 +74,7 @@ For Standard or CORE-escalated PRs, include pattern analysis:
 ## Launch Review Lanes
 
 `review.pr-moderate` and `review.pr-standard` are lens fan-out boundaries: they
-declare `lens_fanout`, so each dispatch names exactly one lens with
+declare a `lenses` menu, so each dispatch names exactly one lens with
 `--lens <repo-relative lens path>` and resolving either without it fails closed.
 One worker receives one reviewer contract, never the whole set the marker lists
 below, so resolve a separate route per triggered lens rather than batching them.

@@ -16,6 +16,7 @@ import unittest
 from unittest import mock
 
 from aitk.model_routing import (
+    BLOCKED_EXIT,
     ModelRouteError,
     _valid_worker,
     parse_claude_output,
@@ -487,6 +488,12 @@ class RoutingTransportTests(RoutingTestCase):
         generic envelope check. Downstream that is silent: the code aggregator
         dedupes and escalates on `[major]`/`[minor]`/`[nitpick]` and drops what
         it cannot read, and plan review iterates against a score it never got.
+
+        Both checks were substring searches, which is not how the aggregator
+        reads either value. A plan-tagged finding that named `[major]` anywhere
+        in its prose satisfied a code-domain check, and any incidental ratio in
+        the summary satisfied the plan score check. The tag must open the finding
+        and the score must own its line.
         """
         cases = (
             # (boundary, route, lens, worker, expected exit, error fragment)
@@ -504,7 +511,7 @@ class RoutingTransportTests(RoutingTestCase):
                 "skills/review/references/code-quality.md",
                 {"findings": ["[High] unchecked index"], "summary": "one blocker"},
                 3,
-                "without a [major]/[minor]/[nitpick] tag",
+                "do not open with a [major]/[minor]/[nitpick] tag",
             ),
             (
                 "workflows.review-plan-fresh",
@@ -520,7 +527,7 @@ class RoutingTransportTests(RoutingTestCase):
                 "skills/plan-review/references/implementation.md",
                 {"findings": ["[minor] no rollback step"], "summary": "Score: 7/10"},
                 3,
-                "without a [High]/[Medium]/[Low] tag",
+                "do not open with a [High]/[Medium]/[Low] tag",
             ),
             (
                 "workflows.review-plan-fresh",
@@ -528,7 +535,61 @@ class RoutingTransportTests(RoutingTestCase):
                 "skills/plan-review/references/implementation.md",
                 {"findings": ["[Medium] no rollback step"], "summary": "looks workable"},
                 3,
-                "no X/10 score",
+                "no `Score: X/10` line",
+            ),
+            # The two bypasses the substring form allowed. A cross-domain
+            # finding that mentions the right tag somewhere in its prose is not
+            # tagged; a summary that quotes any ratio has not scored itself.
+            (
+                "review.pr-standard",
+                "review",
+                "skills/review/references/code-quality.md",
+                {
+                    "findings": ["[High] unchecked index — as bad as any [major] defect"],
+                    "summary": "one blocker",
+                },
+                3,
+                "do not open with a [major]/[minor]/[nitpick] tag",
+            ),
+            (
+                "workflows.review-plan-fresh",
+                "review",
+                "skills/plan-review/references/implementation.md",
+                {
+                    "findings": ["[Medium] no rollback step"],
+                    "summary": "rollback covers 7/10 of the call sites",
+                },
+                3,
+                "no `Score: X/10` line",
+            ),
+            # Formatting in front of the tag is formatting, not a missing tag:
+            # a check that rejects `**[major]** ...` fails a worker that answered
+            # correctly and teaches the next one to strip Markdown, not to tag.
+            (
+                "review.pr-standard",
+                "review",
+                "skills/review/references/code-quality.md",
+                {
+                    "findings": [
+                        "- [minor] stale comment",
+                        "**[major]** unchecked index",
+                        "### [nitpick] naming",
+                    ],
+                    "summary": "one nit",
+                },
+                0,
+                None,
+            ),
+            (
+                "workflows.review-plan-fresh",
+                "review",
+                "skills/plan-review/references/implementation.md",
+                {
+                    "findings": ["[Medium] no rollback step"],
+                    "summary": "Workable.\n\n**Score:** 7/10",
+                },
+                0,
+                None,
             ),
             # A worker that could not review is reporting why, not grading. Held
             # to the vocabulary, a legible failure becomes an unparseable one.
@@ -577,6 +638,138 @@ class RoutingTransportTests(RoutingTestCase):
                     self.assertIsNone(payload["result"])
                     self.assertIn(fragment, payload["error"]["message"])
 
+    def test_a_declared_summary_form_is_enforced_on_the_summary(self) -> None:
+        """The batch lane's summary is data the main thread renders, not prose.
+
+        `review.pr-batch` returns the PR number, the recommendation, the
+        residual risk, and the lenses it could not run *only* inside `summary`,
+        and the main thread builds a GitHub comment out of them. The generic
+        envelope accepts any non-empty string, so a worker that answered in a
+        paragraph passed the runner and left the main thread with nothing to
+        post and no error to report.
+        """
+        good = (
+            "PR: #101 Fix the tab layout\n"
+            "Recommendation: request-changes\n"
+            "Residual risk: none\n"
+            "Deferred lenses: none"
+        )
+        cases = (
+            (good, [], 0, None),
+            (good, ["[major] unchecked index"], 0, None),
+            # Prose that says all four things without the labelled lines.
+            (
+                "PR 101 looks risky; I would ask for changes.",
+                [],
+                3,
+                "PR: #<N> <title>",
+            ),
+            # The recommendation is a fixed vocabulary, not free text.
+            (
+                "PR: #101 Fix the tab layout\n"
+                "Recommendation: probably fine\n"
+                "Residual risk: none\n"
+                "Deferred lenses: none",
+                [],
+                3,
+                "Recommendation: approve | request-changes | comment",
+            ),
+            # An empty residual-risk line is a slot the main thread cannot fill.
+            (
+                "PR: #101 Fix the tab layout\n"
+                "Recommendation: approve\n"
+                "Residual risk:\n"
+                "Deferred lenses: none",
+                [],
+                3,
+                "Residual risk: <one line, or none>",
+            ),
+            # Dropping the deferred line is the batch lane's own failure mode:
+            # the two floored lenses are excluded from its closure but its
+            # classifier still triggers them, and a worker that omits the line
+            # is indistinguishable from one that had nothing to defer.
+            (
+                "PR: #101 Fix the tab layout\n"
+                "Recommendation: approve\n"
+                "Residual risk: none",
+                [],
+                3,
+                "Deferred lenses: <names, or none>",
+            ),
+            (
+                "PR: #101 Fix the tab layout\n"
+                "Recommendation: request-changes\n"
+                "Residual risk: auth path untested\n"
+                "Deferred lenses: adversarial, architecture",
+                [],
+                0,
+                None,
+            ),
+            # The lane is code-domain too, so untagged findings still fail.
+            (
+                good,
+                ["unchecked index"],
+                3,
+                "do not open with a [major]/[minor]/[nitpick] tag",
+            ),
+        )
+        for summary, findings, expected_code, fragment in cases:
+            worker = {
+                "status": "completed",
+                "summary": summary,
+                "findings": findings,
+                "verification": ["read the cited lines"],
+            }
+            with self.subTest(summary=summary.splitlines()[0], findings=findings):
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+                    prompt.write("Review this.")
+                    prompt.flush()
+                    with mock.patch(
+                        "aitk.routing_transport.shutil.which", return_value="/bin/claude"
+                    ):
+                        code, payload = run_model(
+                            ROOT,
+                            "review",
+                            "claude",
+                            "review.pr-batch",
+                            Path(prompt.name),
+                            cwd=ROOT,
+                            runner=_claude_runner(worker),
+                        )
+                self.assertEqual(expected_code, code)
+                if fragment is None:
+                    self.assertEqual(worker, payload["result"])
+                else:
+                    self.assertIn(fragment, payload["error"]["message"])
+
+    def test_a_blocked_batch_worker_is_not_held_to_the_summary_form(self) -> None:
+        # Same carve-out `_domain_problem` makes: a worker explaining why it
+        # could not review has no recommendation to give, and demanding the shape
+        # would turn a legible refusal into a schema error.
+        worker = {
+            "status": "blocked",
+            "summary": "the diff was truncated; no review possible",
+            "findings": [],
+            "verification": [],
+        }
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+            prompt.write("Review this.")
+            prompt.flush()
+            with mock.patch(
+                "aitk.routing_transport.shutil.which", return_value="/bin/claude"
+            ):
+                code, payload = run_model(
+                    ROOT,
+                    "review",
+                    "claude",
+                    "review.pr-batch",
+                    Path(prompt.name),
+                    cwd=ROOT,
+                    runner=_claude_runner(worker),
+                )
+        self.assertEqual(BLOCKED_EXIT, code)
+        self.assertEqual(worker, payload["result"])
+
     def test_the_worker_prompt_states_the_vocabulary_it_is_graded_on(self) -> None:
         # Enforcement without disclosure is a trap: the runner rejects an
         # untagged fan-out result, so the header the worker reads has to name the
@@ -596,14 +789,30 @@ class RoutingTransportTests(RoutingTestCase):
             lens="skills/plan-review/references/implementation.md",
         )
         plain = resolve_route(ROOT, "review", "claude", "review.code-quality-final")
+        batch = resolve_route(ROOT, "review", "claude", "review.pr-batch")
         self.assertIn(
-            "grading=[major]/[minor]/[nitpick]\n",
+            "grading=every finding must begin with one of "
+            "[major]|[minor]|[nitpick]\n",
             worker_prompt(code_route, "task", ()),
         )
         self.assertIn(
-            "grading=[High]/[Medium]/[Low] + Score: X/10 in summary\n",
+            "grading=every finding must begin with one of [High]|[Medium]|[Low]; "
+            "summary must contain a `Score: X/10` line of its own\n",
             worker_prompt(plan_route, "task", ()),
         )
+        # The batch lane's summary is checked line by line, so the header names
+        # each line rather than only the finding vocabulary. Tightening the check
+        # without tightening this text is exactly the trap the comment above
+        # describes, one field over.
+        batch_header = worker_prompt(batch, "task", ())
+        self.assertIn("every finding must begin with one of [major]", batch_header)
+        for label in (
+            "PR: #<N> <title>",
+            "Recommendation:",
+            "Residual risk:",
+            "Deferred lenses:",
+        ):
+            self.assertIn(label, batch_header)
         # Always emitted, `-` included, so a worker never has to tell "no domain"
         # apart from "header field the runner forgot".
         self.assertIn("grading=-\n", worker_prompt(plain, "task", ()))

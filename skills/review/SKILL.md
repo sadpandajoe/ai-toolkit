@@ -100,12 +100,16 @@ Dispatch mode is tier-routed:
 Map the tier to the current runtime's actual model or reasoning-effort controls at dispatch time.
 
 The lens fan-out boundaries (`review.local-primary-lanes`, `review.pr-moderate`,
-`review.pr-standard`, `review.pr-lenses`, `review.local-final-pass`) declare
-`lens_fanout`, so each dispatch must name its lens: resolve one route per
+`review.pr-standard`, `review.pr-lenses`, `review.local-final-pass`) declare a
+`lenses` menu, so each dispatch must name its lens: resolve one route per
 triggered lens with `--lens <repo-relative lens path>`. Resolving a fan-out
 boundary without `--lens` fails closed rather than handing a single reviewer all
-seven sibling lens contracts. Non-fan-out boundaries — the Code-judo lane, the
-independent-capability lanes, and `review.pr-batch` — take no `--lens`.
+seven sibling lens contracts. Boundaries with no menu — the Code-judo lane, the
+independent-capability lanes, and `review.pr-batch` — take no `--lens`. A menu is
+what makes a lane fan out; `lens_domain` is separate and says only which artefact
+the lane grades, so `review.pr-batch` carries a domain without a menu: it applies
+its lenses itself, in one context, and its findings are graded as code all the
+same.
 
 ### Deep review mode (tier override)
 

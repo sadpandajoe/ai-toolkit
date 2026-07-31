@@ -20,6 +20,7 @@ from typing import Callable
 from aitk.routing_policy import (
     BLOCKED_EXIT,
     DEFAULT_TIMEOUT,
+    DOMAIN_FINDING_PATTERNS,
     DOMAIN_SEVERITIES,
     FAILED_EXIT,
     ModelRouteError,
@@ -27,6 +28,7 @@ from aitk.routing_policy import (
     PREFLIGHT_TIMEOUT,
     PROMPT_LIMIT,
     ResolvedRoute,
+    SUMMARY_FORMS,
     UNAVAILABLE_ERROR,
     VERSION_PATTERN,
     WORKER_SCHEMA,
@@ -43,14 +45,20 @@ def worker_prompt(
 ) -> str:
     restrictions = json.dumps(route.restrictions, separators=(",", ":"))
     # The vocabulary the result is checked against, stated to the worker that has
-    # to produce it. `_domain_problem` rejects an untagged or unscored fan-out
-    # result, and a rule enforced without being stated is a trap rather than a
-    # contract.
+    # to produce it. `_domain_problem` and `_summary_problem` reject a finding
+    # that does not open with its domain's tag, a plan summary with no `Score:`
+    # line, and a summary missing its declared form -- and a rule enforced
+    # without being stated is a trap rather than a contract.
     grading = "-"
     if route.lens_domain is not None:
-        grading = "/".join(DOMAIN_SEVERITIES[route.lens_domain])
+        tags = "|".join(DOMAIN_SEVERITIES[route.lens_domain])
+        grading = f"every finding must begin with one of {tags}"
         if route.lens_domain == "plan":
-            grading += " + Score: X/10 in summary"
+            grading += "; summary must contain a `Score: X/10` line of its own"
+    if route.summary_form is not None:
+        lines = "; ".join(label for label, _ in SUMMARY_FORMS[route.summary_form])
+        form = f"summary must contain these lines, one per line: {lines}"
+        grading = form if grading == "-" else f"{grading}; {form}"
     prefix = (
         "AI_TOOLKIT_MODEL_ROUTE_V1\n"
         f"route={route.name}\nboundary={route.boundary}\n"
@@ -97,7 +105,7 @@ def _valid_worker(value: object) -> bool:
 
 
 def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | None:
-    """Check a fan-out lane's result against its lens domain's grading vocabulary.
+    """Check a graded lane's result against its lens domain's grading vocabulary.
 
     `_valid_worker` only proves the envelope is well-formed: every string passes.
     But the domain decides how the caller *consumes* the result -- code findings
@@ -106,6 +114,11 @@ def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | No
     dropped by the aggregator rather than rejected here. Enforcing the vocabulary
     at the boundary is what makes `lens_domain` more than prompt prose.
 
+    The tag must open the finding and the score must own its line. Both were
+    substring searches, which the aggregator's own parse is not: a plan finding
+    that named `[major]` somewhere in its prose satisfied a code-domain check,
+    and a summary that mentioned any `N/10` satisfied the plan score check.
+
     Only `completed` results are graded. A `blocked` or `failed` worker is
     reporting why it could not review, and demanding severity tags on that
     explanation would turn a legible failure into an unparseable one.
@@ -113,25 +126,45 @@ def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | No
     if route.lens_domain is None or result.get("status") != "completed":
         return None
     tags = DOMAIN_SEVERITIES[route.lens_domain]
-    untagged = [
-        item
-        for item in result["findings"]
-        if not any(tag in str(item) for tag in tags)
-    ]
+    pattern = DOMAIN_FINDING_PATTERNS[route.lens_domain]
+    untagged = [item for item in result["findings"] if not pattern.match(str(item))]
     if untagged:
         return (
             f"{route.lens_domain}-domain boundary {route.boundary} returned "
-            f"{len(untagged)} finding(s) without a {'/'.join(tags)} tag; "
-            f"the first is: {str(untagged[0])[:120]}"
+            f"{len(untagged)} finding(s) that do not open with a "
+            f"{'/'.join(tags)} tag; the first is: {str(untagged[0])[:120]}"
         )
     if route.lens_domain == "plan" and not PLAN_SCORE_PATTERN.search(
         str(result["summary"])
     ):
         return (
-            f"plan-domain boundary {route.boundary} returned no X/10 score in its "
-            "summary; plan review iterates against that score"
+            f"plan-domain boundary {route.boundary} returned no `Score: X/10` line "
+            "in its summary; plan review iterates against that score"
         )
     return None
+
+
+def _summary_problem(route: ResolvedRoute, result: dict[str, object]) -> str | None:
+    """Check a lane's summary against the named grammar its boundary declares.
+
+    Gated on `completed` for the same reason `_domain_problem` is: a worker
+    saying why it could not review has no PR recommendation to give, and
+    demanding the shape would replace a legible refusal with a schema error.
+    """
+    if route.summary_form is None or result.get("status") != "completed":
+        return None
+    summary = str(result["summary"])
+    missing = [
+        label
+        for label, pattern in SUMMARY_FORMS[route.summary_form]
+        if not pattern.search(summary)
+    ]
+    if not missing:
+        return None
+    return (
+        f"boundary {route.boundary} returned a summary missing the "
+        f"{route.summary_form} form's required line(s): {'; '.join(missing)}"
+    )
 
 
 def parse_codex_output(output: str, last_message: str) -> dict[str, object]:
@@ -548,9 +581,11 @@ def run_model(
                     f"{len(result['findings'])} findings; this lane must return "
                     "an empty findings array"
                 )
-            domain_problem = _domain_problem(route, result)
-            if domain_problem is not None:
-                raise ModelRouteError(domain_problem)
+            grading_problem = _domain_problem(route, result) or _summary_problem(
+                route, result
+            )
+            if grading_problem is not None:
+                raise ModelRouteError(grading_problem)
         except (ModelRouteError, json.JSONDecodeError) as error:
             return 3, _outer(
                 route,

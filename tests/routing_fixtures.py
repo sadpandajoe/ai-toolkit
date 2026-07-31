@@ -115,10 +115,14 @@ def _lenses_named_at(boundary: dict[str, object]) -> list[str]:
 
 
 def _a_lens_named_at(boundary: dict[str, object]) -> str | None:
-    """One valid --lens for a fan-out boundary; None where the flag is refused."""
-    if not boundary.get("lens_fanout", False):
-        return None
-    return _lenses_named_at(boundary)[0]
+    """One valid --lens for a fan-out boundary; None where the flag is refused.
+
+    A declared menu is what makes a boundary fan out. `lens_domain` is a separate
+    property -- which artefact the lane grades -- and a lane can carry one without
+    a menu, applying its lenses itself rather than dispatching them.
+    """
+    menu = _lenses_named_at(boundary)
+    return menu[0] if menu else None
 
 
 def _routes_for(boundary: dict[str, object], lens: str | None) -> list[str]:

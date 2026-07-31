@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -96,15 +97,22 @@ class RoutingManifestTests(RoutingTestCase):
                 problems,
             )
             # And the menu is what `--lens` resolves against: a lens missing from
-            # it is unroutable rather than mis-scoped. The lens floor has to come
-            # out too, or the manifest fails to load first and this proves nothing
-            # about the resolver -- which is itself the point of the floor.
-            prose_only["lens_floors"]["code"] = [
-                value for value in prose_only["lens_floors"]["code"] if value != lens
-            ]
-            manifest.write_text(json.dumps(prose_only))
+            # it is unroutable rather than mis-scoped. This is shown against the
+            # *unmutated* manifest with a lens that belongs to the plan menu,
+            # because a code menu can no longer be narrowed below its floor at
+            # all: `lens_floors` is pinned in `routing_policy.py`, so the edit
+            # that used to make room for this check -- dropping the lens from the
+            # floor as well -- is now itself a validation failure. That is the
+            # floor doing its job, and proving the resolver's behaviour must not
+            # require disabling it.
             with self.assertRaisesRegex(ModelRouteError, "is not named at boundary"):
-                resolve_route(root, "deep-review", "claude", boundary["id"], lens=lens)
+                resolve_route(
+                    root,
+                    "deep-review",
+                    "claude",
+                    boundary["id"],
+                    lens="skills/plan-review/references/implementation.md",
+                )
 
     def test_a_menu_may_not_quietly_drop_a_floor_lens(self) -> None:
         """Per-boundary, not union-wide.
@@ -158,10 +166,14 @@ class RoutingManifestTests(RoutingTestCase):
             manifest.write_text(pristine)
             self.assertEqual([], validate_model_routing(root))
 
-    def test_lens_menu_shape_is_tied_to_the_fanout_flag(self) -> None:
-        # A menu on a boundary that refuses `--lens` describes a selection
-        # nothing can make, and a one-entry menu is a fan-out with nothing to
-        # choose between — both are half-finished edits rather than designs.
+    def test_lens_menu_shape_is_checked_and_requires_a_domain(self) -> None:
+        # A one-entry menu is a fan-out with nothing to choose between, and a
+        # menu without a declared domain leaves a dual-use lens — architecture
+        # review, test review — with no signal for which vocabulary to answer in.
+        # Both are half-finished edits rather than designs. The menu is now what
+        # *makes* a boundary fan out, so a menu-less boundary is simply a lane
+        # that applies its own lenses; it is `lens_domain` that it may carry
+        # alone, not `lenses`.
         with tempfile.TemporaryDirectory() as directory:
             root = self.fixture(directory)
             manifest = root / "interfaces/model-routing.json"
@@ -193,6 +205,16 @@ class RoutingManifestTests(RoutingTestCase):
                     {"lenses": ["skills/review/code-quality.md"] * 2},
                 ),
                 ("review.pr-standard", {"lenses": []}),
+                # A well-formed menu on a lane that declares no domain.
+                (
+                    "review.code-quality-final",
+                    {
+                        "lenses": [
+                            "skills/review/references/code-quality.md",
+                            "skills/review/references/deep-quality.md",
+                        ]
+                    },
+                ),
             ):
                 with self.subTest(boundary=identifier, mutation=mutation):
                     payload = json.loads(pristine)
@@ -204,6 +226,113 @@ class RoutingManifestTests(RoutingTestCase):
                         ModelRouteError, "invalid dispatch boundary lens menu"
                     ):
                         load_model_routing(root)
+            manifest.write_text(pristine)
+
+    def test_both_lens_floors_are_required_and_pinned_in_policy(self) -> None:
+        """Optional floors are floors that delete themselves.
+
+        Both maps returned "no problems" for `null` and for `{}`, and neither
+        compared against anything, so every guarantee they encode could be
+        removed by deleting the line that states it — an empty map, a dropped
+        domain, a deleted lens entry. None of those reads as a behaviour change
+        in a diff, and all three validated. The pins in `routing_policy.py` make
+        the manifest answerable to a second copy, the way the route table already
+        is, and the two comparisons run in opposite directions because the two
+        floors fail in opposite directions: a route floor is breached by
+        *widening* (the expensive lens becomes cheap), a menu floor by
+        *narrowing* (the lane becomes unreachable).
+        """
+        adversarial = "skills/review/references/adversarial.md"
+        cases = (
+            (lambda p: p.update(lens_routes={}), "lens_routes must not be empty"),
+            (lambda p: p.update(lens_routes=None), "lens_routes must be an object"),
+            (
+                lambda p: p["lens_routes"].pop(adversarial),
+                f"lens route floor for {adversarial} must stay within",
+            ),
+            (
+                lambda p: p["lens_routes"].__setitem__(
+                    adversarial, ["review", "deep-review"]
+                ),
+                f"lens route floor for {adversarial} must stay within",
+            ),
+            (lambda p: p.update(lens_floors={}), "lens_floors must not be empty"),
+            (lambda p: p.update(lens_floors=None), "lens_floors must be an object"),
+            (
+                lambda p: p["lens_floors"].pop("plan"),
+                "lens floor for plan drops pinned lenses",
+            ),
+            (
+                lambda p: p["lens_floors"]["code"].remove(adversarial),
+                "lens floor for code drops pinned lenses",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            self.assertEqual([], validate_model_routing(root))
+            for mutate, expected in cases:
+                with self.subTest(expected=expected):
+                    payload = json.loads(pristine)
+                    mutate(payload)
+                    manifest.write_text(json.dumps(payload))
+                    with self.assertRaisesRegex(ModelRouteError, re.escape(expected)):
+                        load_model_routing(root)
+            manifest.write_text(pristine)
+            self.assertEqual([], validate_model_routing(root))
+
+    def test_a_menuless_lane_may_not_inline_a_lens_below_its_route_floor(self) -> None:
+        """The floor has to cover the lane that applies the lens itself.
+
+        `resolve_route` checks `lens_routes` against the lens named by `--lens`,
+        and only a boundary with a menu ever passes one. A lane like
+        `review.pr-batch` applies its lenses in its own context and declares them
+        as boundary contracts, so it reached the adversarial lens on the cheap
+        `review` route without the floor ever being consulted — bypassed not by
+        overriding the rule but by taking a path it was never wired into.
+
+        A fan-out boundary must stay exempt: its check-time closure is resolved
+        with `lens=None` and deliberately contains the whole menu, so the same
+        rule applied there would demand every fan-out satisfy the strictest floor
+        on its menu and reject all of them. `workflows.adversarial-primary` is
+        the control in the other direction — a menu-less lane that declares the
+        adversarial lens on `deep-review`, which is exactly what the floor asks
+        for and must keep validating untouched.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            self.assertEqual([], validate_model_routing(root))
+            for identifier, lens in (
+                ("review.pr-batch", "skills/review/references/adversarial.md"),
+                ("review.pr-batch", "skills/plan-review/references/architecture.md"),
+            ):
+                with self.subTest(boundary=identifier, lens=lens):
+                    payload = json.loads(pristine)
+                    for item in payload["dispatch_boundaries"]:
+                        if item["id"] == identifier:
+                            item["contracts"] = [*item["contracts"], lens]
+                    manifest.write_text(json.dumps(payload))
+                    with self.assertRaisesRegex(
+                        ModelRouteError,
+                        f"{identifier} inlines {re.escape(lens)} on review",
+                    ):
+                        load_model_routing(root)
+            # Restricting the same lane to `deep-review` makes the identical
+            # declaration legal, which is the floor being a floor rather than a
+            # ban on the lens.
+            payload = json.loads(pristine)
+            for item in payload["dispatch_boundaries"]:
+                if item["id"] == "review.pr-batch":
+                    item["contracts"] = [
+                        *item["contracts"],
+                        "skills/review/references/adversarial.md",
+                    ]
+                    item["routes"] = ["deep-review"]
+            manifest.write_text(json.dumps(payload))
+            self.assertEqual([], validate_model_routing(root))
             manifest.write_text(pristine)
 
     def test_malformed_manifest_is_a_stable_route_error(self) -> None:

@@ -266,12 +266,12 @@ class ConformanceTests(unittest.TestCase):
         code_fanouts = [
             boundary
             for boundary in payload["dispatch_boundaries"]
-            if boundary.get("lens_fanout") == "code"
+            if boundary.get("lenses") and boundary.get("lens_domain") == "code"
         ]
         plan_fanouts = [
             boundary
             for boundary in payload["dispatch_boundaries"]
-            if boundary.get("lens_fanout") == "plan"
+            if boundary.get("lenses") and boundary.get("lens_domain") == "plan"
         ]
         self.assertTrue(code_fanouts, "no code lens fan-out boundaries left to check")
         self.assertTrue(plan_fanouts, "no plan lens fan-out boundaries left to check")
@@ -609,7 +609,6 @@ class ConformanceTests(unittest.TestCase):
         # Not a fan-out: one worker holding the whole ledger. Fanning this out by
         # lens would give each worker a slice of the ledger, which is the shape it
         # exists to correct.
-        self.assertNotIn("lens_fanout", audit)
         self.assertNotIn("lenses", audit)
         for contract in (
             "rules/code-review.md",
@@ -721,9 +720,9 @@ class ConformanceTests(unittest.TestCase):
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
         menus: dict[str, set[str]] = {}
         for boundary in payload["dispatch_boundaries"]:
-            domain = boundary.get("lens_fanout")
-            if domain is not None:
-                menus.setdefault(domain, set()).update(boundary.get("lenses", []))
+            domain = boundary.get("lens_domain")
+            if domain is not None and boundary.get("lenses"):
+                menus.setdefault(domain, set()).update(boundary["lenses"])
         self.assertTrue(menus, "no fan-out boundary declares a lens menu")
         checked: set[str] = set()
         for domain, lenses in sorted(menus.items()):

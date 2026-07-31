@@ -19,6 +19,7 @@ from aitk.routing_policy import (
     _lens_menu,
     _lens_routes,
     _route_map,
+    _summary_form,
 )
 from aitk.routing_closure import _required_contract_paths
 from aitk.routing_manifest import load_model_routing
@@ -66,8 +67,8 @@ def resolve_route(
         # so accepting `--lens` there would silently drop every span dependency
         # the flag does not match -- the same quiet-shrink failure the fan-out
         # requirement exists to prevent.
-        fans_out = boundary_item.get("lens_fanout", False)
         menu = _lens_menu(boundary_item)
+        fans_out = bool(menu)
         if fans_out and lens is None:
             raise ModelRouteError(
                 f"boundary {boundary} fans out over reviewer lenses; "
@@ -107,10 +108,12 @@ def resolve_route(
         )
         unscored = bool(boundary_item.get("unscored", False))
         lens_domain = _lens_domain(boundary_item)
+        summary_form = _summary_form(boundary_item)
     else:
         required_contracts = ()
         unscored = False
         lens_domain = None
+        summary_form = None
     mapping = item["providers"][provider]
     family = mapping["model"]
     provider_config = payload["providers"][provider]
@@ -129,4 +132,5 @@ def resolve_route(
         unscored=unscored,
         lens=lens,
         lens_domain=lens_domain,
+        summary_form=summary_form,
     )
