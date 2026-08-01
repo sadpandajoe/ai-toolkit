@@ -351,6 +351,13 @@ class RoutingManifestTests(RoutingTestCase):
             )["providers"]["claude"].update({"disallowed_tools": [{}]}),
             lambda payload: payload["dispatch_boundaries"][0].update({"routes": [{}]}),
             lambda payload: payload["dispatch_boundaries"][0].update({"count": True}),
+            # A pinned floor is read from the raw payload, so its members are
+            # whatever the file says. Comparing it as a set before checking the
+            # members are strings crashed on the nested form instead of
+            # reporting it.
+            lambda payload: payload["lens_routes"].update(
+                {"skills/review/references/adversarial.md": [{"route": "deep-review"}]}
+            ),
         )
         for mutate in mutations:
             with self.subTest(

@@ -144,7 +144,14 @@ def _lens_route_problems(
     problems: list[str] = []
     for lens, pinned in sorted(LENS_ROUTE_FLOORS.items()):
         declared = floors.get(lens)
-        if not isinstance(declared, list) or not set(declared) <= set(pinned):
+        # Element types before the set comparison, for the reason spelled out in
+        # the loop below: this reads the raw payload, not the coerced
+        # `_lens_routes`, so a nested member reaches `set()` as written.
+        if (
+            not isinstance(declared, list)
+            or not all(isinstance(route, str) for route in declared)
+            or not set(declared) <= set(pinned)
+        ):
             problems.append(
                 f"lens route floor for {lens} must stay within: {', '.join(pinned)}"
             )

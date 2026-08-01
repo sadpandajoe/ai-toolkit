@@ -123,8 +123,18 @@ DOMAIN_FINDING_PATTERNS = {
 # the call sites", "covers 3/10 branches" -- so a plan review that never scored
 # itself passed as long as it mentioned a fraction somewhere. Emphasis around
 # the label is formatting, for the same reason `_severity_pattern` allows it.
+#
+# So is a heading marker, and here that is not a hypothetical: every plan lens
+# prints its score as `### Score: X/10` under a `## <Lens> Review` heading --
+# see `skills/plan-review/references/architecture.md`. Accepting only the
+# unheaded form rejected the exact template the worker was handed, which teaches
+# the next one to deviate from its contract rather than to score. The list form
+# rides along for the same reason `_severity_pattern` allows it -- no lens
+# template prints it that way today, and a worker that does has still scored
+# itself on a line of its own, which is all this check is asked to establish.
 PLAN_SCORE_PATTERN = re.compile(
-    r"^[ \t]*[*_]{0,2}Score:[*_]{0,2}[ \t]*(?:10|[1-9])[ \t]*/[ \t]*10[ \t]*$",
+    r"^[ \t]*(?:[-*+][ \t]+|#{1,6}[ \t]+)?[*_]{0,2}Score:[*_]{0,2}[ \t]*"
+    r"(?:10|[1-9])[ \t]*/[ \t]*10[ \t]*$",
     re.MULTILINE,
 )
 

@@ -591,6 +591,20 @@ class RoutingTransportTests(RoutingTestCase):
                 0,
                 None,
             ),
+            # The form every plan lens actually prints: `### Score: X/10` under a
+            # `## <Lens> Review` heading. Rejecting the canonical template failed
+            # workers that followed their own contract.
+            (
+                "workflows.review-plan-fresh",
+                "review",
+                "skills/plan-review/references/implementation.md",
+                {
+                    "findings": ["[Medium] no rollback step"],
+                    "summary": "## Implementation Review\n### Score: 7/10\n### Issues",
+                },
+                0,
+                None,
+            ),
             # A worker that could not review is reporting why, not grading. Held
             # to the vocabulary, a legible failure becomes an unparseable one.
             (
