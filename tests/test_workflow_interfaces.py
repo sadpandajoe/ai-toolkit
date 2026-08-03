@@ -328,10 +328,25 @@ class WorkflowInterfaceTests(unittest.TestCase):
 
             problems = validate_contracts(root)
 
+            # Two workflows name this lens and both must notice it vanished, but
+            # they name it through different channels, so they report through
+            # different checks. `fix-bug` names the bare skill-relative path;
+            # `review-plan` names it as a Markdown link, because its fan-out span
+            # has to be a link for the route runner to resolve the selected lens
+            # at all. Pinning only the first message let the second channel go
+            # unchecked -- the assertion passed on `fix-bug` alone.
             self.assertTrue(
                 any(
-                    "review-plan: named skill resource is missing or unsafe: plan-review/references/architecture.md"
-                    in item
+                    "fix-bug: named skill resource is missing or unsafe: "
+                    "plan-review/references/architecture.md" in item
+                    for item in problems
+                ),
+                problems,
+            )
+            self.assertTrue(
+                any(
+                    "review-plan: dependency link target is missing or not a file: "
+                    "../../plan-review/references/architecture.md" in item
                     for item in problems
                 ),
                 problems,

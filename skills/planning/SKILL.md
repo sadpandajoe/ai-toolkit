@@ -35,7 +35,7 @@ PM → planning → implementation. This umbrella owns the middle phase.
 Standard substantial planning:
 1. `plan-implementation` → draft plan
 <!-- aitk-model-route:planning.loop-summary -->
-2. `iterate-review` → dispatches `plan-review/` reviewers on `review`/`deep-review` until 8/10 threshold
+2. [`iterate-review`](references/iterate-review.md) → dispatches `plan-review/` reviewers on `review`/`deep-review` until 8/10 threshold
 3. `finalize` → cold-read "stay or move" gate
 4. Hand off to implementation
 
@@ -52,7 +52,7 @@ During post-implementation review, if findings surface:
 ## Notes
 
 <!-- aitk-model-route:planning.loop-ownership -->
-- `iterate-review` is the loop-runner that dispatches `plan-review/` lens subagents on `review`/`deep-review`. They work together: this umbrella owns the loop; `plan-review/` owns the lenses.
+- [`iterate-review`](references/iterate-review.md) is the loop-runner that dispatches `plan-review/` lens subagents on `review`/`deep-review`. They work together: this umbrella owns the loop; `plan-review/` owns the lenses.
 - `finalize` fires once per plan iteration cycle as the last gate before implementation begins.
 - `feedback-classify` is how the planning umbrella reaches back into implementation/review to say "this isn't a code fix — re-plan."
 - End-to-end sequencing belongs in the selected canonical workflow reference.

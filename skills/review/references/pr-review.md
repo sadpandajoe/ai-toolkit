@@ -6,6 +6,16 @@ tier: Heavy
 
 Use for a single GitHub PR review after `review-pr` resolves the PR reference.
 
+## Required Context
+
+Read before grading: `rules/code-review.md` and `rules/severity.md`. Every lane
+that dispatches from this file produces or triages severity-tagged code-review
+findings, and the calibration in `rules/code-review.md` applies to every review
+path — single-reviewer, adversarial, and multi-reviewer synthesis. The review
+umbrella deliberately no longer supplies these (it is also carried by plan, PM,
+and QA routes), so a lane whose closure contains no reviewer lens would
+otherwise grade with no calibration contract at all.
+
 ## Gather Context
 
 Fetch:
@@ -63,6 +73,12 @@ For Standard or CORE-escalated PRs, include pattern analysis:
 
 ## Launch Review Lanes
 
+`review.pr-moderate` and `review.pr-standard` are lens fan-out boundaries: they
+declare a `lenses` menu, so each dispatch names exactly one lens with
+`--lens <repo-relative lens path>` and resolving either without it fails closed.
+One worker receives one reviewer contract, never the whole set the marker lists
+below, so resolve a separate route per triggered lens rather than batching them.
+
 Trivial:
 - Single-pass code quality review.
 - If clean, return a compact approve recommendation. Post/approve only when `--auto` or explicit user authorization grants that boundary.
@@ -70,16 +86,65 @@ Trivial:
 Moderate:
 <!-- aitk-model-route:review.pr-moderate -->
 - Launch only the triggered reviewer lenses needed by the diff classification.
+  Triggered lenses come from this set: [code-quality.md](code-quality.md),
+  [deep-quality.md](deep-quality.md),
+  [adversarial.md](adversarial.md),
+  [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
+  [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
+  [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md),
+  [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md),
+  [../../plan-review/references/backend.md](../../plan-review/references/backend.md).
+  Code-judo is not one of them — it dispatches at its own boundary below.
 - Keep the main thread compact: collect findings, recommendation, confidence, and any premise uncertainty.
 - Escalate to Standard only when reviewers find cross-cutting risk, unclear ownership, or security-sensitive behavior.
 
 Standard:
 <!-- aitk-model-route:review.pr-standard -->
 - Launch triggered reviewer lenses in parallel.
+  Triggered lenses come from this set: [code-quality.md](code-quality.md),
+  [deep-quality.md](deep-quality.md),
+  [adversarial.md](adversarial.md),
+  [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
+  [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
+  [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md),
+  [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md),
+  [../../plan-review/references/backend.md](../../plan-review/references/backend.md).
+  Code-judo is not one of them — it dispatches at its own boundary below.
 - Use `review` for bounded PR lanes and `deep-review` for architecture,
   security-sensitive, adversarial, or substantial multi-system lanes.
 - Optional second opinion when available.
 - Adversarial lane only with `--adversarial` or security-sensitive detection.
+  It is one of the fan-out lenses above, so dispatch it like any other — its own
+  `--lens` selection, on `deep-review` per the route rule above. That rule is a
+  manifest constraint, not just orchestrator guidance: the boundary's `routes`
+  list permits both routes for the lane as a whole, but `lens_routes` declares a
+  per-lens floor, so `--lens adversarial` on `review` is rejected at resolve time
+  rather than buying a cheaper pass than the lane is worth. On a
+  TRIVIAL PR the flag escalates the tier to Moderate, because TRIVIAL runs a
+  single pass with no fan-out boundary to launch it from; security-sensitive
+  detection escalates to Standard under the existing rule. Its findings are
+  severity-tagged, so they merge with the other lanes rather than getting their
+  own section — that split belongs to Code-judo alone.
+
+**Deep review mode.** When `classify-diff` reports **Deep-tier escalation: YES**
+(`ultra`/`max` effort or a deep-tier phrase — that skill owns the phrase list),
+follow the review SKILL's *Deep review mode* section and route every triggered
+lens through `deep-review`; both `review.pr-moderate` and `review.pr-standard`
+permit it.
+
+**Code-judo lane.** Dispatch the code-judo generative pass separately via
+`review.code-judo` whenever `classify-diff` reports **Code-judo lane: YES** *and*
+the dispatching caller did not pass `Batch mode: Code-judo suppressed` — which a
+`^refactor` PR title or an explicit ask can set on its own, with
+`Deep-tier escalation: NO`. Do not gate judo dispatch on the escalation field.
+Code-judo returns unscored restructuring **proposals**; surface them in their own
+section, not the scored findings/component table.
+
+When the payload carries `Batch mode: Code-judo suppressed` (set by the batch
+orchestrator in [pr-batch.md](pr-batch.md)), skip the judo lane even
+on `Code-judo lane: YES`,
+run the findings lenses only, and record the proposals slot as
+`suppressed (batch)` rather than `none`.
 
 ## Synthesize and Score
 

@@ -24,6 +24,16 @@ review-plan --pm
 
 `--pm`: Include PM brief review (`pm/references/review-feature-brief.md`) in addition to technical reviewers.
 
+## Required Context
+
+Scores use `rules/scoring.md`.
+
+The reviewer lenses themselves are **not** listed here. Both dispatch boundaries
+below fan out over the plan-lens menu declared in `interfaces/model-routing.json`,
+so each worker receives exactly the one lens its dispatch selected. Listing them
+as shared context instead handed every plan reviewer all six sibling contracts and
+asked it to review under six conflicting output formats at once.
+
 ## Command Contract
 
 This workflow owns one-off plan review only. It does not create the plan,
@@ -32,6 +42,15 @@ implement it, or turn review comments into code changes.
 - Read PROJECT.md to find the active plan pointer, then review `PLAN.md` as the formal plan body; do not preload unrelated workflow references.
 <!-- aitk-model-route:workflows.review-plan-fresh -->
 - Use fresh reviewer subagents for each review pass after material plan revisions.
+  One dispatch per lens, selected from the plan-lens menu — the same menu step 3
+  draws from: [architecture.md](../../plan-review/references/architecture.md),
+  [implementation.md](../../plan-review/references/implementation.md),
+  [frontend.md](../../plan-review/references/frontend.md),
+  [backend.md](../../plan-review/references/backend.md),
+  [review-testplan.md](../../testing/references/review-testplan.md), and
+  [review-feature-brief.md](../../pm/references/review-feature-brief.md).
+  Naming the menu here is what makes those lanes dispatchable: a lens this span
+  omits cannot be selected, however clearly step 2 chose it.
 - Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
 - The main thread revises `PLAN.md`; PROJECT.md stores state/pointers and final scores. Subagents return scored findings only.
 - Continue after material findings are resolved and the cold read says Go; otherwise stop on blocker, stop rule, or user decision.
@@ -67,10 +86,22 @@ State the scope assessment, which reviewers are selected, and why before launchi
 ### 3. Review Iterations
 
 <!-- aitk-model-route:workflows.review-plan-selected -->
-Launch selected fresh reviewer subagents in parallel. Use `review` for bounded implementation/test/PM lanes and `deep-review` for architecture, security-sensitive, and final cold-read lanes. Each reviewer:
+Launch the selected fresh reviewer subagents in parallel — one dispatch per lens,
+each naming its own: [architecture.md](../../plan-review/references/architecture.md),
+[implementation.md](../../plan-review/references/implementation.md),
+[frontend.md](../../plan-review/references/frontend.md),
+[backend.md](../../plan-review/references/backend.md),
+[review-testplan.md](../../testing/references/review-testplan.md), or
+[review-feature-brief.md](../../pm/references/review-feature-brief.md).
+Use `review` for bounded implementation/test/PM lanes; architecture and
+security-sensitive lanes resolve to `deep-review`, which the manifest enforces as
+a route floor rather than leaving to the dispatcher's reading of this sentence.
+Each reviewer:
 - Reads only PROJECT.md plus the active plan content needed for its lens
 - Receives the exact inventoried reviewer contract closure inline from the route runner
-- Produces a scored review block (X/10 with strengths, issues, suggestions)
+- Produces a scored review block (X/10 with strengths, issues, suggestions) per
+  `rules/scoring.md` — this is a **plan** fan-out, so lenses shared with code
+  review use their plan-mode output
 
 After collecting scores:
 - If all reviewers are at 8/10 or better → proceed to step 4

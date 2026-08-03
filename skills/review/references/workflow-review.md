@@ -11,9 +11,15 @@ when at least three independent reviewer lanes trigger.
 
 1. The main thread gathers base SHA, changed files, acceptance criteria,
    preflight result, and triggered lens references.
-2. Use `parallel_fanout` with at most six lanes. Each lane runs in a
+2. Use `parallel_fanout` with at most six **findings** lanes. Each lane runs in a
    `fresh_subagent`, reads the actual diff, and returns only schema-shaped
-   findings: severity, file, line, title, detail, proof, and suggested fix.
+   findings: severity, file, line, title, detail, proof, and suggested fix. A
+   full-stack STANDARD review (code quality, deep quality, architecture, tests,
+   frontend, backend) fills exactly six. If a seventh findings lane would trigger
+   (e.g. an adversarial lane stacked onto a full team), shed the lowest-value
+   lane for this diff — drop an untouched-subsystem lane first, then
+   legibility-only coverage — and `log` what was dropped rather than silently
+   truncating.
 3. Fan in every lane before deduplication. Keep the highest severity for
    overlapping file/line/title findings.
 4. Use `parallel_fanout` again to adversarially verify every major/minor finding
@@ -21,10 +27,30 @@ when at least three independent reviewer lanes trigger.
    the claim. Nitpicks may pass through without a verifier.
 5. Return confirmed and refuted arrays only. The main thread writes durable
    review state, applies fixes, re-verifies, and emits the Review Gate.
+   On **`review-code`** that hand-back has one more step: run the
+   **resolved-state audit** at the `review.local-resolved-audit` boundary once
+   the local fix queue is drained. It is mandatory on that path
+   ([local-review.md](local-review.md)), so it belongs in this list — an
+   off-thread fan-out that enumerates the remaining main-thread steps and omits
+   it is how the lane silently stops running on exactly the reviews that require
+   it. On **`review-pr`** it does not run: that boundary's contract reads the
+   local Review Record and fix queue, and a PR review writes neither, so
+   requiring it there names a step whose inputs do not exist. The PR path closes
+   out by posting per [pr-posting.md](pr-posting.md) instead.
 
 ## Bounds
 
 - The classifier selects lenses; never run all lenses by default.
+- **Code-judo runs outside this fan-out.** The code-judo generative pass is never
+  one of the six findings lanes and does not pass through dedup or adversarial
+  verification — its output is unscored, behavior-preserving *proposals*, not
+  severity findings. Dispatch it separately via the `review.code-judo` boundary
+  whenever `classify-diff` reports `Code-judo lane: YES` — in deep review mode or
+  from a `^refactor` title or explicit ask alone — *and* the dispatching caller
+  did not pass `Batch mode: Code-judo suppressed` ([pr-batch.md](pr-batch.md)),
+  which is the sole exception. Route its proposals to a dedicated Restructuring
+  Proposals section of the Review Record; never coerce them into the
+  schema-shaped findings pipeline.
 - A security-sensitive finding may use a three-vote independent panel.
 - Provider adapters may execute fan-out sequentially only through the declared
   fallback; they may not weaken fresh-context or evidence requirements.

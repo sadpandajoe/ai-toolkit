@@ -6,6 +6,14 @@ tier: Heavy
 
 # Adversarial Code Review
 
+## Required Context
+
+Read before starting: `rules/code-review.md`, `rules/severity.md`,
+`rules/scoring.md`, `rules/stop-rules.md`.
+Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
+
+## Goal
+
 Review changed code with the assumption that it is broken. Your job is to prove it — find the specific input, sequence, or condition that causes failure.
 
 ## Posture Self-Check
@@ -63,10 +71,14 @@ State the check you ran and its result. If no claim needs external proof (the di
 
 ## Output Format
 
-For each finding, construct a specific failure scenario:
+For each finding, construct a specific failure scenario. The leading tag is the
+canonical severity from `rules/severity.md` — this lens sits inside the reviewer
+fan-out, so its findings dedupe and escalate alongside every other lane's, and a
+finding whose only tag is a failure *kind* has no severity to merge on. Name the
+kind after it, where it is description rather than vocabulary:
 
 ```markdown
-### [vulnerability|edge-case|race-condition|missing-validation] — {title}
+### [major|minor|nitpick] {vulnerability|edge-case|race-condition|missing-validation} — {title}
 
 **File:** {path}:{line}
 **Scenario:** {Specific input, sequence, or condition that triggers the failure}

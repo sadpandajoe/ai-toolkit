@@ -74,7 +74,7 @@ That reference owns:
 - synthesis, scoring, and recommendation
 
 <!-- aitk-model-route:workflows.review-pr-fresh -->
-Use fresh reviewer subagents for each single-PR review pass. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, or substantial multi-system lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
+Use fresh reviewer subagents for each single-PR review pass. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, or substantial multi-system lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass. The pass follows [../../review/references/pr-review.md](../../review/references/pr-review.md) and posts through [../../review/references/pr-posting.md](../../review/references/pr-posting.md).
 
 ### 3. Post or Draft
 
@@ -95,6 +95,7 @@ Before emitting the chat summary, append a `## PR Review — #N` entry per revie
 Verdict: [approve / request-changes / comment]
 Top finding: [one-liner, or "none"]
 Severity counts: [critical N, major N, minor N, nit N]
+Restructuring proposals: [count, or "none" — populated whenever the Code-judo lane ran, whether from deep review mode, a `^refactor` title, or an explicit ask; write "suppressed (batch)" for PRs reviewed in a batch, where the lane never runs]
 Posted: [yes / draft / no — reason]
 Residual risk: [one-liner, or "none"]
 ```

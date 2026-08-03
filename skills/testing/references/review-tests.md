@@ -6,6 +6,14 @@ tier: Heavy
 
 # Review Tests
 
+## Required Context
+
+Read before starting: `rules/code-review.md`, `rules/severity.md`,
+`rules/stop-rules.md`.
+Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
+
+## Goal
+
 Evaluate the tests related to the current change.
 
 If PROJECT.md exists, read it first to understand the issue, root cause, and expected behavior. If it does not exist, use the in-conversation context, plan, or diff as primary source.
@@ -68,13 +76,21 @@ Identify tests that should be:
 
 ## Output
 
+This lens grades **shipped tests**, so it reports in the code-review vocabulary
+its Required Context declares — severity tags, no score. It previously emitted
+`Score: X/10` and `[High/Medium/Low]`, the plan-review format, while sitting in
+the code fan-out beside lanes returning `[major]`/`[minor]`: the orchestrator
+merges and dedupes those findings, and a lane speaking a different vocabulary
+either gets dropped from the merge or silently reweighted against the rest.
+
 ```markdown
 ## Test Review
-### Score: X/10
+### Findings
+- [major] [Weak test, missing coverage, or production blind spot — why it matters]
+- [minor] [Lower-consequence gap]
+- [nitpick] [Optional polish]
 ### Strengths
 - [Behavioral coverage, high-signal tests, suite efficiency]
-### Issues
-- [High/Medium/Low] [Weak tests, missing coverage, production blind spots — why each matters]
 ### Suggestions
 - [Tests to add, simplification opportunities, defensive checks, monitoring]
 ### Missing

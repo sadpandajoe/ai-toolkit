@@ -44,7 +44,7 @@ If you find PII, rewrite it generically and re-check the reply still answers the
 1. Inline reply for line-anchored review comments with a path, line, and comment id:
 
 ```bash
-gh api repos/<owner>/<repo>/pulls/comments/<comment-id>/replies \
+gh api repos/<owner>/<repo>/pulls/<number>/comments/<comment-id>/replies \
   -f body="<response>"
 ```
 

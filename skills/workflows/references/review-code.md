@@ -42,10 +42,10 @@ That reference dispatches:
 <!-- aitk-model-route:workflows.review-code-orchestration -->
 The main thread is the orchestrator. It gathers changed files, runs the Complexity Gate, runs repo-appropriate pre-flight verification, dispatches reviewer subagents on `review`/`deep-review` plus an independent second-opinion capability concurrently when available, deduplicates findings across all lanes, writes actionable review state to PROJECT.md, applies accepted fixes ("accepted" = confirmed by review synthesis/triage, not a per-fix user pause — only disputed or user-decision findings surface to the user), re-verifies, and emits the Review Gate.
 
-All review judgment comes from fresh-context reviewer lanes. The main thread synthesizes and fixes; it does not replace the reviewers.
+All review judgment comes from fresh-context reviewer lanes. The main thread synthesizes and fixes; it does not replace the reviewers. It dedupes and sorts on the `rules/severity.md` scale and closes the loop under `rules/review-gate.md`; the lens contracts themselves belong to the lane boundaries in [../../review/references/local-review.md](../../review/references/local-review.md), not to this orchestrator.
 
 <!-- aitk-model-route:workflows.review-code-fresh -->
-Use fresh reviewer subagents for each review pass after material code changes. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, and high-risk integrated lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
+Use fresh reviewer subagents for each review pass after material code changes. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, and high-risk integrated lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass. Lane selection and the lens set come from [../../review/references/local-review.md](../../review/references/local-review.md).
 
 For STANDARD or expensive reviews, checkpoint + context_reset before reviewer dispatch once pre-flight verification and diff scope are recorded, and again after review findings or fixes when QA/PR/final reporting remains. Resume from changed-file list, pre-flight result, PROJECT.md review record, and Review Gate state rather than from implementation chatter.
 
