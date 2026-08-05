@@ -55,8 +55,13 @@ Classify scope with `rules/complexity-gate.md` and this review-specific routing:
 | Lines changed | < 50 | 50-200 | 200+ |
 | Logic changes | None or cosmetic | Contained functional change | Cross-cutting behavior |
 | Reviewer lanes | Code quality only | Triggered lanes only | Full triggered team |
+| Ensemble ([ensemble.md](ensemble.md)) | `trivial` | `moderate` | `standard` (`deep` in deep review mode) |
 
-The independent second-opinion capability runs on **every** tier when available, independent of this table.
+At TRIVIAL the single code-quality lens **is** the independent review — one
+fresh reviewer, not zero and not two. The separate second-opinion capability
+lane starts at MODERATE, where it is requested concurrently with the triggered
+lanes whenever it is available. Deep review mode pins the tier to at least
+STANDARD, so it never lands in the TRIVIAL column.
 
 Formatting-only diffs and micro-fixes may skip the review loop under `rules/review-gate.md`.
 
@@ -113,7 +118,7 @@ The main thread is an orchestrator. Dispatch fresh-context reviewer subagents on
 Use triggered references from `classify-diff.md`, including:
 
 - [code-quality.md](code-quality.md)
-- [deep-quality.md](deep-quality.md) — strict structural findings; default lane on STANDARD-tier diffs
+- [deep-quality.md](deep-quality.md) — strict structural findings on `deep-review`; the default lane filling that mandatory route
 - [adversarial.md](adversarial.md) — red-team findings on `deep-review`; fires on security sensitivity or an explicit ask
 - [../../testing/references/review-tests.md](../../testing/references/review-tests.md)
 - [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md)
@@ -129,9 +134,12 @@ escalation **NO**, so dispatch it on `Code-judo lane: YES` and never gate it on
 the escalation field.
 
 <!-- aitk-model-route:review.local-independent-second-opinion -->
-Launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
+On MODERATE and above, launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
 
-Collect findings from all primary lanes and the independent lane, dedupe, sort by the `rules/severity.md` scale, and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing.
+<!-- aitk-model-route:review.local-cross-provider-cold -->
+On STANDARD and above — and at MODERATE only when the user or workflow asked to cross providers, passing `--cross-provider` — also dispatch the ensemble's cross-provider cold reviewer concurrently, resolved with `bin/aitk review-ensemble <tier> --provider <origin> --available <reachable>`: run `bin/aitk model-run --provider <cross-provider>` on the ensemble's cross lane route with scope and diff only — never the origin lanes' findings. It is a separate stage and does not consume the lens lane budget. If the cross provider is unreachable, apply the ensemble's degraded action (`continue`/`disclose` proceed with the disclosure sentence; `deep` and `security` block pending explicit user override) and never substitute another model for it.
+
+Collect findings from all primary lanes, the cross-provider lane, and the independent lane; dedupe while **merging** each finding's `provider/family` provenance; sort by the `rules/severity.md` scale; and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing. Verify each `[major]`/`[minor]` with a lane from a different family than the one that raised it (a different provider in deep review mode), per [ensemble.md](ensemble.md).
 
 ### Code-Judo Lane (Dispatched at Its Own Boundary)
 
@@ -201,7 +209,7 @@ round with the same recorded base.
 
 ## Independent Second Opinion (capability-based)
 
-Every `review-code` run requests an independent review in addition to the primary reviewer lanes on all tiers that run the review loop. The lane degrades gracefully and never blocks the review.
+MODERATE and above request an independent review in addition to the primary reviewer lanes. The lane degrades gracefully and never blocks the review. TRIVIAL does not run it — its one code-quality lens already satisfies the never-review-your-own-work rule, and a second lane on a one-line diff buys nothing.
 
 <!-- aitk-model-route:review.local-independent-capability -->
 Launch the runtime's configured `independent-review` capability on `review` concurrently with reviewer dispatch. Provider adapters own discovery, authentication, and invocation; this shared skill owns only the stable input and output contract.
@@ -241,10 +249,21 @@ Emit after all review lanes finish:
 Rounds: [N]
 Base: [short-sha — every round measured against this]
 Pre-flight: [pass/fail/skipped]
-Independent review: [clean/findings (N) /skipped (unavailable) /skipped (micro-fix)]
+Independent review: [clean/findings (N) /skipped (unavailable) /skipped (trivial tier) /skipped (micro-fix)]
 Resolved-state audit: [clean/reopened (N) /not required]
+Ensemble: [trivial/moderate/standard/deep/security]
+Model coverage: [provider-diverse/family-diverse/single-family] — lanes: [provider/family list]
+Verification: [model-diverse/reduced (reason)]
 Status: [clean/blocked/user decision/skipped/micro-fix]
 ```
+
+`Model coverage:` is the resolver's level verbatim. Whenever the resolver
+returns a disclosure sentence, append it on the next line — it fires when
+coverage is below the floor, when a requested lane was dropped even though the
+floor still holds, and when the roster cannot supply a diverse verifier. Never write a coverage level the run did not achieve, and
+never count the orchestrating session's own model as a lane — the toolkit pins
+the model it requests but cannot attest the provider's internal serving-model
+identity.
 
 ## PROJECT.md Review Record
 
@@ -257,13 +276,14 @@ Write or update this compact record before fixing findings or clearing context. 
 **Scope:** <changed files or path filter>
 **Independent scope:** <branch (base..HEAD) — note it here when it is wider than Scope>
 **Pre-flight:** <pass/fail/skipped — command or reason>
+**Ensemble / coverage:** <ensemble> / <coverage level> <resolver disclosure, when it returns one>
 **Review Gate:** <pending/clean/blocked/user decision/skipped/micro-fix>
 **Resolved-state audit:** <pending/clean/reopened (N)/not required>
 
 ### Findings
-| ID | Severity | File | Finding | Locking assertion | Status |
-|----|----------|------|---------|-------------------|--------|
-| R1 | major/minor/nitpick | path:line | concise issue | the assertion that fails today and passes once fixed, or `n/a` | open/fixed/deferred/user-decision |
+| ID | Severity | File | Finding | Locking assertion | Raised by | Verified by | Status |
+|----|----------|------|---------|-------------------|-----------|-------------|--------|
+| R1 | major/minor/nitpick | path:line | concise issue | the assertion that fails today and passes once fixed, or `n/a` | provider/family | provider/family or unverified | open/fixed/deferred/user-decision |
 
 ### Restructuring Proposals
 <!-- Only when a code-judo pass ran (`Code-judo lane: YES` — deep review mode is one way in, a `^refactor` title or explicit ask is another). These are unscored, behavior-preserving proposals, not severity findings — never fold them into the Fix Queue automatically. Omit the section entirely when no judo pass ran or it found no move. -->
@@ -285,10 +305,11 @@ Use the standalone summary only when `review-code` is user-invoked directly. Int
 ```markdown
 ## Review-Code Complete
 Rounds: [N] | Pre-flight: [pass/fail/skipped] | Status: [clean/blocked]
+Model coverage: [level] — [provider/family lanes] [+ resolver disclosure, when it returns one]
 
 ### Team Selected
-| Reviewer | Why |
-|----------|-----|
+| Reviewer | Route | Provider/Family | Why |
+|----------|-------|-----------------|-----|
 
 ### Fixed
 - [...]

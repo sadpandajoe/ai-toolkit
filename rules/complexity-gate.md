@@ -19,10 +19,18 @@ Reason: [one line]
 
 When classification is `TRIVIAL` and confidence is `8/10` or higher:
 - **Auto-proceed** — do not ask the user for confirmation before implementing; the high-confidence classification is the approval
-- Skip the formal planning phase, investigation lanes, RCA validation, and reviewer subagents
+- Skip the formal planning phase, investigation lanes, and RCA validation
 - Go directly to implementation, verification, Review Gate emission, and summary
 - Emit Review Gate `skipped` or `micro-fix` only when `rules/review-gate.md` allows it; otherwise reclassify as MODERATE before logic review
-- Zero subagent spawns — orchestrator does all work inline
+- Zero subagent spawns **for the implementation path** — the orchestrator scopes, implements, and verifies inline
+
+**Scope of the zero-spawn rule.** It governs the implementation path only. A
+workflow whose *product* is a review — `review-code`, `review-pr`,
+`review-code-adversarial` — still runs exactly one fresh reviewer at TRIVIAL:
+the never-review-your-own-work rule outranks the fast path, and one lane is the
+floor, not zero. That single lane *is* the independent review; TRIVIAL does not
+add a second-opinion lane on top of it. An explicit deep review pins the tier to
+at least STANDARD, so it never takes this path at all.
 
 ## Moderate Path
 

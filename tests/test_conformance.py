@@ -695,7 +695,7 @@ class ConformanceTests(unittest.TestCase):
         # lens menus already had: named by the procedure that requires it, absent
         # from the enumeration the caller actually follows.
         handback = re.search(
-            r"^5\. Return confirmed.*?(?=^## )",
+            r"^6\. Return confirmed.*?(?=^## )",
             (ROOT / "skills/review/references/workflow-review.md").read_text(),
             re.MULTILINE | re.DOTALL,
         )

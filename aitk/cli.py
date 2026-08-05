@@ -22,7 +22,12 @@ from .checkpoint import (
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
 from .doctor import run_doctor
 from .installer import install, resolve_paths, rollback, uninstall
-from .model_routing import ModelRouteError, resolve_route, run_model
+from .model_routing import (
+    ModelRouteError,
+    resolve_ensemble,
+    resolve_route,
+    run_model,
+)
 from .pgm import preflight as pgm_preflight
 from .workflows import load_workflows
 
@@ -231,6 +236,53 @@ def _model_route(arguments: argparse.Namespace) -> int:
             )
             print(f"{key}: {rendered}")
     return 0
+
+
+def _review_ensemble(arguments: argparse.Namespace) -> int:
+    root = _root(arguments.root)
+    try:
+        ensemble = resolve_ensemble(
+            root,
+            arguments.ensemble,
+            arguments.provider,
+            arguments.available,
+            engage_cross_provider=arguments.cross_provider,
+        )
+    except ModelRouteError as error:
+        if arguments.json:
+            print(
+                json.dumps(
+                    {
+                        "command": "review-ensemble",
+                        "error": {"code": error.code, "message": str(error)},
+                    },
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(f"{error.code}: {error}", file=sys.stderr)
+        return 2
+    payload = {"command": "review-ensemble", **ensemble.as_dict()}
+    if arguments.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(f"ensemble: {ensemble.name}")
+        print(f"origin: {ensemble.origin_provider}")
+        print(f"cross-provider: {ensemble.cross_provider_policy}")
+        for lane in ensemble.lens + ensemble.cross:
+            print(
+                f"{lane.role}: {lane.provider}/{lane.route} "
+                f"{lane.family} {lane.effort}"
+            )
+        print(
+            f"verification: {ensemble.verification_lanes} lane(s), "
+            f"{ensemble.verifier_diversity}-diverse"
+        )
+        print(f"coverage: {ensemble.coverage} (floor {ensemble.coverage_floor})")
+        print(f"status: {ensemble.status}")
+        if ensemble.disclosure:
+            print(ensemble.disclosure)
+    return 0 if ensemble.status != "blocked" else 4
 
 
 def _model_run(arguments: argparse.Namespace) -> int:
@@ -500,6 +552,31 @@ def parser() -> argparse.ArgumentParser:
     )
     model_route.add_argument("--json", action="store_true")
     model_route.set_defaults(handler=_model_route)
+
+    review_ensemble = subparsers.add_parser(
+        "review-ensemble",
+        help="resolve a review tier to its exact provider/model roster",
+    )
+    review_ensemble.add_argument("ensemble")
+    review_ensemble.add_argument(
+        "--provider",
+        required=True,
+        choices=("codex", "claude"),
+        help="provider the review is orchestrated from",
+    )
+    review_ensemble.add_argument(
+        "--available",
+        nargs="+",
+        choices=("codex", "claude"),
+        help="provider CLIs actually reachable; defaults to all",
+    )
+    review_ensemble.add_argument(
+        "--cross-provider",
+        action="store_true",
+        help="engage the cross lanes of an optional tier; required tiers always engage them",
+    )
+    review_ensemble.add_argument("--json", action="store_true")
+    review_ensemble.set_defaults(handler=_review_ensemble)
 
     model_run = subparsers.add_parser(
         "model-run", help="run one fail-closed worker with pinned model and effort"

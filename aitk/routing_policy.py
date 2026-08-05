@@ -74,6 +74,20 @@ ROUTE_RESTRICTIONS = {
 LENS_DOMAINS = ("code", "plan")
 
 
+# Review-ensemble vocabulary. A review tier names a roster of provider/model
+# lanes rather than a single route, so that "deep review" can mean a claim about
+# which models actually ran instead of how hard one model was asked to think.
+ENSEMBLE_NAMES = {"trivial", "moderate", "standard", "deep", "security"}
+CROSS_PROVIDER_POLICIES = {"forbidden", "optional", "required"}
+VERIFIER_DIVERSITY = {"none", "family", "provider"}
+DEGRADED_ACTIONS = {"continue", "disclose", "block"}
+LANE_ORIGINS = {"origin", "cross"}
+# Ordered weakest to strongest: a run's coverage is compared against its tier's
+# floor by index, so the order is load-bearing rather than cosmetic.
+COVERAGE_LEVELS = ("single-family", "family-diverse", "provider-diverse")
+MAX_LENS_LANES = 6
+
+
 # The output vocabulary each lens domain grades in (`rules/severity.md`), and the
 # score a plan lane must carry (`rules/scoring.md`). These exist as data because
 # `lens_domain` used to reach only the worker prompt: a code lane could return
@@ -237,6 +251,9 @@ ROUTE_ERROR = "MODEL_ROUTE_INVALID"
 
 
 UNAVAILABLE_ERROR = "MODEL_ROUTE_UNAVAILABLE"
+
+
+ENSEMBLE_BLOCKED_ERROR = "REVIEW_ENSEMBLE_BLOCKED"
 
 
 PROMPT_LIMIT = 1024 * 1024
@@ -490,3 +507,91 @@ def _route_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
         for item in routes
         if isinstance(item, dict) and isinstance(item.get("name"), str)
     }
+
+
+def _ensemble_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
+    entries = payload.get("ensembles")
+    if not isinstance(entries, list):
+        return {}
+    return {
+        str(item.get("name")): item
+        for item in entries
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+
+
+@dataclass(frozen=True)
+class EnsembleLane:
+    role: str
+    provider: str
+    route: str
+    family: str
+    selector: str
+    effort: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "role": self.role,
+            "provider": self.provider,
+            "route": self.route,
+            "family": self.family,
+            "selector": self.selector,
+            "effort": self.effort,
+        }
+
+
+@dataclass(frozen=True)
+class ResolvedEnsemble:
+    """One review tier resolved to its exact provider/model roster.
+
+    ``lens`` holds one entry per lens route the origin provider must exercise.
+    The routes are mandatory, not a menu: at least one lens lane runs on each,
+    which is what makes ``coverage`` a statement about the run instead of about
+    the palette. ``lens_lanes`` is the concurrent lens-lane budget for a single
+    fan-out stage; verification and cross-provider lanes are separate stages and
+    do not consume it.
+    """
+
+    name: str
+    origin_provider: str
+    cross_provider: str | None
+    cross_provider_policy: str
+    lens_lanes: int
+    lens: tuple[EnsembleLane, ...]
+    cross: tuple[EnsembleLane, ...]
+    dropped_lanes: tuple[str, ...]
+    unverifiable_lanes: tuple[str, ...]
+    verification_lanes: int
+    verifier_diversity: str
+    verification_pool: tuple[EnsembleLane, ...]
+    coverage_floor: str
+    coverage: str
+    providers: tuple[str, ...]
+    families: tuple[str, ...]
+    on_degraded: str
+    status: str
+    disclosure: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "ensemble": self.name,
+            "origin_provider": self.origin_provider,
+            "cross_provider": self.cross_provider,
+            "cross_provider_policy": self.cross_provider_policy,
+            "lens_lanes": self.lens_lanes,
+            "lens": [lane.as_dict() for lane in self.lens],
+            "cross": [lane.as_dict() for lane in self.cross],
+            "dropped_lanes": list(self.dropped_lanes),
+            "unverifiable_lanes": list(self.unverifiable_lanes),
+            "verification": {
+                "lanes": self.verification_lanes,
+                "diversity": self.verifier_diversity,
+            },
+            "coverage_floor": self.coverage_floor,
+            "coverage": self.coverage,
+            "providers": list(self.providers),
+            "families": list(self.families),
+            "on_degraded": self.on_degraded,
+            "status": self.status,
+            "disclosure": self.disclosure,
+        }

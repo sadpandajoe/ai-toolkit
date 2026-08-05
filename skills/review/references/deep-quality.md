@@ -10,9 +10,11 @@ does not replace it. Run the baseline code-quality loop for
 DRY/reuse/placement/test-coverage, and run this for strict structural findings.
 
 This lens finds structural problems. Its generative sibling,
-`references/code-judo.md`, *proposes* behavior-preserving restructurings and is
-pinned to the deeper `deep-review` route. This findings lens runs on the normal
-`review` route and can activate at normal review effort.
+`references/code-judo.md`, *proposes* behavior-preserving restructurings. Both
+run on the `deep-review` route; the difference between them is budget and
+output, not model. This lens occupies one of the tier's lens lanes and returns
+findings; code-judo runs outside that budget as an extra stage and returns
+unscored proposals.
 
 ## Triggers
 
@@ -22,10 +24,11 @@ whenever that classifier lists it under Triggered Reviewers, and never
 re-derives the conditions here.
 
 Two route facts belong to this lens rather than the classifier: it runs on the
-cheap `review` route alongside baseline code quality (only deep-tier escalation
-reroutes it to `deep-review`), and a bare "deep quality" ask fires *this lens
-only* — that ask is not a deep-tier phrase, so it neither escalates the
-review's route nor adds a Code-judo pass.
+`deep-review` route, which is also how a tier whose mandatory `deep-review`
+route would otherwise carry no lane gets one (see `references/ensemble.md`); and
+a bare "deep quality" ask fires *this lens only* — that ask is not a deep-tier
+phrase, so it neither pins the tier, nor escalates the other lenses' routes, nor
+adds a Code-judo pass.
 
 ## Required Context
 
