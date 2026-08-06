@@ -357,12 +357,13 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
     else:
         efforts = policy.get("efforts")
         if (
-            efforts != {"standard": "high", "deep": "xhigh"}
+            efforts != {"light": "medium", "standard": "high", "deep": "xhigh"}
             or policy.get("automatic_max") is not False
             or policy.get("fallback") != "forbidden"
         ):
             problems.append(
-                "model routing policy must use high/xhigh with no max or fallback"
+                "model routing policy must use light/medium, standard/high, and "
+                "deep/xhigh reasoning tiers with no max or fallback"
             )
     providers = payload.get("providers")
     if not isinstance(providers, dict) or set(providers) != PROVIDERS:
@@ -537,7 +538,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             ("Write", "Edit", "NotebookEdit"),
         ),
         "operations": (
-            "standard",
+            "light",
             "operations",
             False,
             "sol",

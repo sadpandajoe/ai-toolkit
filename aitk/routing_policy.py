@@ -18,7 +18,7 @@ import re
 PROVIDERS = {"codex", "claude"}
 
 
-REASONING = {"standard", "deep"}
+REASONING = {"light", "standard", "deep"}
 
 
 RESPONSIBILITIES = {"implementation", "review", "rca", "operations"}

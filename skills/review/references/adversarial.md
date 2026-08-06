@@ -99,6 +99,17 @@ Rate the overall adversarial assessment:
 
 When consumed by commands that aggregate numeric scores, use the numeric equivalent (1-10) alongside the tier name. See `rules/scoring.md` for the universal scale.
 
+## If Dispatch Fails
+
+This lens is pinned to the `deep-review` route. The underlying model runs safety
+classifiers on offensive-cybersecurity content that can false-positive on
+legitimate defensive security review, and the routing transport does not
+distinguish a content refusal from a transport failure — both surface as the
+same `MODEL_ROUTE_UNAVAILABLE`. If this lens fails while other `deep-review`
+lenses on the same diff succeed, treat it as a possible refusal rather than a
+broken route: retry manually via the `review` (non-deep) route instead of
+re-dispatching `deep-review`.
+
 ## Rules
 
 - Do not flag theoretical issues — every finding must have a concrete scenario

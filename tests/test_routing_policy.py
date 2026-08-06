@@ -31,7 +31,7 @@ class RoutingPolicyTests(RoutingTestCase):
             ("deep-review", "claude"): ("fable", "xhigh", "plan"),
             ("rca", "claude"): ("opus", "high", "plan"),
             ("deep-rca", "codex"): ("sol", "xhigh", "read-only"),
-            ("operations", "claude"): ("sonnet", "high", "dontAsk"),
+            ("operations", "claude"): ("sonnet", "medium", "dontAsk"),
         }
         for (name, provider), expected in cases.items():
             with self.subTest(route=name, provider=provider):

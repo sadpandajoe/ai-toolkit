@@ -2,6 +2,7 @@
   "version": 1,
   "policy": {
     "efforts": {
+      "light": "medium",
       "standard": "high",
       "deep": "xhigh"
     },
@@ -156,7 +157,7 @@
     },
     {
       "name": "operations",
-      "reasoning": "standard",
+      "reasoning": "light",
       "responsibility": "operations",
       "restrictions": [
         "Collect read-only evidence, produce deterministic reports, or prepare already-authored API, ticket, or Playwright steps for parent execution.",

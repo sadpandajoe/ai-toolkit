@@ -47,7 +47,7 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertIn("AI_TOOLKIT_MODEL_ROUTE_V1", prompt)
         selector = MODEL_CATALOG["claude"]["models"]["sonnet"]["selector"]
         self.assertIn(f"selector={selector}", prompt)
-        self.assertIn("effort=high", prompt)
+        self.assertIn("effort=medium", prompt)
         self.assertIn("design tests", prompt)
         self.assertIn(contract_content, prompt)
         self.assertTrue(prompt.endswith("TASK_END\n"))
