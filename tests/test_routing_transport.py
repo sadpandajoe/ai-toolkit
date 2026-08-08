@@ -877,6 +877,100 @@ class RoutingTransportTests(RoutingTestCase):
                     payload["transport"],
                 )
                 self.assertEqual("MODEL_ROUTE_UNAVAILABLE", payload["error"]["code"])
+                if failure == "nonzero":
+                    self.assertEqual(
+                        "provider process failed: rejected",
+                        payload["error"]["message"],
+                    )
+
+    def test_provider_failure_diagnostic_is_bounded(self) -> None:
+        def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            if "--version" in argv:
+                return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+            if "--help" in argv:
+                flags = " ".join(
+                    (
+                        "--print --no-session-persistence --safe-mode ",
+                        "--strict-mcp-config --mcp-config --model --effort ",
+                        "--permission-mode --json-schema --output-format ",
+                        "--disallowedTools --tools",
+                    )
+                )
+                return subprocess.CompletedProcess(argv, 0, flags, "")
+            return subprocess.CompletedProcess(argv, 1, "", "x" * 5000)
+
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+            prompt.write("Review this change.")
+            prompt.flush()
+            with mock.patch(
+                "aitk.routing_transport.shutil.which", return_value="/bin/claude"
+            ):
+                code, payload = run_model(
+                    ROOT,
+                    "review",
+                    "claude",
+                    "review.code-quality-final",
+                    Path(prompt.name),
+                    cwd=ROOT,
+                    runner=runner,
+                )
+
+        self.assertEqual(3, code)
+        self.assertEqual("MODEL_ROUTE_UNAVAILABLE", payload["error"]["code"])
+        self.assertTrue(payload["error"]["message"].endswith("… [truncated]"))
+        self.assertLessEqual(len(payload["error"]["message"]), 1100)
+
+    def test_provider_failure_uses_a_structured_error_event_when_stderr_is_empty(
+        self,
+    ) -> None:
+        def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            if "--version" in argv:
+                return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+            if "--help" in argv:
+                flags = " ".join(
+                    (
+                        "--print --no-session-persistence --safe-mode ",
+                        "--strict-mcp-config --mcp-config --model --effort ",
+                        "--permission-mode --json-schema --output-format ",
+                        "--disallowedTools --tools",
+                    )
+                )
+                return subprocess.CompletedProcess(argv, 0, flags, "")
+            return subprocess.CompletedProcess(
+                argv,
+                1,
+                json.dumps(
+                    {
+                        "type": "result",
+                        "subtype": "error",
+                        "is_error": True,
+                        "error": {"message": "selected model is unavailable"},
+                    }
+                ),
+                "",
+            )
+
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+            prompt.write("Review this change.")
+            prompt.flush()
+            with mock.patch(
+                "aitk.routing_transport.shutil.which", return_value="/bin/claude"
+            ):
+                code, payload = run_model(
+                    ROOT,
+                    "review",
+                    "claude",
+                    "review.code-quality-final",
+                    Path(prompt.name),
+                    cwd=ROOT,
+                    runner=runner,
+                )
+
+        self.assertEqual(3, code)
+        self.assertEqual(
+            "provider process failed: selected model is unavailable",
+            payload["error"]["message"],
+        )
 
     def test_invalid_prompt_is_rejected_before_provider_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
