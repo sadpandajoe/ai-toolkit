@@ -37,6 +37,58 @@ from aitk.routing_closure import _contracts
 from aitk.routing_resolver import resolve_route
 
 
+_PROVIDER_DIAGNOSTIC_LIMIT = 1024
+
+
+def _structured_failure_diagnostic(stdout: str) -> str:
+    """Extract only an explicit provider error message from JSON output."""
+
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("type")
+        failed = (
+            event_type == "error"
+            or (isinstance(event_type, str) and event_type.endswith(".failed"))
+            or event.get("is_error") is True
+            or event.get("subtype") == "error"
+        )
+        if not failed:
+            continue
+        error = event.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return error["message"]
+        if isinstance(error, str):
+            return error
+        if isinstance(event.get("message"), str):
+            return event["message"]
+    return ""
+
+
+def _provider_failure_message(stderr: str, stdout: str) -> str:
+    """Return a bounded, one-line diagnostic for a failed provider process.
+
+    A nonzero CLI exit is still fail-closed, but the provider's stderr is often
+    the only indication whether the pinned selector, authentication, or a
+    required control was rejected. Keep that evidence in the structured error
+    without letting terminal control characters or an unbounded provider log
+    flood a workflow checkpoint or summary.
+    """
+
+    diagnostic = re.sub(r"\s+", " ", stderr).strip()
+    if not diagnostic:
+        diagnostic = _structured_failure_diagnostic(stdout)
+    if not diagnostic:
+        return "provider process failed"
+    if len(diagnostic) > _PROVIDER_DIAGNOSTIC_LIMIT:
+        diagnostic = diagnostic[:_PROVIDER_DIAGNOSTIC_LIMIT] + "… [truncated]"
+    return f"provider process failed: {diagnostic}"
+
+
 def worker_prompt(
     route: ResolvedRoute,
     prompt: str,
@@ -553,7 +605,7 @@ def run_model(
                 exit_code=process.returncode,
                 argv=None,
                 result=None,
-                error="provider process failed",
+                error=_provider_failure_message(process.stderr, process.stdout),
             )
         try:
             if provider == "codex":
