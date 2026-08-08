@@ -38,8 +38,13 @@ Classify the PR scope with the shared TRIVIAL / MODERATE / STANDARD gate and thi
 | Lines changed | < 100 | 100-400 | 400+ |
 | Behavioral change | None / cosmetic | Contained functional change | Cross-cutting or contract change |
 | Reviewer lanes | Code quality only | Triggered lanes only | Full triggered team, plus optional second opinion |
+| Ensemble ([ensemble.md](ensemble.md)) | `trivial` | `moderate` | `standard` (`deep` in deep review mode) |
 
 Emit the Complexity Gate block per `rules/complexity-gate.md`.
+
+`review-pr --deep` (and the phrase "deep review PR #N") pins the tier to at
+least STANDARD before this table is read — size signals can raise that floor but
+never lower it.
 
 Trivial + confidence 8/10+: code quality review only, unless impact assessment escalates. Moderate: triggered reviewer lanes only, with no premise deep-dive unless impact or uncertainty escalates. Standard: premise validation plus full triggered team.
 
@@ -80,7 +85,8 @@ One worker receives one reviewer contract, never the whole set the marker lists
 below, so resolve a separate route per triggered lens rather than batching them.
 
 Trivial:
-- Single-pass code quality review.
+<!-- aitk-model-route:review.pr-trivial -->
+- Dispatch exactly one fresh code-quality reviewer on `review`. That single lane **is** the independent review — never zero, never a second lane, and never an orchestrator self-review in its place.
 - If clean, return a compact approve recommendation. Post/approve only when `--auto` or explicit user authorization grants that boundary.
 
 Moderate:
@@ -100,7 +106,9 @@ Moderate:
 
 Standard:
 <!-- aitk-model-route:review.pr-standard -->
-- Launch triggered reviewer lenses in parallel.
+- Launch triggered reviewer lenses in parallel on the origin provider, bounded by
+  the ensemble's lens lane budget and the priority order in
+  [classify-diff.md](classify-diff.md).
   Triggered lenses come from this set: [code-quality.md](code-quality.md),
   [deep-quality.md](deep-quality.md),
   [adversarial.md](adversarial.md),
@@ -126,11 +134,15 @@ Standard:
   severity-tagged, so they merge with the other lanes rather than getting their
   own section — that split belongs to Code-judo alone.
 
+<!-- aitk-model-route:review.pr-cross-provider-cold -->
+Standard and deep PR reviews also dispatch the ensemble's cross-provider cold reviewer as a separate stage: resolve the roster with `bin/aitk review-ensemble <tier> --provider <origin> --available <reachable>`, then run `bin/aitk model-run --provider <cross-provider>` on the resolved cross lane route with PR scope and diff only — never the origin lanes' findings. It does not consume the lens lane budget. Verify each `[major]`/`[minor]` with a lane from a different family than the one that raised it (a different provider at `deep`/`security`), and keep `provider/family` provenance on every finding through dedup into the report.
+
 **Deep review mode.** When `classify-diff` reports **Deep-tier escalation: YES**
-(`ultra`/`max` effort or a deep-tier phrase — that skill owns the phrase list),
-follow the review SKILL's *Deep review mode* section and route every triggered
-lens through `deep-review`; both `review.pr-moderate` and `review.pr-standard`
-permit it.
+(`ultra`/`max` effort, `--deep`, or a deep-tier phrase — `classify-diff` owns
+the phrase list), follow the review SKILL's *Deep review mode* section: pin the
+tier to at least STANDARD, route every triggered lens through `deep-review` —
+both `review.pr-moderate` and `review.pr-standard` permit it — and run the
+cross-provider cold lane on `deep-review`.
 
 **Code-judo lane.** Dispatch the code-judo generative pass separately via
 `review.code-judo` whenever `classify-diff` reports **Code-judo lane: YES** *and*
@@ -145,6 +157,11 @@ orchestrator in [pr-batch.md](pr-batch.md)), skip the judo lane even
 on `Code-judo lane: YES`,
 run the findings lenses only, and record the proposals slot as
 `suppressed (batch)` rather than `none`.
+
+If the cross provider is unreachable, the `deep` ensemble **blocks**: report the
+resolver's disclosure and stop, or continue only on explicit user override with
+the disclosure retained in the output. A single-provider run is never reported as
+a deep review.
 
 ## Synthesize and Score
 
@@ -178,7 +195,12 @@ Clean reviews skip the reasoning review and proceed to posting rules.
 
 Return the synthesized review plus:
 - recommendation
-- team selected
+- team selected, with each lane's route and `provider/family`
+- ensemble name, resolved `Model coverage:` level, and the resolver's disclosure sentence whenever it returns one (below floor, dropped lane, or no diverse verifier)
 - component scores
-- finding counts
+- finding counts, each finding carrying raiser and verifier `provider/family`
 - posting mode needed (`draft`, `confirm`, `auto`)
+
+Findings posted to GitHub carry severity and evidence only. Model provenance
+stays in the local report and PROJECT.md record — it is orchestration detail,
+not review-comment content.

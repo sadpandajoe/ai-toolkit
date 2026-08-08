@@ -29,12 +29,16 @@ Use the [feedback skill](../../feedback/SKILL.md) for actionable review-comment 
 
 ```
 review-pr <pr-number-or-url>
+review-pr <pr-number-or-url> --deep
 review-pr <pr-number-or-url> --draft
 review-pr <pr-number-or-url> --adversarial
 review-pr <pr-number-or-url> --auto
 review-pr 101 102 103
 review-pr --all-open
 ```
+
+`--deep` is the flag form of "deep review PR #N". It is a defined mode, not an
+intensity adjective — see [Deep Review Mode](#deep-review-mode).
 
 ## Contract
 
@@ -49,6 +53,37 @@ review-pr --all-open
 - For batch reviews, keep the main thread as a thin orchestrator and use compact per-PR handoffs.
 - For batch reviews of 4+ PRs, follow `rules/context-management.md`: after each wave of 3 PRs, the main thread must append a `## Review-PR Batch Wave N` block to PROJECT.md (per-PR recommendation, posted status, top finding, residual risk), then checkpoint + context_reset before launching the next wave. This is a hard gate — without the PROJECT.md write, the per-PR posting state is lost on clear.
 - For every reviewed PR (single or batch), append a `## PR Review — #N` entry to PROJECT.md before the chat summary. This is a hard gate so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) immediately after `review-pr` does not lose the review record.
+- Report the resolved `Model coverage:` level on every review, and never describe a run as multi-model, ensemble, or deep coverage that it did not achieve.
+
+## Deep Review Mode
+
+`--deep` and `ultra`/`max` effort select this mode, as does any deep-tier phrase
+— [classify-diff](../../review/references/classify-diff.md) owns that phrase
+list and reports the verdict as `Deep-tier escalation: YES`; do not restate the
+phrases here. The mode is defined by four simultaneous properties — a run
+missing any of them is not a deep review and must not be reported as one:
+
+1. **Tier floor**: the Complexity Gate is pinned to at least STANDARD. A
+   two-file PR gets STANDARD handling, not the Trivial fast path.
+2. **Ensemble**: the `deep` roster from
+   [skills/review/references/ensemble.md](../../review/references/ensemble.md) —
+   every triggered lens on the `deep-review` route.
+3. **Cross-provider review is mandatory**: a cold whole-diff review on the
+   provider this session is *not* running on — the roster is symmetric, so
+   whichever provider orchestrates, the other one reviews. It receives scope and
+   diff only, never the origin lanes' findings.
+4. **Provider-diverse verification**: each `[major]`/`[minor]` is verified by a
+   lane from a different provider than the one that raised it, with
+   `provider/family` provenance preserved from raise through synthesis.
+
+If the other provider is unreachable, deep mode **blocks**: report the
+resolver's disclosure sentence and stop. Continue only on an explicit user
+override, keeping the disclosure in both the summary and the PROJECT.md record.
+Never substitute a different model for the missing provider.
+
+Ordinary `review-pr` without `--deep` keeps its adaptive routing: the tier comes
+from the diff, and a missing cross provider degrades with disclosure rather than
+blocking.
 
 ## Steps
 
@@ -74,7 +109,7 @@ That reference owns:
 - synthesis, scoring, and recommendation
 
 <!-- aitk-model-route:workflows.review-pr-fresh -->
-Use fresh reviewer subagents for each single-PR review pass. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, or substantial multi-system lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass. The pass follows [../../review/references/pr-review.md](../../review/references/pr-review.md) and posts through [../../review/references/pr-posting.md](../../review/references/pr-posting.md).
+Use fresh reviewer subagents for each single-PR review pass, with the roster resolved by `bin/aitk review-ensemble` rather than chosen per run. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, or substantial multi-system lanes — and every lane under `--deep`. Reuse a reviewer only to clarify that reviewer's own finding in the same pass. The pass follows [../../review/references/pr-review.md](../../review/references/pr-review.md) and posts through [../../review/references/pr-posting.md](../../review/references/pr-posting.md).
 
 ### 3. Post or Draft
 
@@ -95,6 +130,7 @@ Before emitting the chat summary, append a `## PR Review — #N` entry per revie
 Verdict: [approve / request-changes / comment]
 Top finding: [one-liner, or "none"]
 Severity counts: [critical N, major N, minor N, nit N]
+Ensemble / coverage: [ensemble] / [provider-diverse|family-diverse|single-family] [+ disclosure when below floor]
 Restructuring proposals: [count, or "none" — populated whenever the Code-judo lane ran, whether from deep review mode, a `^refactor` title, or an explicit ask; write "suppressed (batch)" for PRs reviewed in a batch, where the lane never runs]
 Posted: [yes / draft / no — reason]
 Residual risk: [one-liner, or "none"]
@@ -124,6 +160,8 @@ Emit the summary from [skills/review/references/pr-posting.md](../../review/refe
 - [ ] All findings tagged by severity
 - [ ] Recommendation determined before posting
 - [ ] Posting action respects `--draft`, `--auto`, and user-confirmation boundaries
+- [ ] Ensemble resolved and `Model coverage:` reported, with the disclosure sentence whenever coverage is below the tier floor
+- [ ] `--deep` runs confirmed cross-provider coverage, or blocked/overrode with the disclosure recorded
 - [ ] PII scrub run over all drafted findings, top-level comments, and review summaries before posting
 - [ ] PROJECT.md `## PR Review — #N` entry written for every reviewed PR before summary
 - [ ] Summary emitted

@@ -32,6 +32,7 @@ are grouped by role so workflows load only the phase they are entering.
 | [references/pr-batch.md](references/pr-batch.md) | Batch PR review orchestration |
 | [references/adversarial-orchestration.md](references/adversarial-orchestration.md) | `review-code-adversarial` orchestration |
 | [references/workflow-review.md](references/workflow-review.md) | Standard-tier capability orchestration (lens fan-out → dedup → adversarial verify) |
+| [references/ensemble.md](references/ensemble.md) | Tiered model/provider rosters, verifier diversity, and coverage reporting |
 
 ## Classifiers
 
@@ -50,7 +51,7 @@ are grouped by role so workflows load only the phase they are entering.
 | Lens | When | Reference | Route |
 |------|------|-----------|-------|
 | Code quality | Always (every complexity tier) | [references/code-quality.md](references/code-quality.md) | review |
-| Deep quality | Refactor-shaped or STANDARD diff, deep review mode, or a bare "deep quality" lens ask. Strict structural **findings**. Routed by `classify-diff`. | [references/deep-quality.md](references/deep-quality.md) | review (deep-review in deep review mode) |
+| Deep quality | Refactor-shaped or STANDARD diff, deep review mode, a bare "deep quality" lens ask, **or** whenever the tier's mandatory `deep-review` route would otherwise carry no lane (see [references/ensemble.md](references/ensemble.md)). Strict structural **findings**. Routed by `classify-diff`. | [references/deep-quality.md](references/deep-quality.md) | deep-review |
 | Code-judo | `classify-diff` reports `Code-judo lane: YES` — deep review mode, a `^refactor`-titled change, or an explicit Code-judo ask. Generative restructuring **proposal** (runs outside the findings fan-out). Pinned deep tier — see Invocation. | [references/code-judo.md](references/code-judo.md) | deep-review |
 | Adversarial | Security-sensitive diffs; `review-code-adversarial` workflow | [references/adversarial.md](references/adversarial.md) | deep-review |
 
@@ -89,15 +90,20 @@ boundary, which carries its own contract closure.
 
 Reviewer lens references are subagent prompts. Orchestration and posting references are read by the main thread.
 
-Dispatch mode is tier-routed:
+Dispatch mode is tier-routed. Every tier resolves its roster from
+[references/ensemble.md](references/ensemble.md) — the model/provider mix is
+data, never a per-run judgment call:
 
-- **TRIVIAL / MODERATE** — use `fresh_subagent` for each required independent
-  lens; the provider binding chooses concrete syntax.
-- **STANDARD** (or ≥3 triggered lanes) — use `parallel_fanout` per
-  [references/workflow-review.md](references/workflow-review.md): lens fan-out →
-  dedup → adversarial verify; only confirmed findings return to the session.
+| Tier | Ensemble | Dispatch |
+|------|----------|----------|
+| TRIVIAL | `trivial` | One `fresh_subagent` code-quality lens on `review`. That single lens **is** the independent review — no second reviewer, and no orchestrator self-review in its place. |
+| MODERATE | `moderate` | `fresh_subagent` per triggered lens, all on the origin provider. The cross-provider lane is opt-in (`--cross-provider`), not automatic — MODERATE is provider-local by default, verification included. |
+| STANDARD (or ≥3 triggered lanes) | `standard` | `parallel_fanout` per [references/workflow-review.md](references/workflow-review.md): lens fan-out → cold cross-provider lane → dedup → model-diverse adversarial verify. A cross-provider lane is **required**; losing it is disclosed reduced coverage, not a silent downgrade. |
+| Deep review mode | `deep` | As STANDARD, with every lens on `deep-review`, a cross-provider `deep-review` cold lane, and provider-diverse verification. Blocks when the cross provider is unreachable. |
+| Security / adversarial | `security` | Three-vote panel spanning both providers per [references/adversarial-orchestration.md](references/adversarial-orchestration.md). Blocks when the cross provider is unreachable. |
 
-Map the tier to the current runtime's actual model or reasoning-effort controls at dispatch time.
+Only confirmed findings return to the session, each carrying the
+`provider/family` that raised it and the one that verified it.
 
 The lens fan-out boundaries (`review.local-primary-lanes`, `review.pr-moderate`,
 `review.pr-standard`, `review.pr-lenses`, `review.local-final-pass`) declare a
@@ -113,9 +119,21 @@ same.
 
 ### Deep review mode (tier override)
 
-Deep review mode is entered on `ultra`/`max` effort or a **deep-tier phrase** — `classify-diff` owns that phrase list (see its *Deep-tier phrases* section) and reports the verdict as `Deep-tier escalation: YES`. Do not re-derive the phrase set here. Note that a bare "deep quality" ask is *not* one of those phrases: it requests the cheap deep-quality lens, not this tier override.
+Deep review mode is entered on `ultra`/`max` effort, `--deep`, or a **deep-tier phrase** — `classify-diff` owns that phrase list (see its *Deep-tier phrases* section) and reports the verdict as `Deep-tier escalation: YES`. Do not re-derive the phrase set here. Note that a bare "deep quality" ask is *not* one of those phrases: it requests the deep-quality lens alone, not this tier override.
 
-Deep review mode is an explicit **escalation**, not a route name. In this mode, route *every* triggered lens through the `deep-review` route instead of the tier's default route, and add the Code-judo lane below. Escalation is *sufficient* to add that lane but not necessary — the lane also fires on a `^refactor` title or an explicit Code-judo ask with escalation `NO`, so dispatch it on `Code-judo lane: YES`. The Complexity Gate still decides *which* lenses trigger; deep review mode only changes the route they run on. The lens dispatch boundaries (`review.local-primary-lanes`, `review.pr-standard`, `review.pr-moderate`, `review.code-quality-final`, `review.pr-lenses`) all permit `deep-review` in their allowlists, so this is a route selection, not a new binding. The independent second-opinion / independent-review *capability* lanes are external capabilities rather than lenses — they stay on their own `review` route and do not escalate.
+Deep review mode is an explicit **escalation**, not a route name. It is defined by three simultaneous effects, and a run that delivers fewer than all three is not a deep review:
+
+1. **Tier pinned to at least STANDARD.** A small diff does not demote a deep review to TRIVIAL/MODERATE handling; the Complexity Gate still decides *which* lenses trigger, but the tier floor and the ensemble come from the escalation.
+2. **Every triggered lens routes through `deep-review`**, and the Code-judo lane is added. Escalation is *sufficient* to add that lane but not necessary — the lane also fires on a `^refactor` title or an explicit Code-judo ask with escalation `NO`, so dispatch it on `Code-judo lane: YES`.
+3. **Cross-provider review is mandatory** — the `deep` ensemble's cold whole-diff lane on the other provider, plus provider-diverse verification. When the other provider is unreachable, the review **blocks** with the resolver's disclosure rather than continuing as a single-provider run.
+
+The lens dispatch boundaries (`review.local-primary-lanes`, `review.pr-standard`, `review.pr-moderate`, `review.code-quality-final`, `review.pr-lenses`) all permit `deep-review` in their allowlists, and the cross-provider lane uses each workflow's own cold-review boundary (`review.local-cross-provider-cold`, `review.pr-cross-provider-cold`, `review.adversarial-cross-provider-panel`) — so this is route and provider selection, not a new binding. The independent second-opinion / independent-review *capability* lanes are external capabilities rather than lenses — they stay on their own `review` route, on the origin provider, and do not escalate. They are not the ensemble's cross-provider lane: "second opinion" means one more fresh lane on the same provider, while `--cross-provider` engages the other provider's cold lane from the tier roster.
+
+The three overlapping names mean different things and are not synonyms:
+`deep-review` is a **route** (a model + effort pinning), `review-pr --deep` /
+"deep review PR #N" is this **mode** (tier floor + routes + cross-provider
+ensemble), and `review-code-adversarial` is a **workflow** that runs the
+`security` ensemble.
 
 ### Code-judo (deep tier)
 

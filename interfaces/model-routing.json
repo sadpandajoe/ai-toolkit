@@ -180,6 +180,61 @@
       }
     }
   ],
+  "ensembles": [
+    {
+      "name": "trivial",
+      "lens_lanes": 1,
+      "lens_routes": ["review"],
+      "cross_provider": "forbidden",
+      "cross_lanes": [],
+      "verification": {"lanes": 0, "diversity": "none"},
+      "coverage_floor": "single-family",
+      "on_degraded": "continue"
+    },
+    {
+      "name": "moderate",
+      "lens_lanes": 4,
+      "lens_routes": ["review", "deep-review"],
+      "cross_provider": "optional",
+      "cross_lanes": [{"provider": "cross", "route": "review"}],
+      "verification": {"lanes": 1, "diversity": "family"},
+      "coverage_floor": "family-diverse",
+      "on_degraded": "continue"
+    },
+    {
+      "name": "standard",
+      "lens_lanes": 6,
+      "lens_routes": ["review", "deep-review"],
+      "cross_provider": "required",
+      "cross_lanes": [{"provider": "cross", "route": "review"}],
+      "verification": {"lanes": 1, "diversity": "family"},
+      "coverage_floor": "provider-diverse",
+      "on_degraded": "disclose"
+    },
+    {
+      "name": "deep",
+      "lens_lanes": 6,
+      "lens_routes": ["deep-review"],
+      "cross_provider": "required",
+      "cross_lanes": [{"provider": "cross", "route": "deep-review"}],
+      "verification": {"lanes": 1, "diversity": "provider"},
+      "coverage_floor": "provider-diverse",
+      "on_degraded": "block"
+    },
+    {
+      "name": "security",
+      "lens_lanes": 2,
+      "lens_routes": ["deep-review"],
+      "cross_provider": "required",
+      "cross_lanes": [
+        {"provider": "cross", "route": "deep-review"},
+        {"provider": "origin", "route": "review"}
+      ],
+      "verification": {"lanes": 2, "diversity": "provider"},
+      "coverage_floor": "provider-diverse",
+      "on_degraded": "block"
+    }
+  ],
   "dispatch_boundaries": [
     {"id": "planning.pm-brief-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/pm/references/review-feature-brief.md"]},
     {"id": "planning.technical-plan-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md"], "lens_domain": "plan", "lenses": [
@@ -194,6 +249,9 @@
     {"id": "workflows.fix-bug-implementation", "path": "skills/workflows/references/fix-bug.md", "count": 1, "routes": ["implementation"]},
     {"id": "review.code-quality-final", "path": "skills/review/references/code-quality.md", "count": 1, "routes": ["review", "deep-review"]},
     {"id": "review.local-independent-second-opinion", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"]},
+    {"id": "review.local-cross-provider-cold", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md"]},
+    {"id": "review.pr-cross-provider-cold", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md"]},
+    {"id": "review.adversarial-cross-provider-panel", "path": "skills/review/references/adversarial-orchestration.md", "count": 1, "routes": ["deep-review"], "contracts": ["skills/review/references/adversarial.md"]},
     {"id": "review.local-final-pass", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"], "contracts": ["rules/code-review.md"], "lens_domain": "code", "lenses": [
       "skills/review/references/code-quality.md",
       "skills/review/references/deep-quality.md",
@@ -210,6 +268,7 @@
       "skills/review/references/classify-diff.md"
     ]},
     {"id": "review.local-independent-capability", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"], "contracts": ["rules/review-gate.md"]},
+    {"id": "review.pr-trivial", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review"], "contracts": ["rules/code-review.md"]},
     {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md"], "lens_domain": "code", "lenses": [
       "skills/review/references/code-quality.md",
       "skills/review/references/deep-quality.md",
@@ -328,6 +387,7 @@
     {"path": "skills/review/references/adversarial-orchestration.md", "marker": "describes-reviewers-not-dispatch", "count": 1},
     {"path": "skills/agent-setup-maintainer/lessons.md", "marker": "historical-handoff-lesson", "count": 1},
     {"path": "skills/review/references/classify-diff.md", "marker": "describes-caller-owned-dispatch", "count": 1},
+    {"path": "skills/review/references/code-quality.md", "marker": "describes-worker-tool-boundary", "count": 1},
     {"path": "skills/review/references/classify-diff.md", "marker": "explicitly-not-a-dispatch", "count": 1},
     {"path": "skills/review/references/local-review.md", "marker": "judo-dispatched-at-own-boundary", "count": 1},
     {"path": "skills/review/references/local-review.md", "marker": "pre-dispatch-condition", "count": 1},
