@@ -37,13 +37,6 @@ PRICING = {
         "cache_create": 3.75,
     },
 }
-SONNET_5_STANDARD_PRICING = {
-    "input": 3.00,
-    "output": 15.00,
-    "cache_read": 0.30,
-    "cache_create": 3.75,
-}
-SONNET_5_STANDARD_FROM = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
 
 def parse_record_time(value: object) -> datetime | None:
@@ -65,14 +58,6 @@ def get_pricing(
     require_timestamp: bool = False,
 ) -> dict[str, float] | None:
     """Return pricing; promotional models use the record's absolute time."""
-    if model.startswith("claude-sonnet-5"):
-        when = parse_record_time(timestamp)
-        if when is None:
-            if require_timestamp:
-                return None
-            when = datetime.now(timezone.utc)
-        if when >= SONNET_5_STANDARD_FROM:
-            return SONNET_5_STANDARD_PRICING
     if model in PRICING:
         return PRICING[model]
     for key in sorted(PRICING, key=len, reverse=True):

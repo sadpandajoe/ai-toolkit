@@ -84,49 +84,25 @@ class CostScriptTests(unittest.TestCase):
             ),
         )
 
-    def test_promotional_pricing_uses_each_records_absolute_timestamp(self) -> None:
-        boundaries = {
-            "2026-08-31T23:59:59.999999Z": 2.0,
-            "2026-09-01T00:00:00Z": 3.0,
-            "2026-09-01T01:00:00+01:00": 3.0,
-            "2026-09-01T01:00:00+01:01": 2.0,
-            "2026-08-31T20:00:00-04:00": 3.0,
-        }
+    def test_sonnet_5_pricing_is_flat_across_the_former_cutover(self) -> None:
+        timestamps = ("2026-08-31T23:59:59Z", "2026-09-01T00:00:00Z")
         usage = {"input_tokens": 1_000_000}
         for script in ("show-cost.py", "optimize-cost.py"):
             module = load_script(script)
-            for timestamp, expected in boundaries.items():
+            for timestamp in timestamps:
                 with self.subTest(script=script, timestamp=timestamp):
-                    self.assertEqual(
-                        expected,
-                        module.get_pricing("claude-sonnet-5", timestamp)["input"],
+                    pricing = module.get_pricing(
+                        "claude-sonnet-5", timestamp, require_timestamp=True
                     )
+                    self.assertEqual(2.0, pricing["input"])
+                    self.assertEqual(10.0, pricing["output"])
                     self.assertEqual(
-                        expected,
-                        module.compute_cost(usage, "claude-sonnet-5", timestamp),
+                        2.0, module.compute_cost(usage, "claude-sonnet-5", timestamp)
                     )
 
-    def test_missing_invalid_or_timezone_free_promotional_timestamps_are_unpriced(
+    def test_session_parser_prices_sonnet_5_records_flat_across_the_former_boundary(
         self,
     ) -> None:
-        usage = {"input_tokens": 1_000_000}
-        for script in ("show-cost.py", "optimize-cost.py"):
-            module = load_script(script)
-            for timestamp in (None, "", "not-a-time", "2026-08-31T23:59:59"):
-                with self.subTest(script=script, timestamp=timestamp):
-                    self.assertIsNone(
-                        module.get_pricing(
-                            "claude-sonnet-5",
-                            timestamp,
-                            require_timestamp=True,
-                        )
-                    )
-                    self.assertEqual(
-                        0.0,
-                        module.compute_cost(usage, "claude-sonnet-5", timestamp),
-                    )
-
-    def test_session_parser_prices_records_individually_across_boundary(self) -> None:
         module = load_script("show-cost.py")
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "session.jsonl"
@@ -150,7 +126,7 @@ class CostScriptTests(unittest.TestCase):
             ]
             path.write_text("".join(json.dumps(item) + "\n" for item in records))
             session = module.parse_one_session(str(path), "project", None)
-            self.assertEqual(5.0, session["total_cost"])
+            self.assertEqual(4.0, session["total_cost"])
             self.assertEqual(0, session["models"]["claude-sonnet-5"]["unpriced"])
 
     def test_project_shortening_has_no_personal_username_constant(self) -> None:
