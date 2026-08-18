@@ -39,7 +39,7 @@ def _claude_runner(
 
     def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         if "--version" in argv:
-            return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+            return subprocess.CompletedProcess(argv, 0, "2.1.219\n", "")
         if "--help" in argv:
             flags = " ".join(
                 (

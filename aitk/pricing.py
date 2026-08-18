@@ -1,11 +1,21 @@
-"""Timestamp-aware API-equivalent model pricing used by local reports."""
+"""API-equivalent model pricing used by local reports."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 
 PRICING = {
+    "claude-opus-5": {
+        "input": 5.00,
+        "output": 25.00,
+        "cache_read": 0.50,
+        "cache_create": 6.25,
+    },
+    "claude-fable-5": {
+        "input": 10.00,
+        "output": 50.00,
+        "cache_read": 1.00,
+        "cache_create": 12.50,
+    },
     "claude-opus-4-8": {
         "input": 5.00,
         "output": 25.00,
@@ -39,25 +49,7 @@ PRICING = {
 }
 
 
-def parse_record_time(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.astimezone(timezone.utc)
-
-
-def get_pricing(
-    model: str,
-    timestamp: object = None,
-    *,
-    require_timestamp: bool = False,
-) -> dict[str, float] | None:
-    """Return pricing; promotional models use the record's absolute time."""
+def get_pricing(model: str) -> dict[str, float] | None:
     if model in PRICING:
         return PRICING[model]
     for key in sorted(PRICING, key=len, reverse=True):
@@ -66,12 +58,8 @@ def get_pricing(
     return None
 
 
-def compute_cost(
-    usage: dict[str, object],
-    model: str,
-    timestamp: object = None,
-) -> float:
-    pricing = get_pricing(model, timestamp, require_timestamp=True)
+def compute_cost(usage: dict[str, object], model: str) -> float:
+    pricing = get_pricing(model)
     if pricing is None:
         return 0.0
     return (

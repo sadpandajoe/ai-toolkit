@@ -212,7 +212,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_dry_run_emits_exact_claude_controls_without_fallback(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.219\n", "")
             flags = " ".join(
                 (
                     "--print --no-session-persistence --safe-mode --strict-mcp-config ",
@@ -265,7 +265,7 @@ class RoutingTransportTests(RoutingTestCase):
         ) -> subprocess.CompletedProcess[str]:
             nonlocal worker_input
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.219\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -400,7 +400,7 @@ class RoutingTransportTests(RoutingTestCase):
         ) -> Callable[..., subprocess.CompletedProcess[str]]:
             def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
                 if "--version" in argv:
-                    return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                    return subprocess.CompletedProcess(argv, 0, "2.1.219\n", "")
                 if "--help" in argv:
                     flags = " ".join(
                         (
@@ -839,7 +839,7 @@ class RoutingTransportTests(RoutingTestCase):
                     argv: list[str], **_: object
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
-                        return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                        return subprocess.CompletedProcess(argv, 0, "2.1.219\n", "")
                     if "--help" in argv:
                         flags = " ".join(
                             (
@@ -943,7 +943,7 @@ class RoutingTransportTests(RoutingTestCase):
                     argv: list[str], **_: object
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
-                        return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                        return subprocess.CompletedProcess(argv, 0, "2.1.219\n", "")
                     if "--help" in argv:
                         flags = " ".join(
                             (

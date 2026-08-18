@@ -153,8 +153,8 @@ def parse_session_detailed(path, project, since):
 
             model = msg.get("model", "unknown")
             usage = msg["usage"]
-            pricing = get_pricing(model, ts, require_timestamp=True)
-            cost = compute_cost(usage, model, ts)
+            pricing = get_pricing(model)
+            cost = compute_cost(usage, model)
             inp = usage.get("input_tokens", 0)
             out = usage.get("output_tokens", 0)
             cr = usage.get("cache_read_input_tokens", 0)
@@ -176,7 +176,7 @@ def parse_session_detailed(path, project, since):
             models_used[model]["count"] += 1
             models_used[model]["unpriced"] += int(pricing is None)
             models_used[model]["sonnet_equivalent_cost"] += compute_cost(
-                usage, "claude-sonnet-5", ts
+                usage, "claude-sonnet-5"
             )
 
     if message_count == 0:
@@ -387,7 +387,7 @@ def analyze(sessions):
                 "title": f"Output tokens account for {output_pct:.0f}% of cost",
                 "detail": (
                     f"{total_output_tokens/1_000_000:.1f}M output tokens account for "
-                    f"{format_cost(output_cost)} at each record's model and timestamp price."
+                    f"{format_cost(output_cost)} at each record's model price."
                 ),
                 "action": "Verbose subagent responses and long explanations drive output cost. "
                 "Instruct subagents to return structured data, not prose.",
@@ -396,7 +396,7 @@ def analyze(sessions):
 
     # 8. Potential savings summary
     if total_cost > 0:
-        # Estimate only the measured Opus-to-Sonnet delta at each record's timestamp.
+        # Estimate only the measured Opus-to-Sonnet delta.
         tiering_savings = max(0.0, opus_cost - opus_sonnet_equivalent) * 0.6
         # Estimate savings from checkpointing (expensive sessions could save 30%)
         checkpoint_savings = (
