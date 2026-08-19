@@ -1,0 +1,9 @@
+{
+  "boundary": "review.pr-lenses",
+  "route": "deep-review",
+  "provider": "codex",
+  "model_selector": "gpt-5.6-sol",
+  "cli_version": "0.147.0",
+  "effort_level": "xhigh",
+  "lens": "skills/review/references/adversarial.md"
+}

@@ -11,3 +11,4 @@ __pycache__/
 /WATCH.md
 build/
 .DS_Store
+/tests/fixtures/eval-baselines-local/

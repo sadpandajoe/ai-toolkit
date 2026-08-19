@@ -1,0 +1,8 @@
+{
+  "scenario": "authorization-handling",
+  "providers": ["claude", "codex"],
+  "cli_version": {
+    "claude": "2.1.234",
+    "codex": "0.147.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "boundary": "review.pr-lenses",
+  "route": "deep-review",
+  "provider": "claude",
+  "model_selector": "claude-fable-5",
+  "cli_version": "2.1.234",
+  "effort_level": "xhigh",
+  "lens": "skills/review/references/adversarial.md"
+}

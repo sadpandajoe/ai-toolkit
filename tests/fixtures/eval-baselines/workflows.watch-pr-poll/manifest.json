@@ -1,0 +1,9 @@
+{
+  "boundary": "workflows.watch-pr-poll",
+  "route": "operations",
+  "provider": "claude",
+  "model_selector": "claude-sonnet-5",
+  "cli_version": "2.1.234",
+  "effort_level": "high",
+  "lens": null
+}
