@@ -1,0 +1,18 @@
+{
+  "boundary": "workflows.watch-pr-poll",
+  "scenario": null,
+  "route": "operations",
+  "provider": "claude",
+  "model_selector": "claude-sonnet-5",
+  "lens": null,
+  "condition": "before",
+  "effort_level": "high",
+  "trial_count": 3,
+  "verdict": "pass",
+  "per_trial": [
+    1,
+    2,
+    3
+  ],
+  "evidence_sha256": "7240d9f4971b3e8a99ae5839cac8d19eff715f719e1487b7a97692b19ce02b0d"
+}

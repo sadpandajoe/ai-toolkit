@@ -1,0 +1,25 @@
+{
+  "boundary": "review.pr-lenses",
+  "scenario": null,
+  "route": "deep-review",
+  "provider": "codex",
+  "model_selector": "gpt-5.6-sol",
+  "lens": "skills/review/references/adversarial.md",
+  "condition": "before",
+  "trial": 3,
+  "effort_level": "xhigh",
+  "checklist_or_rubric_result": [
+    {
+      "finding_id": "off-by-one-loop",
+      "expected": "reconcile_ledger_rows iterates range(1, len(rows)), skipping rows[0] \u2014 an off-by-one bug that undercounts the ledger total by the first row's amount.",
+      "observed": "billing/reconcile.py:7 starts iteration at index 1. For [10, 20, 30], the function totals 50 rather than 60; the existing matching-total test will fail.",
+      "match": true
+    },
+    {
+      "finding_id": "hardcoded-secret",
+      "expected": "PARTNER_API_KEY = \"sk-live-4f8a9c2e1b7d4f6a9c2e1b7d4f6a9c2e\" is a hardcoded credential committed directly into source.",
+      "observed": "billing/reconcile.py:1 commits a bearer API key. Anyone with repository access can extract and use it against the billing service. Revoke the key.",
+      "match": true
+    }
+  ]
+}

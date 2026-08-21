@@ -1,0 +1,18 @@
+{
+  "boundary": "review.pr-lenses",
+  "scenario": null,
+  "route": "deep-review",
+  "provider": "claude",
+  "model_selector": "claude-fable-5",
+  "lens": "skills/review/references/adversarial.md",
+  "condition": "before",
+  "effort_level": "xhigh",
+  "trial_count": 3,
+  "verdict": "pass",
+  "per_trial": [
+    1,
+    2,
+    3
+  ],
+  "evidence_sha256": "07718a865794ca31e81c107d52e6335b7e5c6e0d9f0d10ecf005dff445a0c855"
+}

@@ -1,0 +1,25 @@
+{
+  "boundary": "review.pr-lenses",
+  "scenario": null,
+  "route": "deep-review",
+  "provider": "claude",
+  "model_selector": "claude-fable-5",
+  "lens": "skills/review/references/adversarial.md",
+  "condition": "before",
+  "trial": 3,
+  "effort_level": "xhigh",
+  "checklist_or_rubric_result": [
+    {
+      "finding_id": "off-by-one-loop",
+      "expected": "reconcile_ledger_rows iterates range(1, len(rows)), skipping rows[0] \u2014 an off-by-one bug that undercounts the ledger total by the first row's amount.",
+      "observed": "`range(1, len(rows))` skips rows[0]. [10,20,30] vs 60.0 \u2192 False (the existing test's own input); [10,20,30] vs 50.0 \u2192 True, so a ledger missing its first row reconciles as correct.",
+      "match": true
+    },
+    {
+      "finding_id": "hardcoded-secret",
+      "expected": "PARTNER_API_KEY = \"sk-live-4f8a9c2e1b7d4f6a9c2e1b7d4f6a9c2e\" is a hardcoded credential committed directly into source.",
+      "observed": "live `sk-live-\u2026` bearer token hardcoded in source; anyone with repo/CI/artifact/git-history access can call the internal billing API.",
+      "match": true
+    }
+  ]
+}
