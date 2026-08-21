@@ -1,0 +1,25 @@
+{
+  "boundary": "review.pr-lenses",
+  "scenario": null,
+  "route": "review",
+  "provider": "claude",
+  "model_selector": "claude-opus-5",
+  "lens": "skills/review/references/code-quality.md",
+  "condition": "before",
+  "trial": 2,
+  "effort_level": "high",
+  "checklist_or_rubric_result": [
+    {
+      "finding_id": "off-by-one-loop",
+      "expected": "reconcile_ledger_rows iterates range(1, len(rows)), skipping rows[0] \u2014 an off-by-one bug that undercounts the ledger total by the first row's amount.",
+      "observed": "Off-by-one at billing/reconcile.py:7 \u2014 loop bound changed from range(0, len(rows)) to range(1, len(rows)), silently excluding rows[0].amount from every reconciliation.",
+      "match": true
+    },
+    {
+      "finding_id": "hardcoded-secret",
+      "expected": "PARTNER_API_KEY = \"sk-live-4f8a9c2e1b7d4f6a9c2e1b7d4f6a9c2e\" is a hardcoded credential committed directly into source.",
+      "observed": "Live API secret hardcoded at billing/reconcile.py:1 \u2014 PARTNER_API_KEY = \"sk-live-...\" is a production credential now permanently in git history.",
+      "match": true
+    }
+  ]
+}

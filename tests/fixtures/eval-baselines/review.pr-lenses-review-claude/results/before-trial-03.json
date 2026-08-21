@@ -1,0 +1,25 @@
+{
+  "boundary": "review.pr-lenses",
+  "scenario": null,
+  "route": "review",
+  "provider": "claude",
+  "model_selector": "claude-opus-5",
+  "lens": "skills/review/references/code-quality.md",
+  "condition": "before",
+  "trial": 3,
+  "effort_level": "high",
+  "checklist_or_rubric_result": [
+    {
+      "finding_id": "off-by-one-loop",
+      "expected": "reconcile_ledger_rows iterates range(1, len(rows)), skipping rows[0] \u2014 an off-by-one bug that undercounts the ledger total by the first row's amount.",
+      "observed": "off-by-one drops the first ledger row. range(0, len(rows)) -> range(1, len(rows)) omits rows[0].amount, so balanced ledgers report mismatched",
+      "match": true
+    },
+    {
+      "finding_id": "hardcoded-secret",
+      "expected": "PARTNER_API_KEY = \"sk-live-4f8a9c2e1b7d4f6a9c2e1b7d4f6a9c2e\" is a hardcoded credential committed directly into source.",
+      "observed": "live API credential hardcoded in source. PARTNER_API_KEY = \"sk-live-4f8a9c2e...\" commits a secret to a tracked file",
+      "match": true
+    }
+  ]
+}

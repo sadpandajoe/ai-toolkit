@@ -99,8 +99,8 @@ def parse_one_session(path, project, since):
             out = usage.get("output_tokens", 0)
             cr = usage.get("cache_read_input_tokens", 0)
             cc = usage.get("cache_creation_input_tokens", 0)
-            pricing = get_pricing(model, ts_str, require_timestamp=True)
-            cost = compute_cost(usage, model, ts_str)
+            pricing = get_pricing(model)
+            cost = compute_cost(usage, model)
 
             totals[model]["input"] += inp
             totals[model]["output"] += out
@@ -273,7 +273,7 @@ def print_period(label, dates_data, show_details=True):
 
         if any(value["unpriced"] for value in model_totals.values()):
             print(
-                f"  {DIM}n/a or * records lack known pricing or a valid record timestamp; those costs are excluded.{RESET}"
+                f"  {DIM}n/a or * records lack known pricing; those costs are excluded.{RESET}"
             )
 
     # Project breakdown (top 5)

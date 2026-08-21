@@ -27,11 +27,10 @@ does not maintain a second workflow table.
 6. Before dispatching any model worker, read `rules/model-assignment.md`, choose
    a stable route named by the canonical workflow/reference, resolve it with
    `<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, and launch it
-   with the same boundary through the provider's `routed_subagent`. The runner
-   derives and inlines the exact contract closure from that inventoried
-   boundary; per-file digests identify the transmitted content for diagnostics
-   but are not an independently anchored integrity gate. Routed workers never
-   rely on ambient skill loading.
+   with the same boundary through the provider's `routed_subagent`. Routed
+   workers never rely on ambient skill loading — see
+   `rules/routed-subagent-integrity.md` for contract-closure and integrity
+   mechanics.
    `fresh_subagent`, `parallel_fanout`, or `independent_review`
    describe isolation/scheduling; they never authorize an unpinned generic
    worker or a model/effort downgrade.

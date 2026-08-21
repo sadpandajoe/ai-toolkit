@@ -3,11 +3,7 @@
 ## Golden Rules
 - **PROJECT.md is current context; PLAN.md is the active plan** — PROJECT.md holds lightweight state (what we're working on, where we are, durable decisions). PLAN.md holds the formal plan when standard-path planning produced one. Both are local-only and must never be committed to git.
 - **No PII on public surfaces** — never put customer names, ticket IDs (Shortcut `sc-XXXXX` / Linear / Jira), customer-identifying URLs, or other PII in anything destined for a public repo: PR titles, bodies, comments, and commit messages. Describe the bug or behaviour generically ("embedded dashboard with tabs", not "Customer X's dashboard"). Keep IDs and reporter context in local-only files (PROJECT.md, commit notes). Chat summaries back to the user and local files are fine — the constraint is about content that lands on GitHub or another public destination.
-- **Evidence over assumptions** — use version control history, test results, existing solutions
-- **Working solution before optimization** — get it working, commit, then improve
-- **Incremental progress** — small, verified changes over big risky ones
-- **Document decisions and reasoning** — future maintainers need context
-- **TDD and YAGNI** — test first, build only what's needed now
+- **Default engineering discipline** — evidence over assumptions, a working solution before optimization, small verified increments, TDD, YAGNI, and documented reasoning for decisions future maintainers will need.
 - **Canonical workflows own their internal loops** — planning, review, and
   validation phases continue automatically until a threshold or blocker; do not
   surface internal phases as the next user step unless explicitly requested
@@ -22,11 +18,7 @@
 - **Skill descriptions are classifiers** — make trigger and non-trigger boundaries explicit. Put skill-only rules, lessons, and gotchas beside the skill.
 
 ## Communication Rules
-- **Be direct about errors** — no unnecessary apologies
-- **Show, don't tell** — include actual commands, outputs, evidence
-- **Explain reasoning** — why one approach over another
-- **Ask for clarification** — don't assume when unclear
-- **Request confirmation** — before destructive changes
+Be direct about errors with no unnecessary apologies; show actual commands/output/evidence rather than just claims; explain the reasoning behind a non-obvious choice; ask rather than assume when direction is genuinely unclear; get confirmation before destructive changes.
 
 ## Override Hierarchy
 

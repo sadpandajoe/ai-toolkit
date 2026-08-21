@@ -1,0 +1,23 @@
+{
+  "cursor_previous_poll": {
+    "last_seen_thread_id": "PRRT_kwDOAexample0001"
+  },
+  "current_poll": {
+    "threads": [
+      {
+        "thread_id": "PRRT_kwDOAexample0001",
+        "author": "review-bot",
+        "body": "This thread was already resolved before the previous poll.",
+        "resolved": true,
+        "new_since_cursor": false
+      },
+      {
+        "thread_id": "PRRT_kwDOAexample0002",
+        "author": "sample-reviewer",
+        "body": "Can the retry backoff cap be configurable instead of hardcoded to 30s?",
+        "resolved": false,
+        "new_since_cursor": true
+      }
+    ]
+  }
+}

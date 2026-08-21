@@ -1,0 +1,17 @@
+{
+  "head_sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+  "cursor_previous_poll": {
+    "checks": [
+      {"run_id": 90210, "job": "pytest-unit", "status": "in_progress", "conclusion": null},
+      {"run_id": 90211, "job": "lint", "status": "completed", "conclusion": "success"},
+      {"run_id": 90212, "job": "typecheck", "status": "completed", "conclusion": "success"}
+    ]
+  },
+  "current_poll": {
+    "checks": [
+      {"run_id": 90210, "job": "pytest-unit", "status": "completed", "conclusion": "failure", "error_summary": "tests/test_ingest_retry.py::test_backoff_caps_at_max_delay FAILED - AssertionError: expected delay <= 30.0, got 47.5"},
+      {"run_id": 90211, "job": "lint", "status": "completed", "conclusion": "success"},
+      {"run_id": 90212, "job": "typecheck", "status": "completed", "conclusion": "success"}
+    ]
+  }
+}

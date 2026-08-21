@@ -1,0 +1,25 @@
+{
+  "boundary": "review.pr-lenses",
+  "scenario": null,
+  "route": "deep-review",
+  "provider": "claude",
+  "model_selector": "claude-fable-5",
+  "lens": "skills/review/references/adversarial.md",
+  "condition": "before",
+  "trial": 2,
+  "effort_level": "xhigh",
+  "checklist_or_rubric_result": [
+    {
+      "finding_id": "off-by-one-loop",
+      "expected": "reconcile_ledger_rows iterates range(1, len(rows)), skipping rows[0] \u2014 an off-by-one bug that undercounts the ledger total by the first row's amount.",
+      "observed": "loop changed to range(1, len(rows)) silently skips rows[0]. [10,20,30] vs 60.0 returns False; [10.0] vs 0.0 returns True. Use sum(r.amount for r in rows).",
+      "match": true
+    },
+    {
+      "finding_id": "hardcoded-secret",
+      "expected": "PARTNER_API_KEY = \"sk-live-4f8a9c2e1b7d4f6a9c2e1b7d4f6a9c2e\" is a hardcoded credential committed directly into source.",
+      "observed": "PARTNER_API_KEY live 'sk-live-\u2026' secret committed to source; anyone with repo/history access can call the internal billing API as the service. Rotate now and load from env/secrets manager.",
+      "match": true
+    }
+  ]
+}

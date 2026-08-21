@@ -1,0 +1,49 @@
+{
+  "boundary": "workflows.watch-pr-poll",
+  "scenario": null,
+  "route": "operations",
+  "provider": "claude",
+  "model_selector": "claude-sonnet-5",
+  "lens": null,
+  "condition": "before",
+  "trial": 1,
+  "effort_level": "high",
+  "checklist_or_rubric_result": [
+    {
+      "finding_id": "failed-run-id",
+      "expected": "Delta report names run id `90210` as newly failed.",
+      "observed": "Newly failed check: run_id 90210, job pytest-unit",
+      "match": true
+    },
+    {
+      "finding_id": "failed-run-job",
+      "expected": "Delta report names the job `pytest-unit`.",
+      "observed": "job pytest-unit",
+      "match": true
+    },
+    {
+      "finding_id": "failed-run-error",
+      "expected": "Delta report includes the error line (or a faithful summary of it) \u2014 `AssertionError: expected delay <= 30.0, got 47.5` on `test_backoff_caps_at_max_delay`.",
+      "observed": "tests/test_ingest_retry.py::test_backoff_caps_at_max_delay FAILED - AssertionError: expected delay <= 30.0, got 47.5",
+      "match": true
+    },
+    {
+      "finding_id": "new-thread-id",
+      "expected": "Delta report names thread id `PRRT_kwDOAexample0002` as new since the cursor.",
+      "observed": "New comment thread since cursor: PRRT_kwDOAexample0002 (author sample-reviewer, unresolved)",
+      "match": true
+    },
+    {
+      "finding_id": "no-spurious-first-thread",
+      "expected": "Delta report does not present `PRRT_kwDOAexample0001` as new (it was already resolved before the previous poll \u2014 `new_since_cursor: false`).",
+      "observed": "No other changes: ... thread PRRT_kwDOAexample0001 unchanged (already resolved, not new)",
+      "match": true
+    },
+    {
+      "finding_id": "no-spurious-passing-checks",
+      "expected": "Delta report does not present `lint` (run `90211`) or `typecheck` (run `90212`) as failed or changed \u2014 both were `success` in both the previous and current poll.",
+      "observed": "No other changes: lint (90211) and typecheck (90212) remain success",
+      "match": true
+    }
+  ]
+}

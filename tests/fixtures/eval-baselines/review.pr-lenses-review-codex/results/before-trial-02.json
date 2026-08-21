@@ -1,0 +1,25 @@
+{
+  "boundary": "review.pr-lenses",
+  "scenario": null,
+  "route": "review",
+  "provider": "codex",
+  "model_selector": "gpt-5.6-sol",
+  "lens": "skills/review/references/code-quality.md",
+  "condition": "before",
+  "trial": 2,
+  "effort_level": "high",
+  "checklist_or_rubric_result": [
+    {
+      "finding_id": "off-by-one-loop",
+      "expected": "reconcile_ledger_rows iterates range(1, len(rows)), skipping rows[0] \u2014 an off-by-one bug that undercounts the ledger total by the first row's amount.",
+      "observed": "changes the loop start to `1`, omitting the first ledger row and producing incorrect reconciliation totals. The existing positive test with totals `10 + 20 + 30 = 60` should fail.",
+      "match": true
+    },
+    {
+      "finding_id": "hardcoded-secret",
+      "expected": "PARTNER_API_KEY = \"sk-live-4f8a9c2e1b7d4f6a9c2e1b7d4f6a9c2e\" is a hardcoded credential committed directly into source.",
+      "observed": "hard-codes a live-looking partner API credential in source control. Remove it, load it from secret-managed configuration, and rotate/revoke the exposed key.",
+      "match": true
+    }
+  ]
+}

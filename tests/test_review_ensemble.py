@@ -595,11 +595,11 @@ class ReviewContractProseTests(unittest.TestCase):
 
     def test_second_opinion_and_cross_provider_are_named_as_distinct_lanes(self) -> None:
         ensemble = (REVIEW_REFERENCES / "ensemble.md").read_text()
-        skill = (ROOT / "skills/review/SKILL.md").read_text()
+        dispatch = (REVIEW_REFERENCES / "dispatch.md").read_text()
 
         self.assertIn("**not** the independent second-opinion capability", ensemble)
         self.assertIn("The two names are not interchangeable", ensemble)
-        self.assertIn("They are not the ensemble's cross-provider lane", skill)
+        self.assertIn("They are not the ensemble's cross-provider lane", dispatch)
 
     def test_trivial_review_keeps_exactly_one_fresh_reviewer(self) -> None:
         gate = (ROOT / "rules/complexity-gate.md").read_text()

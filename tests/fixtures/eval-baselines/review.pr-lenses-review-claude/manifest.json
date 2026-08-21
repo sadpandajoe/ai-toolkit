@@ -1,0 +1,9 @@
+{
+  "boundary": "review.pr-lenses",
+  "route": "review",
+  "provider": "claude",
+  "model_selector": "claude-opus-5",
+  "cli_version": "2.1.234",
+  "effort_level": "high",
+  "lens": "skills/review/references/code-quality.md"
+}
