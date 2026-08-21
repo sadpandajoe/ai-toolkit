@@ -327,6 +327,7 @@ does not exist.
 | `rules/shortcut-api.md` | Shortcut skill loader |
 | `rules/input-detection.md` | `create-feature`, `fix-bug`, `run-test-plan`, `test-pr` |
 | `rules/model-assignment.md` | Routed worker contract |
+| `rules/routed-subagent-integrity.md` | `routed_subagent` capability binding loader |
 | `rules/rule-maintenance.md` | `reflect propose-rule`, rule editing |
 
 ## Hooks (optional)

@@ -259,7 +259,7 @@ class ConformanceTests(unittest.TestCase):
         # must gate at least one of them on the lane field, and none may gate on
         # deep-tier escalation, which is a route choice rather than a lane.
         for consumer in (
-            "skills/review/SKILL.md",
+            "skills/review/references/dispatch.md",
             "skills/review/references/local-review.md",
             "skills/review/references/pr-review.md",
             "skills/review/references/workflow-review.md",
@@ -846,7 +846,7 @@ class ConformanceTests(unittest.TestCase):
             "skills/review/references/pr-batch.md",
             "skills/review/references/pr-review.md",
             "skills/review/references/workflow-review.md",
-            "skills/review/SKILL.md",
+            "skills/review/references/dispatch.md",
         ):
             with self.subTest(contract=contract):
                 self.assertIn(suppression, (ROOT / contract).read_text())
