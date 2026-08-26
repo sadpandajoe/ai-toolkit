@@ -169,9 +169,10 @@ a short summary of the fix once every gate reaches `PASS`.
 
 ## Notes
 
-- This skill is dual-run alongside `skills/workflows/references/fix-ci.md`
-  today; nothing dispatches "fix CI" requests here yet. The dual-run router
-  pointer that makes this skill a live dispatch target lands in a later
-  commit. Reading and testing it does not change live behavior.
-- `skills/workflows/references/fix-ci.md` stays on the pre-rename
-  trivial/moderate/standard vocabulary until it is retired in Wave 8.
+- This skill is now the live dispatch target for natural-language "fix CI" /
+  "CI failure" requests — Claude Code's own skill selection prefers this
+  narrower description over the general `skills/workflows` router, same as
+  `fix-bug`. The old `skills/workflows/references/fix-ci.md` and its
+  `interfaces/workflows.json` entry stay in place — durable-contract
+  infrastructure, not dispatch (see `fix-bug`'s Notes for why); they stay on
+  the pre-rename trivial/moderate/standard vocabulary indefinitely.

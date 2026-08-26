@@ -1,6 +1,6 @@
 ---
 name: workflows
-description: Run AI Toolkit's daily CI, testing, QA, code-review, plan-review, PR, checkpoint, metrics, or maintenance workflows. Use for end-to-end software work and natural-language requests matching those workflows. Do NOT use for a small direct answer or when a narrower domain skill completely covers the request.
+description: Run AI Toolkit's daily testing, QA, code-review, plan-review, PR, checkpoint, metrics, or maintenance workflows. Use for end-to-end software work and natural-language requests matching those workflows. Do NOT use for a small direct answer or when a narrower domain skill completely covers the request.
 ---
 
 # Daily Workflows
@@ -22,10 +22,10 @@ directly by its own, more specific skill description, same pattern as
 its reference file stay in place — durable-contract infrastructure, not
 dispatch (see `fix-bug`'s note above).
 
-Dual-run note: `fix-ci` requests can also match `skills/goals/fix-ci/SKILL.md`
-directly by its own skill description — same pattern as `fix-bug` above. This
-router stays the live dispatch path for `fix-ci` until that skill's own Notes
-section confirms migration.
+`fix-ci` requests match `skills/goals/fix-ci/SKILL.md` directly by its own,
+more specific skill description, same pattern as `fix-bug` above. The
+`interfaces/workflows.json` `fix-ci` entry and its reference file stay in
+place — durable-contract infrastructure, not dispatch.
 
 Dual-run note: `review-code`, `review-code-adversarial`, and `review-pr`
 requests can also match `skills/goals/code-review/SKILL.md` directly by its
