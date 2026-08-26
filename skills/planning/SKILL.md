@@ -1,6 +1,6 @@
 ---
 name: planning
-description: Producing a technical implementation plan, iterating it through reviewer feedback, finalizing with a cold read, or classifying review findings as plan-level (re-plan) vs code-level (fix in place). Do NOT use for product scoping (use pm/), writing code (use implement-change/), or reviewing finished code (use review/).
+description: Producing a technical implementation plan, iterating it through reviewer feedback, finalizing with a cold read, or classifying review findings as plan-level (re-plan) vs code-level (fix in place). Do NOT use for writing code (use implement-change/) or reviewing finished code (use review/).
 ---
 
 # Planning
@@ -15,11 +15,10 @@ Umbrella for technical planning phases — producing a plan, iterating it throug
 
 | Umbrella | Role |
 |----------|------|
-| `pm/` | Product scoping — brief, milestones, epic decomposition (precedes planning) |
-| `planning/` (this skill) | Technical plan creation + iteration (follows PM) |
+| `planning/` (this skill) | Technical plan creation + iteration |
 | `plan-review/` | Reviewer lenses that critique the technical plan (dispatched by this umbrella's iterate-review) |
 
-PM → planning → implementation. This umbrella owns the middle phase.
+This umbrella owns the planning phase, ahead of implementation.
 
 ## Phases
 

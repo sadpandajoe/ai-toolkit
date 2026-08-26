@@ -431,8 +431,6 @@ BOUNDARY_INVARIANTS = {
     "workflows.review-plan-fresh": ("review", "deep-review"),
     "workflows.review-plan-selected": ("review", "deep-review"),
     "workflows.review-pr-fresh": ("review", "deep-review"),
-    "workflows.watch-pr-fix": ("implementation",),
-    "workflows.watch-pr-poll": ("operations",),
 }
 
 

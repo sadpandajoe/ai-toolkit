@@ -147,13 +147,10 @@ ai-toolkit/
 ├── skills/                  # Canonical Agent Skills; references load lazily (see skills/README.md for anatomy)
 │   ├── workflows/          # Public daily-workflow router + canonical orchestration references
 │   ├── planning/            # Technical planning — plan-implementation, iterate-review, finalize, feedback-classify
-│   ├── pm/                  # Product management — create-feature-brief, plan-milestones, review-feature-brief, decompose-epic
 │   ├── plan-review/         # Plan-reviewer lenses — architecture, backend, frontend, implementation
 │   ├── review/              # Code/PR reviewer orchestration + lenses — local-review, pr-review, classify-diff, adversarial
 │   ├── feedback/            # PR feedback response — triage comments, fix approved items, post replies
-│   ├── pr-watch/            # Watch-and-fix loop for an open PR — CI to green + incoming comments, with escalation
 │   ├── debug/               # Diagnostic umbrella — investigate-change, review-rca, check-existing-fix, CI gather/classify/fix/verify
-│   ├── reflection/          # Memory capture, review/prune, failure postmortems, rule promotion
 │   ├── qa/                  # QA — triage-bug, validate-fix, assess-impact, analyze/expand/execute-use-cases, file-bug
 │   ├── testing/             # Test-harness work — create/update suites, review tests + test plans
 │   ├── preflight/           # Pre-work environment checks — worktree setup + app-runnable env prep
@@ -166,7 +163,6 @@ ai-toolkit/
 │   ├── archive-project-file/ # Archive lifecycle skill
 │   ├── shortcut/            # Shortcut REST fetch/report helpers
 │   ├── superset-local/      # Superset-specific local stack + Playwright helpers
-│   ├── preset-rbac-setup/   # Seed canonical RBAC test users on a staging workspace via the Manager API
 │   └── workstreams/         # Post-parallel-implementation fan-in and merge sequencing
 ├── hooks/
 │   ├── hooks.json                 # Codex plugin lifecycle-hook adapter
@@ -280,7 +276,6 @@ $workflows run-test-plan https://github.com/owner/repo/pull/123
 ### Plan Review
 ```text
 $workflows review-plan                # Review PLAN.md or PROJECT.md-referenced plan
-$workflows review-plan --pm           # Include PM brief review
 ```
 
 `$workflows review-plan` is standalone plan quality review — the same fresh-reviewer loop as `create-feature` step 4, without the full workflow.
@@ -312,8 +307,8 @@ does not exist.
 | `rules/universal.md` | Always-on provider guidance |
 | `rules/orchestration.md` | Skill-owned orchestration policy |
 | `rules/context-management.md` | Always-on provider guidance |
-| `rules/durable-workflows.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests`, `watch-pr` |
-| `rules/ci-evidence.md` | Debug and watch skill loaders |
+| `rules/durable-workflows.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests` |
+| `rules/ci-evidence.md` | Debug skill loaders |
 | `rules/implementation.md` | Implementation skill loader |
 | `rules/testing.md` | Testing and implementation skill loaders |
 | `rules/resource-management.md` | Always-on provider guidance |
@@ -327,7 +322,7 @@ does not exist.
 | `rules/shortcut-api.md` | Shortcut skill loader |
 | `rules/input-detection.md` | `create-feature`, `fix-bug`, `run-test-plan`, `test-pr` |
 | `rules/model-assignment.md` | Routed worker contract |
-| `rules/rule-maintenance.md` | `reflect propose-rule`, rule editing |
+| `rules/rule-maintenance.md` | Ad hoc rule editing |
 
 ## Hooks (optional)
 

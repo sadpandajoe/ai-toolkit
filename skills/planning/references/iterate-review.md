@@ -20,7 +20,6 @@ The caller provides:
   - Always: whichever reviewers the caller designates as mandatory
   - Conditional: add based on what the plan actually touches
 - **Scope**: `trivial` / `moderate` / `standard` — determines reasoning effort
-- **Optional PM brief review**: when the plan has a feature brief that needs `pm/references/review-feature-brief.md`
 - **Optional action gate**: when the caller wants an action gate block after cold read
 
 ## Threshold
@@ -29,17 +28,7 @@ Default: **8/10 or better** on every applicable reviewer, plus a **Go** from col
 
 ## Procedure
 
-### 1. PM Brief Review (optional)
-
-When the caller provides PM context:
-
-<!-- aitk-model-route:planning.pm-brief-review -->
-- Spawn `pm/references/review-feature-brief.md` as a subagent on `review`
-- Use `review` by default; use `deep-review` only when the brief covers multi-system rollout or material business risk
-- Revise the brief until 8/10
-- If the brief reaches 8/10 after the first pass, proceed to technical plan review
-
-### 2. Technical Plan Review
+### 1. Technical Plan Review
 
 <!-- aitk-model-route:planning.technical-plan-review -->
 Launch the applicable technical reviewers **in parallel** — one dispatch per lens,
@@ -72,7 +61,7 @@ Each reviewer:
 - Produces a scored review block (X/10 with strengths, issues, suggestions); this
   is a **plan** fan-out, so lenses shared with code review use their plan-mode output
 
-### 3. Iterate Until Threshold
+### 2. Iterate Until Threshold
 
 After collecting scores:
 
@@ -83,7 +72,7 @@ After collecting scores:
 
 **Shallow-analysis escalation**: If a reviewer scored low because their analysis was shallow (not because the plan has real issues), re-run that specific reviewer with heavier reasoning rather than revising a plan that doesn't need revising.
 
-### 4. Cold Read
+### 3. Cold Read
 
 Spawn sibling [finalize.md](finalize.md) as a fresh-eyes final check using `deep-review`.
 
@@ -91,7 +80,7 @@ Spawn sibling [finalize.md](finalize.md) as a fresh-eyes final check using `deep
 - **No-Go** with blocking issues → revise and re-run sibling [finalize.md](finalize.md)
 - **No-Go** after two revisions → stop and surface the blocking issues to the user
 
-### 5. Write Final Scores
+### 4. Write Final Scores
 
 Append the scores to the plan location the caller specified. For standard-path workflows this is typically `PLAN.md`. If a moderate path needs durable plan-review scores, reclassify to STANDARD before using this loop.
 
@@ -108,7 +97,7 @@ Append the scores to the plan location the caller specified. For standard-path w
 
 Do NOT write a per-iteration change log. The caller prints a brief summary in conversation for approval / next step instead — the persistent artifact is the scores, not the diff.
 
-### 6. Action Gate (optional)
+### 5. Action Gate (optional)
 
 When the caller requested an action gate, include `action-gate` context after cold read passes. Auto-proceed conditions are owned by `skills/action-gate/SKILL.md` (Auto-Proceed Rule) — follow that rule rather than a restated threshold here.
 

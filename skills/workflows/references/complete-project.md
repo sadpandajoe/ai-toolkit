@@ -1,7 +1,7 @@
 # Project Capstone
 
-> **When**: A project or major body of work is complete and you want to summarize, promote learnings, archive, and hand off.
-> **Produces**: Project-level metrics summary, promoted/pruned memories, archived PROJECT.md, and a recommended final action.
+> **When**: A project or major body of work is complete and you want to summarize, archive, and hand off.
+> **Produces**: Project-level metrics summary, archived PROJECT.md, and a recommended final action.
 
 ## Effect Boundary
 
@@ -13,7 +13,6 @@ This is the bookend to `start` — it closes what `start` opens.
 
 ```
 complete-project                    # Full capstone for current project
-complete-project --skip-promote     # Skip the memory promotion step
 ```
 
 ## Steps
@@ -30,34 +29,11 @@ Read `.ai-toolkit/metrics.jsonl` (falling back to legacy `.claude/metrics.jsonl`
 
 If the file is missing or no events match, emit `No metrics recorded for this project` and continue.
 
-### 3. Scan Memories — Surface Promotion Candidates
-
-Skip if `--skip-promote` was passed.
-
-Read all memory files in the project memory directory. Identify promotion candidates:
-- **Feedback memories** describing patterns applicable across projects (not project-specific context)
-- **Postmortem memories** (`feedback_failure_*`) where the prevention recommendation points to a universal rule or skill change
-- **Recurring themes** — multiple memories pointing to the same underlying pattern
-
-For each candidate, present:
-
-```markdown
-### Promotion Candidate: {filename}
-**Pattern**: {one-line summary}
-**Why promote**: {reasoning}
-**Suggested action**: Promote to rule / Keep as memory / Prune (outdated)
-```
-
-Wait for user confirmation per candidate. Then follow the matching `reflect` flow:
-- **Promote**: `reflect promote` with pre-authorization — the candidate approval above already authorizes the promotion, so the sub-flow drafts the rule, writes, deletes the source memory, and updates MEMORY.md without re-confirming intent (standalone `reflect promote` keeps its own rule-text confirmation)
-- **Prune**: delete the memory file and MEMORY.md entry
-- **Keep**: no action
-
-### 4. Archive Completed Phases
+### 3. Archive Completed Phases
 
 Run `archive-project-file` via the [archive skill](../../archive-project-file/SKILL.md) as an internal phase. Hint that this is a full-project archive — all completed phases should move out, not just the most recent one.
 
-### 5. Tear Down Branch-Local Services
+### 4. Tear Down Branch-Local Services
 
 Identify and stop services started for this branch:
 
@@ -75,11 +51,11 @@ Report what was found and stopped:
 
 If nothing is running, skip silently.
 
-### 6. Write Final PROJECT.md Status
+### 5. Write Final PROJECT.md Status
 
 Use the template at [skills/reporting/templates/complete-project-final.md](../../reporting/templates/complete-project-final.md). Replaces the prior status section.
 
-### 7. Suggest Final Action
+### 6. Suggest Final Action
 
 Pick one based on branch state:
 - **Uncommitted changes**: commit, then `create-pr`
@@ -88,19 +64,19 @@ Pick one based on branch state:
 - **Everything merged**: deploy to staging/production
 - **No code changes (process/learning project)**: archive complete, no further action
 
-### 8. Summary + Record Metrics
+### 7. Summary + Record Metrics
 
 Use the summary template at [skills/reporting/templates/complete-project-summary.md](../../reporting/templates/complete-project-summary.md) following the structural rules in [skills/reporting/SKILL.md](../../reporting/SKILL.md).
 
 After emitting the summary, include `metrics-emit` context using the [metrics emitter](../../metrics-emit/SKILL.md) with:
 - `command`: `complete-project`
 - `complexity`: `standard`
-- `status`: `clean` (or `blocked` if step 5 left services running, etc.)
+- `status`: `clean` (or `blocked` if step 4 left services running, etc.)
 - `rounds`: 0 (no review loop)
-- `gate_decisions`: include any user decisions made during memory promotion
+- `gate_decisions`: include any user decisions made during the run
 - `worker_usage`: subagent/worker invocation counts when applicable
 
-### 9. Suggest Final Clear
+### 8. Suggest Final Clear
 
 The capstone is also a natural context boundary — the project is closed, durable state is archived, and the next thing the user does will be a fresh project or unrelated work. Suggest a clean slate:
 
@@ -108,4 +84,4 @@ The capstone is also a natural context boundary — the project is closed, durab
 Project closed. Run checkpoint + context_reset to start the next session fresh.
 ```
 
-Do not auto-clear. The user may want to stay in-session to push the PR, deploy, or pick up the suggested final action from step 7.
+Do not auto-clear. The user may want to stay in-session to push the PR, deploy, or pick up the suggested final action from step 6.

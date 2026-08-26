@@ -16,7 +16,6 @@ Umbrella for reviewer lenses that critique a *technical plan* before implementat
 | Umbrella | Reviews | When |
 |----------|---------|------|
 | `plan-review/` (this skill) | Technical plan | During `planning/references/iterate-review.md` loop (pre-implementation) |
-| `pm/review-feature-brief` | Feature brief (scope/AC/milestones) | During PM iteration (pre-planning) |
 | `review/` | Shipped code | `review-code`, `review-pr` (post-implementation) |
 | `testing/review-tests` and `review-testplan` | Test code and test strategy | During review (code) or plan-review (strategy) |
 

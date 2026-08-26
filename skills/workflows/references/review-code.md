@@ -66,5 +66,5 @@ Internal callers such as `create-feature`, `fix-bug`, `fix-ci`, `create-tests`, 
 ## Notes
 
 - This command is used standalone and as an internal review phase.
-- The selected team should be visible in the summary so bad selections can be corrected with `reflect`.
+- The selected team should be visible in the summary so bad selections can be corrected.
 - **Request an independent second opinion.** Every run asks the provider adapter for its independent-review capability concurrently with the primary reviewer lanes. It degrades gracefully: when unavailable, record `Independent review: skipped (unavailable)` and continue. The whole-loop skip for formatting-only/micro-fix diffs skips this lane too.

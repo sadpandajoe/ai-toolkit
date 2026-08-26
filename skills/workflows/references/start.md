@@ -102,10 +102,8 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
    - Updating an existing test suite → `update-tests`
    - Creating the first meaningful tests → `create-tests`
    - Validating a story, PR, or environment without fixing it → `run-test-plan`
-   - Open PR with pending CI or fresh review comments → `watch-pr`
    - Cherry-picking → `$cherry-pick`
    - Ready to open a PR → `create-pr`
-   - Capturing a pattern or reviewing memories → `reflect`
    - Completed phases cluttering PROJECT.md → [`archive-project-file`](../../archive-project-file/SKILL.md)
    - Want to see all available workflows → `custom-skills-info`
 

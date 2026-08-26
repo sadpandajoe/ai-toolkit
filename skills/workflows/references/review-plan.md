@@ -19,10 +19,7 @@ transition and effect record.
 
 ```
 review-plan
-review-plan --pm
 ```
-
-`--pm`: Include PM brief review (`pm/references/review-feature-brief.md`) in addition to technical reviewers.
 
 ## Required Context
 
@@ -46,9 +43,8 @@ implement it, or turn review comments into code changes.
   draws from: [architecture.md](../../plan-review/references/architecture.md),
   [implementation.md](../../plan-review/references/implementation.md),
   [frontend.md](../../plan-review/references/frontend.md),
-  [backend.md](../../plan-review/references/backend.md),
-  [review-testplan.md](../../testing/references/review-testplan.md), and
-  [review-feature-brief.md](../../pm/references/review-feature-brief.md).
+  [backend.md](../../plan-review/references/backend.md), and
+  [review-testplan.md](../../testing/references/review-testplan.md).
   Naming the menu here is what makes those lanes dispatchable: a lens this span
   omits cannot be selected, however clearly step 2 chose it.
 - Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
@@ -79,7 +75,6 @@ Assess the plan's complexity to determine reviewer depth. Use the substance of t
 **Conditional reviewers** (add to Standard plans when applicable):
 - `plan-review/references/frontend.md` — if plan touches frontend (React, CSS, UI components)
 - `plan-review/references/backend.md` — if plan touches backend (API, database, migrations)
-- [`pm/references/review-feature-brief.md`](../../pm/references/review-feature-brief.md) — if `--pm` flag or plan has a `Feature Brief` section with scope/milestones
 
 State the scope assessment, which reviewers are selected, and why before launching.
 
@@ -90,10 +85,9 @@ Launch the selected fresh reviewer subagents in parallel — one dispatch per le
 each naming its own: [architecture.md](../../plan-review/references/architecture.md),
 [implementation.md](../../plan-review/references/implementation.md),
 [frontend.md](../../plan-review/references/frontend.md),
-[backend.md](../../plan-review/references/backend.md),
-[review-testplan.md](../../testing/references/review-testplan.md), or
-[review-feature-brief.md](../../pm/references/review-feature-brief.md).
-Use `review` for bounded implementation/test/PM lanes; architecture and
+[backend.md](../../plan-review/references/backend.md), or
+[review-testplan.md](../../testing/references/review-testplan.md).
+Use `review` for bounded implementation/test lanes; architecture and
 security-sensitive lanes resolve to `deep-review`, which the manifest enforces as
 a route floor rather than leaving to the dispatcher's reading of this sentence.
 Each reviewer:

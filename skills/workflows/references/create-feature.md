@@ -23,7 +23,6 @@ create-feature sc-12345
 create-feature apache/superset#28456
 create-feature https://github.com/owner/repo/issues/123
 create-feature https://app.shortcut.com/.../story/123
-create-feature sc-12345 --watch   # once a PR exists and the final push lands, chain into watch-pr
 ```
 
 ## Command Contract
@@ -38,7 +37,6 @@ step loads only the domain skill needed when that phase starts.
 - Run `verify` or equivalent pre-flight checks before `review-code`, and record the result in the Review Gate. Run `review-code` after each meaningful implementation slice or wave.
 - For TRIVIAL work, use the Review Gate exception only for zero-logic diffs or true micro-fixes. If a TRIVIAL change needs logic review beyond those exceptions, reclassify as MODERATE and run `review-code`.
 - Stop before final commit/PR for MODERATE or STANDARD work unless the user already authorized that boundary.
-- With `--watch`, after a PR exists and the final push lands, chain into `watch-pr` on that PR — the flag is the explicit pre-authorization for the watch's standing commit+push grant. Without the flag, end with a one-line `watch-pr` suggestion when an open PR exists; never enter the watch unflagged.
 - Only the main thread writes PROJECT.md or `PLAN.md`. Subagents return handoffs; the orchestrator updates durable state.
 - For STANDARD work, follow `rules/context-management.md`: checkpoint + context_reset after `PLAN.md` is written, after plan review/action gate accepts, after each implementation slice or wave, and after code review fixes when validation/PR work remains.
 - For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` immediately after the Complexity Gate.
@@ -87,14 +85,13 @@ There is no `COMPLEX` classification. Larger efforts stay STANDARD with explicit
 
 1. Normalize the request and fetch ticket context if present.
 2. Emit the Complexity Gate with the feature signals above.
-3. Load PM scoping only if scope, milestones, acceptance criteria, or rollout are non-trivial.
-4. Load technical planning, produce slices, write `PLAN.md`, update PROJECT.md, and emit `PLAN.md Written`.
-5. Checkpoint, request `context_reset`, then resume from `PLAN.md` and PROJECT.md before plan review.
+3. Load technical planning, produce slices, write `PLAN.md`, update PROJECT.md, and emit `PLAN.md Written`.
+4. Checkpoint, request `context_reset`, then resume from `PLAN.md` and PROJECT.md before plan review.
 <!-- aitk-model-route:workflows.create-feature-plan-review -->
-6. Launch fresh reviewer subagents through the plan-review loop ([../../planning/references/iterate-review.md](../../planning/references/iterate-review.md)) on `review` or `deep-review` as specified by that loop; they return findings and scores, and the main thread updates the plan until material findings are resolved and the Action Gate says proceed.
+5. Launch fresh reviewer subagents through the plan-review loop ([../../planning/references/iterate-review.md](../../planning/references/iterate-review.md)) on `review` or `deep-review` as specified by that loop; they return findings and scores, and the main thread updates the plan until material findings are resolved and the Action Gate says proceed.
 <!-- aitk-model-route:workflows.create-feature-implementation -->
-7. Dispatch one bounded implementation subagent on `implementation` only when isolation or parallelism clearly helps; first checkpoint and request `context_reset`, otherwise implement the slice or wave inline. Any subagent returns `Implementation Handoff` blocks only.
-8. Main thread updates `PLAN.md`/PROJECT.md, runs fan-in if needed, then runs `verify` or equivalent pre-flight checks. **Hard gate before the next checkpoint + context_reset**: append a `## Slice N Complete` block to PROJECT.md (slice name, files changed, tests added/updated, acceptance result, next slice or "ready for review"). Do not invoke checkpoint + context_reset until this block is written:
+6. Dispatch one bounded implementation subagent on `implementation` only when isolation or parallelism clearly helps; first checkpoint and request `context_reset`, otherwise implement the slice or wave inline. Any subagent returns `Implementation Handoff` blocks only.
+7. Main thread updates `PLAN.md`/PROJECT.md, runs fan-in if needed, then runs `verify` or equivalent pre-flight checks. **Hard gate before the next checkpoint + context_reset**: append a `## Slice N Complete` block to PROJECT.md (slice name, files changed, tests added/updated, acceptance result, next slice or "ready for review"). Do not invoke checkpoint + context_reset until this block is written:
 
    ```markdown
    ## Slice N Complete
@@ -105,16 +102,16 @@ There is no `COMPLEX` classification. Larger efforts stay STANDARD with explicit
    Next: [next slice name OR "ready for review-code"]
    ```
 
-9. Checkpoint and request `context_reset` before `review-code` when implementation context is non-trivial, then invoke `review-code` from the changed-file list, plan pointer, and pre-flight result.
-10. After code review fixes are done, checkpoint + context_reset before feature validation or PR work if the review loop was non-trivial.
-11. Run feature validation when user-visible behavior changed.
-12. Load the summary template and stop before final commit/PR unless authorized.
+8. Checkpoint and request `context_reset` before `review-code` when implementation context is non-trivial, then invoke `review-code` from the changed-file list, plan pointer, and pre-flight result.
+9. After code review fixes are done, checkpoint + context_reset before feature validation or PR work if the review loop was non-trivial.
+10. Run feature validation when user-visible behavior changed.
+11. Load the summary template and stop before final commit/PR unless authorized.
 
 ## MODERATE Happy Path
 
 1. Normalize the request, fetch ticket context if present, and emit the Complexity Gate.
 2. Resolve enough scope inline to avoid guessing; write compact PROJECT.md action items if the work may span turns.
-3. Load PM or technical planning references only if a specific ambiguity needs them.
+3. Load technical planning references only if a specific ambiguity needs them.
 <!-- aitk-model-route:workflows.create-feature-moderate-implementation -->
 4. Implement inline by default, or hand off to one bounded implementation subagent on `implementation` if isolation clearly helps. Non-isolated implementation handoffs never include commits.
 5. Run `verify` or equivalent pre-flight checks, then one fresh review pass through `review-code`.
@@ -128,7 +125,6 @@ Use the happy paths and path rules as the primary flow. Use this table as a phas
 |------|-------|-------|----------------------|
 | Normalize input | Main thread | `rules/input-detection.md` | Load immediately. Fetch ticket context before classification or implementation. |
 | Complexity Gate | Main thread | `rules/complexity-gate.md` | Load immediately. Choose TRIVIAL, MODERATE, or STANDARD path. |
-| PM scoping | Main thread by default; PM subagent on `review` only for broad scope | [skills/pm/references/create-feature-brief.md](../../pm/references/create-feature-brief.md), [plan-milestones.md](../../pm/references/plan-milestones.md) | Load only when scope, milestones, acceptance criteria, or rollout are non-trivial. Broad means multiple product surfaces, rollout or permissions decisions, or unclear acceptance criteria. Handoff: product constraints and acceptance criteria. |
 | Technical plan | Main thread by default; planning subagent only for broad STANDARD design | [skills/planning/references/plan-implementation.md](../../planning/references/plan-implementation.md) | Load on STANDARD path, or MODERATE path with design uncertainty. Output must include slices, dependencies, entrance/exit criteria, and acceptance checks. |
 | PLAN.md gate | Main thread | PROJECT.md + `PLAN.md` | STANDARD path only. Write the plan and emit `PLAN.md Written` before implementation. |
 | Plan review | Fresh reviewer subagents on `review`/`deep-review` via planning loop | [skills/planning/references/iterate-review.md](../../planning/references/iterate-review.md), [finalize.md](../../planning/references/finalize.md), [`action-gate`](../../action-gate/SKILL.md) | Load after `PLAN.md` is written. Use fresh reviewers for each review pass after material plan revisions; reuse a reviewer only for clarifying that reviewer's own finding in the same pass. Continue after material findings are resolved and the Action Gate says proceed; otherwise stop on blocker or user decision. |

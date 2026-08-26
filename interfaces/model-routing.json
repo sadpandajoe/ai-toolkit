@@ -236,7 +236,6 @@
     }
   ],
   "dispatch_boundaries": [
-    {"id": "planning.pm-brief-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/pm/references/review-feature-brief.md"]},
     {"id": "planning.technical-plan-review", "path": "skills/planning/references/iterate-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md"], "lens_domain": "plan", "lenses": [
       "skills/plan-review/references/architecture.md",
       "skills/plan-review/references/implementation.md",
@@ -297,16 +296,14 @@
       "skills/plan-review/references/implementation.md",
       "skills/plan-review/references/frontend.md",
       "skills/plan-review/references/backend.md",
-      "skills/testing/references/review-testplan.md",
-      "skills/pm/references/review-feature-brief.md"
+      "skills/testing/references/review-testplan.md"
     ]},
     {"id": "workflows.review-plan-selected", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md"], "lens_domain": "plan", "lenses": [
       "skills/plan-review/references/architecture.md",
       "skills/plan-review/references/implementation.md",
       "skills/plan-review/references/frontend.md",
       "skills/plan-review/references/backend.md",
-      "skills/testing/references/review-testplan.md",
-      "skills/pm/references/review-feature-brief.md"
+      "skills/testing/references/review-testplan.md"
     ]},
     {"id": "workflows.review-pr-fresh", "path": "skills/workflows/references/review-pr.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/pr-review.md", "skills/review/references/pr-posting.md"]},
     {"id": "pgm.status-collection", "path": "extensions/pgm/skills/pgm/references/create-status-report.md", "count": 1, "routes": ["operations"]},
@@ -356,9 +353,7 @@
     {"id": "workflows.feedback-fix-wave", "path": "skills/workflows/references/address-feedback.md", "count": 1, "routes": ["implementation"]},
     {"id": "workflows.create-feature-moderate-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
     {"id": "workflows.create-feature-moderate-handoff", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
-    {"id": "workflows.review-code-orchestration", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/local-review.md", "rules/review-gate.md"]},
-    {"id": "workflows.watch-pr-poll", "path": "skills/workflows/references/watch-pr.md", "count": 1, "routes": ["operations"]},
-    {"id": "workflows.watch-pr-fix", "path": "skills/workflows/references/watch-pr.md", "count": 1, "routes": ["implementation"]}
+    {"id": "workflows.review-code-orchestration", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/local-review.md", "rules/review-gate.md"]}
   ],
   "lens_routes": {
     "skills/review/references/adversarial.md": ["deep-review"],
@@ -394,7 +389,6 @@
     {"path": "skills/review/references/local-review.md", "marker": "pre-launch-condition", "count": 1},
     {"path": "skills/testing/rules.md", "marker": "test-runner-process-workers", "count": 1},
     {"path": "skills/workflows/references/start.md", "marker": "preflight-before-later-dispatch", "count": 1},
-    {"path": "skills/workflows/references/watch-pr.md", "marker": "describes-prior-dispatch-payloads", "count": 1},
     {"path": "skills/workflows/SKILL.md", "marker": "meta-routing-policy", "count": 1}
   ]
 }

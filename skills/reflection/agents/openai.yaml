@@ -1,6 +1,0 @@
-interface:
-  display_name: "Reflection"
-  short_description: "Help with Reflection tasks"
-
-policy:
-  allow_implicit_invocation: false

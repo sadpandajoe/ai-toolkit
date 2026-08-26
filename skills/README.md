@@ -50,10 +50,7 @@ End-to-end workflow umbrellas:
 | [workflows/](workflows/) | Public daily-workflow routing and canonical orchestration references |
 | [debug/](debug/) | Investigating bugs, diagnosing failures, RCA review, CI failure classification, fix verification |
 | [feedback/](feedback/) | PR review feedback triage, approved fixes, reviewer replies, and thread handling |
-| [pr-watch/](pr-watch/) | Watch-and-fix loop over an open PR — CI status + review comments, dispatching to debug/ and feedback/ |
-| [reflection/](reflection/) | Memory capture, memory review/prune, failure postmortems, rule promotion |
 | [planning/](planning/) | Producing/iterating technical plans, finalize cold read, classifying review findings as plan vs code |
-| [pm/](pm/) | Product scoping before planning — feature briefs, acceptance criteria, milestones |
 | [plan-review/](plan-review/) | Reviewer lenses that critique a plan: architecture, backend, frontend, feasibility |
 | [qa/](qa/) | Triage, fix validation, impact assessment, use-case discovery, scenario expansion, bug filing |
 | [testing/](testing/) | HOW to test — creating/updating automated test suites, reviewing test code |
@@ -79,7 +76,6 @@ Domain integrations:
 |----------|---------|
 | [shortcut/](shortcut/) | Shortcut REST API: fetch story, post report, attach artifacts |
 | [superset-local/](superset-local/) | Superset-specific local Docker stack and Playwright glue |
-| [preset-rbac-setup/](preset-rbac-setup/) | Seed canonical RBAC test users on a fresh Preset staging workspace |
 
 ## Designing a new skill
 

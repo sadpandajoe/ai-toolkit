@@ -1,6 +1,0 @@
-interface:
-  display_name: "Preset Rbac Setup"
-  short_description: "Help with Preset Rbac Setup tasks"
-
-policy:
-  allow_implicit_invocation: false
