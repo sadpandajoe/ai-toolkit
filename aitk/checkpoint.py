@@ -313,6 +313,28 @@ def _read(
     return contract, parse_checkpoint(content, workflow, contract), content
 
 
+def read_snapshot(path: Path) -> dict[str, object] | None:
+    """Non-validating read of the checkpoint block: for inspection, not resumption.
+
+    Skips contract lookup and digest/transition validation so a stale digest or
+    unknown workflow does not block a skill from reading the last-known phase.
+    """
+    _reject_unsafe_path(path)
+    if not path.is_file():
+        return None
+    content = path.read_text()
+    if BEGIN not in content and END not in content:
+        return None
+    _, _, body = _locate(content)
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        raise CheckpointError(f"checkpoint JSON is malformed: {error.msg}") from error
+    if not isinstance(payload, dict):
+        raise CheckpointError("checkpoint payload must be an object")
+    return payload
+
+
 def checkpoint_file(
     root: Path,
     workflow: str,
