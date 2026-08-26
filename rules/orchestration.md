@@ -30,9 +30,12 @@ same Sonnet worker.
 
 High is the automatic baseline; xhigh is reserved for deep routes. Automatic
 dispatch never selects max and never falls back to a weaker model or effort.
-Resolve the toolkit/package root from the installed skill. Resolve with
-`<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, then launch with
-`<toolkit-root>/bin/aitk model-run --boundary <marker-id>`.
+Resolve the toolkit/package root from the installed skill, then check the
+provider's `routed_subagent` binding: `fallback` resolves with
+`<toolkit-root>/bin/aitk model-route --boundary <marker-id>` and launches with
+`<toolkit-root>/bin/aitk model-run --boundary <marker-id>`; `native` dispatches
+by name to a provider-native worker instead (see
+`config/providers/claude.md`).
 
 **Cherry-pick routing**: the cherry-pick gate classifies difficulty (TRIVIAL vs
 NON-TRIVIAL) and selects `review` or `deep-review` for the mandatory post-apply

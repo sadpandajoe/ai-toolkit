@@ -2,9 +2,14 @@
 
 `interfaces/model-routing.json` is the only source of truth for volatile model
 selectors, provider controls, and effort values. Skills name stable routes;
-provider adapters resolve the toolkit/package root, resolve those routes with
-`<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, and launch them
-with `<toolkit-root>/bin/aitk model-run --boundary <marker-id>`.
+how a provider adapter dispatches a route depends on that provider's
+`routed_subagent` binding in `interfaces/providers.json`. A `fallback`
+binding resolves the route with
+`<toolkit-root>/bin/aitk model-route --boundary <marker-id>` and launches it
+with `<toolkit-root>/bin/aitk model-run --boundary <marker-id>`. A `native`
+binding dispatches by name to a provider-native worker instead — see
+`config/providers/claude.md`'s `routed_subagent` entry for which roles that
+covers today.
 
 | Route | Use | Effort | Codex family | Claude family |
 |---|---|---|---|---|

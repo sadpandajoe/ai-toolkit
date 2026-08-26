@@ -25,13 +25,18 @@ does not maintain a second workflow table.
    different provider.
 <!-- aitk-model-route-exempt:meta-routing-policy -->
 6. Before dispatching any model worker, read `rules/model-assignment.md`, choose
-   a stable route named by the canonical workflow/reference, resolve it with
+   a stable route named by the canonical workflow/reference, and check the
+   provider's `routed_subagent` binding mode (loaded in step 5). When the
+   binding is `native`, look up the worker by name — the matching file under
+   `agents/claude/` — whose own frontmatter carries the route's
+   model/permission restrictions, so no separate resolve/launch step runs.
+   When the binding is `fallback`, resolve it with
    `<toolkit-root>/bin/aitk model-route --boundary <marker-id>`, and launch it
-   with the same boundary through the provider's `routed_subagent`. The runner
-   derives and inlines the exact contract closure from that inventoried
-   boundary; per-file digests identify the transmitted content for diagnostics
-   but are not an independently anchored integrity gate. Routed workers never
-   rely on ambient skill loading.
+   with the same boundary through that transport. The runner derives and
+   inlines the exact contract closure from that inventoried boundary;
+   per-file digests identify the transmitted content for diagnostics but are
+   not an independently anchored integrity gate. Routed workers never rely on
+   ambient skill loading.
    `fresh_subagent`, `parallel_fanout`, or `independent_review`
    describe isolation/scheduling; they never authorize an unpinned generic
    worker or a model/effort downgrade.
