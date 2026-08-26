@@ -43,6 +43,22 @@ def test_review_deep_review_and_deep_rca_stay_on_a_stronger_model():
     assert _route(payload, "deep-rca")["providers"]["claude"]["model"] == "fable"
 
 
+def test_planning_stays_on_opus_and_is_read_only():
+    payload = _payload()
+    route = _route(payload, "planning")
+    assert route["providers"]["claude"]["model"] == "opus"
+    assert route["providers"]["claude"]["permission_mode"] == "plan"
+
+
+def test_regressing_planning_to_sonnet_fails_validation():
+    # Planning precedes implementation and must never self-approve on the
+    # same model family that would go on to implement its own plan.
+    payload = copy.deepcopy(_payload())
+    _route(payload, "planning")["providers"]["claude"]["model"] = "sonnet"
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any("model route vocabulary or invariant mapping mismatch" in p for p in problems)
+
+
 def test_regressing_implementation_back_to_opus_fails_validation():
     payload = copy.deepcopy(_payload())
     _route(payload, "implementation")["providers"]["claude"]["model"] = "opus"

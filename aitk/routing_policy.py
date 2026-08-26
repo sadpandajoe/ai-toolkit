@@ -40,6 +40,7 @@ ROUTE_NAMES = {
     "rca",
     "deep-rca",
     "operations",
+    "planning",
 }
 
 
@@ -67,6 +68,10 @@ ROUTE_RESTRICTIONS = {
     "operations": (
         "Collect read-only evidence, produce deterministic reports, or prepare already-authored API, ticket, or Playwright steps for parent execution.",
         "Do not perform external mutations, execute tests, design tests, diagnose failures, perform RCA, review, decide fixes, or modify product code.",
+    ),
+    "planning": (
+        "Produce a durable plan or investigation artifact for COMPLEX work, decomposed into the smallest implementable slices.",
+        "Do not implement, edit files, run tests, review, or self-approve the plan — planning only proposes.",
     ),
 }
 

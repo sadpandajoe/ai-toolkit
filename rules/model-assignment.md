@@ -25,6 +25,7 @@ native worker's frontmatter carries its restrictions. See
 | `rca` | Clear, bounded root-cause synthesis | high | Sol | Sonnet |
 | `deep-rca` | Ambiguous, intermittent, historical, or cross-system RCA | xhigh | Sol | Fable |
 | `operations` | Read-only evidence reduction and deterministic operational reporting after parent/tool collection | high | Sol | Sonnet |
+| `planning` | COMPLEX-only durable plan or investigation artifact, decomposed into implementable slices | high | Sol | Opus |
 
 Rules:
 
@@ -44,6 +45,12 @@ Rules:
   execute tests or external mutations, design tests, diagnose, perform RCA,
   review, decide fixes, or modify product code. The route, not the model
   family, sets these boundaries.
+- `planning` uses Opus, but not for the same reason `review`/`deep-review`
+  do — it never checks another route's output; it precedes implementation,
+  triggered only by the `COMPLEX` classification in
+  `rules/complexity-gate.md`. It shares `operations`'s read-only, no-mutation
+  restrictions plus its own: never implement, review, or self-approve the
+  plan it produces.
 - Use xhigh for deep routes. Never select max automatically; max is a conscious
   one-off user override outside the automatic routing policy.
 - Fable is read-only on every automatic route. A user can still choose a

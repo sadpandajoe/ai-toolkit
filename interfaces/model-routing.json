@@ -178,6 +178,31 @@
           ]
         }
       }
+    },
+    {
+      "name": "planning",
+      "reasoning": "standard",
+      "responsibility": "operations",
+      "restrictions": [
+        "Produce a durable plan or investigation artifact for COMPLEX work, decomposed into the smallest implementable slices.",
+        "Do not implement, edit files, run tests, review, or self-approve the plan — planning only proposes."
+      ],
+      "explicit_only": false,
+      "providers": {
+        "codex": {
+          "model": "sol",
+          "sandbox": "read-only"
+        },
+        "claude": {
+          "model": "opus",
+          "permission_mode": "plan",
+          "disallowed_tools": [
+            "Write",
+            "Edit",
+            "NotebookEdit"
+          ]
+        }
+      }
     }
   ],
   "ensembles": [
@@ -246,10 +271,11 @@
     {"id": "workflows.create-feature-plan-review", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/planning/references/iterate-review.md", "agents/codex/plan-validator.md"]},
     {"id": "workflows.create-feature-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
     {"id": "workflows.fix-bug-implementation", "path": "skills/workflows/references/fix-bug.md", "count": 1, "routes": ["implementation"]},
-    {"id": "fix-bug.investigate", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["rca"], "contracts": ["agents/codex/rca.md"]},
+    {"id": "fix-bug.investigate", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["rca", "deep-rca"], "contracts": ["agents/codex/rca.md"]},
     {"id": "fix-bug.implement", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["implementation"]},
     {"id": "fix-bug.test-authoring", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["implementation"]},
     {"id": "fix-bug.review", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["review"], "contracts": ["agents/codex/reviewer.md"]},
+    {"id": "fix-bug.plan", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["planning"]},
     {"id": "review.code-quality-final", "path": "skills/review/references/code-quality.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "review.local-independent-second-opinion", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "review.local-cross-provider-cold", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"]},
