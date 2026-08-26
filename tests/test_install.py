@@ -230,6 +230,15 @@ def test_code_review_goal_skill_is_registered_and_installable():
     )
 
 
+def test_test_pr_goal_skill_is_registered_and_installable():
+    discovered = _discovered_skills(REPO_ROOT)
+    assert discovered["test-pr"] == "skills/goals/test-pr"
+    assert validate_skill_interfaces(REPO_ROOT) == []
+    assert ("test-pr", REPO_ROOT / "skills/goals/test-pr") in _public_skills(
+        REPO_ROOT, with_pgm=False
+    )
+
+
 def test_address_feedback_goal_skill_is_registered_and_installable():
     discovered = _discovered_skills(REPO_ROOT)
     assert discovered["address-feedback"] == "skills/goals/address-feedback"

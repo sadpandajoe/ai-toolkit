@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test PR"
+  short_description: "Manually verify a PR's user-visible behavior in a running browser app, with evidence capture"
+  default_prompt: "Use $test-pr to manually test this PR in the browser."

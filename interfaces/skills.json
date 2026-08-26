@@ -23,6 +23,7 @@
     {"name": "review", "path": "skills/review", "classification": "internal_support"},
     {"name": "shortcut", "path": "skills/shortcut", "classification": "internal_support"},
     {"name": "superset-local", "path": "skills/superset-local", "classification": "internal_support"},
+    {"name": "test-pr", "path": "skills/goals/test-pr", "classification": "public_direct"},
     {"name": "testing", "path": "skills/testing", "classification": "internal_support"},
     {"name": "verification-loop", "path": "skills/verification-loop", "classification": "internal_support"},
     {"name": "workflows", "path": "skills/workflows", "classification": "public_router"},
