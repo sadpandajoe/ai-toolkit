@@ -96,7 +96,12 @@ Routine bounded lanes use `review`. Architecture, security, adversarial, and
 high-risk final lanes use `deep-review`. Resolve and launch the route through
 `<toolkit-root>/bin/aitk model-route --boundary <marker-id>` and matching
 `model-run`; an unrouteable lane is
-unavailable and must not silently fall back to a generic worker.
+unavailable and must not silently fall back to a generic worker. Neither
+provider has a native reviewer yet, so this stays `fallback` dispatch on both
+sides — but a Codex lane's inlined closure now carries a named specialist
+contract (`agents/codex/reviewer.md`) from this boundary's declared
+`contracts`, the same way a Claude native worker's frontmatter carries its
+restrictions (see `rules/model-assignment.md`).
 
 Lens fan-out boundaries take **one dispatch per lens**, each resolved with
 `--lens <repo-relative lens path>`. That flag is required there and the boundary

@@ -35,7 +35,9 @@ provider's `routed_subagent` binding: `fallback` resolves with
 `<toolkit-root>/bin/aitk model-route --boundary <marker-id>` and launches with
 `<toolkit-root>/bin/aitk model-run --boundary <marker-id>`; `native` dispatches
 by name to a provider-native worker instead (see
-`config/providers/claude.md`).
+`config/providers/claude.md`). Codex has no native roster, so its dispatch is
+always `fallback`; its `rca`/`review`/`deep-review` boundaries carry a named
+Codex specialist contract instead — see `rules/model-assignment.md`.
 
 **Cherry-pick routing**: the cherry-pick gate classifies difficulty (TRIVIAL vs
 NON-TRIVIAL) and selects `review` or `deep-review` for the mandatory post-apply

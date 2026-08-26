@@ -9,7 +9,13 @@ binding resolves the route with
 with `<toolkit-root>/bin/aitk model-run --boundary <marker-id>`. A `native`
 binding dispatches by name to a provider-native worker instead — see
 `config/providers/claude.md`'s `routed_subagent` entry for which roles that
-covers today.
+covers today. Codex has no native roster — every Codex dispatch is
+`fallback` — but its `rca`/`deep-rca` and `review`/`deep-review` boundaries
+carry a named Codex specialist contract in their declared `contracts`
+(`agents/codex/rca.md`, `agents/codex/reviewer.md`, or
+`agents/codex/plan-validator.md`), inlined into the closure the same way a
+native worker's frontmatter carries its restrictions. See
+`config/providers/codex.md`.
 
 | Route | Use | Effort | Codex family | Claude family |
 |---|---|---|---|---|
