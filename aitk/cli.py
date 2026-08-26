@@ -29,6 +29,12 @@ from .model_routing import (
     resolve_route,
     run_model,
 )
+from .gate_state import (
+    GateStateError,
+    read as read_gate_state,
+    set_state as set_gate_state,
+)
+from .gates import GATE_STATES
 from .pgm import preflight as pgm_preflight
 from .routing import (
     COMPLEXITY_VALUES,
@@ -424,13 +430,15 @@ def _project_state(arguments: argparse.Namespace) -> int:
     try:
         checkpoint_snapshot = read_snapshot(path)
         routing_snapshot = read_routing_state(path)
-    except (CheckpointError, RoutingStateError) as error:
+        gate_snapshot = read_gate_state(path)
+    except (CheckpointError, RoutingStateError, GateStateError) as error:
         print(f"aitk project-state: {error}", file=sys.stderr)
         return 1
     payload = {
         "file": str(path),
         "checkpoint": checkpoint_snapshot,
         "routing": routing_snapshot,
+        "gates": gate_snapshot,
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
@@ -451,6 +459,26 @@ def _routing_state(arguments: argparse.Namespace) -> int:
         print(
             f"routing-state: complexity={payload['complexity']} "
             f"confidence={payload['confidence']}"
+        )
+        print(f"  file: {path}")
+    return 0
+
+
+def _gate_state(arguments: argparse.Namespace) -> int:
+    path = _project_state_file(arguments)
+    try:
+        record = set_gate_state(
+            path, arguments.gate, arguments.state, arguments.reason, arguments.count
+        )
+    except (CheckpointError, GateStateError) as error:
+        print(f"aitk gate-state: {error}", file=sys.stderr)
+        return 1
+    if arguments.json:
+        print(json.dumps(record, indent=2, sort_keys=True))
+    else:
+        print(
+            f"gate-state: gate={arguments.gate} state={record['state']} "
+            f"count={record['count']}"
         )
         print(f"  file: {path}")
     return 0
@@ -698,6 +726,19 @@ def parser() -> argparse.ArgumentParser:
     routing_set.add_argument("--reason", required=True)
     routing_set.add_argument("--json", action="store_true")
     routing_set.set_defaults(handler=_routing_state)
+
+    gate_state = subparsers.add_parser(
+        "gate-state", help="record a gate's PASS/RETRY/ESCALATE/... history"
+    )
+    gate_actions = gate_state.add_subparsers(dest="gate_action", required=True)
+    gate_set = gate_actions.add_parser("set", help="set a gate's recorded state")
+    gate_set.add_argument("--file")
+    gate_set.add_argument("--gate", required=True)
+    gate_set.add_argument("--state", required=True, choices=sorted(GATE_STATES))
+    gate_set.add_argument("--reason", required=True)
+    gate_set.add_argument("--count", required=True, type=int)
+    gate_set.add_argument("--json", action="store_true")
+    gate_set.set_defaults(handler=_gate_state)
 
     pgm = subparsers.add_parser(
         "pgm-preflight", help="validate optional PGM configuration before collection"

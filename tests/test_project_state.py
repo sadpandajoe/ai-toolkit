@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from aitk import routing
+from aitk import gate_state, routing
 from aitk.checkpoint import CheckpointError, canonical_json, read_snapshot
 
 BEGIN = "<!-- aitk-checkpoint:v1 -->"
@@ -183,3 +183,94 @@ def test_routing_one_marker_without_its_pair_raises(tmp_path: Path):
     path.write_text(f"# PROJECT\n\n{routing.BEGIN}\n{{}}\n")
     with pytest.raises(routing.RoutingStateError, match="exactly one marker pair"):
         routing.read(path)
+
+
+# --- aitk.gate_state: gate-state block round-trip --------------------------
+
+
+def test_gate_state_read_missing_file_returns_none(tmp_path: Path):
+    assert gate_state.read(tmp_path / "PROJECT.md") is None
+
+
+def test_gate_state_read_file_without_markers_returns_none(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n\nNo gate block here.\n")
+    assert gate_state.read(path) is None
+
+
+def test_gate_state_set_then_read_round_trips(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    record = gate_state.set_state(path, "review", "RETRY", "missing tests", 1)
+    assert record == {"state": "RETRY", "reason": "missing tests", "count": 1}
+    assert gate_state.read(path, "review") == record
+    assert gate_state.read(path) == {"review": record}
+
+
+def test_gate_state_set_preserves_other_gates(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    gate_state.set_state(path, "review", "RETRY", "missing tests", 1)
+    gate_state.set_state(path, "rca", "PASS", "root cause confirmed", 0)
+    assert gate_state.read(path) == {
+        "review": {"state": "RETRY", "reason": "missing tests", "count": 1},
+        "rca": {"state": "PASS", "reason": "root cause confirmed", "count": 0},
+    }
+    content = path.read_text()
+    assert content.count(gate_state.BEGIN) == 1
+    assert content.count(gate_state.END) == 1
+
+
+def test_gate_state_set_updates_existing_gate(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    gate_state.set_state(path, "review", "RETRY", "missing tests", 1)
+    gate_state.set_state(path, "review", "ESCALATE", "missing tests", 2)
+    assert gate_state.read(path, "review") == {
+        "state": "ESCALATE",
+        "reason": "missing tests",
+        "count": 2,
+    }
+
+
+def test_gate_state_read_unknown_gate_returns_none(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    gate_state.set_state(path, "review", "PASS", "clean", 0)
+    assert gate_state.read(path, "rca") is None
+
+
+def test_gate_state_set_classification_rejects_invalid_state(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    with pytest.raises(gate_state.GateStateError, match="state is invalid"):
+        gate_state.set_state(path, "review", "NOT_A_STATE", "reason", 0)
+
+
+def test_gate_state_set_rejects_negative_count(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    with pytest.raises(gate_state.GateStateError, match="count must be"):
+        gate_state.set_state(path, "review", "RETRY", "reason", -1)
+
+
+def test_gate_state_set_requires_existing_file(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    with pytest.raises(CheckpointError, match="gate-state artifact is missing"):
+        gate_state.set_state(path, "review", "PASS", "reason", 0)
+
+
+def test_gate_state_read_malformed_json_raises(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text(
+        f"# PROJECT\n\n{gate_state.BEGIN}\n{{not valid json\n{gate_state.END}\n"
+    )
+    with pytest.raises(gate_state.GateStateError, match="malformed"):
+        gate_state.read(path)
+
+
+def test_gate_state_one_marker_without_its_pair_raises(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text(f"# PROJECT\n\n{gate_state.BEGIN}\n{{}}\n")
+    with pytest.raises(gate_state.GateStateError, match="exactly one marker pair"):
+        gate_state.read(path)
