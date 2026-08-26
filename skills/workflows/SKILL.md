@@ -53,7 +53,14 @@ utility workflow with no goal-skill counterpart, keeps `PR` in this router's
 own frontmatter description above.
 
 1. Read the manifest and match either the explicitly requested workflow name or
-   the highest-specificity natural-language trigger.
+   the highest-specificity natural-language trigger. If the matched workflow is
+   `fix-bug`, `create-feature`, `fix-ci`, `review-code`,
+   `review-code-adversarial`, `review-pr`, `address-feedback`, or `test-pr`,
+   stop here and dispatch to that workflow's goal skill instead — see the
+   migrated-workflow notes above for which `skills/goals/*/SKILL.md` each maps
+   to. Do not proceed to step 3 for these; their manifest entry and reference
+   file are durable-contract infrastructure, not a dispatch target, even when
+   this router is the one doing the matching.
 2. If no workflow matches, handle the request directly. If equally specific
    triggers name different workflows, ask for the intended workflow.
 3. Confirm the manifest owner is `workflows` and join its `reference_root` with
