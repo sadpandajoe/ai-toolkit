@@ -16,7 +16,7 @@ Append a single structured event to `.ai-toolkit/metrics.jsonl` at the end of an
 The calling workflow provides these values in its prompt:
 
 - `command` — the canonical workflow identifier (legacy JSON key retained for compatibility; e.g., `create-feature`, `fix-bug`)
-- `complexity` — `trivial`, `moderate`, or `standard`
+- `complexity` — `TRIVIAL`, `STANDARD`, or `COMPLEX` (`aitk.routing.COMPLEXITY_VALUES`; the pre-rename `MODERATE`/lowercase values are stale and must not be emitted)
 - `status` — the final outcome: `clean`, `blocked`, `user-decision`, `skipped`, `micro-fix`, or workflow-specific
 - `rounds` — number of review iterations (0 if no review loop)
 - `gate_decisions` — object with gate outcomes (e.g., `{complexity: "standard", action: "proceed", review: "clean"}`)
@@ -32,7 +32,7 @@ All fields are best-effort. If a value is unknown or not applicable, omit it rat
 {
   "timestamp": "<ISO 8601>",
   "command": "<command-name>",
-  "complexity": "<trivial|moderate|standard>",
+  "complexity": "<TRIVIAL|STANDARD|COMPLEX>",
   "status": "<outcome>",
   "rounds": <number>,
   "gate_decisions": {},
