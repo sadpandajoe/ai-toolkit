@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Review"
+  short_description: "Review local changes or a PR diff via one independent SOL pass, plus a delta pass when triggered"
+  default_prompt: "Use $code-review to review this code."
