@@ -402,6 +402,7 @@ BOUNDARY_INVARIANTS = {
     "fix-bug.review": ("review",),
     "fix-bug.plan": ("planning",),
     "pgm.status-collection": ("operations",),
+    "planning.decompose-work": ("planning",),
     "planning.loop-ownership": ("review", "deep-review"),
     "planning.loop-summary": ("review", "deep-review"),
     "planning.pm-brief-review": ("review", "deep-review"),

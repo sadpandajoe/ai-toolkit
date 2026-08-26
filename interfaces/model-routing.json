@@ -276,6 +276,7 @@
     {"id": "fix-bug.test-authoring", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["implementation"]},
     {"id": "fix-bug.review", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "fix-bug.plan", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["planning"]},
+    {"id": "planning.decompose-work", "path": "skills/planning/references/decompose-work.md", "count": 1, "routes": ["planning"]},
     {"id": "review.code-quality-final", "path": "skills/review/references/code-quality.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "review.local-independent-second-opinion", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "review.local-cross-provider-cold", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"]},

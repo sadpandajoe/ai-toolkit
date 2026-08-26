@@ -29,6 +29,12 @@ This umbrella owns the planning phase, ahead of implementation.
 | Finalize plan | Cold-read gate — stay or move decision before implementation | [references/finalize.md](references/finalize.md) |
 | Feedback classify | Route review findings: code-level (fix in loop) vs plan-level (re-plan) | [references/feedback-classify.md](references/feedback-classify.md) |
 
+Dual-run note: [`decompose-work`](references/decompose-work.md) exists
+alongside `iterate-review`/`finalize` today, for `MULTI_PHASE` work only.
+Neither older file is retired yet; this umbrella's live Composition Flow
+below does not route through it until create-feature's hierarchical-planning
+commit wires it in.
+
 ## Composition Flow
 
 Standard substantial planning:
