@@ -35,17 +35,28 @@ Apply filters from arguments:
 
 ### 3. Compute Aggregates
 
-From the filtered events, compute:
+Every event carries an `event` field (`workflow-summary` when absent, for
+events recorded before that field existed — see
+[`metrics-emit`](../../metrics-emit/SKILL.md)'s Event Types). From the
+filtered events, compute:
 
-**Pass rates**: percentage of workflows ending in each status (`clean`, `blocked`, `user-decision`, `skipped`, `micro-fix`)
+**Pass rates**: percentage of `workflow-summary` events ending in each status (`clean`, `blocked`, `user-decision`, `skipped`, `micro-fix`)
 
-**Round counts**: average and max review rounds per workflow
+**Round counts**: average and max review rounds per workflow, from `workflow-summary` events
 
-**Worker usage**: total subagent/worker invocations by role or reasoning tier when recorded
+**Worker usage**: total subagent/worker invocations by role or reasoning tier when recorded, from `workflow-summary` events
 
-**Complexity gate accuracy**: ratio of TRIVIAL classifications that ended `clean` without re-classification (indicates the gate is correctly identifying easy work)
+**Complexity gate accuracy**: ratio of TRIVIAL classifications that ended `clean` without re-classification (indicates the gate is correctly identifying easy work) — from `workflow-summary` events, or from `complexity` events (`value: TRIVIAL`) paired with a later `complexity` event with `reclassified: true` for the same run, when present
+
+**Gate retry/escalation rate**: from `gate` events, grouped by `gate` name — the fraction of `state: RETRY` and `state: ESCALATE` per gate. High escalation rate on one named gate signals a gate that's failing the same way repeatedly, not a healthy retry loop
+
+**Reclassification rate**: fraction of runs (grouped by `command`) that ever emit a `complexity` event with `reclassified: true`, or a `gate` event with `state: RECLASSIFY`
 
 **Workflow frequency**: how often each workflow is used
+
+Not every workflow emits the mid-run event types yet — treat their absence
+for a given `command` as "not instrumented," not as zero retries/
+reclassifications.
 
 ### 4. Emit Summary
 
@@ -73,6 +84,16 @@ Events: [total count]
 ### Complexity Gate
 - Trivial workflows: [N] ([%] of total)
 - Trivial → clean: [N] ([accuracy %])
+- Reclassification rate: [N] ([%] of total runs) — omit this line if no run in the period emits `complexity`/`gate` events
+
+### Gate Reliability
+| Gate | PASS | RETRY | ESCALATE | Escalation % |
+|------|------|-------|----------|---------------|
+| [gate name] | [N] | [N] | [N] | [%] |
+
+Omit this section entirely if no `gate` events exist in the period —
+distinct from a gate table showing 0% escalation, which means it's
+instrumented and healthy.
 
 ### Trends
 - [Notable patterns: improving/declining pass rate, command with high blocked rate, etc.]
@@ -83,5 +104,6 @@ Events: [total count]
 - This is a read-only workflow — it never modifies the metrics file
 - Metrics are best-effort: not every workflow emits metrics yet (initial adoption covers `create-feature`, `fix-bug`, `fix-ci`)
 - The `.ai-toolkit/metrics.jsonl` file is user-local and not committed to git
-- Events are appended by [`metrics-emit/`](../../metrics-emit/SKILL.md) at each workflow's summary step
+- Events are appended by [`metrics-emit/`](../../metrics-emit/SKILL.md) at each workflow's summary step, and optionally mid-run via its `gate`/`phase`/`complexity`/`model` event types
+- Gate reliability and reclassification rate are only as complete as adoption of the mid-run event types — a gate/skill that only emits `workflow-summary` won't show up in the Gate Reliability table yet
 - Trend analysis requires at least 10 events to be meaningful
