@@ -40,10 +40,12 @@ directly by its own, more specific skill description, same pattern as
 its reference file stay in place — durable-contract infrastructure, not
 dispatch.
 
-Dual-run note: `test-pr` requests can also match
-`skills/goals/test-pr/SKILL.md` directly by its own skill description —
-same pattern as `fix-bug` above. This router stays the live dispatch path
-until that skill's own Notes section confirms migration.
+`test-pr` requests match `skills/goals/test-pr/SKILL.md` directly by its own,
+more specific skill description, same pattern as `fix-bug` above. The
+`interfaces/workflows.json` `test-pr` entry and its reference file stay in
+place — durable-contract infrastructure, not dispatch. `create-pr`, a
+utility workflow with no goal-skill counterpart, keeps `PR` in this router's
+own frontmatter description above.
 
 1. Read the manifest and match either the explicitly requested workflow name or
    the highest-specificity natural-language trigger.

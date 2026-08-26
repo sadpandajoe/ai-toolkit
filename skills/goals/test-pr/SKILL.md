@@ -77,11 +77,12 @@ URL, production URL, or a posting gate not yet satisfied) with the reason.
 
 ## Notes
 
-- This skill is dual-run alongside
-  `skills/workflows/references/test-pr.md` today; nothing dispatches
-  "test this PR"/"manually test pr" requests here yet. The dual-run router
-  pointer that makes this skill a live dispatch target lands in a later
-  commit. Reading and testing it does not change live behavior.
+- This skill is now the live dispatch target for natural-language "test this
+  PR" / "manually test pr" requests — Claude Code's own skill selection
+  prefers this narrower description over the general `skills/workflows`
+  router, same as `fix-bug`. The old `skills/workflows/references/test-pr.md`
+  and its `interfaces/workflows.json` entry stay in place — durable-contract
+  infrastructure, not dispatch (see `fix-bug`'s Notes for why).
 - This command does not modify code or file bugs — mirrors
   `test-pr.md`'s own Notes.
 - Declares no dispatch boundaries of its own — `qa.fresh-validation`,
