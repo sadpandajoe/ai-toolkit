@@ -12,15 +12,18 @@ filesystem) plus a tmp_path fixture to prove the discovery/target-shape
 logic in isolation from what happens to be committed today.
 """
 
+import json
 from pathlib import Path
 
 from aitk.installer import (
     Target,
     _allowed_owned_dirs,
+    _public_skills,
     _worker_agents,
     desired_targets,
     resolve_paths,
 )
+from aitk.interfaces import _discovered_skills, validate_skill_interfaces
 from aitk.routing import COMPLEXITY_VALUES
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -105,3 +108,71 @@ def test_planner_cites_the_current_complexity_tier_vocabulary():
     assert COMPLEXITY_VALUES == {"TRIVIAL", "STANDARD", "COMPLEX"}
     for stale_tier in ("MODERATE",):
         assert stale_tier not in text
+
+
+def _write_goal_skill(root: Path, name: str) -> Path:
+    skill_dir = root / "skills/goals" / name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(f"---\nname: {name}\n---\nBody.\n")
+    agents_dir = skill_dir / "agents"
+    agents_dir.mkdir()
+    (agents_dir / "openai.yaml").write_text("allow_implicit_invocation: true\n")
+    return skill_dir
+
+
+def _write_skills_json(root: Path, entries: list[dict[str, str]]) -> None:
+    interfaces_dir = root / "interfaces"
+    interfaces_dir.mkdir(parents=True, exist_ok=True)
+    (interfaces_dir / "skills.json").write_text(
+        json.dumps({"version": 1, "skills": entries})
+    )
+
+
+def test_discovered_skills_includes_the_goals_tier(tmp_path: Path):
+    root = tmp_path / "repo"
+    _write_goal_skill(root, "fix-bug")
+    discovered = _discovered_skills(root)
+    assert discovered["fix-bug"] == "skills/goals/fix-bug"
+
+
+def test_a_declared_goal_skill_passes_validation(tmp_path: Path):
+    root = tmp_path / "repo"
+    _write_goal_skill(root, "fix-bug")
+    _write_skills_json(
+        root,
+        [
+            {
+                "name": "fix-bug",
+                "path": "skills/goals/fix-bug",
+                "classification": "public_direct",
+            }
+        ],
+    )
+    assert validate_skill_interfaces(root) == []
+
+
+def test_an_undeclared_goal_skill_fails_validation(tmp_path: Path):
+    root = tmp_path / "repo"
+    _write_goal_skill(root, "fix-bug")
+    _write_skills_json(root, [])
+    assert "unclassified skill: fix-bug" in validate_skill_interfaces(root)
+
+
+def test_public_skills_derives_install_target_from_declared_path_not_the_glob(
+    tmp_path: Path,
+):
+    root = tmp_path / "repo"
+    _write_goal_skill(root, "fix-bug")
+    _write_skills_json(
+        root,
+        [
+            {
+                "name": "fix-bug",
+                "path": "skills/goals/fix-bug",
+                "classification": "public_direct",
+            }
+        ],
+    )
+    assert _public_skills(root, with_pgm=False) == [
+        ("fix-bug", root / "skills/goals/fix-bug")
+    ]

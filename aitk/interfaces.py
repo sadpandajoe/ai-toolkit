@@ -41,6 +41,7 @@ def _skill_name(path: Path) -> str | None:
 
 def _discovered_skills(root: Path) -> dict[str, str]:
     paths = sorted((root / "skills").glob("*/SKILL.md"))
+    paths.extend(sorted((root / "skills/goals").glob("*/SKILL.md")))
     paths.extend(sorted((root / "extensions").glob("*/skills/*/SKILL.md")))
     discovered: dict[str, str] = {}
     for skill_file in paths:
