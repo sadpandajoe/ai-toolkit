@@ -269,11 +269,14 @@ gate reaches `PASS`.
 
 ## Notes
 
-- This skill is dual-run alongside
-  `skills/workflows/references/create-feature.md` today; nothing dispatches
-  "create feature" requests here yet. The dual-run router pointer that makes
-  this skill a live dispatch target lands in a later commit, same as
-  `fix-bug`'s C30. Reading and testing it does not change live behavior.
+- This skill is now the live dispatch target for natural-language "create
+  feature" / "build" / "implement" requests — Claude Code's own skill
+  selection prefers this narrower description over the general
+  `skills/workflows` router, same as `fix-bug`. The old
+  `skills/workflows/references/create-feature.md` and its
+  `interfaces/workflows.json` entry stay in place — they're durable-contract
+  infrastructure (`aitk/checkpoint.py`'s `_contract()` cross-validates
+  against them), not dispatch, so they're not deleted by this cutover.
 - Enforcing never-self-verify specifically for planner output (the Complex
   and Multi-Phase Paths' own plan step) is a later commit's extension to
   `aitk.gates`'s tests, not this one's.
