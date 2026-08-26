@@ -4,6 +4,15 @@ For every workflow whose manifest `execution_class` is `durable`, treat its
 entry in `interfaces/contracts.json` as the machine-readable phase,
 authorization, effect, verification, and reporting contract.
 
+PROJECT.md's frontmatter (`current_phase`, `current_gate`, `attempt`) is the
+human-readable mirror of two separate machine blocks: the `aitk-checkpoint:v1`
+block this file governs (phase edges and effect reservations, below), and the
+`aitk-gate:v1` block `aitk gate-state` maintains (each gate's last decided
+state, reason, and repeat count, per `rules/gates.md`'s six-state contract).
+Keep the frontmatter's `current_gate`/`attempt` in sync with whatever
+`aitk gate-state` last persisted for the active gate — do not hand-edit either
+block, and do not let the frontmatter drift from the machine state it mirrors.
+
 - Initialize the live artifact with `bin/aitk checkpoint init --workflow
   <name>` and validate it before resuming. Re-running init for the same valid
   workflow is a no-op so it cannot erase progress. Starting a different run
@@ -13,7 +22,10 @@ authorization, effect, verification, and reporting contract.
 - Advance only through declared phase edges with `bin/aitk checkpoint advance`.
   Persist the human-readable state required by the workflow before advancing.
 - Complete the contract's authorization and preflight gates before any effect.
-  A failed gate stops the workflow with no reservation or effect.
+  A gate that isn't `PASS` (per `rules/gates.md`) stops the workflow with no
+  reservation or effect: `RETRY`/`ESCALATE` return to the gated step,
+  `BLOCKED`/`USER_DECISION` stop for the user, `RECLASSIFY` returns to the
+  Complexity Gate.
 - Before an idempotent effect, durably call `bin/aitk checkpoint reserve` with
   the declared key and a stable operation ID. After execution or reconciliation,
   call `bin/aitk checkpoint apply` with the same key/ID and a digest of the
