@@ -1,9 +1,11 @@
-"""Tests for aitk.checkpoint.read_snapshot() — the non-validating v2 read."""
+"""Tests for the PROJECT.md v2 state modules: checkpoint.read_snapshot() and
+the routing-state block (aitk.routing)."""
 
 from pathlib import Path
 
 import pytest
 
+from aitk import routing
 from aitk.checkpoint import CheckpointError, canonical_json, read_snapshot
 
 BEGIN = "<!-- aitk-checkpoint:v1 -->"
@@ -55,3 +57,88 @@ def test_one_marker_without_its_pair_raises_checkpoint_error(tmp_path: Path):
 def test_relative_path_raises_checkpoint_error():
     with pytest.raises(CheckpointError, match="not normalized"):
         read_snapshot(Path("PROJECT.md"))
+
+
+# --- aitk.routing: routing-state block round-trip -------------------------
+
+
+def test_routing_read_missing_file_returns_none(tmp_path: Path):
+    assert routing.read(tmp_path / "PROJECT.md") is None
+
+
+def test_routing_read_file_without_markers_returns_none(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n\nNo routing block here.\n")
+    assert routing.read(path) is None
+
+
+def test_routing_set_then_read_round_trips(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    payload = routing.set_classification(path, "STANDARD", 8, "multi-file change")
+    assert routing.read(path) == payload
+    assert payload == {
+        "schema_version": 1,
+        "complexity": "STANDARD",
+        "confidence": 8,
+        "reason": "multi-file change",
+    }
+
+
+def test_routing_set_classification_updates_existing_block(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    routing.set_classification(path, "TRIVIAL", 9, "one-line fix")
+    routing.set_classification(path, "MODERATE", 6, "reclassified")
+    assert routing.read(path) == {
+        "schema_version": 1,
+        "complexity": "MODERATE",
+        "confidence": 6,
+        "reason": "reclassified",
+    }
+    # exactly one marker pair survives the update
+    content = path.read_text()
+    assert content.count(routing.BEGIN) == 1
+    assert content.count(routing.END) == 1
+
+
+def test_routing_set_classification_rejects_invalid_complexity(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    with pytest.raises(routing.RoutingStateError, match="complexity is invalid"):
+        routing.set_classification(path, "COMPLEX", 5, "not a v1 tier yet")
+    assert routing.read(path) is None
+
+
+def test_routing_set_classification_rejects_out_of_range_confidence(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    with pytest.raises(routing.RoutingStateError, match="confidence must be"):
+        routing.set_classification(path, "TRIVIAL", 11, "reason")
+
+
+def test_routing_set_classification_rejects_empty_reason(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    with pytest.raises(routing.RoutingStateError, match="reason must be"):
+        routing.set_classification(path, "TRIVIAL", 5, "")
+
+
+def test_routing_set_classification_requires_existing_file(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    with pytest.raises(CheckpointError, match="routing-state artifact is missing"):
+        routing.set_classification(path, "TRIVIAL", 5, "reason")
+
+
+def test_routing_read_malformed_json_raises(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text(f"# PROJECT\n\n{routing.BEGIN}\n{{not valid json\n{routing.END}\n")
+    with pytest.raises(routing.RoutingStateError, match="malformed"):
+        routing.read(path)
+
+
+def test_routing_one_marker_without_its_pair_raises(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text(f"# PROJECT\n\n{routing.BEGIN}\n{{}}\n")
+    with pytest.raises(routing.RoutingStateError, match="exactly one marker pair"):
+        routing.read(path)
