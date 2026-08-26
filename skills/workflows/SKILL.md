@@ -11,10 +11,15 @@ does not maintain a second workflow table.
 
 `fix-bug` requests match `skills/goals/fix-bug/SKILL.md` directly by its own,
 more specific skill description — this router's own "Do NOT use... when a
-narrower domain skill completely covers the request" clause defers to it. This
-router's `fix-bug` reference entry (`interfaces/workflows.json`,
-`skills/workflows/references/fix-bug.md`) is retained only as literal
-`fix-bug`-command-name compatibility until Wave 8 deletes it.
+narrower domain skill completely covers the request" clause defers to it. The
+`interfaces/workflows.json` `fix-bug` entry and its reference file
+(`skills/workflows/references/fix-bug.md`) stay in place indefinitely:
+`aitk/checkpoint.py`'s `_contract()` cross-validates a workflow's durable
+state against both that manifest entry and `interfaces/contracts.json`,
+regardless of which skill dispatches it, so neither is deletable by a
+cutover — confirmed empirically when deleting this entry broke checkpoint,
+contract, and model-routing tests despite nothing dispatching through this
+router anymore.
 
 `create-feature` requests match `skills/goals/create-feature/SKILL.md`
 directly by its own, more specific skill description, same pattern as
