@@ -34,10 +34,11 @@ pattern as `fix-bug` above. Their `interfaces/workflows.json` entries and
 reference files stay in place — durable-contract infrastructure, not
 dispatch.
 
-Dual-run note: `address-feedback` requests can also match
-`skills/goals/address-feedback/SKILL.md` directly by its own skill
-description — same pattern as `fix-bug` above. This router stays the live
-dispatch path until that skill's own Notes section confirms migration.
+`address-feedback` requests match `skills/goals/address-feedback/SKILL.md`
+directly by its own, more specific skill description, same pattern as
+`fix-bug` above. The `interfaces/workflows.json` `address-feedback` entry and
+its reference file stay in place — durable-contract infrastructure, not
+dispatch.
 
 Dual-run note: `test-pr` requests can also match
 `skills/goals/test-pr/SKILL.md` directly by its own skill description —

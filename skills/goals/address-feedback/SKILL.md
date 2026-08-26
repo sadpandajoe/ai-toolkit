@@ -99,12 +99,13 @@ to resume.
 
 ## Notes
 
-- This skill is dual-run alongside
-  `skills/workflows/references/address-feedback.md` today; nothing
-  dispatches "address PR feedback"/"fix review comments" requests here yet.
-  The dual-run router pointer that makes this skill a live dispatch target
-  lands in a later commit. Reading and testing it does not change live
-  behavior.
+- This skill is now the live dispatch target for natural-language "address PR
+  feedback" / "fix review comments" requests — Claude Code's own skill
+  selection prefers this narrower description over the general
+  `skills/workflows` router, same as `fix-bug`. The old
+  `skills/workflows/references/address-feedback.md` and its
+  `interfaces/workflows.json` entry stay in place — durable-contract
+  infrastructure, not dispatch (see `fix-bug`'s Notes for why).
 - Declares no dispatch boundaries of its own — `workflows.feedback-fix-wave`,
   already registered in `interfaces/model-routing.json`, covers the fix-wave
   batching this skill's procedure reaches; the Review Gate step dispatches
