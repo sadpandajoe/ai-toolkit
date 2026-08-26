@@ -21,6 +21,7 @@ from aitk.installer import (
     desired_targets,
     resolve_paths,
 )
+from aitk.routing import COMPLEXITY_VALUES
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -42,6 +43,7 @@ def test_worker_agents_discovers_real_source_directory():
         discovered["implementation-worker"]
         == REPO_ROOT / "agents/claude/implementation-worker.md"
     )
+    assert discovered["planner"] == REPO_ROOT / "agents/claude/planner.md"
 
 
 def test_worker_agents_ignores_symlinks(tmp_path: Path):
@@ -81,6 +83,7 @@ def test_desired_targets_includes_all_worker_agents(tmp_path: Path):
         "claude-agent:debug-worker",
         "claude-agent:test-worker",
         "claude-agent:implementation-worker",
+        "claude-agent:planner",
     }
 
 
@@ -94,3 +97,11 @@ def test_desired_targets_has_no_duplicate_target_paths(tmp_path: Path):
 def test_claude_agents_directory_is_an_allowed_owned_dir(tmp_path: Path):
     paths = _paths(tmp_path)
     assert str(paths.home / ".claude/agents") in _allowed_owned_dirs(paths)
+
+
+def test_planner_cites_the_current_complexity_tier_vocabulary():
+    text = (REPO_ROOT / "agents/claude/planner.md").read_text()
+    assert "COMPLEX" in text
+    assert COMPLEXITY_VALUES == {"TRIVIAL", "STANDARD", "COMPLEX"}
+    for stale_tier in ("MODERATE",):
+        assert stale_tier not in text
