@@ -14,6 +14,11 @@ directly by its own skill description — a natural-language goal skill, not a
 manifest entry. This router stays the live dispatch path for `fix-bug` until
 that skill's own Notes section confirms migration.
 
+Dual-run note: `create-feature` requests can also match
+`skills/goals/create-feature/SKILL.md` directly by its own skill description —
+same pattern as `fix-bug` above. This router stays the live dispatch path for
+`create-feature` until that skill's own Notes section confirms migration.
+
 1. Read the manifest and match either the explicitly requested workflow name or
    the highest-specificity natural-language trigger.
 2. If no workflow matches, handle the request directly. If equally specific
