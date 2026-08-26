@@ -71,11 +71,13 @@ once it reaches `PASS`.
 
 ## Notes
 
-- This skill is dual-run alongside `skills/workflows/references/review-code.md`,
-  `review-code-adversarial.md`, and `review-pr.md` today; nothing dispatches
-  "review my code"/"review this PR" requests here yet. The dual-run router
-  pointer that makes this skill a live dispatch target lands in a later
-  commit. Reading and testing it does not change live behavior.
+- This skill is now the live dispatch target for natural-language "review my
+  code" / "review this PR" requests — Claude Code's own skill selection
+  prefers this narrower description over the general `skills/workflows`
+  router, same as `fix-bug`. The old `skills/workflows/references/
+  review-code.md`, `review-code-adversarial.md`, and `review-pr.md`, and
+  their `interfaces/workflows.json` entries, stay in place — durable-contract
+  infrastructure, not dispatch (see `fix-bug`'s Notes for why).
 - Declares no dispatch boundaries of its own — `review.sol-review` and
   `review.delta-review`, declared when those files were added (C38/C39),
   cover every model dispatch this skill's procedure reaches.
