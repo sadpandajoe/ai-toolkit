@@ -1,6 +1,6 @@
 ---
 name: workflows
-description: Run AI Toolkit's daily feature, bug, CI, testing, QA, code-review, plan-review, PR, checkpoint, metrics, or maintenance workflows. Use for end-to-end software work and natural-language requests matching those workflows. Do NOT use for a small direct answer or when a narrower domain skill completely covers the request.
+description: Run AI Toolkit's daily feature, CI, testing, QA, code-review, plan-review, PR, checkpoint, metrics, or maintenance workflows. Use for end-to-end software work and natural-language requests matching those workflows. Do NOT use for a small direct answer or when a narrower domain skill completely covers the request.
 ---
 
 # Daily Workflows
@@ -9,10 +9,12 @@ This is the provider-neutral public router. Workflow identity and routing data
 come only from [the core manifest](../../interfaces/workflows.json); this skill
 does not maintain a second workflow table.
 
-Dual-run note: `fix-bug` requests can also match `skills/goals/fix-bug/SKILL.md`
-directly by its own skill description — a natural-language goal skill, not a
-manifest entry. This router stays the live dispatch path for `fix-bug` until
-that skill's own Notes section confirms migration.
+`fix-bug` requests match `skills/goals/fix-bug/SKILL.md` directly by its own,
+more specific skill description — this router's own "Do NOT use... when a
+narrower domain skill completely covers the request" clause defers to it. This
+router's `fix-bug` reference entry (`interfaces/workflows.json`,
+`skills/workflows/references/fix-bug.md`) is retained only as literal
+`fix-bug`-command-name compatibility until Wave 8 deletes it.
 
 Dual-run note: `create-feature` requests can also match
 `skills/goals/create-feature/SKILL.md` directly by its own skill description —

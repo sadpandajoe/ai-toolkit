@@ -142,9 +142,10 @@ a short summary of the fix once every gate reaches `PASS`.
 
 ## Notes
 
-- This skill is dual-run alongside `skills/workflows/references/fix-bug.md`
-  today; nothing dispatches "fix bug" requests here yet. The dual-run router
-  pointer that makes this skill a live dispatch target lands in a later
-  commit. Reading and testing it does not change live behavior.
-- `skills/workflows/references/fix-bug.md` stays on the pre-rename
-  TRIVIAL/MODERATE/STANDARD vocabulary until it is retired in Wave 8.
+- This skill is now the live dispatch target for natural-language "fix bug" /
+  "diagnose" / "broken behavior" requests — Claude Code's own skill selection
+  prefers this narrower description over the general `skills/workflows`
+  router. `skills/workflows/references/fix-bug.md` and its
+  `interfaces/workflows.json` entry are retained only for literal
+  `fix-bug`-command-name compatibility until Wave 8 deletes them; they stay on
+  the pre-rename TRIVIAL/MODERATE/STANDARD vocabulary until then.
