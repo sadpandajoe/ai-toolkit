@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Feature"
+  short_description: "Build a new feature, S-size SINGLE_PHASE happy path"
+  default_prompt: "Use $create-feature to build this feature."

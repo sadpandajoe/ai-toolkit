@@ -148,6 +148,8 @@ def test_implementation_only_boundaries_are_untouched_by_the_codex_retarget():
         "workflows.create-feature-moderate-handoff",
         "fix-bug.implement",
         "fix-bug.test-authoring",
+        "create-feature.implement",
+        "create-feature.test-authoring",
     }
     assert implementation_only_ids == expected
     for identifier in implementation_only_ids:

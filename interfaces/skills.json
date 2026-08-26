@@ -5,6 +5,7 @@
     {"name": "agent-setup-maintainer", "path": "skills/agent-setup-maintainer", "classification": "public_direct"},
     {"name": "archive-project-file", "path": "skills/archive-project-file", "classification": "public_direct"},
     {"name": "cherry-pick", "path": "skills/cherry-pick", "classification": "public_direct"},
+    {"name": "create-feature", "path": "skills/goals/create-feature", "classification": "public_direct"},
     {"name": "debug", "path": "skills/debug", "classification": "internal_support"},
     {"name": "feedback", "path": "skills/feedback", "classification": "internal_support"},
     {"name": "fix-bug", "path": "skills/goals/fix-bug", "classification": "public_direct"},
