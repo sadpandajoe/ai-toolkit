@@ -16,6 +16,7 @@ from .checkpoint import (
     apply as apply_checkpoint,
     checkpoint_file,
     initialize as initialize_checkpoint,
+    read_snapshot,
     reserve as reserve_checkpoint,
     validate as validate_checkpoint,
 )
@@ -29,6 +30,12 @@ from .model_routing import (
     run_model,
 )
 from .pgm import preflight as pgm_preflight
+from .routing import (
+    COMPLEXITY_VALUES,
+    RoutingStateError,
+    read as read_routing_state,
+    set_classification,
+)
 from .workflows import load_workflows
 
 
@@ -405,6 +412,50 @@ def _checkpoint(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _project_state_file(arguments: argparse.Namespace) -> Path:
+    if arguments.file:
+        expanded = Path(arguments.file).expanduser()
+        return expanded if expanded.is_absolute() else Path.cwd() / expanded
+    return Path.cwd() / "PROJECT.md"
+
+
+def _project_state(arguments: argparse.Namespace) -> int:
+    path = _project_state_file(arguments)
+    try:
+        checkpoint_snapshot = read_snapshot(path)
+        routing_snapshot = read_routing_state(path)
+    except (CheckpointError, RoutingStateError) as error:
+        print(f"aitk project-state: {error}", file=sys.stderr)
+        return 1
+    payload = {
+        "file": str(path),
+        "checkpoint": checkpoint_snapshot,
+        "routing": routing_snapshot,
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _routing_state(arguments: argparse.Namespace) -> int:
+    path = _project_state_file(arguments)
+    try:
+        payload = set_classification(
+            path, arguments.complexity, arguments.confidence, arguments.reason
+        )
+    except (CheckpointError, RoutingStateError) as error:
+        print(f"aitk routing-state: {error}", file=sys.stderr)
+        return 1
+    if arguments.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(
+            f"routing-state: complexity={payload['complexity']} "
+            f"confidence={payload['confidence']}"
+        )
+        print(f"  file: {path}")
+    return 0
+
+
 def _pgm_preflight(arguments: argparse.Namespace) -> int:
     result = pgm_preflight(
         arguments.workflow,
@@ -622,6 +673,31 @@ def parser() -> argparse.ArgumentParser:
         if action == "apply":
             checkpoint_action.add_argument("--result-digest", required=True)
         checkpoint_action.set_defaults(handler=_checkpoint)
+
+    project_state = subparsers.add_parser(
+        "project-state",
+        help="read the routing snapshot from PROJECT.md without loading history",
+    )
+    project_state.add_argument("--file")
+    project_state.set_defaults(handler=_project_state)
+
+    routing_state = subparsers.add_parser(
+        "routing-state", help="record the complexity-gate classification snapshot"
+    )
+    routing_actions = routing_state.add_subparsers(
+        dest="routing_action", required=True
+    )
+    routing_set = routing_actions.add_parser(
+        "set", help="set the routing-state classification"
+    )
+    routing_set.add_argument("--file")
+    routing_set.add_argument(
+        "--complexity", required=True, choices=sorted(COMPLEXITY_VALUES)
+    )
+    routing_set.add_argument("--confidence", required=True, type=int)
+    routing_set.add_argument("--reason", required=True)
+    routing_set.add_argument("--json", action="store_true")
+    routing_set.set_defaults(handler=_routing_state)
 
     pgm = subparsers.add_parser(
         "pgm-preflight", help="validate optional PGM configuration before collection"
