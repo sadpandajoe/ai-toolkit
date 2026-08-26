@@ -5,11 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from aitk import gate_state, routing
+from aitk import checkpoint, gate_state, routing
 from aitk.checkpoint import CheckpointError, canonical_json, read_snapshot
 
 BEGIN = "<!-- aitk-checkpoint:v1 -->"
 END = "<!-- /aitk-checkpoint -->"
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _write_block(path: Path, body: str) -> None:
@@ -274,3 +276,91 @@ def test_gate_state_one_marker_without_its_pair_raises(tmp_path: Path):
     path.write_text(f"# PROJECT\n\n{gate_state.BEGIN}\n{{}}\n")
     with pytest.raises(gate_state.GateStateError, match="exactly one marker pair"):
         gate_state.read(path)
+
+
+# --- aitk.checkpoint: initialize()/advance() ownership and resume ----------
+#
+# These exercise the real "fix-bug" contract in interfaces/contracts.json
+# (phases: reproduce -> diagnose -> implement -> verify -> review), the only
+# state-machine path with no prior test coverage anywhere in the repo.
+
+
+def test_initialize_then_advance_survives_interrupt_alongside_sibling_blocks(
+    tmp_path: Path,
+):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+
+    started = checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    assert started.workflow == "fix-bug"
+    assert started.phase == "reproduce"
+    assert started.generation == 0
+
+    routing.set_classification(path, "STANDARD", 8, "multi-file change")
+    gate_state.set_state(path, "review", "RETRY", "missing tests", 1)
+
+    # Interrupt: drop every in-memory result and re-read the file fresh.
+    del started
+    snapshot = read_snapshot(path)
+    assert snapshot["workflow"] == "fix-bug"
+    assert snapshot["phase"] == "reproduce"
+    assert routing.read(path) == {
+        "schema_version": 2,
+        "complexity": "STANDARD",
+        "confidence": 8,
+        "reason": "multi-file change",
+    }
+    assert gate_state.read(path, "review") == {
+        "state": "RETRY",
+        "reason": "missing tests",
+        "count": 1,
+    }
+
+    # All three blocks coexist as exactly one marker pair each -- each
+    # writer rewrites the whole file, so this is the real coexistence risk.
+    content = path.read_text()
+    assert content.count(BEGIN) == 1 and content.count(END) == 1
+    assert content.count(routing.BEGIN) == 1 and content.count(routing.END) == 1
+    assert content.count(gate_state.BEGIN) == 1 and content.count(gate_state.END) == 1
+
+    # Resume: advance the checkpoint into the next legal phase.
+    resumed = checkpoint.advance(REPO_ROOT, "fix-bug", path, "diagnose")
+    assert resumed.phase == "diagnose"
+    assert resumed.generation == 1
+
+    post_resume = read_snapshot(path)
+    assert post_resume["phase"] == "diagnose"
+    assert post_resume["generation"] == 1
+    # The checkpoint rewrite must not disturb the sibling blocks.
+    assert routing.read(path)["complexity"] == "STANDARD"
+    assert gate_state.read(path, "review")["state"] == "RETRY"
+
+
+def test_advance_rejects_a_transition_not_in_the_contract(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    with pytest.raises(CheckpointError, match="illegal checkpoint transition"):
+        checkpoint.advance(REPO_ROOT, "fix-bug", path, "review")
+
+
+def test_initialize_rejects_ownership_by_a_different_workflow(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    with pytest.raises(
+        CheckpointError,
+        match="another durable workflow already owns this checkpoint artifact",
+    ):
+        checkpoint.initialize(REPO_ROOT, "create-feature", path)
+
+
+def test_initialize_replace_existing_rejects_pending_effects(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    checkpoint.reserve(REPO_ROOT, "fix-bug", path, "commit_sha", "abc123")
+    with pytest.raises(
+        CheckpointError, match="cannot replace a checkpoint with pending effects"
+    ):
+        checkpoint.initialize(REPO_ROOT, "fix-bug", path, replace_existing=True)
