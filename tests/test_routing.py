@@ -171,6 +171,23 @@ def test_sol_review_boundary_is_a_single_menu_less_reviewer_dispatch():
     assert "lenses" not in boundary
 
 
+def test_delta_review_boundary_is_a_deep_review_escalation_not_a_second_baseline():
+    # delta-review.md is the triggered-risk pass sol-review.md escalates to --
+    # it must route through deep-review only (never "review", which stays
+    # sol-review's baseline lane) and must carry no lens menu, since it is one
+    # additional pass, not a return to the ensemble's fan-out roster.
+    payload = _payload()
+    boundary = _route_boundary(payload, "review.delta-review")
+    assert boundary["path"] == "skills/review/references/delta-review.md"
+    assert boundary["routes"] == ["deep-review"]
+    assert boundary["contracts"] == [
+        "agents/codex/reviewer.md",
+        "skills/review/references/adversarial.md",
+    ]
+    assert "lens_domain" not in boundary
+    assert "lenses" not in boundary
+
+
 def _route_boundary(payload: dict[str, object], identifier: str) -> dict[str, object]:
     for boundary in _boundaries(payload):
         if boundary["id"] == identifier:

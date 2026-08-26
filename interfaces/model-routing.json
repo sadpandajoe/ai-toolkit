@@ -392,7 +392,8 @@
     {"id": "workflows.create-feature-moderate-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
     {"id": "workflows.create-feature-moderate-handoff", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
     {"id": "workflows.review-code-orchestration", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/local-review.md", "rules/review-gate.md", "agents/codex/reviewer.md"]},
-    {"id": "review.sol-review", "path": "skills/review/references/sol-review.md", "count": 1, "routes": ["review"], "contracts": ["agents/codex/reviewer.md"]}
+    {"id": "review.sol-review", "path": "skills/review/references/sol-review.md", "count": 1, "routes": ["review"], "contracts": ["agents/codex/reviewer.md"]},
+    {"id": "review.delta-review", "path": "skills/review/references/delta-review.md", "count": 1, "routes": ["deep-review"], "contracts": ["agents/codex/reviewer.md", "skills/review/references/adversarial.md"]}
   ],
   "lens_routes": {
     "skills/review/references/adversarial.md": ["deep-review"],

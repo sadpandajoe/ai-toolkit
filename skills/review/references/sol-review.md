@@ -1,6 +1,6 @@
 ---
 name: sol-review
-description: Run one independent SOL code review by default for a changed-code diff, then require the implementing side to validate each finding before applying it. Internal helper for local/PR/workflow review entry points. Do NOT use for plan-level review (skills/plan-review's own reviewers) or for a triggered-risk deep pass -- that is delta-review's job, a sibling reference landing in a later commit.
+description: Run one independent SOL code review by default for a changed-code diff, then require the implementing side to validate each finding before applying it. Internal helper for local/PR/workflow review entry points. Do NOT use for plan-level review (skills/plan-review's own reviewers) or for a triggered-risk deep pass -- that is delta-review.md's job.
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -70,10 +70,10 @@ reviewed.
 
 If the diff carries a risk signal this one pass is not scoped to catch —
 security-sensitive surface, an adversarial-relevant change, or a caller
-explicitly requesting the deeper pass — escalate to the triggered-risk deep
-procedure rather than looping this same independent pass again. That
-procedure is a sibling reference landing in a later commit; until it exists,
-escalation falls back to today's dual-run `ensemble.md` deep/security tiers.
+explicitly requesting the deeper pass — escalate to
+[delta-review.md](delta-review.md) rather than looping this same independent
+pass again. Report the trigger reason (security-sensitive surface, deep-tier
+phrase, or explicit ask) so that procedure can scope its dispatch.
 
 ## Output
 
@@ -94,11 +94,11 @@ escalation falls back to today's dual-run `ensemble.md` deep/security tiers.
 
 ## Notes
 
-- This file is dual-run alongside [ensemble.md](ensemble.md),
-  [classify-diff.md](classify-diff.md), and the lens files (`code-quality.md`,
-  `deep-quality.md`, `code-judo.md`, `adversarial.md`) today — nothing routes
-  through it yet. `skills/review/SKILL.md`'s orchestration table
-  (`local-review.md`, `pr-review.md`, `pr-batch.md`, `workflow-review.md`,
-  `adversarial-orchestration.md`) switches to this file and its sibling
-  triggered-risk procedure in a later commit; none of the ensemble files are
-  retired by this commit.
+- This file and [delta-review.md](delta-review.md) are dual-run alongside
+  [ensemble.md](ensemble.md), [classify-diff.md](classify-diff.md), and the
+  lens files (`code-quality.md`, `deep-quality.md`, `code-judo.md`,
+  `adversarial.md`) today — nothing routes through either of them yet.
+  `skills/review/SKILL.md`'s orchestration table (`local-review.md`,
+  `pr-review.md`, `pr-batch.md`, `workflow-review.md`,
+  `adversarial-orchestration.md`) switches to this pair in a later commit
+  (C40); none of the ensemble files are retired by this commit.

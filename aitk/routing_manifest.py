@@ -416,6 +416,7 @@ BOUNDARY_INVARIANTS = {
     "review.adversarial-cross-provider-panel": ("deep-review",),
     "review.code-judo": ("deep-review",),
     "review.code-quality-final": ("review", "deep-review"),
+    "review.delta-review": ("deep-review",),
     "review.local-cross-provider-cold": ("review", "deep-review"),
     "review.local-final-pass": ("deep-review",),
     "review.local-independent-capability": ("review",),
