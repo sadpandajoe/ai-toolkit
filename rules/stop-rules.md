@@ -2,7 +2,7 @@
 
 Universal stop conditions for iterative review and fix loops.
 
-Superseded by `rules/gates.md`'s six-state gate contract; this rule remains authoritative until callers migrate.
+Superseded, for `rules/gates.md`'s listed migrated citers only, by its six-state gate contract. For every other caller — including `skills/plan-review`, `skills/planning`, and `skills/testing`'s review helpers — this rule remains authoritative indefinitely; see `rules/gates.md`'s "Permanently out of scope" note.
 
 ## When to Stop
 

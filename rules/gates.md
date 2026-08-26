@@ -8,15 +8,29 @@ consolidates the behavior currently split across `skills/action-gate/SKILL.md`
 threshold) into one vocabulary and one counting rule.
 
 **Status: dual-run.** `skills/goals/{fix-bug,fix-ci,code-review,
-address-feedback,test-pr}` and `skills/cherry-pick` now cite this contract's
-vocabulary at their own checkpoints, translating their existing domain-
-specific verdicts into these six states rather than reimplementing them. The
-four files above remain the ones actually enforcing behavior today — none of
-these callers invoke `aitk.gates.decide_failure()` or replace their own
-gate/verdict logic with this file's — so this is citation, not yet
-behavioral migration. The old mechanisms stay authoritative and are deleted
-only once every caller's citation is confirmed sufficient and the plan's
-Wave 8 gate (grep-confirmed migration) is met.
+address-feedback,test-pr}` and `skills/cherry-pick` — this file's complete
+set of migrated citers — now cite this contract's vocabulary at their own
+checkpoints, translating their existing domain-specific verdicts into these
+six states rather than reimplementing them. The four files above remain the
+ones actually enforcing behavior today — none of these callers invoke
+`aitk.gates.decide_failure()` or replace their own gate/verdict logic with
+this file's — so this is citation, not yet behavioral migration.
+
+**Permanently out of scope.** Every other consumer of `rules/review-gate.md`
+/`stop-rules.md`/`scoring.md` — this reaches well beyond the ensemble review
+layer and the old workflow router (both separately dual-run pending their
+own replacements): it includes `skills/plan-review`'s reviewer references,
+`skills/planning`'s plan-iteration and finalize helpers, and
+`skills/testing`'s test-review helpers, several of which are also called
+from code that already migrated (e.g. the Wave 5 planning helpers still
+route plan-level review through the old scoring threshold). None of this is
+scheduled for migration by this rebuild. Deleting `review-gate.md`/
+`stop-rules.md`/`scoring.md` is not safe while any non-listed consumer
+depends on them, and given how broadly they're woven through plan- and
+test-review, that may never fully clear under this plan's current scope —
+treat the Wave 8 deletion bullet for these three files as conditional on a
+future, separately-scoped migration of that surface, not as a deletion this
+rebuild will necessarily reach.
 
 ## Canonical Vocabulary
 
