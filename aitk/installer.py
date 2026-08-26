@@ -243,6 +243,20 @@ def _fail(point: str) -> None:
         raise LifecycleError(f"injected installer failure at {point}")
 
 
+def _worker_agents(root: Path) -> list[tuple[str, Path]]:
+    # Tracked source lives at agents/claude/ (not .claude/agents/) because
+    # the repo's own .claude/ is gitignored: it holds this toolkit project's
+    # own local Claude Code session state, not installable source content.
+    directory = root / "agents/claude"
+    if not directory.is_dir():
+        return []
+    return sorted(
+        (path.stem, path)
+        for path in directory.glob("*.md")
+        if path.is_file() and not path.is_symlink()
+    )
+
+
 def _public_skills(root: Path, with_pgm: bool) -> list[tuple[str, Path]]:
     result: list[tuple[str, Path]] = []
     for item in load_skill_interfaces(root):
@@ -283,6 +297,15 @@ def desired_targets(paths: InstallPaths, with_pgm: bool) -> list[Target]:
                 f"agent-skill:{name}",
                 "symlink",
                 paths.agents_dir / "skills" / name,
+                source,
+            )
+        )
+    for name, source in _worker_agents(paths.root):
+        result.append(
+            Target(
+                f"claude-agent:{name}",
+                "symlink",
+                paths.home / ".claude/agents" / f"{name}.md",
                 source,
             )
         )
