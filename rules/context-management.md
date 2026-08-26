@@ -7,20 +7,27 @@ artifacts are authoritative.
 ## Proactive Phase Reset Policy
 
 - **TRIVIAL**: stay in one session unless tool or log output becomes unusually large.
-- **MODERATE**: reset when logs, diffs, or review rounds become noisy, especially before independent review.
-- **STANDARD / expensive**: reset at every major phase boundary after the current artifact and machine checkpoint are current.
+- **STANDARD**: reset when logs, diffs, or review rounds become noisy, especially before independent review.
+- **COMPLEX / expensive**: reset at every gate transition, after the current
+  artifact and machine checkpoint are current.
 
-Standard boundaries are:
+A gate transition is the natural reset boundary because it's already the point
+where durable state must be current: a `PASS` closes a checkpoint and opens
+the next phase; a `RETRY`/`ESCALATE` records a repeat-failure count that must
+survive the reset or the counting rule breaks. For COMPLEX work, reset after
+recording the gate decision (`rules/gates.md`'s block, persisted via
+`aitk gate-state`), not mid-attempt. Concretely, that means:
 
-1. Investigation or planning artifact written.
-2. Plan/RCA review and action gate recorded.
-3. Implementation slice or wave completed and verified.
-4. Review findings and fix queue recorded.
-5. Review fixes completed with the next validation/reporting action recorded.
+1. Investigation or planning artifact written, gate recorded.
+2. Plan/RCA review gate recorded (`PASS`, or `RETRY`/`ESCALATE` with reason
+   and count persisted).
+3. Implementation slice or wave completed, verification gate recorded.
+4. Review gate recorded with findings and fix queue.
+5. Review fixes completed, next validation/reporting gate recorded.
 
-Batch work resets between waves. Skip a standard reset only when the next phase
-is tiny and the durable artifact already contains everything needed; record the
-reason in `PROJECT.md`.
+Batch work resets between waves. Skip a reset only when the next phase is tiny
+and the durable artifact already contains everything needed, including any
+in-progress gate's reason/count; record the reason in `PROJECT.md`.
 
 ## Reactive Thresholds
 
@@ -35,7 +42,11 @@ next phase before the checkpoint is durable.
 ## Save and Continue Protocol
 
 1. Use the deterministic checkpoint API and the selected workflow contract to
-   update the `PROJECT.md` machine block and human continuation record.
+   update the `PROJECT.md` machine block and human continuation record. If a
+   gate decision is in flight (a `RETRY`/`ESCALATE` mid-count, or a decision
+   not yet acted on), persist it with `aitk gate-state` before resetting —
+   the repeat-failure count in `rules/gates.md`'s counting rule depends on it
+   surviving the reset.
 2. Leave uncommitted work untouched unless the workflow already has commit
    authorization; record dirty state instead.
 3. Apply the provider's `context_reset` binding or its declared fresh-session fallback.
