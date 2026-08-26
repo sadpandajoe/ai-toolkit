@@ -157,6 +157,27 @@ def test_implementation_only_boundaries_are_untouched_by_the_codex_retarget():
         assert "contracts" not in boundary
 
 
+def test_sol_review_boundary_is_a_single_menu_less_reviewer_dispatch():
+    # sol-review.md replaces the tier-resolved ensemble roster with one
+    # independent pass -- it must not carry a lens menu (that would make it
+    # a fan-out lane again) and must route only through the review tier, not
+    # deep-review, which stays the triggered-risk escalation's job.
+    payload = _payload()
+    boundary = _route_boundary(payload, "review.sol-review")
+    assert boundary["path"] == "skills/review/references/sol-review.md"
+    assert boundary["routes"] == ["review"]
+    assert boundary["contracts"] == ["agents/codex/reviewer.md"]
+    assert "lens_domain" not in boundary
+    assert "lenses" not in boundary
+
+
+def _route_boundary(payload: dict[str, object], identifier: str) -> dict[str, object]:
+    for boundary in _boundaries(payload):
+        if boundary["id"] == identifier:
+            return boundary
+    raise AssertionError(f"no dispatch boundary named {identifier!r}")
+
+
 def test_contract_dependency_allowed_permits_only_the_codex_agents_directory():
     from aitk.routing_markdown import _contract_dependency_allowed
     from pathlib import PurePosixPath

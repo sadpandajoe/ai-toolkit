@@ -428,6 +428,7 @@ BOUNDARY_INVARIANTS = {
     "review.pr-moderate": ("review", "deep-review"),
     "review.pr-standard": ("review", "deep-review"),
     "review.pr-trivial": ("review",),
+    "review.sol-review": ("review",),
     "testing.test-authoring": ("implementation",),
     "workflows.adversarial-primary": ("deep-review",),
     "workflows.adversarial-second-opinion": ("deep-review",),
