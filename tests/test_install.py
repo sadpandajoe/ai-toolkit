@@ -228,3 +228,13 @@ def test_code_review_goal_skill_is_registered_and_installable():
     assert ("code-review", REPO_ROOT / "skills/goals/code-review") in _public_skills(
         REPO_ROOT, with_pgm=False
     )
+
+
+def test_address_feedback_goal_skill_is_registered_and_installable():
+    discovered = _discovered_skills(REPO_ROOT)
+    assert discovered["address-feedback"] == "skills/goals/address-feedback"
+    assert validate_skill_interfaces(REPO_ROOT) == []
+    assert (
+        "address-feedback",
+        REPO_ROOT / "skills/goals/address-feedback",
+    ) in _public_skills(REPO_ROOT, with_pgm=False)

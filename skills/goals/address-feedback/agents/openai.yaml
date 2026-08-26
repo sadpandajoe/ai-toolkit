@@ -1,0 +1,4 @@
+interface:
+  display_name: "Address Feedback"
+  short_description: "Gather, triage, fix, verify, reply to, and resolve PR review feedback end to end"
+  default_prompt: "Use $address-feedback to address the review feedback on this PR."

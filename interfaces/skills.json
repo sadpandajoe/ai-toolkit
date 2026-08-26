@@ -2,6 +2,7 @@
   "version": 1,
   "skills": [
     {"name": "action-gate", "path": "skills/action-gate", "classification": "internal_support"},
+    {"name": "address-feedback", "path": "skills/goals/address-feedback", "classification": "public_direct"},
     {"name": "agent-setup-maintainer", "path": "skills/agent-setup-maintainer", "classification": "public_direct"},
     {"name": "archive-project-file", "path": "skills/archive-project-file", "classification": "public_direct"},
     {"name": "cherry-pick", "path": "skills/cherry-pick", "classification": "public_direct"},
