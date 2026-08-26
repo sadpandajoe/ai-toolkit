@@ -106,3 +106,46 @@ def test_repeat_count_resets_when_persisted_gate_state_reason_changes(tmp_path: 
         "reason": "flaky test",
         "count": 1,
     }
+
+
+# --- scripted end-to-end scenario through the decision table --------------
+
+
+def test_scripted_scenario_retry_then_escalate_then_pass_then_blocked(tmp_path: Path):
+    """Walks one gate through RETRY -> ESCALATE -> PASS -> BLOCKED, persisting
+    each decision, entirely offline against a tmp_path PROJECT.md."""
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    gate = "review"
+
+    # First failure for a reason: RETRY, count 1.
+    stored = gate_state.read(path, gate)
+    previous_reason = stored["reason"] if stored else None
+    previous_count = stored["count"] if stored else 0
+    state, count = decide_failure(previous_reason, previous_count, "missing tests")
+    gate_state.set_state(path, gate, state, "missing tests", count)
+    assert (state, count) == ("RETRY", 1)
+
+    # Same reason fails again: ESCALATE, count 2.
+    stored = gate_state.read(path, gate)
+    state, count = decide_failure(stored["reason"], stored["count"], "missing tests")
+    gate_state.set_state(path, gate, state, "missing tests", count)
+    assert (state, count) == ("ESCALATE", 2)
+
+    # The fix lands: PASS advances the gate. decide_failure is not consulted
+    # for a pass — the calling workflow decides PASS directly and persists it.
+    gate_state.set_state(path, gate, "PASS", "tests added", 0)
+    assert gate_state.read(path, gate) == {
+        "state": "PASS",
+        "reason": "tests added",
+        "count": 0,
+    }
+
+    # A later phase hits unresolved required findings with no ambiguity to
+    # ask about: BLOCKED, also decided by the workflow, not decide_failure.
+    gate_state.set_state(path, gate, "BLOCKED", "unresolved required finding", 0)
+    assert gate_state.read(path, gate) == {
+        "state": "BLOCKED",
+        "reason": "unresolved required finding",
+        "count": 0,
+    }
