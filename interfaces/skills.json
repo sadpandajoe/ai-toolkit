@@ -7,6 +7,7 @@
     {"name": "cherry-pick", "path": "skills/cherry-pick", "classification": "public_direct"},
     {"name": "debug", "path": "skills/debug", "classification": "internal_support"},
     {"name": "feedback", "path": "skills/feedback", "classification": "internal_support"},
+    {"name": "fix-bug", "path": "skills/goals/fix-bug", "classification": "public_direct"},
     {"name": "implement-change", "path": "skills/implement-change", "classification": "internal_support"},
     {"name": "metrics-emit", "path": "skills/metrics-emit", "classification": "internal_support"},
     {"name": "pgm", "path": "extensions/pgm/skills/pgm", "classification": "public_router"},

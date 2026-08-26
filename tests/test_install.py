@@ -176,3 +176,37 @@ def test_public_skills_derives_install_target_from_declared_path_not_the_glob(
     assert _public_skills(root, with_pgm=False) == [
         ("fix-bug", root / "skills/goals/fix-bug")
     ]
+
+
+def test_desired_targets_symlinks_a_goal_skill_by_declared_path(tmp_path: Path):
+    root = tmp_path / "repo"
+    _write_goal_skill(root, "fix-bug")
+    _write_skills_json(
+        root,
+        [
+            {
+                "name": "fix-bug",
+                "path": "skills/goals/fix-bug",
+                "classification": "public_direct",
+            }
+        ],
+    )
+    paths = resolve_paths(
+        root,
+        home=tmp_path / "home",
+        codex_home=tmp_path / "codex",
+        agents_dir=tmp_path / "agents",
+    )
+    desired = desired_targets(paths, with_pgm=False)
+    by_name = {item.name: item for item in desired}
+    assert by_name["claude-skill:fix-bug"].source == root / "skills/goals/fix-bug"
+    assert by_name["agent-skill:fix-bug"].source == root / "skills/goals/fix-bug"
+
+
+def test_fix_bug_goal_skill_is_registered_and_installable():
+    discovered = _discovered_skills(REPO_ROOT)
+    assert discovered["fix-bug"] == "skills/goals/fix-bug"
+    assert validate_skill_interfaces(REPO_ROOT) == []
+    assert ("fix-bug", REPO_ROOT / "skills/goals/fix-bug") in _public_skills(
+        REPO_ROOT, with_pgm=False
+    )
