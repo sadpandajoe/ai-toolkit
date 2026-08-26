@@ -53,6 +53,32 @@ Identify possible failure scenarios such as:
 - integration issues
 - performance risks
 
+## RCA Gate Evidence Checklist
+
+Adapted from systematic-debugging principles: confidence is not enough. A
+`rules/gates.md` RCA gate should reach `PASS` only when the causal story is
+evidenced, not merely asserted:
+
+- Failure mechanism is explained, not merely correlated.
+- Evidence points to the relevant execution/data path.
+- Competing likely causes were considered or ruled out.
+- The proposed fix changes the causal point, not only a visible symptom.
+- There is a verification strategy capable of disproving the RCA.
+- For a bug fix, regression evidence should fail before the fix and pass
+  after, when feasible.
+
+A gate-driven caller emits its own Gate block from this checklist instead of
+the `## RCA Review` / `Score: X/10` output below — all six items evidenced is
+`PASS`; a missing item is `RETRY` (or `ESCALATE` if the same item was already
+missing on the prior attempt at this gate) per `rules/gates.md`'s
+Repeat-Failure Counting Rule:
+
+```markdown
+## Gate: <rca-gate-name>
+State: PASS / RETRY / ESCALATE
+Reason: [which checklist item(s) failed, or "all six items evidenced"]
+```
+
 ## Output
 
 ```markdown
