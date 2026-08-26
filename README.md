@@ -315,6 +315,7 @@ does not exist.
 | `rules/preset-environments.md` | `run-test-plan`, `test-pr` |
 | `rules/code-review.md` | Review skill loader |
 | `rules/complexity-gate.md` | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` |
+| `rules/gates.md` | Skill-owned loader, dual-run (not yet wired to any workflow) |
 | `rules/review-gate.md` | Review and workflow reference loaders |
 | `rules/scoring.md` | Review and planning skill loaders |
 | `rules/severity.md` | Review, planning, and QA skill loaders |

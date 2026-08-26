@@ -2,6 +2,8 @@
 
 Universal stop conditions for iterative review and fix loops.
 
+Superseded by `rules/gates.md`'s six-state gate contract; this rule remains authoritative until callers migrate.
+
 ## When to Stop
 
 Stop the current loop when any of these are true:

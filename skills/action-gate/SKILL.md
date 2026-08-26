@@ -7,6 +7,8 @@ description: Use when a workflow needs an execution gate after investigation, cl
 
 Use this helper after an investigation or classification phase has produced a root-cause hypothesis, a proposed fix, and a validation plan.
 
+Superseded by `rules/gates.md`'s six-state gate contract; this skill remains authoritative until callers migrate.
+
 ## Output Contract
 
 Always end with this block:

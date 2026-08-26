@@ -2,6 +2,8 @@
 
 Shared scoring scale for all review skills that output `Score: X/10`.
 
+Superseded by `rules/gates.md`'s six-state gate contract; this rule remains authoritative until callers migrate.
+
 ## Scale
 
 | Range | Tier | Meaning |

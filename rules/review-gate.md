@@ -2,6 +2,8 @@
 
 Output contract for `review-code` and any workflow that invokes it. This defines the block format — it does not override how review findings are produced.
 
+Superseded by `rules/gates.md`'s six-state gate contract; this rule remains authoritative until callers migrate.
+
 ## Block Format
 
 Every review phase must emit this block, even when the review loop is skipped:
