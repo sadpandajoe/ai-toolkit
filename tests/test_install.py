@@ -210,3 +210,12 @@ def test_fix_bug_goal_skill_is_registered_and_installable():
     assert ("fix-bug", REPO_ROOT / "skills/goals/fix-bug") in _public_skills(
         REPO_ROOT, with_pgm=False
     )
+
+
+def test_fix_ci_goal_skill_is_registered_and_installable():
+    discovered = _discovered_skills(REPO_ROOT)
+    assert discovered["fix-ci"] == "skills/goals/fix-ci"
+    assert validate_skill_interfaces(REPO_ROOT) == []
+    assert ("fix-ci", REPO_ROOT / "skills/goals/fix-ci") in _public_skills(
+        REPO_ROOT, with_pgm=False
+    )

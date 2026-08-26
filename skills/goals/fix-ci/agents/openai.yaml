@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fix CI"
+  short_description: "Diagnose and fix a failing CI run, trivial fast-path"
+  default_prompt: "Use $fix-ci to diagnose and fix this CI failure."
