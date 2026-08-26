@@ -1,7 +1,15 @@
-"""PROJECT.md v2 schema round-trip: proves the three independent state
+"""State and specialist contracts.
+
+Part 1: PROJECT.md v2 schema round-trip — proves the three independent state
 modules (checkpoint, routing, gate_state) coexist in one file without one's
 marker block corrupting another's, and that `aitk project-state` surfaces
-all three together."""
+all three together.
+
+Part 2: agents/codex/*.md specialist contracts — the Codex-side counterpart
+to agents/claude/*.md. No prior convention exists in this repo for a Codex
+contract file's frontmatter shape; this establishes one (name, routes,
+responsibility, domain) and proves the three files satisfy it consistently.
+"""
 
 import json
 from pathlib import Path
@@ -9,6 +17,7 @@ from pathlib import Path
 from aitk import gate_state, routing
 from aitk.checkpoint import canonical_json, read_snapshot
 from aitk.cli import main
+from aitk.doctor import _frontmatter
 
 CHECKPOINT_BEGIN = "<!-- aitk-checkpoint:v1 -->"
 CHECKPOINT_END = "<!-- /aitk-checkpoint -->"
@@ -112,3 +121,47 @@ def test_project_state_cli_surfaces_all_three_blocks_together(tmp_path: Path, ca
     assert payload["gates"] == {
         "verify": {"state": "PASS", "reason": "suite green", "count": 0}
     }
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CODEX_CONTRACT_NAMES = ("rca", "reviewer", "plan-validator")
+
+
+def test_codex_contracts_exist_and_are_non_empty():
+    for name in CODEX_CONTRACT_NAMES:
+        path = REPO_ROOT / "agents/codex" / f"{name}.md"
+        assert path.is_file()
+        assert len(path.read_text().strip()) > 0
+
+
+def test_codex_contracts_share_a_consistent_frontmatter_shape():
+    for name in CODEX_CONTRACT_NAMES:
+        path = REPO_ROOT / "agents/codex" / f"{name}.md"
+        fields = _frontmatter(path.read_text())
+        assert fields.get("name") == name
+        assert fields.get("routes", "").startswith("[") and fields["routes"].endswith(
+            "]"
+        )
+        assert fields.get("responsibility")
+        assert fields.get("domain")
+
+
+def test_codex_contract_routes_are_real_model_routing_routes():
+    payload = json.loads((REPO_ROOT / "interfaces/model-routing.json").read_text())
+    known_routes = {route["name"] for route in payload["routes"]}
+    for name in CODEX_CONTRACT_NAMES:
+        path = REPO_ROOT / "agents/codex" / f"{name}.md"
+        fields = _frontmatter(path.read_text())
+        listed = [
+            item.strip()
+            for item in fields["routes"].strip("[]").split(",")
+            if item.strip()
+        ]
+        assert listed, f"{name}: routes list must not be empty"
+        assert set(listed) <= known_routes, f"{name}: unknown route in {listed}"
+
+
+def test_codex_contracts_each_cite_specialist_handoff():
+    for name in CODEX_CONTRACT_NAMES:
+        path = REPO_ROOT / "agents/codex" / f"{name}.md"
+        assert "rules/specialist-handoff.md" in path.read_text()
