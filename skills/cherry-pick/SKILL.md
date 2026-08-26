@@ -11,6 +11,20 @@ Safely move one or more isolated changes (bug fixes, isolated features) onto a t
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present. Cherry-picking has a small set of recurring failure modes; do not relearn them.
 
+Read `rules/gates.md` — its six-state contract (`PASS`/`RETRY`/`ESCALATE`/
+`USER_DECISION`/`BLOCKED`/`RECLASSIFY`) is the vocabulary every checkpoint
+below translates into; the checkpoints keep their own domain-specific
+verdicts and block formats (Gate Decision, Scope Audit, Push Boundary — this
+skill's execution table and `CHERRY_PICK.md` remain its state artifact, not
+`PROJECT.md`, per the Notes section below) rather than being rewritten
+against `rules/gates.md`'s block format verbatim. Where a checkpoint's
+outcome is a real command's exit status — step 7b's pre-commit/build/
+type-check/test run — that portion follows `skills/verification-loop`'s
+run-command-and-decide-RETRY-vs-ESCALATE shape (fix, re-run, and escalate
+only if the *same* check fails twice in a row) rather than looping
+indefinitely; it is cited, not re-run through that skill's `aitk gate-state`
+persistence, since this skill does not own `PROJECT.md`.
+
 ## Contract
 
 **In scope:** classify each change, plan its application, apply, adapt conflicts when source intent can be preserved, run repo-standard validation.
@@ -67,6 +81,11 @@ Decide should-we-cherry against the accept/reject matrix (see [references/gate.m
 
 → Full decision matrix: [references/gate.md](references/gate.md)
 
+Translates to `rules/gates.md`: `PROCEED`/`FORCE-PROCEED` → `PASS` (a
+force-override still records its warning in `Reason`); `REJECT` → `BLOCKED`;
+`SKIP` → `PASS` with the skip reason in `Reason` — the same shape as
+`rules/gates.md`'s Mapping section gives `review-gate.md`'s `skipped` status.
+
 ### 3. Plan (main thread)
 
 Per-cherry application strategy: file include/exclude, conflict forecast, adaptation strategy, validation approach.
@@ -120,11 +139,26 @@ The subagent contract, LLM audit procedure, and status labels live in [reference
 <!-- aitk-model-route:cherry-pick.scope-leak-rereview -->
 The orchestrator may not mark a cherry `Applied` without this report. If the subagent finds leaks, revert leaked hunks and amend on the main thread, then re-spawn the subagent on the same `review`/`deep-review` route on the amended commit.
 
+Translates to `rules/gates.md`: `CLEAN` → `PASS`; `LEAK — revert <hunks>` →
+`RETRY` (the revert-amend-respawn loop above *is* the repeat-failure cycle —
+`ESCALATE` still means the same leak reason recurring after one revert
+attempt, not an open-ended loop); `ESCALATE` → `ESCALATE` directly, since the
+subagent's own judgment that a leak can't be cleanly resolved is itself a
+valid escalation reason under `rules/gates.md`, not only a repeat count.
+
 **7b. Correctness validation — main thread.**
 
 Conflict-marker scan, **pre-commit on changed files**, build, type-check, targeted tests. Pre-commit is mandatory — conflict resolution often re-indents lines past length limits, and pre-commit is what CI runs. If pre-commit auto-fixes or you make manual fixes, `git commit --amend --no-edit` before pushing. Do not push, then amend, then force-push.
 
 → Full procedure (subagent contract, LLM audit, validation order, status labels, dependency manifest rule): [references/validate.md](references/validate.md)
+
+The build/type-check/test portion of this step is exactly
+`skills/verification-loop`'s shape (run a command, `PASS` on green, one fix
+attempt on red, `ESCALATE` only if the same check fails twice in a row —
+see `references/validate.md`'s "What To Do When Validation Fails" table).
+Follow that shape without invoking the skill itself: the same reason failing
+twice means stop and surface it in the execution table rather than trying a
+third fix.
 
 ### 7c. Unblock Discovery (Blocked / Rejected only)
 
@@ -172,6 +206,13 @@ Reason (if not pushed): <one line>
 ```
 
 If `Status: pushed`, the `git push` for this cherry has already happened — not queued, not deferred. If `Status: pending-authorization` (only when `--no-push` is set) or `deferred-by-user`, the orchestrator must also stop dependent follow-ups until the user clears the boundary. Do not start the next dependent cherry's worker without this block in chat for the previous cherry. This is the only structural defense against falling into the "apply, validate, next, …, done, push" rhythm that batches pushes (see gotchas.md, "Push batched at end instead of per-cherry").
+
+Translates to `rules/gates.md`: `pushed` → `PASS`; `pending-authorization` and
+`deferred-by-user` → `USER_DECISION` (not a failure — the push boundary is a
+trade-off/authorization question, same as `rules/gates.md`'s Mapping section
+gives `action-gate`'s `Ask for approval`). The Push Boundary block above
+stays the record of it — it is not replaced by `rules/gates.md`'s generic
+Gate block.
 
 ## Batch Cherry-Pick Flow
 
