@@ -13,8 +13,7 @@ architecture decomposition, before any phase is planned or implemented.
 This is a leaf capability, not a loop: it runs once per architecture
 decision (and again only on `RECLASSIFY`/`ESCALATE`, never as routine
 iteration). Planning the next individual phase in detail is sibling
-`plan-phase.md`'s job, not this one's — a sibling reference landing in a
-later commit.
+[plan-phase.md](plan-phase.md)'s job, not this one's.
 
 ## When this runs
 
@@ -48,8 +47,7 @@ not a separate agent. Its output names, for the whole unit:
 - **Phase exit goals** — one per boundary, not implementation detail
 
 No phase beyond the first gets a detailed code plan here — that is
-deferred to `plan-phase.md` (added in a later commit), run just-in-time per
-phase.
+deferred to [plan-phase.md](plan-phase.md), run just-in-time per phase.
 
 ### 2. Validate the decomposition
 

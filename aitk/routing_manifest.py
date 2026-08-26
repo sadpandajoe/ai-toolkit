@@ -405,6 +405,7 @@ BOUNDARY_INVARIANTS = {
     "planning.decompose-work": ("planning",),
     "planning.loop-ownership": ("review", "deep-review"),
     "planning.loop-summary": ("review", "deep-review"),
+    "planning.plan-phase": ("planning",),
     "planning.pm-brief-review": ("review", "deep-review"),
     "planning.technical-plan-review": ("review", "deep-review"),
     "qa.fresh-validation": ("review", "operations"),
