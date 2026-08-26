@@ -37,6 +37,7 @@ def _paths(tmp_path: Path):
 def test_worker_agents_discovers_real_source_directory():
     discovered = dict(_worker_agents(REPO_ROOT))
     assert discovered["debug-worker"] == REPO_ROOT / "agents/claude/debug-worker.md"
+    assert discovered["test-worker"] == REPO_ROOT / "agents/claude/test-worker.md"
 
 
 def test_worker_agents_ignores_symlinks(tmp_path: Path):
@@ -66,6 +67,13 @@ def test_desired_targets_includes_claude_agent_symlink(tmp_path: Path):
         paths.home / ".claude/agents/debug-worker.md",
         REPO_ROOT / "agents/claude/debug-worker.md",
     )
+
+
+def test_desired_targets_includes_all_worker_agents(tmp_path: Path):
+    paths = _paths(tmp_path)
+    desired = desired_targets(paths, with_pgm=False)
+    names = {item.name for item in desired if item.name.startswith("claude-agent:")}
+    assert names == {"claude-agent:debug-worker", "claude-agent:test-worker"}
 
 
 def test_desired_targets_has_no_duplicate_target_paths(tmp_path: Path):
