@@ -35,6 +35,11 @@ Dual-run note: `address-feedback` requests can also match
 description — same pattern as `fix-bug` above. This router stays the live
 dispatch path until that skill's own Notes section confirms migration.
 
+Dual-run note: `test-pr` requests can also match
+`skills/goals/test-pr/SKILL.md` directly by its own skill description —
+same pattern as `fix-bug` above. This router stays the live dispatch path
+until that skill's own Notes section confirms migration.
+
 1. Read the manifest and match either the explicitly requested workflow name or
    the highest-specificity natural-language trigger.
 2. If no workflow matches, handle the request directly. If equally specific
