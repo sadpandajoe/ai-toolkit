@@ -1,3 +1,15 @@
+---
+workflow:
+complexity:
+classification_confidence:
+current_phase:
+current_gate:
+attempt:
+planning_required:
+rca_validation_required:
+modifiers: []
+---
+
 ## Overview
 <!-- One-paragraph description of what we are trying to do -->
 
@@ -40,7 +52,7 @@
 <!-- Update before each major action (git operations, file changes, etc.) -->
 
 ### [Timestamp] - Session Start
-- 
+-
 
 ### [Timestamp] - Action Taken
 
