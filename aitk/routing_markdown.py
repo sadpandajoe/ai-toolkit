@@ -167,6 +167,8 @@ def _contract_dependency_allowed(path: Path) -> bool:
         return False
     if path.parts[0] in {"rules", "skills"}:
         return True
+    if len(path.parts) == 3 and path.parts[0] == "agents" and path.parts[1] == "codex":
+        return True
     return (
         len(path.parts) >= 4
         and path.parts[0] == "extensions"
