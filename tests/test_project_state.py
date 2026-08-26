@@ -7,6 +7,7 @@ import pytest
 
 from aitk import checkpoint, gate_state, routing
 from aitk.checkpoint import CheckpointError, canonical_json, read_snapshot
+from aitk.size_axis import SizeAxisError, validate_size_axis
 
 BEGIN = "<!-- aitk-checkpoint:v1 -->"
 END = "<!-- /aitk-checkpoint -->"
@@ -364,3 +365,129 @@ def test_initialize_replace_existing_rejects_pending_effects(tmp_path: Path):
         CheckpointError, match="cannot replace a checkpoint with pending effects"
     ):
         checkpoint.initialize(REPO_ROOT, "fix-bug", path, replace_existing=True)
+
+
+# --- aitk.size_axis: PROJECT.md v2 size-axis schema -------------------------
+#
+# These fields are frontmatter, not a marker-block state module -- no YAML
+# frontmatter parser exists anywhere in aitk/ yet, so validate_size_axis()
+# is a pure function over an already-parsed dict, not a PROJECT.md reader.
+
+
+def test_an_unfilled_template_validates_cleanly():
+    # PROJECT_TEMPLATE.md ships every size-axis field blank; every fresh
+    # TRIVIAL/STANDARD project must start valid with none of them set.
+    unfilled = {
+        "size": None,
+        "execution_shape": None,
+        "phaseability_reason": None,
+        "phase_complexity": None,
+        "phase_size": None,
+        "phase_execution_shape": None,
+        "architecture_plan_status": None,
+        "phase_plan_status": None,
+        "verification_status": None,
+        "reasoning_attempts": None,
+    }
+    validate_size_axis(unfilled)  # must not raise
+    validate_size_axis({})  # absent keys are equivalent to None
+
+
+def test_a_fully_populated_multi_phase_payload_validates():
+    # Mirrors the source plan's create-feature MULTI_PHASE example.
+    validate_size_axis(
+        {
+            "size": "XL",
+            "execution_shape": "MULTI_PHASE",
+            "phaseability_reason": (
+                "editor has independent state, layout, persistence, "
+                "history workstreams"
+            ),
+            "phase_complexity": "STANDARD",
+            "phase_size": "M",
+            "phase_execution_shape": "SINGLE_PHASE",
+            "architecture_plan_status": "PASS",
+            "phase_plan_status": "PASS",
+            "verification_status": "RETRY",
+            "reasoning_attempts": {
+                "architecture": 1,
+                "phase_plan": 0,
+                "implementation": 0,
+            },
+        }
+    )
+
+
+def test_unrelated_frontmatter_keys_are_ignored():
+    # This module owns only the size-axis slice of PROJECT.md's frontmatter;
+    # the v1 fields (workflow, complexity, current_phase, ...) are someone
+    # else's schema and must not be rejected here.
+    validate_size_axis({"workflow": "fix-bug", "complexity": "TRIVIAL", "size": "S"})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("size", "MEDIUM"),
+        ("execution_shape", "PARALLEL_PHASE"),
+        ("phase_complexity", "MODERATE"),
+        ("phase_size", "XXL"),
+        ("phase_execution_shape", "SINGLE_PHASE "),
+        ("architecture_plan_status", "DONE"),
+        ("phase_plan_status", "OK"),
+        ("verification_status", "PENDING"),
+    ],
+)
+def test_an_invalid_enum_value_is_rejected(field, value):
+    with pytest.raises(SizeAxisError, match=field):
+        validate_size_axis({field: value})
+
+
+def test_phaseability_reason_must_be_a_nonempty_string():
+    with pytest.raises(SizeAxisError, match="phaseability_reason"):
+        validate_size_axis({"phaseability_reason": ""})
+
+
+def test_reasoning_attempts_rejects_a_missing_unit():
+    with pytest.raises(SizeAxisError, match="reasoning_attempts"):
+        validate_size_axis({"reasoning_attempts": {"architecture": 1, "phase_plan": 0}})
+
+
+def test_reasoning_attempts_rejects_an_unknown_unit():
+    with pytest.raises(SizeAxisError, match="reasoning_attempts"):
+        validate_size_axis(
+            {
+                "reasoning_attempts": {
+                    "architecture": 1,
+                    "phase_plan": 0,
+                    "implementation": 0,
+                    "review": 0,
+                }
+            }
+        )
+
+
+def test_reasoning_attempts_rejects_a_negative_count():
+    with pytest.raises(SizeAxisError, match="reasoning_attempts.implementation"):
+        validate_size_axis(
+            {
+                "reasoning_attempts": {
+                    "architecture": 1,
+                    "phase_plan": 0,
+                    "implementation": -1,
+                }
+            }
+        )
+
+
+def test_reasoning_attempts_rejects_a_bool_disguised_as_an_int():
+    with pytest.raises(SizeAxisError, match="reasoning_attempts.phase_plan"):
+        validate_size_axis(
+            {
+                "reasoning_attempts": {
+                    "architecture": 1,
+                    "phase_plan": True,
+                    "implementation": 0,
+                }
+            }
+        )

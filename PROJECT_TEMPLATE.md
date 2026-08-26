@@ -8,6 +8,19 @@ attempt:
 planning_required:
 rca_validation_required:
 modifiers: []
+size:
+execution_shape:
+phaseability_reason:
+phase_complexity:
+phase_size:
+phase_execution_shape:
+architecture_plan_status:
+phase_plan_status:
+verification_status:
+reasoning_attempts:
+  architecture:
+  phase_plan:
+  implementation:
 ---
 
 ## Overview
