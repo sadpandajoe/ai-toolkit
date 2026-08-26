@@ -7,10 +7,16 @@ consolidates the behavior currently split across `skills/action-gate/SKILL.md`
 (iteration stop conditions), and `rules/scoring.md` (numeric iteration
 threshold) into one vocabulary and one counting rule.
 
-**Status: dual-run.** Nothing currently routes through this rule. The four
-files above remain authoritative until each caller migrates and the old
-mechanisms are deleted (see the plan's Wave 8). This file exists so the
-contract can be reviewed and cited before anything depends on it.
+**Status: dual-run.** `skills/goals/{fix-bug,fix-ci,code-review,
+address-feedback,test-pr}` and `skills/cherry-pick` now cite this contract's
+vocabulary at their own checkpoints, translating their existing domain-
+specific verdicts into these six states rather than reimplementing them. The
+four files above remain the ones actually enforcing behavior today — none of
+these callers invoke `aitk.gates.decide_failure()` or replace their own
+gate/verdict logic with this file's — so this is citation, not yet
+behavioral migration. The old mechanisms stay authoritative and are deleted
+only once every caller's citation is confirmed sufficient and the plan's
+Wave 8 gate (grep-confirmed migration) is met.
 
 ## Canonical Vocabulary
 
