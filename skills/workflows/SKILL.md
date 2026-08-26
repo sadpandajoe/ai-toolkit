@@ -9,6 +9,11 @@ This is the provider-neutral public router. Workflow identity and routing data
 come only from [the core manifest](../../interfaces/workflows.json); this skill
 does not maintain a second workflow table.
 
+Dual-run note: `fix-bug` requests can also match `skills/goals/fix-bug/SKILL.md`
+directly by its own skill description — a natural-language goal skill, not a
+manifest entry. This router stays the live dispatch path for `fix-bug` until
+that skill's own Notes section confirms migration.
+
 1. Read the manifest and match either the explicitly requested workflow name or
    the highest-specificity natural-language trigger.
 2. If no workflow matches, handle the request directly. If equally specific
