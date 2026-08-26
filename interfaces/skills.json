@@ -19,6 +19,7 @@
     {"name": "shortcut", "path": "skills/shortcut", "classification": "internal_support"},
     {"name": "superset-local", "path": "skills/superset-local", "classification": "internal_support"},
     {"name": "testing", "path": "skills/testing", "classification": "internal_support"},
+    {"name": "verification-loop", "path": "skills/verification-loop", "classification": "internal_support"},
     {"name": "workflows", "path": "skills/workflows", "classification": "public_router"},
     {"name": "workstreams", "path": "skills/workstreams", "classification": "internal_support"}
   ]

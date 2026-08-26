@@ -163,6 +163,7 @@ ai-toolkit/
 │   ├── archive-project-file/ # Archive lifecycle skill
 │   ├── shortcut/            # Shortcut REST fetch/report helpers
 │   ├── superset-local/      # Superset-specific local stack + Playwright helpers
+│   ├── verification-loop/   # Run a verification command, decide PASS/RETRY/ESCALATE (dual-run)
 │   └── workstreams/         # Post-parallel-implementation fan-in and merge sequencing
 ├── hooks/
 │   ├── hooks.json                 # Codex plugin lifecycle-hook adapter
