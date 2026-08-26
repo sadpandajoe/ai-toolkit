@@ -279,6 +279,106 @@ def test_gate_state_one_marker_without_its_pair_raises(tmp_path: Path):
         gate_state.read(path)
 
 
+# --- Multi-phase checkpoint/resume (create-feature's Multi-Phase Path) -----
+#
+# create-feature's Multi-Phase Path (skills/goals/create-feature/SKILL.md)
+# deliberately does not use aitk.checkpoint's initialize()/advance() -- that
+# mechanism resumes only through a fixed, pre-declared phase list keyed to a
+# named workflow contract in interfaces/contracts.json, and cannot accept
+# the runtime-derived phase names decompose-work.md produces per feature.
+# Cross-phase persistence instead composes aitk.size_axis (per-phase
+# reclassification) with aitk.gate_state under a gate name scoped per phase.
+# These tests prove that composition survives a simulated context reset: a
+# phase's own gate history is independent of every other phase's, and
+# re-reading the file from scratch (a fresh gate_state.read() call, not a
+# cached object) recovers the full history for every phase already run.
+
+
+def test_multi_phase_gate_history_is_independent_per_phase(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+
+    # Phase 1 ("layout-editing") fails once, then passes.
+    gate_state.set_state(
+        path, "create-feature-phase-layout-editing-verify", "RETRY", "missing test", 1
+    )
+    gate_state.set_state(
+        path, "create-feature-phase-layout-editing-verify", "PASS", "clean", 0
+    )
+
+    # Phase 2 ("persistence") starts fresh -- its own gate name, own history.
+    gate_state.set_state(
+        path, "create-feature-phase-persistence-verify", "RETRY", "flaky fixture", 1
+    )
+
+    # A fresh read (simulating a resumed context) sees both phases intact:
+    # phase 2's RETRY does not touch phase 1's PASS, and phase 1's earlier
+    # RETRY does not leak into phase 2's count.
+    history = gate_state.read(path)
+    assert history == {
+        "create-feature-phase-layout-editing-verify": {
+            "state": "PASS",
+            "reason": "clean",
+            "count": 0,
+        },
+        "create-feature-phase-persistence-verify": {
+            "state": "RETRY",
+            "reason": "flaky fixture",
+            "count": 1,
+        },
+    }
+
+
+def test_multi_phase_resume_uses_current_phase_to_scope_gate_history(tmp_path: Path):
+    # Models create-feature's Multi-Phase Path step (e): the gate name is
+    # templated from current_phase, so a resuming orchestrator that already
+    # knows current_phase (hand-set PROJECT.md frontmatter -- no aitk reader
+    # owns that field, see aitk/size_axis.py's module docstring) can look up
+    # exactly what the in-flight phase has already tried, without touching
+    # any other phase's history.
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    gate_state.set_state(
+        path, "create-feature-phase-layout-editing-verify", "PASS", "clean", 0
+    )
+    gate_state.set_state(
+        path, "create-feature-phase-persistence-verify", "ESCALATE", "flaky fixture", 2
+    )
+
+    current_phase = "persistence"  # as if just read off resumed frontmatter
+    resumed_gate = gate_state.read(path, f"create-feature-phase-{current_phase}-verify")
+    assert resumed_gate == {"state": "ESCALATE", "reason": "flaky fixture", "count": 2}
+    # The completed phase's history survives untouched alongside it.
+    assert gate_state.read(path, "create-feature-phase-layout-editing-verify") == {
+        "state": "PASS",
+        "reason": "clean",
+        "count": 0,
+    }
+
+
+def test_multi_phase_reclassification_is_independent_per_phase():
+    # Each phase reclassifies complexity/size on its own (source plan: "then
+    # classify each phase independently") -- two phases with different
+    # phase-level classifications must both validate independently, without
+    # one phase's fields constraining or leaking into the other's.
+    phase_one = {
+        "phase_complexity": "STANDARD",
+        "phase_size": "M",
+        "phase_execution_shape": "SINGLE_PHASE",
+        "phase_plan_status": "PASS",
+        "verification_status": "PASS",
+    }
+    phase_two = {
+        "phase_complexity": "COMPLEX",
+        "phase_size": "S",
+        "phase_execution_shape": "SINGLE_PHASE",
+        "phase_plan_status": "RETRY",
+        "verification_status": None,
+    }
+    validate_size_axis(phase_one)
+    validate_size_axis(phase_two)
+
+
 # --- aitk.checkpoint: initialize()/advance() ownership and resume ----------
 #
 # These exercise the real "fix-bug" contract in interfaces/contracts.json
