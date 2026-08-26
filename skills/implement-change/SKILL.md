@@ -52,6 +52,9 @@ worktree preservation, and any authorized commit.
 
 ## Output
 
+This handoff shape is one example of `rules/specialist-handoff.md`'s
+input/output contract (dual-run — not yet the authoritative source).
+
 ```markdown
 ## Implementation Handoff
 
