@@ -1,4 +1,4 @@
 interface:
   display_name: "Fix Bug"
-  short_description: "Diagnose and fix a reported bug, trivial fast-path"
+  short_description: "Diagnose and fix a reported bug, trivial and standard paths"
   default_prompt: "Use $fix-bug to diagnose and fix this bug."

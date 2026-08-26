@@ -70,7 +70,9 @@ def _structural_seeds(
     """
     path = Path(boundary_path)
     parts = path.parts
-    if len(parts) >= 2 and parts[0] == "skills":
+    if len(parts) >= 4 and parts[0] == "skills" and parts[1] == "goals":
+        owner = Path("skills") / "goals" / parts[2] / "SKILL.md"
+    elif len(parts) >= 2 and parts[0] == "skills":
         owner = Path("skills") / parts[1] / "SKILL.md"
     elif len(parts) >= 4 and parts[0] == "extensions" and parts[2] == "skills":
         owner = Path(*parts[:4]) / "SKILL.md"
