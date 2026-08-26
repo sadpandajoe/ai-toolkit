@@ -27,12 +27,14 @@ are grouped by role so workflows load only the phase they are entering.
 
 | Reference | Role |
 |-----------|------|
+| [references/sol-review.md](references/sol-review.md) | Default: one independent SOL review pass, findings validated before fixing |
+| [references/delta-review.md](references/delta-review.md) | Triggered-risk escalation beyond the default pass (security-sensitive surface, deep-tier phrase, or explicit ask) |
 | [references/local-review.md](references/local-review.md) | Local `review-code` orchestration |
 | [references/pr-review.md](references/pr-review.md) | Single GitHub PR review procedure |
 | [references/pr-batch.md](references/pr-batch.md) | Batch PR review orchestration |
 | [references/adversarial-orchestration.md](references/adversarial-orchestration.md) | `review-code-adversarial` orchestration |
 | [references/workflow-review.md](references/workflow-review.md) | Standard-tier capability orchestration (lens fan-out → dedup → adversarial verify) |
-| [references/ensemble.md](references/ensemble.md) | Tiered model/provider rosters, verifier diversity, and coverage reporting |
+| [references/ensemble.md](references/ensemble.md) | Legacy tiered model/provider roster path — still directly callable via `bin/aitk review-ensemble`, retired once the pair above has run a full goal-skill review cycle |
 
 ## Classifiers
 
@@ -90,7 +92,19 @@ boundary, which carries its own contract closure.
 
 Reviewer lens references are subagent prompts. Orchestration and posting references are read by the main thread.
 
-Dispatch mode is tier-routed. Every tier resolves its roster from
+Dispatch defaults to [references/sol-review.md](references/sol-review.md): one
+independent SOL review pass, findings validated before fixing. A diff that
+carries a security-sensitive surface, a deep-tier phrase, or an explicit
+caller ask escalates to [references/delta-review.md](references/delta-review.md)
+in addition to that pass — never in place of it.
+
+The tier-routed roster below is the legacy path this pair replaces — still
+fully live and still directly callable via `bin/aitk review-ensemble`, and it
+is what the five orchestration references above (`local-review.md`,
+`pr-review.md`, `pr-batch.md`, `workflow-review.md`,
+`adversarial-orchestration.md`) still dispatch through internally today.
+Retired only once the pair above has run a full goal-skill review cycle
+(Wave 8). Every tier resolves its roster from
 [references/ensemble.md](references/ensemble.md) — the model/provider mix is
 data, never a per-run judgment call:
 

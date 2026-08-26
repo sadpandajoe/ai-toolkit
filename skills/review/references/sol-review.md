@@ -94,11 +94,13 @@ phrase, or explicit ask) so that procedure can scope its dispatch.
 
 ## Notes
 
-- This file and [delta-review.md](delta-review.md) are dual-run alongside
-  [ensemble.md](ensemble.md), [classify-diff.md](classify-diff.md), and the
-  lens files (`code-quality.md`, `deep-quality.md`, `code-judo.md`,
-  `adversarial.md`) today — nothing routes through either of them yet.
-  `skills/review/SKILL.md`'s orchestration table (`local-review.md`,
-  `pr-review.md`, `pr-batch.md`, `workflow-review.md`,
-  `adversarial-orchestration.md`) switches to this pair in a later commit
-  (C40); none of the ensemble files are retired by this commit.
+- `skills/review/SKILL.md`'s Invocation section now documents this file as
+  the default dispatch (C40), with [delta-review.md](delta-review.md) as its
+  escalation. The five orchestration references it lists
+  (`local-review.md`, `pr-review.md`, `pr-batch.md`, `workflow-review.md`,
+  `adversarial-orchestration.md`) still dispatch through
+  [ensemble.md](ensemble.md)/[classify-diff.md](classify-diff.md)/the lens
+  files internally, unchanged — that internal switch is not this commit's
+  scope. Ensemble stays live and directly callable via
+  `bin/aitk review-ensemble` until a full goal-skill review cycle has run on
+  this pair (Wave 8).
