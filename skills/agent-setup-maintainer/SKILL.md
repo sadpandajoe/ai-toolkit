@@ -10,6 +10,7 @@ description: Review, audit, update, or refactor AI coding-agent setup such as sk
 1. Read sibling `lessons.md` if present.
 2. Read the relevant provider guidance templates under `config/` and the canonical interface manifest under `interfaces/`.
 3. Inspect relevant source files under `skills/`, `rules/`, `interfaces/`, `hooks/`, and `config/`. Inspect `build/` or installed copies only when validating adapters or install output.
+4. Before editing any `rules/*.md` file, read `rules/rule-maintenance.md` — it governs how and when a rule should be strengthened, marked stale, or split out, including the gate-escalation-history and eval-regression signals that catch drift before a human notices it.
 
 ## Core principles
 

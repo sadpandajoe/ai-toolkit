@@ -2,6 +2,32 @@
 
 Rules are living documents. Update them based on real-world usage:
 
+## Drift-catching mechanism
+
+Two signals catch rule drift without waiting for a human to notice:
+
+- **Gate escalation history.** Every checkpoint that cites `rules/gates.md`
+  can emit a `gate` event via `skills/metrics-emit` (`state: ESCALATE`,
+  grouped by `gate` name); the `metrics` workflow's Gate Reliability table
+  surfaces the escalation rate per gate. A gate that keeps escalating for
+  the *same* reason across many runs (not one agent's one-off mistake)
+  means the rule backing that checkpoint is too weak or stale — treat a
+  persistently high escalation rate the same as a manually observed
+  violation under "When a rule is violated" below.
+- **Evals.** `evals/` fixtures are model-judgment regression checks for
+  goal-skill behavior, complementing the deterministic `pytest` suite for
+  the parts of a workflow that can't be checked by exit status alone. A
+  fixture that used to pass and now fails is a concrete instance of "a
+  rule is stale" — the rule's guidance no longer matches what the
+  workflow actually needs to do.
+
+Neither signal replaces the manual review below; they're what makes drift
+visible early instead of only after repeated live failures. **Status:**
+gate escalation events exist and are queryable today (`skills/metrics-emit`,
+`skills/workflows/references/metrics.md`'s Gate Reliability table); no
+`evals/` fixtures or runner exist in this repo yet — that signal is
+aspirational until they're built.
+
 ## When a rule is violated
 A rule that agents ignore is too weak. After observing a violation:
 - Strengthen the language (add NEVER lists, move critical instructions to top)
