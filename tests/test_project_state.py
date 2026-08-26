@@ -16,6 +16,10 @@ def _write_block(path: Path, body: str) -> None:
     path.write_text(f"# PROJECT\n\n{BEGIN}\n{body}\n{END}\n")
 
 
+def _write_routing_block(path: Path, body: str) -> None:
+    path.write_text(f"# PROJECT\n\n{routing.BEGIN}\n{body}\n{routing.END}\n")
+
+
 def test_missing_file_returns_none(tmp_path: Path):
     assert read_snapshot(tmp_path / "PROJECT.md") is None
 
@@ -78,7 +82,7 @@ def test_routing_set_then_read_round_trips(tmp_path: Path):
     payload = routing.set_classification(path, "STANDARD", 8, "multi-file change")
     assert routing.read(path) == payload
     assert payload == {
-        "schema_version": 1,
+        "schema_version": 2,
         "complexity": "STANDARD",
         "confidence": 8,
         "reason": "multi-file change",
@@ -89,10 +93,10 @@ def test_routing_set_classification_updates_existing_block(tmp_path: Path):
     path = tmp_path / "PROJECT.md"
     path.write_text("# PROJECT\n")
     routing.set_classification(path, "TRIVIAL", 9, "one-line fix")
-    routing.set_classification(path, "MODERATE", 6, "reclassified")
+    routing.set_classification(path, "COMPLEX", 6, "reclassified")
     assert routing.read(path) == {
-        "schema_version": 1,
-        "complexity": "MODERATE",
+        "schema_version": 2,
+        "complexity": "COMPLEX",
         "confidence": 6,
         "reason": "reclassified",
     }
@@ -106,8 +110,45 @@ def test_routing_set_classification_rejects_invalid_complexity(tmp_path: Path):
     path = tmp_path / "PROJECT.md"
     path.write_text("# PROJECT\n")
     with pytest.raises(routing.RoutingStateError, match="complexity is invalid"):
-        routing.set_classification(path, "COMPLEX", 5, "not a v1 tier yet")
+        routing.set_classification(path, "MODERATE", 5, "pre-rename tier name")
     assert routing.read(path) is None
+
+
+def test_routing_read_normalizes_legacy_moderate_to_standard(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    legacy_payload = {
+        "schema_version": 1,
+        "complexity": "MODERATE",
+        "confidence": 8,
+        "reason": "written under the pre-rename schema",
+    }
+    _write_routing_block(path, canonical_json(legacy_payload))
+    assert routing.read(path) == {
+        "schema_version": 2,
+        "complexity": "STANDARD",
+        "confidence": 8,
+        "reason": "written under the pre-rename schema",
+    }
+
+
+def test_routing_read_normalizes_legacy_standard_to_complex(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    legacy_payload = {
+        "schema_version": 1,
+        "complexity": "STANDARD",
+        "confidence": 6,
+        "reason": "written under the pre-rename schema",
+    }
+    _write_routing_block(path, canonical_json(legacy_payload))
+    assert routing.read(path)["complexity"] == "COMPLEX"
+    assert routing.read(path)["schema_version"] == 2
+
+
+def test_routing_read_does_not_remap_current_schema_standard(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    routing.set_classification(path, "STANDARD", 8, "current schema, not legacy")
+    assert routing.read(path)["complexity"] == "STANDARD"
 
 
 def test_routing_set_classification_rejects_out_of_range_confidence(tmp_path: Path):

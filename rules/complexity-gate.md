@@ -1,7 +1,7 @@
 # Complexity Gate
 
-Classification protocol for workflows that branch on trivial, moderate, or
-standard paths. This defines the output block format and path rules. Signal
+Classification protocol for workflows that branch on trivial, standard, or
+complex paths. This defines the output block format and path rules. Signal
 tables stay in the canonical workflow reference.
 
 ## Block Format
@@ -10,7 +10,7 @@ Always emit this block in conversation before branching:
 
 ```markdown
 ## Complexity Gate
-Classification: TRIVIAL / MODERATE / STANDARD
+Classification: TRIVIAL / STANDARD / COMPLEX
 Confidence: X/10
 Reason: [one line]
 ```
@@ -21,7 +21,7 @@ When classification is `TRIVIAL` and confidence is `8/10` or higher:
 - **Auto-proceed** — do not ask the user for confirmation before implementing; the high-confidence classification is the approval
 - Skip the formal planning phase, investigation lanes, and RCA validation
 - Go directly to implementation, verification, Review Gate emission, and summary
-- Emit Review Gate `skipped` or `micro-fix` only when `rules/review-gate.md` allows it; otherwise reclassify as MODERATE before logic review
+- Emit Review Gate `skipped` or `micro-fix` only when `rules/review-gate.md` allows it; otherwise reclassify as STANDARD before logic review
 - Zero subagent spawns **for the implementation path** — the orchestrator scopes, implements, and verifies inline
 
 **Scope of the zero-spawn rule.** It governs the implementation path only. A
@@ -30,34 +30,34 @@ workflow whose *product* is a review — `review-code`, `review-pr`,
 the never-review-your-own-work rule outranks the fast path, and one lane is the
 floor, not zero. That single lane *is* the independent review; TRIVIAL does not
 add a second-opinion lane on top of it. An explicit deep review pins the tier to
-at least STANDARD, so it never takes this path at all.
+at least COMPLEX, so it never takes this path at all.
 
-## Moderate Path
+## Standard Path
 
-When classification is `MODERATE` and confidence is `8/10` or higher:
+When classification is `STANDARD` and confidence is `8/10` or higher:
 - Skip the formal planning phase and parallel investigation-lane subagents
 - Orchestrator scopes, investigates, or plans inline as the workflow requires
 - Still run one workflow-required review phase with at least one fresh reviewer — never review your own work. Review workflows may launch all triggered lanes for the diff; feature work usually runs code review after implementation. Run plan review only when inline design uncovered real design uncertainty.
 - Still run tests and emit a Review Gate block
 - Spawn additional subagents only when parallelism provides a clear wall-clock win
 
-**When to classify MODERATE** (any of these signals):
+**When to classify STANDARD** (any of these signals):
 - 2–4 files touched, but within a single subsystem
 - Non-mechanical change, but well-understood pattern (add endpoint, extend model, new test file)
 - No architectural decisions or cross-system trade-offs
 - Clear fix or implementation approach — investigation confirms rather than discovers
 
-MODERATE is the **default classification** — most real work lands here. Use TRIVIAL only for truly mechanical changes, STANDARD only when genuine multi-system complexity or ambiguity exists.
+STANDARD is the **default classification** — most real work lands here. Use TRIVIAL only for truly mechanical changes, COMPLEX only when genuine multi-system complexity or ambiguity exists.
 
-## Standard Path
+## Complex Path
 
-When classification is `STANDARD` (or confidence is below `8/10` for any classification):
+When classification is `COMPLEX` (or confidence is below `8/10` for any classification):
 - Full workflow: durable plan or investigation artifact as the command requires, reviewer subagents, and validation gates
 - Use `fresh_subagent`/`parallel_fanout` only where the workflow and
   `rules/orchestration.md` reasoning-load boundaries call for them.
 - **Emit a Phase Plan block immediately after the Complexity Gate** (see below). This announces the cadence — including planned checkpoint/context-reset boundaries — upfront, before the first phase starts.
 
-## Phase Plan Block (STANDARD only)
+## Phase Plan Block (COMPLEX only)
 
 After emitting the Complexity Gate, emit a Phase Plan that names the remaining phases and where checkpoint/context-reset will fire. This makes context cadence predictable to the user instead of firing silently mid-workflow.
 
@@ -70,16 +70,16 @@ Checkpoints fire after: [list of durable artifacts that trigger checkpoint + con
 Resume contract: PROJECT.md (+ manifest if any) carries state across clears.
 ```
 
-Pull the phase list from the selected workflow's STANDARD happy path. Pull the
+Pull the phase list from the selected workflow's COMPLEX happy path. Pull the
 checkpoint/reset list from its contract and `rules/context-management.md`
 Proactive Phase Reset Policy. This rule owns the block shape only; it must not
 copy workflow-specific phase sequences.
 
-If the user's request is genuinely too small for STANDARD (≤2 phases after Complexity Gate), reclassify MODERATE rather than emit a degenerate Phase Plan.
+If the user's request is genuinely too small for COMPLEX (≤2 phases after Complexity Gate), reclassify STANDARD rather than emit a degenerate Phase Plan.
 
 ## Never Silently Decide
 
-Always emit the gate block above. Do not silently choose a path — the block must be visible in conversation so the user and any continuation checkpoint can see the classification. STANDARD work must additionally emit the Phase Plan block; a silent STANDARD path is a defect.
+Always emit the gate block above. Do not silently choose a path — the block must be visible in conversation so the user and any continuation checkpoint can see the classification. COMPLEX work must additionally emit the Phase Plan block; a silent COMPLEX path is a defect.
 
 ## Worked Examples
 
@@ -89,13 +89,13 @@ Always emit the gate block above. Do not silently choose a path — the block mu
 - **Config value change**: 1-2 files, mechanical substitution, testable in isolation. Confidence 9/10.
 - **Missing import after rename**: 1 file, fix is deterministic from the error, no design decision. Confidence 9/10.
 
-### MODERATE
+### STANDARD
 
 - **Add a small setting to an existing panel**: 2-4 files in one UI subsystem, known pattern, contained user-visible behavior. Confidence 8/10.
 - **Extend an existing API response with tests**: handler/model/test change in one subsystem, no new contract shape beyond one field. Confidence 8/10.
 - **Add one known-pattern validation path**: existing validator and targeted tests, clear error behavior, no adjacent workflow redesign. Confidence 8/10.
 
-### STANDARD
+### COMPLEX
 
 - **New export flow across UI and API**: 3+ files, acceptance criteria need a durable plan, and tests/validation span layers. Confidence 7/10 until planned.
 - **Permission-sensitive bulk action**: Cross-cutting impact across UI, backend, authz, and audit paths. Confidence 6/10 until scoped.

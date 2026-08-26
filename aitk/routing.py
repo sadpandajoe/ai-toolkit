@@ -24,9 +24,16 @@ from .checkpoint import (
 
 BEGIN = "<!-- aitk-routing:v1 -->"
 END = "<!-- /aitk-routing -->"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+LEGACY_SCHEMA_VERSION = 1
 ROUTING_KEYS = {"schema_version", "complexity", "confidence", "reason"}
-COMPLEXITY_VALUES = {"TRIVIAL", "MODERATE", "STANDARD"}
+COMPLEXITY_VALUES = {"TRIVIAL", "STANDARD", "COMPLEX"}
+# The pre-rename vocabulary's "STANDARD" and the current vocabulary's
+# "STANDARD" are the same string with different meanings, so the legacy
+# value alone can't disambiguate a read. Gate the remap on schema_version
+# instead: only a document literally written under schema version 1 gets
+# its complexity value remapped through this table.
+_LEGACY_COMPLEXITY_MAP = {"TRIVIAL": "TRIVIAL", "MODERATE": "STANDARD", "STANDARD": "COMPLEX"}
 
 
 class RoutingStateError(ValueError):
@@ -58,7 +65,7 @@ def _locate(content: str) -> tuple[int, int, str] | None:
 
 def _validate_payload(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict) or set(payload) != ROUTING_KEYS:
-        raise RoutingStateError("routing-state fields do not match schema version 1")
+        raise RoutingStateError(f"routing-state fields do not match schema version {SCHEMA_VERSION}")
     if (
         not isinstance(payload["schema_version"], int)
         or isinstance(payload["schema_version"], bool)
@@ -97,7 +104,16 @@ def read(path: Path) -> dict[str, object] | None:
         ) from error
     if not isinstance(payload, dict):
         raise RoutingStateError("routing-state payload must be an object")
-    return payload
+    return _normalize_legacy(payload)
+
+
+def _normalize_legacy(payload: dict[str, object]) -> dict[str, object]:
+    if payload.get("schema_version") != LEGACY_SCHEMA_VERSION:
+        return payload
+    mapped = _LEGACY_COMPLEXITY_MAP.get(payload.get("complexity"))
+    if mapped is None:
+        return payload
+    return {**payload, "schema_version": SCHEMA_VERSION, "complexity": mapped}
 
 
 def set_classification(

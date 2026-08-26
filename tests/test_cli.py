@@ -41,7 +41,7 @@ def test_routing_state_set_then_project_state_shows_it(tmp_path: Path, capsys):
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["routing"] == {
-        "schema_version": 1,
+        "schema_version": 2,
         "complexity": "STANDARD",
         "confidence": 7,
         "reason": "touches three modules",
@@ -104,7 +104,7 @@ def test_routing_state_set_rejects_invalid_complexity_choice(tmp_path: Path, cap
                 "--file",
                 str(path),
                 "--complexity",
-                "COMPLEX",
+                "MODERATE",
                 "--confidence",
                 "5",
                 "--reason",
