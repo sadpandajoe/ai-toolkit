@@ -64,8 +64,10 @@ Track this against `reasoning_attempts.phase_plan` (schema in
 ### 3. Validate the phase plan
 
 Route to the Codex plan-validator contract (`agents/codex/plan-validator.md`)
-in its `phase-plan` mode — validating only this phase's plan, not the whole
-decomposition again.
+in its `phase-plan` mode — never the `planner` that authored the plan;
+`aitk.gates.assert_independent_verification("planner",
+"codex-plan-validator")` is the machine-checkable slice of that rule.
+Validates only this phase's plan, not the whole decomposition again.
 
 ### 4. Phase-size guard
 

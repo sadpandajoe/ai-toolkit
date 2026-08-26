@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from aitk import gate_state
-from aitk.gates import GATE_STATES, decide_failure
+from aitk.gates import GATE_STATES, assert_independent_verification, decide_failure
 
 
 def test_gate_states_is_the_six_state_vocabulary():
@@ -53,6 +53,33 @@ def test_rejects_negative_previous_count():
 def test_rejects_non_integer_previous_count():
     with pytest.raises(ValueError, match="previous_count must be"):
         decide_failure("x", True, "x")
+
+
+# --- never-self-verify: assert_independent_verification() -----------------
+
+
+def test_independent_identities_pass_silently():
+    assert assert_independent_verification("planner", "codex-plan-validator") is None
+
+
+def test_same_identity_as_author_and_verifier_raises():
+    with pytest.raises(ValueError, match="independent of author"):
+        assert_independent_verification("planner", "planner")
+
+
+def test_rejects_empty_author():
+    with pytest.raises(ValueError, match="author must be"):
+        assert_independent_verification("", "reviewer")
+
+
+def test_rejects_empty_verifier():
+    with pytest.raises(ValueError, match="verifier must be"):
+        assert_independent_verification("planner", "")
+
+
+def test_rejects_non_string_author():
+    with pytest.raises(ValueError, match="author must be"):
+        assert_independent_verification(None, "reviewer")
 
 
 # --- persistence integration: decide_failure() composed with gate_state ---

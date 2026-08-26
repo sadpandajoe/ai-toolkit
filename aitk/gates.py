@@ -28,3 +28,24 @@ def decide_failure(
     count = previous_count + 1 if previous_reason == reason else 1
     state = "RETRY" if count == 1 else "ESCALATE"
     return state, count
+
+
+def assert_independent_verification(author: str, verifier: str) -> None:
+    """Raise if the same identity both produced and verified an artifact.
+
+    Machine-checkable slice of rules/specialist-handoff.md's "never review
+    your own work" rule (also stated per-workflow, e.g. fix-bug's and
+    create-feature's "never implement from an unreviewed plan the planner
+    itself approved"): identity equality is the one thing this function can
+    decide deterministically. Whether a fresh reviewer's findings are
+    actually correct, or a validator caught a real problem, is eval
+    territory -- not this function's job.
+    """
+    if not isinstance(author, str) or not author:
+        raise ValueError("author must be a nonempty string")
+    if not isinstance(verifier, str) or not verifier:
+        raise ValueError("verifier must be a nonempty string")
+    if author == verifier:
+        raise ValueError(
+            f"verifier must be independent of author (both were {author!r})"
+        )

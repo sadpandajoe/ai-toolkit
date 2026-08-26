@@ -52,10 +52,13 @@ deferred to [plan-phase.md](plan-phase.md), run just-in-time per phase.
 ### 2. Validate the decomposition
 
 Route to the Codex plan-validator contract (`agents/codex/plan-validator.md`)
-in its `decomposition` mode. SOL validates boundaries, contracts, and
-dependencies only — not code-level detail, since none exists yet at this
-stage. One informed revision on a real finding, then adjudicate or escalate
-if substantive disagreement remains; do not iterate past that.
+in its `decomposition` mode — never the `planner` that authored the
+decomposition; `aitk.gates.assert_independent_verification("planner",
+"codex-plan-validator")` is the machine-checkable slice of that rule. SOL
+validates boundaries, contracts, and dependencies only — not code-level
+detail, since none exists yet at this stage. One informed revision on a
+real finding, then adjudicate or escalate if substantive disagreement
+remains; do not iterate past that.
 
 ### 3. Persist and gate
 
