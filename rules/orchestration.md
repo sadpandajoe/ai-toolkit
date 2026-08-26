@@ -22,8 +22,11 @@ Use the normal `implementation`, `review`, or `rca` route for bounded work. Use
 `deep-review` for architecture, security, adversarial analysis, and meaningful
 final cold reads. Use `deep-rca` when evidence is ambiguous, intermittent,
 history-dependent, or crosses systems. Use `operations` only for its narrow,
-non-development allowlist. Automatic implementation stays on the normal
-Sol/Opus workhorse route; Fable remains a read-only deep advisor.
+non-development allowlist. Automatic implementation and RCA synthesis run on
+the Sol/Sonnet route; `review`/`deep-review`/`deep-rca` stay on Opus/Fable so
+a stronger model always checks Sonnet's output — see `rules/gates.md` for how
+a non-`PASS` gate outcome routes back through review, never back through the
+same Sonnet worker.
 
 High is the automatic baseline; xhigh is reserved for deep routes. Automatic
 dispatch never selects max and never falls back to a weaker model or effort.

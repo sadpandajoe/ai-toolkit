@@ -48,7 +48,7 @@
           "sandbox": "workspace-write"
         },
         "claude": {
-          "model": "opus",
+          "model": "sonnet",
           "permission_mode": "acceptEdits",
           "disallowed_tools": []
         }
@@ -119,7 +119,7 @@
           "sandbox": "read-only"
         },
         "claude": {
-          "model": "opus",
+          "model": "sonnet",
           "permission_mode": "plan",
           "disallowed_tools": [
             "Write",
