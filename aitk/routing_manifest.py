@@ -997,6 +997,16 @@ def validate_route_bindings(root: Path) -> list[str]:
         )
         for capability in ("fresh_subagent", "independent_review", "routed_subagent"):
             binding = bindings.get(capability) if isinstance(bindings, dict) else None
+            if provider == "claude" and capability == "routed_subagent":
+                # Native Task-tool dispatch to agents/claude/*.md workers for the
+                # four roster roles — every other routed boundary still needs
+                # the model-run shim, documented in config/providers/claude.md.
+                if not isinstance(binding, dict) or (
+                    binding.get("mode"),
+                    binding.get("fallback"),
+                ) != ("native", None):
+                    problems.append(f"{provider}/{capability}: must be native")
+                continue
             if not isinstance(binding, dict) or (
                 binding.get("mode"),
                 binding.get("fallback"),

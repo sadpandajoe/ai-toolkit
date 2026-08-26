@@ -20,7 +20,7 @@
         "context_reset": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
         "recurrence": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
         "independent_review": {"mode": "fallback", "document": "config/providers/claude.md", "fallback": "source_linked_model_run"},
-        "routed_subagent": {"mode": "fallback", "document": "config/providers/claude.md", "fallback": "source_linked_model_run"}
+        "routed_subagent": {"mode": "native", "document": "config/providers/claude.md", "fallback": null}
       }
     },
     "codex": {
