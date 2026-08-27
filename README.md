@@ -154,7 +154,7 @@ ai-toolkit/
 │   ├── qa/                  # QA — triage-bug, validate-fix, assess-impact, analyze/expand/execute-use-cases, file-bug
 │   ├── testing/             # Test-harness work — create/update suites, review tests + test plans
 │   ├── preflight/           # Pre-work environment checks — worktree setup + app-runnable env prep
-│   ├── cherry-pick/         # Cherry-pick workflow — investigate, gate, plan, apply, adapt, validate, batch-sequence
+│   ├── goals/                # Natural-language goal skills — fix-bug, create-feature, fix-ci, code-review, address-feedback, test-pr, cherry-pick
 │   ├── agent-setup-maintainer/ # Maintains skills, rules, adapters, and agent workflow docs
 │   ├── action-gate/         # Shared proceed/stop decision helper
 │   ├── implement-change/    # Focused implementation

@@ -42,7 +42,7 @@ Codex specialist contract instead — see `rules/model-assignment.md`.
 **Cherry-pick routing**: the cherry-pick gate classifies difficulty (TRIVIAL vs
 NON-TRIVIAL) and selects `review` or `deep-review` for the mandatory post-apply
 scope audit. Planning, application, adaptation, and correctness validation stay
-with the main thread. See `skills/cherry-pick/references/gate.md` for the route
+with the main thread. See `skills/goals/cherry-pick/references/gate.md` for the route
 table; exact effort values remain manifest-owned.
 
 The orchestrator may run on any user-selected model that satisfies the user's

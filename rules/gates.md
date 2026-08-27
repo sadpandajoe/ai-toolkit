@@ -8,7 +8,7 @@ consolidates the behavior currently split across `skills/action-gate/SKILL.md`
 threshold) into one vocabulary and one counting rule.
 
 **Status: dual-run.** `skills/goals/{fix-bug,fix-ci,code-review,
-address-feedback,test-pr}` and `skills/cherry-pick` — this file's complete
+address-feedback,test-pr}` and `skills/goals/cherry-pick` — this file's complete
 set of migrated citers — now cite this contract's vocabulary at their own
 checkpoints, translating their existing domain-specific verdicts into these
 six states rather than reimplementing them. The four files above remain the

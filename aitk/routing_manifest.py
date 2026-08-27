@@ -985,7 +985,7 @@ def validate_model_routing(root: Path) -> list[str]:
 
 
 def validate_legacy_route_prose(root: Path) -> list[str]:
-    paths = list((root / "skills/cherry-pick").rglob("*.md"))
+    paths = list((root / "skills/goals/cherry-pick").rglob("*.md"))
     paths.append(root / "rules/orchestration.md")
     legacy = re.compile(
         r"\b(?:Standard|Heavy)-tier\b|"
@@ -999,7 +999,7 @@ def validate_legacy_route_prose(root: Path) -> list[str]:
             continue
         for number, line in _markdown_lines(path):
             gate_legacy = (
-                path == root / "skills/cherry-pick/references/gate.md"
+                path == root / "skills/goals/cherry-pick/references/gate.md"
                 and re.search(r"\b(?:Standard|Heavy)\b", line) is not None
             )
             if legacy.search(line) or gate_legacy:

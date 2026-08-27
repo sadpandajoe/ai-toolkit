@@ -56,7 +56,7 @@ End-to-end workflow umbrellas:
 | [testing/](testing/) | HOW to test — creating/updating automated test suites, reviewing test code |
 | [review/](review/) | Reviewing code diffs — dispatching code-review lenses, code-quality, adversarial |
 | [implement-change/](implement-change/) | Executing one approved slice of a plan |
-| [cherry-pick/](cherry-pick/) | Cross-branch movement of isolated changes — safety gates, scope-leak detection |
+| [goals/cherry-pick/](goals/cherry-pick/) | Cross-branch movement of isolated changes — safety gates, scope-leak detection |
 | [preflight/](preflight/) | Worktree prep, dependency/env checks, Docker readiness before work begins |
 
 Workflow scaffolding (mostly orchestrator-only; not auto-routed):
