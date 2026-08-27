@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from typing import Callable
 
 from .build import compare_build, write_build
 from .checkpoint import (
@@ -22,6 +23,7 @@ from .checkpoint import (
 )
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
 from .doctor import run_doctor
+from .evals import EvalError, load_fixtures, run_fixture
 from .installer import install, resolve_paths, rollback, uninstall
 from .model_routing import (
     ModelRouteError,
@@ -43,6 +45,12 @@ from .routing import (
     set_classification,
 )
 from .workflows import load_workflows
+
+
+# One entry per evals/ fixture family, added alongside that family's own
+# commit — see rules/rule-maintenance.md's Evals signal. Empty until the
+# first family (evals/skill_routing/) registers its checker.
+EVAL_CHECKERS: dict[str, Callable[[dict], tuple[bool, str]]] = {}
 
 
 def _root(value: str | None) -> Path:
@@ -484,6 +492,34 @@ def _gate_state(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _evals_run(arguments: argparse.Namespace) -> int:
+    checker = EVAL_CHECKERS.get(arguments.family)
+    if checker is None:
+        print(
+            f"aitk evals-run: no checker registered for family '{arguments.family}'"
+            f" (known: {sorted(EVAL_CHECKERS) or 'none'})",
+            file=sys.stderr,
+        )
+        return 1
+    root = _root(arguments.root)
+    family_dir = root / "evals" / arguments.family
+    try:
+        fixtures = load_fixtures(family_dir)
+    except EvalError as error:
+        print(f"aitk evals-run: {error}", file=sys.stderr)
+        return 1
+    if not fixtures:
+        print(f"evals-run: no fixtures found under {family_dir}")
+        return 0
+    results = [run_fixture(fixture, checker) for fixture in fixtures]
+    failed = [result for result in results if not result.passed]
+    for result in results:
+        status = "PASS" if result.passed else "FAIL"
+        print(f"  [{status}] {result.name}: {result.reason}")
+    print(f"evals-run: {len(results) - len(failed)}/{len(results)} passed")
+    return 1 if failed else 0
+
+
 def _pgm_preflight(arguments: argparse.Namespace) -> int:
     result = pgm_preflight(
         arguments.workflow,
@@ -739,6 +775,13 @@ def parser() -> argparse.ArgumentParser:
     gate_set.add_argument("--count", required=True, type=int)
     gate_set.add_argument("--json", action="store_true")
     gate_set.set_defaults(handler=_gate_state)
+
+    evals_run = subparsers.add_parser(
+        "evals-run", help="run one evals/ fixture family through its checker"
+    )
+    evals_run.add_argument("--family", required=True)
+    evals_run.add_argument("--root", help="Toolkit repository root")
+    evals_run.set_defaults(handler=_evals_run)
 
     pgm = subparsers.add_parser(
         "pgm-preflight", help="validate optional PGM configuration before collection"
