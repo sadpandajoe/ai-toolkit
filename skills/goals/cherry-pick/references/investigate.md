@@ -29,7 +29,7 @@ Run these tracks in parallel when possible:
 
 3. **Prerequisite scan**
    - Look for earlier commits the change appears to depend on
-   - Confirm whether an equivalent fix already exists on the target branch via the `debug` skill's [check-existing-fix reference](../../debug/references/check-existing-fix.md) — see that file's skip rules for dependency upgrades and mixed PRs
+   - Confirm whether an equivalent fix already exists on the target branch via the `debug` skill's [check-existing-fix reference](../../../debug/references/check-existing-fix.md) — see that file's skip rules for dependency upgrades and mixed PRs
    - Identify obvious backport ordering constraints
 
 4. **Target-affected scan** (does the bug even manifest on target?)

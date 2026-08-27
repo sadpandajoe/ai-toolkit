@@ -61,7 +61,7 @@ For each `NEEDS_INVESTIGATION` candidate from the pre-flight table, run these an
 3. **Existing-fix scan**
    - Consume the target evidence from pre-flight first.
    - If pre-flight already found an exact `-x` marker or explicit manifest/user decision with equivalent source evidence, classify `Skipped` and do not run deeper checks. PR number/title grep alone is not enough to skip.
-   - For SHAs with no pre-flight match, the deeper [check-existing-fix reference](../../debug/references/check-existing-fix.md) handles squashed equivalents, partial backports already in place, and fixes done independently on the target.
+   - For SHAs with no pre-flight match, the deeper [check-existing-fix reference](../../../debug/references/check-existing-fix.md) handles squashed equivalents, partial backports already in place, and fixes done independently on the target.
    - Exclude duplicates before planning order.
 
 ## Ordering Rules
