@@ -66,10 +66,26 @@ def test_cli_evals_run_rejects_unregistered_family(tmp_path: Path, capsys):
     assert "no checker registered" in capsys.readouterr().err
 
 
+def test_cli_evals_run_passes_resolved_root_to_the_checker_factory(
+    tmp_path: Path, capsys, monkeypatch
+):
+    seen_roots = []
+
+    def factory(root):
+        seen_roots.append(root)
+        return lambda fixture: (True, "n/a")
+
+    monkeypatch.setitem(cli.EVAL_CHECKERS, "demo", factory)
+
+    main(["evals-run", "--family", "demo", "--root", str(tmp_path)])
+
+    assert seen_roots == [tmp_path.resolve()]
+
+
 def test_cli_evals_run_reports_no_fixtures_when_family_dir_absent(
     tmp_path: Path, capsys, monkeypatch
 ):
-    monkeypatch.setitem(cli.EVAL_CHECKERS, "demo", lambda fixture: (True, "n/a"))
+    monkeypatch.setitem(cli.EVAL_CHECKERS, "demo", lambda root: (lambda fixture: (True, "n/a")))
 
     exit_code = main(["evals-run", "--family", "demo", "--root", str(tmp_path)])
 
@@ -84,7 +100,9 @@ def test_cli_evals_run_aggregates_pass_and_fail(tmp_path: Path, capsys, monkeypa
     (family_dir / "bad.json").write_text('{"input": "y"}')
 
     monkeypatch.setitem(
-        cli.EVAL_CHECKERS, "demo", lambda fixture: (fixture["input"] == "x", fixture["input"])
+        cli.EVAL_CHECKERS,
+        "demo",
+        lambda root: (lambda fixture: (fixture["input"] == "x", fixture["input"])),
     )
 
     exit_code = main(["evals-run", "--family", "demo", "--root", str(tmp_path)])

@@ -49,8 +49,11 @@ from .workflows import load_workflows
 
 # One entry per evals/ fixture family, added alongside that family's own
 # commit — see rules/rule-maintenance.md's Evals signal. Empty until the
-# first family (evals/skill_routing/) registers its checker.
-EVAL_CHECKERS: dict[str, Callable[[dict], tuple[bool, str]]] = {}
+# first family (evals/skill_routing/) registers its checker. Each value is a
+# factory taking the resolved repo root and returning the actual per-fixture
+# checker — most checkers need to read real repo content (SKILL.md
+# descriptions, rule files) to catch drift, not just the fixture dict.
+EVAL_CHECKERS: dict[str, Callable[[Path], Callable[[dict], tuple[bool, str]]]] = {}
 
 
 def _root(value: str | None) -> Path:
@@ -493,8 +496,8 @@ def _gate_state(arguments: argparse.Namespace) -> int:
 
 
 def _evals_run(arguments: argparse.Namespace) -> int:
-    checker = EVAL_CHECKERS.get(arguments.family)
-    if checker is None:
+    checker_factory = EVAL_CHECKERS.get(arguments.family)
+    if checker_factory is None:
         print(
             f"aitk evals-run: no checker registered for family '{arguments.family}'"
             f" (known: {sorted(EVAL_CHECKERS) or 'none'})",
@@ -502,6 +505,7 @@ def _evals_run(arguments: argparse.Namespace) -> int:
         )
         return 1
     root = _root(arguments.root)
+    checker = checker_factory(root)
     family_dir = root / "evals" / arguments.family
     try:
         fixtures = load_fixtures(family_dir)
