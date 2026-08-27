@@ -57,15 +57,20 @@ frequency per gate, not just per whole run.
 - `command` — the canonical workflow identifier
 - `gate` — the gate's name (e.g. `review`, `rca-confidence`, `scope-audit` — the calling skill's own name for the checkpoint)
 - `state` — one of `aitk.gates.GATE_STATES` (`PASS`, `RETRY`, `ESCALATE`, `USER_DECISION`, `BLOCKED`, `RECLASSIFY`)
+- `reason` — the short, stable failure-reason string passed to `decide_failure()` (omit for `PASS`; required for `RETRY`/`ESCALATE` — this is what `reflection`'s drift-detection groups by)
+- `kind` — `mechanical` or `reasoning`, the failure-kind passed to `decide_failure(kind=...)` (omit for `PASS`)
 - `repeat_count` — the value `decide_failure()` returned alongside `state`, when applicable (omit for `PASS`)
 
 ```json
-{"event": "gate", "timestamp": "<ISO 8601>", "command": "<command-name>", "gate": "<gate-name>", "state": "<GATE_STATE>", "repeat_count": <number>}
+{"event": "gate", "timestamp": "<ISO 8601>", "command": "<command-name>", "gate": "<gate-name>", "state": "<GATE_STATE>", "reason": "<failure-reason>", "kind": "<mechanical|reasoning>", "repeat_count": <number>}
 ```
 
 `RETRY` and `ESCALATE` are both recorded through this one event type,
 distinguished by `state` — they are the same signal at different repeat
 counts (`rules/gates.md`'s counting rule), not separate event shapes.
+`reason` is what makes two failures "the same" for that counting rule and is
+what `skills/reflection/SKILL.md`'s `(gate, reason)` grouping reads; without
+it reflection has nothing to group by.
 
 ### `phase`
 
@@ -73,9 +78,10 @@ One event per phase transition within a durable workflow (e.g. `create-feature`'
 
 - `command` — the canonical workflow identifier
 - `phase` — the phase name entered
+- `execution_shape` — `SINGLE_PHASE` or `MULTI_PHASE`, when the workflow has already classified shape (omit otherwise)
 
 ```json
-{"event": "phase", "timestamp": "<ISO 8601>", "command": "<command-name>", "phase": "<phase-name>"}
+{"event": "phase", "timestamp": "<ISO 8601>", "command": "<command-name>", "phase": "<phase-name>", "execution_shape": "<SINGLE_PHASE|MULTI_PHASE>"}
 ```
 
 ### `complexity`
@@ -84,10 +90,11 @@ One event per complexity classification or reclassification decision.
 
 - `command` — the canonical workflow identifier
 - `value` — `TRIVIAL`, `STANDARD`, or `COMPLEX`
+- `size` — `XS`, `S`, `M`, `L`, or `XL`, when the workflow classifies size (omit otherwise)
 - `reclassified` — `true` if this replaces an earlier classification for the same run, omit otherwise
 
 ```json
-{"event": "complexity", "timestamp": "<ISO 8601>", "command": "<command-name>", "value": "<TRIVIAL|STANDARD|COMPLEX>", "reclassified": true}
+{"event": "complexity", "timestamp": "<ISO 8601>", "command": "<command-name>", "value": "<TRIVIAL|STANDARD|COMPLEX>", "size": "<XS|S|M|L|XL>", "reclassified": true}
 ```
 
 ### `model`

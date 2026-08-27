@@ -23,12 +23,13 @@ exact one needed instead of guessing.
 Follow `skills/review/references/code-quality.md`'s Lens mode: scope the
 review to the changed files or requested path, normalize findings against
 `rules/code-review.md` (DRY, consistency, modeling, file-size, spaghetti
-growth, test quality), score each component per `rules/scoring.md`, and tag
-findings with the severity vocabulary from `rules/severity.md`. `deep-review`
-dispatches add the applicable deep/security/adversarial lens from
-`skills/review/references/` at higher reasoning effort. Report findings only —
-do not edit files, run tests, or dispatch anything; the calling workflow's
-orchestrator mode applies fixes and re-runs checks.
+growth, test quality), and tag each finding with the severity vocabulary from
+`rules/severity.md` (no numeric score — severity, not a score out of 10, is
+what the calling gate decides on). `deep-review` dispatches add the
+applicable deep/security/adversarial lens from `skills/review/references/` at
+higher reasoning effort. Report findings only — do not edit files, run
+tests, or dispatch anything; the calling workflow's orchestrator mode
+applies fixes and re-runs checks.
 
 ## Constraints
 
@@ -39,8 +40,8 @@ orchestrator mode applies fixes and re-runs checks.
 
 ## Output
 
-Return findings normalized against `rules/code-review.md`'s severity tags and
-scoring rubric as the Evidence summary field of the
+Return findings normalized against `rules/code-review.md`'s categories and
+`rules/severity.md`'s severity tags as the Evidence summary field of the
 `rules/specialist-handoff.md` output contract. Evidence points — file,
 line, severity, one-line rationale per finding — not a narrative walkthrough
-of the whole diff.
+of the whole diff, and never a `/10` score.

@@ -205,7 +205,12 @@ def test_gate_state_set_then_read_round_trips(tmp_path: Path):
     path = tmp_path / "PROJECT.md"
     path.write_text("# PROJECT\n")
     record = gate_state.set_state(path, "review", "RETRY", "missing tests", 1)
-    assert record == {"state": "RETRY", "reason": "missing tests", "count": 1}
+    assert record == {
+        "state": "RETRY",
+        "reason": "missing tests",
+        "count": 1,
+        "kind": "reasoning",
+    }
     assert gate_state.read(path, "review") == record
     assert gate_state.read(path) == {"review": record}
 
@@ -216,8 +221,18 @@ def test_gate_state_set_preserves_other_gates(tmp_path: Path):
     gate_state.set_state(path, "review", "RETRY", "missing tests", 1)
     gate_state.set_state(path, "rca", "PASS", "root cause confirmed", 0)
     assert gate_state.read(path) == {
-        "review": {"state": "RETRY", "reason": "missing tests", "count": 1},
-        "rca": {"state": "PASS", "reason": "root cause confirmed", "count": 0},
+        "review": {
+            "state": "RETRY",
+            "reason": "missing tests",
+            "count": 1,
+            "kind": "reasoning",
+        },
+        "rca": {
+            "state": "PASS",
+            "reason": "root cause confirmed",
+            "count": 0,
+            "kind": "reasoning",
+        },
     }
     content = path.read_text()
     assert content.count(gate_state.BEGIN) == 1
@@ -233,6 +248,7 @@ def test_gate_state_set_updates_existing_gate(tmp_path: Path):
         "state": "ESCALATE",
         "reason": "missing tests",
         "count": 2,
+        "kind": "reasoning",
     }
 
 
@@ -320,11 +336,13 @@ def test_multi_phase_gate_history_is_independent_per_phase(tmp_path: Path):
             "state": "PASS",
             "reason": "clean",
             "count": 0,
+            "kind": "reasoning",
         },
         "create-feature-phase-persistence-verify": {
             "state": "RETRY",
             "reason": "flaky fixture",
             "count": 1,
+            "kind": "reasoning",
         },
     }
 
@@ -347,12 +365,18 @@ def test_multi_phase_resume_uses_current_phase_to_scope_gate_history(tmp_path: P
 
     current_phase = "persistence"  # as if just read off resumed frontmatter
     resumed_gate = gate_state.read(path, f"create-feature-phase-{current_phase}-verify")
-    assert resumed_gate == {"state": "ESCALATE", "reason": "flaky fixture", "count": 2}
+    assert resumed_gate == {
+        "state": "ESCALATE",
+        "reason": "flaky fixture",
+        "count": 2,
+        "kind": "reasoning",
+    }
     # The completed phase's history survives untouched alongside it.
     assert gate_state.read(path, "create-feature-phase-layout-editing-verify") == {
         "state": "PASS",
         "reason": "clean",
         "count": 0,
+        "kind": "reasoning",
     }
 
 
@@ -415,6 +439,7 @@ def test_initialize_then_advance_survives_interrupt_alongside_sibling_blocks(
         "state": "RETRY",
         "reason": "missing tests",
         "count": 1,
+        "kind": "reasoning",
     }
 
     # All three blocks coexist as exactly one marker pair each -- each

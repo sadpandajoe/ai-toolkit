@@ -20,20 +20,36 @@ the exact one needed instead of guessing.
 
 ## Trigger
 
-Only dispatched when the caller's Complexity Gate block classified the work
-`COMPLEX`, or confidence for any classification fell below `8/10` (per
-`rules/complexity-gate.md`'s Complex Path). Never invoked for `TRIVIAL` or
-`STANDARD` work — those paths plan inline, without a dedicated planner.
+Only dispatched when the caller's Complexity Gate block's Complex Path
+triggers, per whatever confidence/uncertainty rule `rules/complexity-gate.md`
+currently states — this contract does not restate that threshold, so it
+never drifts out of sync with it. Never invoked for `TRIVIAL` or `STANDARD`
+work — those paths plan inline, without a dedicated planner.
+
+## Modes
+
+The caller names one of two modes in the Scope field (per
+`rules/specialist-handoff.md`); the worker's process differs by mode, its
+identity and constraints do not:
+
+- **`decomposition`** — `skills/planning/references/decompose-work.md`'s
+  caller: produce the whole unit's phase boundaries, ordering, global
+  invariants, and each phase's entrance/exit criteria up front. No
+  phase-internal implementation detail — that is `phase-plan` mode's job,
+  one phase at a time.
+- **`phase-plan`** — `skills/planning/references/plan-phase.md`'s caller:
+  produce exactly one phase's plan (relevant files/patterns, changes,
+  tests, exit conditions) against an already-accepted `decomposition`-mode
+  artifact. Never plans ahead for a later phase.
 
 ## Process
 
-Follow `rules/complexity-gate.md`'s Complex Path: produce the durable plan
-or investigation artifact the calling workflow requires, decomposed into
-the smallest implementable slices, each with entrance criteria, scope
-boundary, and exit criteria — matching the shape
-`skills/implement-change/SKILL.md`'s Slice Awareness section expects to
-consume. Emit the Phase Plan block immediately after the Complexity Gate,
-per `rules/complexity-gate.md`.
+Produce the durable plan or investigation artifact the calling workflow
+requires for the given mode, decomposed into the smallest implementable
+slices, each with entrance criteria, scope boundary, and exit criteria —
+matching the shape `skills/implement-change/SKILL.md`'s Slice Awareness
+section expects to consume. Emit the Phase Plan block immediately after the
+Complexity Gate, per `rules/complexity-gate.md`.
 
 ## Constraints
 

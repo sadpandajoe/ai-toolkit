@@ -6,7 +6,8 @@ classification snapshot). Gate state is the small amount of persisted
 history rules/gates.md's repeat-failure counting rule needs to survive a
 context reset: the last decided state, reason, and repeat count, per gate
 name. Decision logic stays in aitk.gates (`decide_failure`) — this module
-only reads and writes the snapshot the caller decided.
+only reads and writes the snapshot the caller decided, including which
+`kind` (`mechanical`/`reasoning`) the decision was made under.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from .checkpoint import (
     _reject_unsafe_path,
     canonical_json,
 )
-from .gates import GATE_STATES
+from .gates import FAILURE_KINDS, GATE_STATES
 
 BEGIN = "<!-- aitk-gate:v1 -->"
 END = "<!-- /aitk-gate -->"
@@ -53,7 +54,9 @@ def _locate(content: str) -> tuple[int, int, str] | None:
     return start, end_marker + len(END), body
 
 
-def _validate_record(gate: str, state: str, reason: str, count: int) -> dict[str, object]:
+def _validate_record(
+    gate: str, state: str, reason: str, count: int, kind: str
+) -> dict[str, object]:
     if not isinstance(gate, str) or not gate:
         raise GateStateError("gate name must be a nonempty string")
     if state not in GATE_STATES:
@@ -62,7 +65,9 @@ def _validate_record(gate: str, state: str, reason: str, count: int) -> dict[str
         raise GateStateError("gate-state reason must be a nonempty string")
     if not isinstance(count, int) or isinstance(count, bool) or count < 0:
         raise GateStateError("gate-state count must be a non-negative integer")
-    return {"state": state, "reason": reason, "count": count}
+    if kind not in FAILURE_KINDS:
+        raise GateStateError(f"gate-state kind must be one of {sorted(FAILURE_KINDS)}")
+    return {"state": state, "reason": reason, "count": count, "kind": kind}
 
 
 def _parse_gates(body: str) -> dict[str, object]:
@@ -96,8 +101,15 @@ def read(path: Path, gate: str | None = None) -> dict[str, object] | None:
     return gates.get(gate) if gate is not None else gates
 
 
-def set_state(path: Path, gate: str, state: str, reason: str, count: int) -> dict[str, object]:
-    record = _validate_record(gate, state, reason, count)
+def set_state(
+    path: Path,
+    gate: str,
+    state: str,
+    reason: str,
+    count: int,
+    kind: str = "reasoning",
+) -> dict[str, object]:
+    record = _validate_record(gate, state, reason, count, kind)
     with _checkpoint_lock(path):
         _reject_unsafe_path(path)
         if not path.is_file():

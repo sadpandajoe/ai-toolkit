@@ -69,7 +69,7 @@ and records a one-line reason for any finding it drops.
 
 Record the outcome under the same `review` gate `sol-review.md` used — this
 is one escalation within that gate, not a second gate. `aitk gate-state set`'s
-repeat-reason counting (`aitk.gates.decide_failure`) only produces a
+repeat-failure counting (`aitk.gates.decide_failure`) only produces a
 meaningful `ESCALATE` if both passes report through the same gate name.
 
 ## Output

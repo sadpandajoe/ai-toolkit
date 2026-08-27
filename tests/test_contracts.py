@@ -52,7 +52,12 @@ def test_three_state_blocks_coexist_and_round_trip_independently(tmp_path: Path)
         "reason": "touches three modules",
     }
     assert gate_state.read(path) == {
-        "review": {"state": "RETRY", "reason": "missing tests", "count": 1}
+        "review": {
+            "state": "RETRY",
+            "reason": "missing tests",
+            "count": 1,
+            "kind": "reasoning",
+        }
     }
 
     content = path.read_text()
@@ -88,8 +93,18 @@ def test_updating_one_block_leaves_the_others_untouched(tmp_path: Path):
         "reason": "reclassified after review",
     }
     assert gate_state.read(path) == {
-        "review": {"state": "ESCALATE", "reason": "missing tests", "count": 2},
-        "rca": {"state": "PASS", "reason": "root cause confirmed", "count": 0},
+        "review": {
+            "state": "ESCALATE",
+            "reason": "missing tests",
+            "count": 2,
+            "kind": "reasoning",
+        },
+        "rca": {
+            "state": "PASS",
+            "reason": "root cause confirmed",
+            "count": 0,
+            "kind": "reasoning",
+        },
     }
 
 
@@ -119,7 +134,12 @@ def test_project_state_cli_surfaces_all_three_blocks_together(tmp_path: Path, ca
         "reason": "multi-phase build",
     }
     assert payload["gates"] == {
-        "verify": {"state": "PASS", "reason": "suite green", "count": 0}
+        "verify": {
+            "state": "PASS",
+            "reason": "suite green",
+            "count": 0,
+            "kind": "reasoning",
+        }
     }
 
 

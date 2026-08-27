@@ -161,6 +161,7 @@ def test_gate_state_set_then_project_state_shows_it(tmp_path: Path, capsys):
             "state": "RETRY",
             "reason": "missing test coverage",
             "count": 1,
+            "kind": "reasoning",
         }
     }
     assert payload["checkpoint"] is None

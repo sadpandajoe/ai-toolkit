@@ -53,6 +53,17 @@ Rules:
   plan it produces.
 - Use xhigh for deep routes. Never select max automatically; max is a conscious
   one-off user override outside the automatic routing policy.
+- **Escalation ladder** (`rules/gates.md`'s `ESCALATE` state climbs exactly
+  one rung per escalation, never skipping or jumping to the top):
+  1. Bump effort within the same route (`high` → `xhigh`), same model family.
+  2. Move to that route's deep-tier counterpart at its assigned effort
+     (`implementation`/`rca`/`review` → their `deep-*` sibling, or `review`
+     → `deep-review` when there is no plain `deep-implementation`/`deep-rca`
+     equivalent for the calling workflow's checkpoint) — this is the model
+     upgrade rung (Sonnet → Opus/Fable, Sol → Sol at xhigh).
+  3. `xhigh` on the deep-tier route — the last rung. A gate still failing
+     here has exhausted the ladder and resolves to `BLOCKED`/`USER_DECISION`
+     per `rules/gates.md`, never a further automatic escalation.
 - Fable is read-only on every automatic route. A user can still choose a
   different model manually for the parent session; that is outside worker
   routing and does not create an automatic authorization bypass.

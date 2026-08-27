@@ -20,39 +20,66 @@ def test_gate_states_is_the_six_state_vocabulary():
     }
 
 
-def test_first_failure_for_a_reason_retries():
-    state, count = decide_failure(None, 0, "flaky assertion")
+def test_first_reasoning_failure_retries():
+    state, count = decide_failure(0, "flaky assertion")
     assert (state, count) == ("RETRY", 1)
 
 
-def test_second_consecutive_failure_for_same_reason_escalates():
-    state, count = decide_failure("flaky assertion", 1, "flaky assertion")
+def test_second_consecutive_reasoning_failure_escalates():
+    state, count = decide_failure(1, "flaky assertion")
     assert (state, count) == ("ESCALATE", 2)
 
 
 def test_repeated_escalation_stays_escalated_and_keeps_counting():
-    state, count = decide_failure("flaky assertion", 2, "flaky assertion")
+    state, count = decide_failure(2, "flaky assertion")
     assert (state, count) == ("ESCALATE", 3)
 
 
-def test_different_reason_resets_the_counter_to_retry():
-    state, count = decide_failure("flaky assertion", 2, "missing fixture")
+def test_reasoning_escalates_even_when_the_reason_text_differs():
+    # The same-reason comparison is retired: two consecutive reasoning
+    # failures escalate regardless of whether the text matches.
+    state, count = decide_failure(1, "missing fixture")
+    assert (state, count) == ("ESCALATE", 2)
+
+
+def test_mechanical_failure_always_retries_and_never_advances_count():
+    state, count = decide_failure(0, "flaky CI runner", kind="mechanical")
+    assert (state, count) == ("RETRY", 0)
+    state, count = decide_failure(count, "flaky CI runner", kind="mechanical")
+    assert (state, count) == ("RETRY", 0)
+    state, count = decide_failure(count, "different flake", kind="mechanical")
+    assert (state, count) == ("RETRY", 0)
+
+
+def test_mechanical_failures_do_not_spend_the_reasoning_budget():
+    # A mechanical retry in between two reasoning failures does not reset
+    # or advance the reasoning count — only reasoning failures do.
+    state, count = decide_failure(0, "wrong approach")
     assert (state, count) == ("RETRY", 1)
+    state, count = decide_failure(count, "transient timeout", kind="mechanical")
+    assert (state, count) == ("RETRY", 1)
+    state, count = decide_failure(count, "wrong approach, take two")
+    assert (state, count) == ("ESCALATE", 2)
 
 
 def test_rejects_empty_reason():
     with pytest.raises(ValueError, match="reason must be"):
-        decide_failure(None, 0, "")
+        decide_failure(0, "")
+
+
+def test_rejects_invalid_kind():
+    with pytest.raises(ValueError, match="kind must be"):
+        decide_failure(0, "x", kind="vibes")
 
 
 def test_rejects_negative_previous_count():
     with pytest.raises(ValueError, match="previous_count must be"):
-        decide_failure("x", -1, "x")
+        decide_failure(-1, "x")
 
 
 def test_rejects_non_integer_previous_count():
     with pytest.raises(ValueError, match="previous_count must be"):
-        decide_failure("x", True, "x")
+        decide_failure(True, "x")
 
 
 # --- never-self-verify: assert_independent_verification() -----------------
@@ -88,50 +115,39 @@ def test_rejects_non_string_author():
 def test_decide_failure_persists_and_round_trips_through_gate_state(tmp_path: Path):
     path = tmp_path / "PROJECT.md"
     path.write_text("# PROJECT\n")
-    state, count = decide_failure(None, 0, "missing tests")
+    state, count = decide_failure(0, "missing tests")
     gate_state.set_state(path, "review", state, "missing tests", count)
     assert gate_state.read(path, "review") == {
         "state": "RETRY",
         "reason": "missing tests",
         "count": 1,
+        "kind": "reasoning",
     }
 
 
 def test_repeat_count_builds_across_calls_via_persisted_history():
     # Simulate a caller re-deciding against the previously persisted record
     # on each call, the way a real workflow would after a context reset.
-    previous_reason, previous_count = None, 0
+    previous_count = 0
     reasons = ["missing tests", "missing tests", "missing tests"]
     seen_states = []
     for reason in reasons:
-        state, count = decide_failure(previous_reason, previous_count, reason)
+        state, count = decide_failure(previous_count, reason)
         seen_states.append((state, count))
-        previous_reason, previous_count = reason, count
+        previous_count = count
     assert seen_states == [("RETRY", 1), ("ESCALATE", 2), ("ESCALATE", 3)]
 
 
-def test_repeat_count_resets_when_persisted_gate_state_reason_changes(tmp_path: Path):
+def test_mechanical_kind_round_trips_through_gate_state(tmp_path: Path):
     path = tmp_path / "PROJECT.md"
     path.write_text("# PROJECT\n")
-    state, count = decide_failure(None, 0, "missing tests")
-    gate_state.set_state(path, "review", state, "missing tests", count)
-
-    stored = gate_state.read(path, "review")
-    state, count = decide_failure(stored["reason"], stored["count"], "missing tests")
-    gate_state.set_state(path, "review", state, "missing tests", count)
-    assert gate_state.read(path, "review") == {
-        "state": "ESCALATE",
-        "reason": "missing tests",
-        "count": 2,
-    }
-
-    stored = gate_state.read(path, "review")
-    state, count = decide_failure(stored["reason"], stored["count"], "flaky test")
-    gate_state.set_state(path, "review", state, "flaky test", count)
+    state, count = decide_failure(0, "flaky runner", kind="mechanical")
+    gate_state.set_state(path, "review", state, "flaky runner", count, "mechanical")
     assert gate_state.read(path, "review") == {
         "state": "RETRY",
-        "reason": "flaky test",
-        "count": 1,
+        "reason": "flaky runner",
+        "count": 0,
+        "kind": "mechanical",
     }
 
 
@@ -145,17 +161,16 @@ def test_scripted_scenario_retry_then_escalate_then_pass_then_blocked(tmp_path: 
     path.write_text("# PROJECT\n")
     gate = "review"
 
-    # First failure for a reason: RETRY, count 1.
+    # First failure: RETRY, count 1.
     stored = gate_state.read(path, gate)
-    previous_reason = stored["reason"] if stored else None
     previous_count = stored["count"] if stored else 0
-    state, count = decide_failure(previous_reason, previous_count, "missing tests")
+    state, count = decide_failure(previous_count, "missing tests")
     gate_state.set_state(path, gate, state, "missing tests", count)
     assert (state, count) == ("RETRY", 1)
 
-    # Same reason fails again: ESCALATE, count 2.
+    # A second reasoning failure escalates, regardless of the reason text.
     stored = gate_state.read(path, gate)
-    state, count = decide_failure(stored["reason"], stored["count"], "missing tests")
+    state, count = decide_failure(stored["count"], "missing tests")
     gate_state.set_state(path, gate, state, "missing tests", count)
     assert (state, count) == ("ESCALATE", 2)
 
@@ -166,6 +181,7 @@ def test_scripted_scenario_retry_then_escalate_then_pass_then_blocked(tmp_path: 
         "state": "PASS",
         "reason": "tests added",
         "count": 0,
+        "kind": "reasoning",
     }
 
     # A later phase hits unresolved required findings with no ambiguity to
@@ -175,4 +191,5 @@ def test_scripted_scenario_retry_then_escalate_then_pass_then_blocked(tmp_path: 
         "state": "BLOCKED",
         "reason": "unresolved required finding",
         "count": 0,
+        "kind": "reasoning",
     }

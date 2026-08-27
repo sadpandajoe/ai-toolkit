@@ -37,7 +37,7 @@ from .gate_state import (
     read as read_gate_state,
     set_state as set_gate_state,
 )
-from .gates import GATE_STATES
+from .gates import FAILURE_KINDS, GATE_STATES
 from .pgm import preflight as pgm_preflight
 from .routing import (
     COMPLEXITY_VALUES,
@@ -481,7 +481,12 @@ def _gate_state(arguments: argparse.Namespace) -> int:
     path = _project_state_file(arguments)
     try:
         record = set_gate_state(
-            path, arguments.gate, arguments.state, arguments.reason, arguments.count
+            path,
+            arguments.gate,
+            arguments.state,
+            arguments.reason,
+            arguments.count,
+            arguments.kind,
         )
     except (CheckpointError, GateStateError) as error:
         print(f"aitk gate-state: {error}", file=sys.stderr)
@@ -491,7 +496,7 @@ def _gate_state(arguments: argparse.Namespace) -> int:
     else:
         print(
             f"gate-state: gate={arguments.gate} state={record['state']} "
-            f"count={record['count']}"
+            f"count={record['count']} kind={record['kind']}"
         )
         print(f"  file: {path}")
     return 0
@@ -779,6 +784,9 @@ def parser() -> argparse.ArgumentParser:
     gate_set.add_argument("--state", required=True, choices=sorted(GATE_STATES))
     gate_set.add_argument("--reason", required=True)
     gate_set.add_argument("--count", required=True, type=int)
+    gate_set.add_argument(
+        "--kind", choices=sorted(FAILURE_KINDS), default="reasoning"
+    )
     gate_set.add_argument("--json", action="store_true")
     gate_set.set_defaults(handler=_gate_state)
 
