@@ -18,6 +18,7 @@ The calling workflow provides:
 
 - `gate` — the gate name to persist history under (e.g. `verify`, `ci-verify`). Reuse the same name across calls for the same checkpoint so the repeat count is accurate; use a different name per distinct checkpoint (verification vs review vs RCA) so their histories don't overwrite each other.
 - `command` — the verification command to run.
+- `workflow` — the calling workflow's canonical identifier (e.g. `fix-bug`, `create-feature`) — passed through to `skills/metrics-emit`'s `gate` event as its `command` field. Distinct from the `command` above (that one is the shell command being verified, this one names the workflow).
 - `project_file` — path to the PROJECT.md carrying gate history (defaults to `PROJECT.md` in the current directory).
 
 ## Steps
@@ -51,6 +52,12 @@ The calling workflow provides:
    Reason: [one line]
    Repeat count: N
    ```
+   Immediately after, in this same step, emit the `gate` event via
+   `skills/metrics-emit` per `rules/gates.md`'s Telemetry section —
+   `command: <workflow>`, `gate: <gate>`, `state: <state>`,
+   `repeat_count: <count>` (omit `repeat_count` for `PASS`). Do not defer
+   this to the calling workflow's terminal `workflow-summary` event; it is a
+   separate event per checkpoint, not a substitute for one.
 7. On `RETRY`: make one fix attempt, then re-run this skill against the same
    `gate`. On `ESCALATE`: stop iterating on the same approach — surface the
    repeated failure to the user instead of retrying again.
