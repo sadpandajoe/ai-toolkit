@@ -63,6 +63,17 @@ Repeat count: N
 how many consecutive times this same reason has failed this gate. It is `0`
 or omitted when `State` is `PASS`.
 
+## Telemetry
+
+Every gate checkpoint that emits the block above must also emit a `gate`
+event via `skills/metrics-emit` (`gate` = this checkpoint's name, `state` and
+`repeat_count` = the same values just printed in the block). This is not
+optional for a `rules/gates.md` citer, even though `skills/metrics-emit`
+itself documents mid-run event types as additive — the Gate Reliability
+signal in `rules/rule-maintenance.md` depends on every checkpoint reporting,
+not a sample of them. Emit it immediately after the block, in the same step,
+not deferred to the workflow's terminal summary.
+
 ## Repeat-Failure Counting Rule
 
 A gate failing does not automatically mean stop. Track the previous failure

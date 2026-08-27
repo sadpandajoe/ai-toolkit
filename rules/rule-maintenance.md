@@ -24,12 +24,13 @@ Two signals catch rule drift without waiting for a human to notice:
 Neither signal replaces the manual review below; they're what makes drift
 visible early instead of only after repeated live failures. **Status:** the
 `gate` event type and the Gate Reliability aggregation are built
-(`skills/metrics-emit`, `skills/workflows/references/metrics.md`), but no
-skill emits a `gate` event yet — the six `rules/gates.md` citers translate
-into its vocabulary at their checkpoints without instrumenting them, so the
-table is empty in practice, same dual-run status as `rules/gates.md` itself.
-No `evals/` fixtures or runner exist in this repo yet either — that signal
-is aspirational until they're built.
+(`skills/metrics-emit`, `skills/workflows/references/metrics.md`), and
+`rules/gates.md`'s Telemetry section now instructs every citer to emit a
+`gate` event at each checkpoint. No goal skill has run live end-to-end in
+this repo yet, so the Gate Reliability table has no real data to aggregate —
+the instrumentation is in place, but the signal stays aspirational until a
+live run populates it. No `evals/` fixtures or runner exist in this repo yet
+either — that signal is aspirational until they're built.
 
 ## When a rule is violated
 A rule that agents ignore is too weak. After observing a violation:
