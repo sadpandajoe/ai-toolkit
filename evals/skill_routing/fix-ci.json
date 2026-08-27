@@ -1,0 +1,5 @@
+{
+  "name": "fix-ci",
+  "phrase": "ci build or check",
+  "expect_skill": "fix-ci"
+}

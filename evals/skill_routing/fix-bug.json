@@ -1,0 +1,5 @@
+{
+  "name": "fix-bug",
+  "phrase": "reports a bug",
+  "expect_skill": "fix-bug"
+}

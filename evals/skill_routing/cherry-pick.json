@@ -1,0 +1,5 @@
+{
+  "name": "cherry-pick",
+  "phrase": "cherry-pick, backport, or apply commits",
+  "expect_skill": "cherry-pick"
+}

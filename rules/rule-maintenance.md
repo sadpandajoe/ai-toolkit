@@ -29,8 +29,13 @@ visible early instead of only after repeated live failures. **Status:** the
 `gate` event at each checkpoint. No goal skill has run live end-to-end in
 this repo yet, so the Gate Reliability table has no real data to aggregate —
 the instrumentation is in place, but the signal stays aspirational until a
-live run populates it. No `evals/` fixtures or runner exist in this repo yet
-either — that signal is aspirational until they're built.
+live run populates it. A minimal eval-harness runner (`aitk evals-run`,
+`aitk/evals.py`) and its first fixture family (`evals/skill_routing/`, a
+structural routing-match check with no model dispatch needed) now exist and
+pass — the Evals signal is live for that one family. It covers only
+routing-description drift so far; the wider claim ("evals catch drift for
+goal-skill *behavior*") stays aspirational until fixture families for
+complexity, gates, and per-workflow behavior are built.
 
 ## When a rule is violated
 A rule that agents ignore is too weak. After observing a violation:

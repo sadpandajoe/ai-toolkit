@@ -1,0 +1,5 @@
+{
+  "name": "test-pr",
+  "phrase": "manually verify a pr's user-visible behavior",
+  "expect_skill": "test-pr"
+}

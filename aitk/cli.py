@@ -24,6 +24,7 @@ from .checkpoint import (
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
 from .doctor import run_doctor
 from .evals import EvalError, load_fixtures, run_fixture
+from .evals_skill_routing import make_checker as _make_skill_routing_checker
 from .installer import install, resolve_paths, rollback, uninstall
 from .model_routing import (
     ModelRouteError,
@@ -48,12 +49,13 @@ from .workflows import load_workflows
 
 
 # One entry per evals/ fixture family, added alongside that family's own
-# commit — see rules/rule-maintenance.md's Evals signal. Empty until the
-# first family (evals/skill_routing/) registers its checker. Each value is a
+# commit — see rules/rule-maintenance.md's Evals signal. Each value is a
 # factory taking the resolved repo root and returning the actual per-fixture
 # checker — most checkers need to read real repo content (SKILL.md
 # descriptions, rule files) to catch drift, not just the fixture dict.
-EVAL_CHECKERS: dict[str, Callable[[Path], Callable[[dict], tuple[bool, str]]]] = {}
+EVAL_CHECKERS: dict[str, Callable[[Path], Callable[[dict], tuple[bool, str]]]] = {
+    "skill_routing": _make_skill_routing_checker,
+}
 
 
 def _root(value: str | None) -> Path:
