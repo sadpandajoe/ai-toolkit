@@ -66,6 +66,7 @@ Workflow scaffolding (mostly orchestrator-only; not auto-routed):
 | [action-gate/](action-gate/) | Execution Gate block (Risk/Confidence/Decision/Verification) after investigation |
 | [reporting/](reporting/) | Final summary + continuation checkpoint shapes |
 | [metrics-emit/](metrics-emit/) | Append structured event to `.ai-toolkit/metrics.jsonl` |
+| [reflection/](reflection/) | Review gate-escalation telemetry, propose rule strengthening for drifting gates |
 | [workstreams/](workstreams/) | Fan-in after parallel implementation subagents finish |
 | [archive-project-file/](archive-project-file/) | Move completed PROJECT.md content to PROJECT_ARCHIVE.md |
 | [agent-setup-maintainer/](agent-setup-maintainer/) | Auditing or updating toolkit skills, rules, interfaces, and generated adapters |

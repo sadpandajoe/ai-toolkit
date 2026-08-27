@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reflection"
+  short_description: "Review gate-escalation history for stale rules"
+  default_prompt: "Use $reflection to review gate-escalation history and propose rule updates."

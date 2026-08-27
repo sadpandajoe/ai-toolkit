@@ -160,6 +160,7 @@ ai-toolkit/
 │   ├── implement-change/    # Focused implementation
 │   ├── reporting/           # Structural rules + per-workflow summary/checkpoint templates
 │   ├── metrics-emit/        # Telemetry skill — final workflow-complete event
+│   ├── reflection/          # Review gate-escalation telemetry, propose rule strengthening
 │   ├── archive-project-file/ # Archive lifecycle skill
 │   ├── shortcut/            # Shortcut REST fetch/report helpers
 │   ├── superset-local/      # Superset-specific local stack + Playwright helpers

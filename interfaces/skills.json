@@ -19,6 +19,7 @@
     {"name": "planning", "path": "skills/planning", "classification": "internal_support"},
     {"name": "preflight", "path": "skills/preflight", "classification": "internal_support"},
     {"name": "qa", "path": "skills/qa", "classification": "internal_support"},
+    {"name": "reflection", "path": "skills/reflection", "classification": "public_direct"},
     {"name": "reporting", "path": "skills/reporting", "classification": "internal_support"},
     {"name": "review", "path": "skills/review", "classification": "internal_support"},
     {"name": "shortcut", "path": "skills/shortcut", "classification": "internal_support"},
