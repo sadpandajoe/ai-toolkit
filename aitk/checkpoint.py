@@ -31,8 +31,19 @@ CHECKPOINT_KEYS = {
     "phase",
     "generation",
     "effects",
+    "accepted_rca",
+    "accepted_decomposition",
+    "accepted_phase_plan",
+    "evidence",
+    "reclassifications",
 }
 EFFECT_KEYS = {"key", "operation_id", "status", "result_digest"}
+ACCEPTED_ARTIFACT_FIELDS = (
+    "accepted_rca",
+    "accepted_decomposition",
+    "accepted_phase_plan",
+)
+RECLASSIFICATION_KEYS = {"reason", "from", "to"}
 TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 
@@ -47,6 +58,11 @@ class CheckpointResult:
     phase: str
     generation: int
     effects: tuple[dict[str, object], ...]
+    accepted_rca: str | None
+    accepted_decomposition: str | None
+    accepted_phase_plan: str | None
+    evidence: tuple[str, ...]
+    reclassifications: tuple[dict[str, object], ...]
     file: str
     changed: bool
 
@@ -56,6 +72,11 @@ class CheckpointResult:
             "phase": self.phase,
             "generation": self.generation,
             "effects": [dict(item) for item in self.effects],
+            "accepted_rca": self.accepted_rca,
+            "accepted_decomposition": self.accepted_decomposition,
+            "accepted_phase_plan": self.accepted_phase_plan,
+            "evidence": list(self.evidence),
+            "reclassifications": [dict(item) for item in self.reclassifications],
             "file": self.file,
         }
 
@@ -265,6 +286,25 @@ def _validate_payload(
             raise CheckpointError("checkpoint contains a duplicate effect record")
         seen_effects.add(identity)
         seen_operations.add(operation_id)
+    for field in ACCEPTED_ARTIFACT_FIELDS:
+        value = payload[field]
+        if value is not None and (not isinstance(value, str) or not value):
+            raise CheckpointError(f"checkpoint {field} must be null or a nonempty string")
+    evidence = payload["evidence"]
+    if not isinstance(evidence, list) or any(
+        not isinstance(item, str) or not item for item in evidence
+    ):
+        raise CheckpointError("checkpoint evidence must be a list of nonempty strings")
+    reclassifications = payload["reclassifications"]
+    if not isinstance(reclassifications, list):
+        raise CheckpointError("checkpoint reclassifications must be a list")
+    for item in reclassifications:
+        if not isinstance(item, dict) or set(item) != RECLASSIFICATION_KEYS:
+            raise CheckpointError("checkpoint reclassification fields are invalid")
+        if any(not isinstance(item[key], str) or not item[key] for key in RECLASSIFICATION_KEYS):
+            raise CheckpointError(
+                "checkpoint reclassification fields must be nonempty strings"
+            )
     if require_canonical is not None and canonical_json(payload) != require_canonical:
         raise CheckpointError("checkpoint JSON is not canonical")
     return payload
@@ -294,6 +334,11 @@ def _result(path: Path, payload: dict[str, object], changed: bool) -> Checkpoint
         phase=str(payload["phase"]),
         generation=int(payload["generation"]),
         effects=tuple(dict(item) for item in payload["effects"]),
+        accepted_rca=payload["accepted_rca"],
+        accepted_decomposition=payload["accepted_decomposition"],
+        accepted_phase_plan=payload["accepted_phase_plan"],
+        evidence=tuple(payload["evidence"]),
+        reclassifications=tuple(dict(item) for item in payload["reclassifications"]),
         file=str(path),
         changed=changed,
     )
@@ -368,6 +413,11 @@ def initialize(
         "phase": contract["phases"][0],
         "generation": 0,
         "effects": [],
+        "accepted_rca": None,
+        "accepted_decomposition": None,
+        "accepted_phase_plan": None,
+        "evidence": [],
+        "reclassifications": [],
     }
     checkpoint = contract["checkpoint"]
     assert isinstance(checkpoint, dict)
@@ -546,6 +596,82 @@ def apply(
     return _write_transition(path, content, before, after, contract)
 
 
+@_serialized_checkpoint
+def accept_artifact(
+    root: Path,
+    workflow: str,
+    path: Path,
+    field: str,
+    pointer: str,
+    include_pgm: bool = False,
+) -> CheckpointResult:
+    """Record the accepted RCA/decomposition/phase-plan artifact once.
+
+    `field` is one of `ACCEPTED_ARTIFACT_FIELDS`. Once a field is set it is
+    final for this checkpoint -- a later plan/RCA revision is a new
+    checkpoint phase or a `record_reclassification()`, not an overwrite.
+    """
+    if field not in ACCEPTED_ARTIFACT_FIELDS:
+        raise CheckpointError(f"unknown accepted-artifact field: {field}")
+    if not isinstance(pointer, str) or not pointer:
+        raise CheckpointError("accepted-artifact pointer must be a nonempty string")
+    contract, before, content = _read(root, workflow, path, include_pgm)
+    if before[field] is not None:
+        if before[field] == pointer:
+            return _result(path, before, False)
+        raise CheckpointError(f"{field} cannot change once accepted")
+    after = dict(before)
+    after[field] = pointer
+    after["generation"] = int(before["generation"]) + 1
+    return _write_transition(path, content, before, after, contract)
+
+
+@_serialized_checkpoint
+def record_evidence(
+    root: Path,
+    workflow: str,
+    path: Path,
+    pointer: str,
+    include_pgm: bool = False,
+) -> CheckpointResult:
+    """Append one evidence pointer. Evidence is append-only, never edited."""
+    if not isinstance(pointer, str) or not pointer:
+        raise CheckpointError("evidence pointer must be a nonempty string")
+    contract, before, content = _read(root, workflow, path, include_pgm)
+    after = dict(before)
+    after["evidence"] = [*before["evidence"], pointer]
+    after["generation"] = int(before["generation"]) + 1
+    return _write_transition(path, content, before, after, contract)
+
+
+@_serialized_checkpoint
+def record_reclassification(
+    root: Path,
+    workflow: str,
+    path: Path,
+    reason: str,
+    from_complexity: str,
+    to_complexity: str,
+    include_pgm: bool = False,
+) -> CheckpointResult:
+    """Append one reclassification record. Append-only, like evidence."""
+    for value, label in (
+        (reason, "reason"),
+        (from_complexity, "from"),
+        (to_complexity, "to"),
+    ):
+        if not isinstance(value, str) or not value:
+            raise CheckpointError(f"reclassification {label} must be a nonempty string")
+    contract, before, content = _read(root, workflow, path, include_pgm)
+    after = dict(before)
+    after["reclassifications"] = [
+        *before["reclassifications"],
+        {"reason": reason, "from": from_complexity, "to": to_complexity},
+    ]
+    after["generation"] = int(before["generation"]) + 1
+    return _write_transition(path, content, before, after, contract)
+
+
 def effect_strategy(contract: dict[str, object], key: str) -> str:
     for item in contract["idempotency_keys"]:
         if item["key"] == key:
@@ -603,7 +729,49 @@ def validate_transition(
         edges = {(item["from"], item["to"]) for item in contract["transitions"]}
         if (before["phase"], after["phase"]) not in edges:
             raise CheckpointError("checkpoint phase transition is not declared")
-    if sum((phase_changed, additions == 1, effect_changes == 1)) != 1:
+    artifact_changes = 0
+    for field in ACCEPTED_ARTIFACT_FIELDS:
+        if before[field] != after[field]:
+            if before[field] is not None:
+                raise CheckpointError(f"checkpoint {field} cannot change once accepted")
+            artifact_changes += 1
+    if artifact_changes > 1:
+        raise CheckpointError(
+            "a checkpoint write may set only one accepted-artifact field"
+        )
+    if after["evidence"][: len(before["evidence"])] != before["evidence"]:
+        raise CheckpointError("checkpoint evidence entries cannot change or reorder")
+    evidence_additions = len(after["evidence"]) - len(before["evidence"])
+    if evidence_additions < 0:
+        raise CheckpointError("checkpoint evidence entries cannot be removed")
+    if evidence_additions > 1:
+        raise CheckpointError("a checkpoint write may append only one evidence entry")
+    before_reclassifications = before["reclassifications"]
+    after_reclassifications = after["reclassifications"]
+    if after_reclassifications[: len(before_reclassifications)] != before_reclassifications:
+        raise CheckpointError("checkpoint reclassifications cannot change or reorder")
+    reclassification_additions = len(after_reclassifications) - len(
+        before_reclassifications
+    )
+    if reclassification_additions < 0:
+        raise CheckpointError("checkpoint reclassifications cannot be removed")
+    if reclassification_additions > 1:
+        raise CheckpointError(
+            "a checkpoint write may append only one reclassification"
+        )
+    if (
+        sum(
+            (
+                phase_changed,
+                additions == 1,
+                effect_changes == 1,
+                artifact_changes == 1,
+                evidence_additions == 1,
+                reclassification_additions == 1,
+            )
+        )
+        != 1
+    ):
         raise CheckpointError(
             "a checkpoint write must contain exactly one state transition"
         )

@@ -18,6 +18,7 @@ def test_project_state_on_missing_file_reports_both_null(tmp_path: Path, capsys)
         "checkpoint": None,
         "routing": None,
         "gates": None,
+        "size_axis": {},
     }
 
 
@@ -190,6 +191,159 @@ def test_gate_state_set_rejects_invalid_state_choice(tmp_path: Path, capsys):
         )
     assert excinfo.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
+
+
+def test_project_state_merges_valid_size_axis_frontmatter(tmp_path: Path, capsys):
+    path = tmp_path / "PROJECT.md"
+    path.write_text(
+        "---\n"
+        "workflow: fix-bug\n"
+        "size: M\n"
+        "execution_shape: SINGLE_PHASE\n"
+        "verification_status: PASS\n"
+        "reasoning_attempts:\n"
+        "  architecture: 0\n"
+        "  phase_plan: 0\n"
+        "  implementation: 1\n"
+        "---\n"
+    )
+    exit_code = main(["project-state", "--file", str(path)])
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["size_axis"] == {
+        "size": "M",
+        "execution_shape": "SINGLE_PHASE",
+        "verification_status": "PASS",
+        "reasoning_attempts": {
+            "architecture": 0,
+            "phase_plan": 0,
+            "implementation": 1,
+        },
+    }
+
+
+def test_project_state_rejects_an_invalid_size_axis_value(tmp_path: Path, capsys):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("---\nsize: HUGE\n---\n")
+    exit_code = main(["project-state", "--file", str(path)])
+    assert exit_code == 1
+    assert "size" in capsys.readouterr().err
+
+
+def test_project_state_on_file_without_frontmatter_has_empty_size_axis(
+    tmp_path: Path, capsys
+):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n\nNo header here.\n")
+    exit_code = main(["project-state", "--file", str(path)])
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["size_axis"] == {}
+
+
+def test_checkpoint_accept_rca_then_record_evidence_and_reclassification(
+    tmp_path: Path, capsys
+):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    exit_code = main(
+        ["checkpoint", "init", "--workflow", "fix-bug", "--file", str(path)]
+    )
+    assert exit_code == 0
+    capsys.readouterr()
+
+    exit_code = main(
+        [
+            "checkpoint",
+            "accept-rca",
+            "--workflow",
+            "fix-bug",
+            "--file",
+            str(path),
+            "--pointer",
+            "rca.md",
+            "--json",
+        ]
+    )
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["accepted_rca"] == "rca.md"
+
+    exit_code = main(
+        [
+            "checkpoint",
+            "record-evidence",
+            "--workflow",
+            "fix-bug",
+            "--file",
+            str(path),
+            "--pointer",
+            "gate=verify PASS",
+            "--json",
+        ]
+    )
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["evidence"] == ["gate=verify PASS"]
+
+    exit_code = main(
+        [
+            "checkpoint",
+            "record-reclassification",
+            "--workflow",
+            "fix-bug",
+            "--file",
+            str(path),
+            "--reason",
+            "scope grew",
+            "--from",
+            "STANDARD",
+            "--to",
+            "COMPLEX",
+            "--json",
+        ]
+    )
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["reclassifications"] == [
+        {"reason": "scope grew", "from": "STANDARD", "to": "COMPLEX"}
+    ]
+
+
+def test_checkpoint_accept_rca_twice_with_a_different_pointer_fails(
+    tmp_path: Path, capsys
+):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    main(["checkpoint", "init", "--workflow", "fix-bug", "--file", str(path)])
+    capsys.readouterr()
+    main(
+        [
+            "checkpoint",
+            "accept-rca",
+            "--workflow",
+            "fix-bug",
+            "--file",
+            str(path),
+            "--pointer",
+            "rca.md",
+        ]
+    )
+    capsys.readouterr()
+    exit_code = main(
+        [
+            "checkpoint",
+            "accept-rca",
+            "--workflow",
+            "fix-bug",
+            "--file",
+            str(path),
+            "--pointer",
+            "rca-v2.md",
+        ]
+    )
+    assert exit_code == 1
+    assert "cannot change once accepted" in capsys.readouterr().err
 
 
 def test_gate_state_set_on_missing_file_fails(tmp_path: Path, capsys):

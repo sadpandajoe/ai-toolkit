@@ -39,3 +39,17 @@ block, and do not let the frontmatter drift from the machine state it mirrors.
 - Treat an applied record as final. An identical apply is a no-op; a changed
   operation ID or result is a conflict. Finish the contract's verification and
   reporting gates before declaring the workflow complete.
+- When a Planning phase's RCA, decomposition, or phase plan is accepted, call
+  `bin/aitk checkpoint accept-rca` / `accept-decomposition` / `accept-phase-plan`
+  with a pointer to the artifact. Each is final once set — a revised plan is a
+  new checkpoint phase or a `record-reclassification`, not an overwrite of the
+  same field. Record every verification-loop gate outcome's evidence pointer
+  with `bin/aitk checkpoint record-evidence`, and every
+  `rules/complexity-gate.md` reclassification (reason + from→to) with
+  `bin/aitk checkpoint record-reclassification` — both are append-only, so the
+  snapshot alone carries the full accepted-artifact and reclassification
+  history across a resume, with no dependence on chat memory. Pair every
+  `record-reclassification` call with an `observation` event (`kind:
+  reclassify`) per `skills/metrics-emit` — the checkpoint record is the
+  durable state, the observation is what lets `skills/reflection` notice the
+  same classification going wrong more than once.

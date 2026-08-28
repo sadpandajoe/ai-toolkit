@@ -13,11 +13,14 @@ from typing import Callable
 from .build import compare_build, write_build
 from .checkpoint import (
     CheckpointError,
+    accept_artifact as accept_artifact_checkpoint,
     advance as advance_checkpoint,
     apply as apply_checkpoint,
     checkpoint_file,
     initialize as initialize_checkpoint,
     read_snapshot,
+    record_evidence as record_evidence_checkpoint,
+    record_reclassification as record_reclassification_checkpoint,
     reserve as reserve_checkpoint,
     validate as validate_checkpoint,
 )
@@ -38,6 +41,8 @@ from .gate_state import (
     set_state as set_gate_state,
 )
 from .gates import FAILURE_KINDS, GATE_STATES
+from .frontmatter import FrontmatterError, read_frontmatter
+from .size_axis import SIZE_AXIS_FIELDS, SizeAxisError, validate_size_axis
 from .pgm import preflight as pgm_preflight
 from .routing import (
     COMPLEXITY_VALUES,
@@ -405,7 +410,7 @@ def _checkpoint(arguments: argparse.Namespace) -> int:
                 arguments.operation_id,
                 arguments.with_pgm,
             )
-        else:
+        elif arguments.checkpoint_action == "apply":
             result = apply_checkpoint(
                 root,
                 arguments.workflow,
@@ -413,6 +418,40 @@ def _checkpoint(arguments: argparse.Namespace) -> int:
                 arguments.key,
                 arguments.operation_id,
                 arguments.result_digest,
+                arguments.with_pgm,
+            )
+        elif arguments.checkpoint_action in {
+            "accept-rca",
+            "accept-decomposition",
+            "accept-phase-plan",
+        }:
+            field = arguments.checkpoint_action.replace("accept-", "accepted_").replace(
+                "-", "_"
+            )
+            result = accept_artifact_checkpoint(
+                root,
+                arguments.workflow,
+                path,
+                field,
+                arguments.pointer,
+                arguments.with_pgm,
+            )
+        elif arguments.checkpoint_action == "record-evidence":
+            result = record_evidence_checkpoint(
+                root,
+                arguments.workflow,
+                path,
+                arguments.pointer,
+                arguments.with_pgm,
+            )
+        else:
+            result = record_reclassification_checkpoint(
+                root,
+                arguments.workflow,
+                path,
+                arguments.reason,
+                arguments.from_complexity,
+                arguments.to_complexity,
                 arguments.with_pgm,
             )
     except (CheckpointError, OSError, json.JSONDecodeError) as error:
@@ -444,14 +483,20 @@ def _project_state(arguments: argparse.Namespace) -> int:
         checkpoint_snapshot = read_snapshot(path)
         routing_snapshot = read_routing_state(path)
         gate_snapshot = read_gate_state(path)
-    except (CheckpointError, RoutingStateError, GateStateError) as error:
+        frontmatter = read_frontmatter(path) if path.is_file() else {}
+        validate_size_axis(frontmatter)
+    except (CheckpointError, RoutingStateError, GateStateError, FrontmatterError, SizeAxisError) as error:
         print(f"aitk project-state: {error}", file=sys.stderr)
         return 1
+    size_axis_snapshot = {
+        field: frontmatter[field] for field in SIZE_AXIS_FIELDS if field in frontmatter
+    }
     payload = {
         "file": str(path),
         "checkpoint": checkpoint_snapshot,
         "routing": routing_snapshot,
         "gates": gate_snapshot,
+        "size_axis": size_axis_snapshot,
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
@@ -726,7 +771,18 @@ def parser() -> argparse.ArgumentParser:
     checkpoint_actions = checkpoint.add_subparsers(
         dest="checkpoint_action", required=True
     )
-    for action in ("init", "validate", "advance", "reserve", "apply"):
+    for action in (
+        "init",
+        "validate",
+        "advance",
+        "reserve",
+        "apply",
+        "accept-rca",
+        "accept-decomposition",
+        "accept-phase-plan",
+        "record-evidence",
+        "record-reclassification",
+    ):
         checkpoint_action = checkpoint_actions.add_parser(
             action, help=f"{action} a durable workflow checkpoint"
         )
@@ -747,6 +803,12 @@ def parser() -> argparse.ArgumentParser:
             checkpoint_action.add_argument("--operation-id", required=True)
         if action == "apply":
             checkpoint_action.add_argument("--result-digest", required=True)
+        if action.startswith("accept-") or action == "record-evidence":
+            checkpoint_action.add_argument("--pointer", required=True)
+        if action == "record-reclassification":
+            checkpoint_action.add_argument("--reason", required=True)
+            checkpoint_action.add_argument("--from", dest="from_complexity", required=True)
+            checkpoint_action.add_argument("--to", dest="to_complexity", required=True)
         checkpoint_action.set_defaults(handler=_checkpoint)
 
     project_state = subparsers.add_parser(

@@ -37,9 +37,23 @@ The caller names one of two modes in the Scope field, matching whichever of
 
 Apply the always-on lens (architecture, implementation feasibility,
 test-plan adequacy) plus any conditional lens the plan's touched area
-requires (frontend, backend). One dispatch per lens — evaluate only the lens
-named for this invocation, not the full lens menu. Render a verdict per
-lens, not a numeric score:
+requires (frontend, backend — see `skills/review/references/{architecture,
+frontend,backend}.md`, read with `lens_domain=plan`). One dispatch per lens —
+evaluate only the lens named for this invocation, not the full lens menu.
+
+The implementation-feasibility lens has no external reference file; apply it
+directly. Evaluate: step sequencing (are dependencies between steps
+respected?), effort realism, dependency availability (do required
+libraries/APIs exist?), consistency with existing codebase patterns,
+incremental delivery (is each phase a small, independently deployable PR?),
+standalone migration PRs (migrations must ship bundled with the code that
+uses them), vertical slices (prefer end-to-end feature slices over
+horizontal layers), migration concerns (backward compatibility, data
+migration, rollback), and risk per step. Do not comment on high-level
+architecture decisions, test strategy details, UI design choices, or code
+style under this lens — those belong to the architecture/test-plan lenses.
+
+Render a verdict per lens, not a numeric score:
 
 - **`APPROVE`** — this lens finds nothing blocking; proceed.
 - **`CHANGES REQUIRED`** — one or more concrete, fixable issues in the

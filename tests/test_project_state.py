@@ -492,11 +492,150 @@ def test_initialize_replace_existing_rejects_pending_effects(tmp_path: Path):
         checkpoint.initialize(REPO_ROOT, "fix-bug", path, replace_existing=True)
 
 
+# --- aitk.checkpoint: accepted artifacts / evidence / reclassifications ----
+#
+# A2: persisted artifact/evidence refs in the checkpoint block, so the
+# snapshot alone (no chat memory) suffices to resume at a phase and know
+# which plan/RCA it was accepted against.
+
+
+def test_initialize_defaults_the_new_fields_empty(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    started = checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    assert started.accepted_rca is None
+    assert started.accepted_decomposition is None
+    assert started.accepted_phase_plan is None
+    assert started.evidence == ()
+    assert started.reclassifications == ()
+    snapshot = read_snapshot(path)
+    assert snapshot["accepted_rca"] is None
+    assert snapshot["evidence"] == []
+    assert snapshot["reclassifications"] == []
+
+
+def test_accept_artifact_sets_the_field_and_survives_interrupt(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    result = checkpoint.accept_artifact(
+        REPO_ROOT, "fix-bug", path, "accepted_rca", "docs/rca-2026-08-26.md"
+    )
+    assert result.accepted_rca == "docs/rca-2026-08-26.md"
+    assert result.generation == 1
+
+    snapshot = read_snapshot(path)
+    assert snapshot["accepted_rca"] == "docs/rca-2026-08-26.md"
+
+
+def test_accept_artifact_is_idempotent_for_the_same_pointer(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    checkpoint.accept_artifact(REPO_ROOT, "fix-bug", path, "accepted_rca", "rca.md")
+    repeated = checkpoint.accept_artifact(
+        REPO_ROOT, "fix-bug", path, "accepted_rca", "rca.md"
+    )
+    assert repeated.changed is False
+    assert repeated.generation == 1
+
+
+def test_accept_artifact_rejects_changing_an_already_accepted_field(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    checkpoint.accept_artifact(REPO_ROOT, "fix-bug", path, "accepted_rca", "rca.md")
+    with pytest.raises(CheckpointError, match="cannot change once accepted"):
+        checkpoint.accept_artifact(
+            REPO_ROOT, "fix-bug", path, "accepted_rca", "rca-v2.md"
+        )
+
+
+def test_accept_artifact_rejects_an_unknown_field(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    with pytest.raises(CheckpointError, match="unknown accepted-artifact field"):
+        checkpoint.accept_artifact(REPO_ROOT, "fix-bug", path, "accepted_plan", "x.md")
+
+
+def test_record_evidence_appends_in_order(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    checkpoint.record_evidence(REPO_ROOT, "fix-bug", path, "gate=verify PASS")
+    result = checkpoint.record_evidence(
+        REPO_ROOT, "fix-bug", path, "gate=review PASS"
+    )
+    assert result.evidence == ("gate=verify PASS", "gate=review PASS")
+    assert read_snapshot(path)["evidence"] == [
+        "gate=verify PASS",
+        "gate=review PASS",
+    ]
+
+
+def test_record_evidence_rejects_an_empty_pointer(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    with pytest.raises(CheckpointError, match="nonempty string"):
+        checkpoint.record_evidence(REPO_ROOT, "fix-bug", path, "")
+
+
+def test_record_reclassification_appends_reason_from_to(tmp_path: Path):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    result = checkpoint.record_reclassification(
+        REPO_ROOT,
+        "fix-bug",
+        path,
+        "review surfaced a schema-wide implication",
+        "STANDARD",
+        "COMPLEX",
+    )
+    assert result.reclassifications == (
+        {
+            "reason": "review surfaced a schema-wide implication",
+            "from": "STANDARD",
+            "to": "COMPLEX",
+        },
+    )
+    assert read_snapshot(path)["reclassifications"] == [
+        {
+            "reason": "review surfaced a schema-wide implication",
+            "from": "STANDARD",
+            "to": "COMPLEX",
+        }
+    ]
+
+
+def test_accepted_artifacts_and_evidence_survive_advance_and_sibling_writes(
+    tmp_path: Path,
+):
+    path = tmp_path / "PROJECT.md"
+    path.write_text("# PROJECT\n")
+    checkpoint.initialize(REPO_ROOT, "fix-bug", path)
+    checkpoint.accept_artifact(REPO_ROOT, "fix-bug", path, "accepted_rca", "rca.md")
+    checkpoint.record_evidence(REPO_ROOT, "fix-bug", path, "gate=diagnose PASS")
+    routing.set_classification(path, "STANDARD", 8, "multi-file change")
+
+    checkpoint.advance(REPO_ROOT, "fix-bug", path, "diagnose")
+
+    snapshot = read_snapshot(path)
+    assert snapshot["phase"] == "diagnose"
+    assert snapshot["accepted_rca"] == "rca.md"
+    assert snapshot["evidence"] == ["gate=diagnose PASS"]
+    assert routing.read(path)["complexity"] == "STANDARD"
+
+
 # --- aitk.size_axis: PROJECT.md v2 size-axis schema -------------------------
 #
-# These fields are frontmatter, not a marker-block state module -- no YAML
-# frontmatter parser exists anywhere in aitk/ yet, so validate_size_axis()
-# is a pure function over an already-parsed dict, not a PROJECT.md reader.
+# These fields are frontmatter, not a marker-block state module.
+# validate_size_axis() stays a pure function over an already-parsed dict;
+# aitk.frontmatter (tests/test_frontmatter.py) is the PROJECT.md reader that
+# produces that dict, wired together in `aitk project-state`
+# (tests/test_cli.py).
 
 
 def test_an_unfilled_template_validates_cleanly():

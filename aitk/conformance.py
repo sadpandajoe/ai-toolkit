@@ -385,6 +385,11 @@ def _validate_durable_runtime(root: Path) -> list[str]:
         "phase": "phase",
         "generation": 0,
         "effects": [],
+        "accepted_rca": None,
+        "accepted_decomposition": None,
+        "accepted_phase_plan": None,
+        "evidence": [],
+        "reclassifications": [],
     }
     if payload != expected:
         problems.append("canonical checkpoint template fields do not match schema v1")
