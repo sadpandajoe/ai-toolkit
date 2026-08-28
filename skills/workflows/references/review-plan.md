@@ -40,10 +40,10 @@ implement it, or turn review comments into code changes.
 <!-- aitk-model-route:workflows.review-plan-fresh -->
 - Use fresh reviewer subagents for each review pass after material plan revisions.
   One dispatch per lens, selected from the plan-lens menu — the same menu step 3
-  draws from: [architecture.md](../../plan-review/references/architecture.md),
-  [implementation.md](../../plan-review/references/implementation.md),
-  [frontend.md](../../plan-review/references/frontend.md),
-  [backend.md](../../plan-review/references/backend.md), and
+  draws from: [architecture.md](../../review/references/architecture.md),
+  [frontend.md](../../review/references/frontend.md),
+  [backend.md](../../review/references/backend.md),
+  the implementation-feasibility lens in [`agents/codex/plan-validator.md`](../../../agents/codex/plan-validator.md), and
   [review-testplan.md](../../testing/references/review-testplan.md).
   Naming the menu here is what makes those lanes dispatchable: a lens this span
   omits cannot be selected, however clearly step 2 chose it.
@@ -69,12 +69,12 @@ Assess the plan's complexity to determine reviewer depth. Use the substance of t
 
 | Plan scope | Reviewers | Cold read |
 |------------|-----------|-----------|
-| **Moderate** — single subsystem, well-understood pattern, no architectural decisions | 1 reviewer: [`plan-review/references/implementation.md`](../../plan-review/references/implementation.md) | [`planning/references/finalize.md`](../../planning/references/finalize.md) |
-| **Standard** — multi-system, real trade-offs, novel design, or ambiguous constraints | 3+ reviewers: `plan-review/references/architecture.md` + `plan-review/references/implementation.md` + [`testing/references/review-testplan.md`](../../testing/references/review-testplan.md) | `planning/references/finalize.md` |
+| **Moderate** — single subsystem, well-understood pattern, no architectural decisions | 1 reviewer: the implementation-feasibility lens in [`agents/codex/plan-validator.md`](../../../agents/codex/plan-validator.md) | [`planning/references/finalize.md`](../../planning/references/finalize.md) |
+| **Standard** — multi-system, real trade-offs, novel design, or ambiguous constraints | 3+ reviewers: `review/references/architecture.md` + the implementation-feasibility lens in `agents/codex/plan-validator.md` + [`testing/references/review-testplan.md`](../../testing/references/review-testplan.md) | `planning/references/finalize.md` |
 
 **Conditional reviewers** (add to Standard plans when applicable):
-- `plan-review/references/frontend.md` — if plan touches frontend (React, CSS, UI components)
-- `plan-review/references/backend.md` — if plan touches backend (API, database, migrations)
+- `review/references/frontend.md` — if plan touches frontend (React, CSS, UI components)
+- `review/references/backend.md` — if plan touches backend (API, database, migrations)
 
 State the scope assessment, which reviewers are selected, and why before launching.
 
@@ -82,10 +82,10 @@ State the scope assessment, which reviewers are selected, and why before launchi
 
 <!-- aitk-model-route:workflows.review-plan-selected -->
 Launch the selected fresh reviewer subagents in parallel — one dispatch per lens,
-each naming its own: [architecture.md](../../plan-review/references/architecture.md),
-[implementation.md](../../plan-review/references/implementation.md),
-[frontend.md](../../plan-review/references/frontend.md),
-[backend.md](../../plan-review/references/backend.md), or
+each naming its own: [architecture.md](../../review/references/architecture.md),
+the implementation-feasibility lens in [`agents/codex/plan-validator.md`](../../../agents/codex/plan-validator.md),
+[frontend.md](../../review/references/frontend.md),
+[backend.md](../../review/references/backend.md), or
 [review-testplan.md](../../testing/references/review-testplan.md).
 Use `review` for bounded implementation/test lanes; architecture and
 security-sensitive lanes resolve to `deep-review`, which the manifest enforces as

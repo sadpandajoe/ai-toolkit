@@ -138,25 +138,27 @@ ai-toolkit/
 │   ├── preset-environments.md  # Preset staging/prod envs, credentials, VPN reachability
 │   ├── code-review.md      # Review guidelines
 │   ├── complexity-gate.md  # Complexity classification and fast-path
-│   ├── review-gate.md      # Review gate output contract
-│   ├── scoring.md          # Review scoring scale
+│   ├── gates.md            # Six-state gate contract (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED)
+│   ├── specialist-handoff.md # Specialist dispatch input/output field contract
+│   ├── review-gate.md      # Review gate output contract — kept for plan-domain reviewers, see rules/gates.md
+│   ├── scoring.md          # Review scoring scale — kept for plan-domain reviewers, see rules/gates.md
 │   ├── severity.md         # Finding severity levels
-│   ├── stop-rules.md       # Universal stop conditions for iterative loops
+│   ├── stop-rules.md       # Universal stop conditions for iterative loops — kept for plan-domain reviewers, see rules/gates.md
 │   ├── shortcut-api.md     # Shortcut REST API routing hint
-│   └── input-detection.md  # Route ticket/issue inputs to Shortcut or GitHub
+│   ├── input-detection.md  # Route ticket/issue inputs to Shortcut or GitHub
+│   └── cross-cutting.md    # Catch-all for principles that don't fit one existing rule file
 ├── skills/                  # Canonical Agent Skills; references load lazily (see skills/README.md for anatomy)
-│   ├── workflows/          # Public daily-workflow router + canonical orchestration references
-│   ├── planning/            # Technical planning — plan-implementation, iterate-review, finalize, feedback-classify
-│   ├── plan-review/         # Plan-reviewer lenses — architecture, backend, frontend, implementation
-│   ├── review/              # Code/PR reviewer orchestration + lenses — local-review, pr-review, classify-diff, adversarial
+│   ├── workflows/          # Compatibility shim over interfaces/workflows.json; utility references (checkpoint, start, metrics, create-pr, ...) still live here
+│   ├── planning/            # Technical planning — plan-implementation, decompose-work, plan-phase, finalize, feedback-classify
+│   ├── review/              # Code/plan reviewer orchestration + lenses — local-review, pr-review, classify-diff, adversarial, architecture/backend/frontend (dual plan+code lenses)
 │   ├── feedback/            # PR feedback response — triage comments, fix approved items, post replies
 │   ├── debug/               # Diagnostic umbrella — investigate-change, review-rca, check-existing-fix, CI gather/classify/fix/verify
 │   ├── qa/                  # QA — triage-bug, validate-fix, assess-impact, analyze/expand/execute-use-cases, file-bug
 │   ├── testing/             # Test-harness work — create/update suites, review tests + test plans
 │   ├── preflight/           # Pre-work environment checks — worktree setup + app-runnable env prep
-│   ├── goals/                # Natural-language goal skills — fix-bug, create-feature, fix-ci, code-review, address-feedback, test-pr, cherry-pick
+│   ├── pr-watch/            # PR-watch iteration/routing/stop contract — polls CI/comments, routes to fix-ci/address-feedback
+│   ├── goals/                # Natural-language goal skills — fix-bug, create-feature, fix-ci, code-review, address-feedback, test-pr, cherry-pick, refactor, watch-pr, release-prep
 │   ├── agent-setup-maintainer/ # Maintains skills, rules, adapters, and agent workflow docs
-│   ├── action-gate/         # Shared proceed/stop decision helper
 │   ├── implement-change/    # Focused implementation
 │   ├── reporting/           # Structural rules + per-workflow summary/checkpoint templates
 │   ├── metrics-emit/        # Telemetry skill — final workflow-complete event
@@ -164,8 +166,7 @@ ai-toolkit/
 │   ├── archive-project-file/ # Archive lifecycle skill
 │   ├── shortcut/            # Shortcut REST fetch/report helpers
 │   ├── superset-local/      # Superset-specific local stack + Playwright helpers
-│   ├── verification-loop/   # Run a verification command, decide PASS/RETRY/ESCALATE (dual-run)
-│   └── workstreams/         # Post-parallel-implementation fan-in and merge sequencing
+│   └── verification-loop/   # Shared PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED contract every goal skill drives through
 ├── hooks/
 │   ├── hooks.json                 # Codex plugin lifecycle-hook adapter
 │   ├── prevent-project-commit.sh  # Block unsafe git flags and local workflow state commits
@@ -186,7 +187,7 @@ ai-toolkit/
 
 ## Public Workflows
 
-The `workflows` skill is the canonical interface and works with natural-language requests across Agent Skills-compatible providers. Explicit requests use `$workflows <name>`; optional PGM requests use `$pgm <name>` after opt-in installation.
+Natural-language requests route directly to the matching goal skill under `skills/goals/` (`fix-bug`, `create-feature`, `code-review`, `fix-ci`, `cherry-pick`, `address-feedback`, `test-pr`, `watch-pr`, `refactor`, `release-prep`) — each one classifies the request, dispatches the right workers, and drives `skills/verification-loop` to a terminal state. The `workflows` skill is now a compatibility shim: every entry in `interfaces/workflows.json` still resolves through `$workflows <name>`, and a handful of utility references (checkpoint, start, metrics, create-pr, and similar) live only there, but workflow behavior itself lives in the goal skill, not in this router. Optional PGM requests use `$pgm <name>` after opt-in installation.
 
 The command-line interface is also stable and scriptable:
 
@@ -196,7 +197,14 @@ The command-line interface is also stable and scriptable:
 | `bin/aitk route [--with-pgm] "<request>"` | Deterministically suggest a workflow without forcing one |
 | `bin/aitk build [--check] [--with-pgm]` | Generate path-resolved guidance and validate workflow manifests |
 | `bin/aitk doctor [--strict] [--installed]` | Run structured repository and optional ownership-ledger checks |
-| `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Serialize durable phases and idempotent effects; use init `--replace` only to start a new completed/stale run |
+| `bin/aitk model-route <route> --provider <codex\|claude>` | Resolve a stable worker route to its pinned model and effort |
+| `bin/aitk model-run <route> --provider <p> --boundary <b> --prompt-file <f>` | Run one fail-closed worker with pinned model and effort, no downgrade |
+| `bin/aitk review-ensemble <tier> --provider <codex\|claude>` | Resolve a review tier to its exact provider/model roster |
+| `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply\|accept-rca\|accept-decomposition\|accept-phase-plan\|record-evidence\|record-reclassification` | Serialize durable phases, idempotent effects, and accepted-artifact/evidence/reclassification references; use init `--replace` only to start a new completed/stale run |
+| `bin/aitk project-state [--file <path>]` | Read the v2 routing snapshot from PROJECT.md without loading history |
+| `bin/aitk routing-state set --complexity <c> --confidence <n> --reason <r>` | Record the complexity-gate classification snapshot |
+| `bin/aitk gate-state set --gate <g> --state <s> --reason <r> --count <n> [--kind mechanical\|reasoning]` | Record a gate's PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED history |
+| `bin/aitk evals-run --family <name> [--live]` | Run one `evals/` fixture family through its checker; `--live` uses the routed Sonnet transport |
 | `bin/aitk install [--with-pgm]` | Install/upgrade source links transactionally |
 | `bin/aitk uninstall` | Remove only ledger-owned artifacts and managed blocks |
 | `bin/aitk rollback` | Restore the exact previous lifecycle transaction once |
@@ -253,15 +261,18 @@ Use `$workflows review-code` when you want the repo-standard wrapper: review, fi
 
 ### Feature Planning
 ```text
+Build this feature: bulk edit dashboards
 $workflows create-feature "bulk edit dashboards"
 $workflows create-feature sc-12345
 $workflows create-feature https://github.com/owner/repo/issues/123
 ```
 
-`$workflows create-feature` owns the full planning loop:
-- PM planning is conditional and iterates to 8/10 when scope or milestones need it
-- Developer planning iterates to 8/10 with shared reviewers from `skills/`
-- The internal finalize-plan skill is the last cold-read before implementation continues automatically
+Natural language routes directly to `skills/goals/create-feature`; `$workflows create-feature` is the stable alias. It classifies the request's complexity (`rules/complexity-gate.md`: TRIVIAL/STANDARD/COMPLEX) and size (`S`/`M`/`L`/`XL`, `aitk/size_axis.py`), derives an execution shape from both, then implements via whichever path that shape selects:
+- `SINGLE_PHASE` (the common case for `S`/`M` work): a Trivial fast path implements inline with no subagent spawn, or a Standard/Complex path dispatches `implementation-worker` (and `test-worker` when needed), verifies through `skills/verification-loop`, then reviews through `skills/review/references/sol-review.md`
+- `BATCHED` (repetitive/mechanical `L`/`XL` work): the same per-slice implement/verify/review loop repeated over waves or items, plus one final aggregate verification
+- `MULTI_PHASE` (`L`/`XL` work with distinct, dependent capabilities): `skills/planning/references/decompose-work.md` runs once, then `plan-phase.md` plans each phase just-in-time before it implements
+
+Every path drives to a `rules/gates.md` PASS before completion is recorded on `PROJECT.md`.
 
 ### Standalone Validation
 ```text
@@ -280,7 +291,7 @@ $workflows run-test-plan https://github.com/owner/repo/pull/123
 $workflows review-plan                # Review PLAN.md or PROJECT.md-referenced plan
 ```
 
-`$workflows review-plan` is standalone plan quality review — the same fresh-reviewer loop as `create-feature` step 4, without the full workflow.
+`$workflows review-plan` is standalone plan quality review, without a full `create-feature` run: fresh reviewer subagents (selected from the plan-lens menu — architecture, implementation-feasibility, test-plan, and conditionally frontend/backend) iterate `PLAN.md` to 8/10 per `rules/scoring.md`, then a fresh cold read gates completion.
 
 ### PR Feedback Analysis
 ```text
@@ -308,25 +319,26 @@ does not exist.
 |------|---------------------------------|
 | `rules/universal.md` | Always-on provider guidance |
 | `rules/orchestration.md` | Skill-owned orchestration policy |
-| `rules/context-management.md` | Always-on provider guidance |
-| `rules/durable-workflows.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests` |
+| `rules/context-management.md` | Always-on provider guidance; `cherry-pick` |
+| `rules/durable-workflows.md` | `address-feedback`, `cherry-pick`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `refactor`, `release-prep`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests`, `watch-pr` |
 | `rules/ci-evidence.md` | Debug skill loaders |
 | `rules/implementation.md` | Implementation skill loader |
 | `rules/testing.md` | Testing and implementation skill loaders |
 | `rules/resource-management.md` | Always-on provider guidance |
-| `rules/preset-environments.md` | `run-test-plan`, `test-pr` |
+| `rules/preset-environments.md` | `run-test-plan`, `test-pr`, `release-prep`, `watch-pr` |
 | `rules/code-review.md` | Review skill loader |
-| `rules/complexity-gate.md` | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` |
-| `rules/gates.md` | Skill-owned loader, dual-run (not yet wired to any workflow) |
-| `rules/specialist-handoff.md` | Skill-owned loader, dual-run (not yet wired to any workflow) |
-| `rules/review-gate.md` | Review and workflow reference loaders |
-| `rules/scoring.md` | Review and planning skill loaders |
+| `rules/complexity-gate.md` | `address-feedback`, `cherry-pick`, `create-feature`, `fix-bug`, `fix-ci`, `refactor`, `review-code`, `review-pr` |
+| `rules/gates.md` | Six-state gate contract (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED); loaded directly by every `skills/goals/*` skill, independent of this manifest's per-workflow rule imports |
+| `rules/specialist-handoff.md` | Specialist dispatch input/output field contract; loaded by `skills/goals/{create-feature,fix-bug,fix-ci,refactor}` today — dual-run, other goal skills still use ad hoc handoff prose |
+| `rules/review-gate.md` | Superseded by `rules/gates.md` for its migrated goal-skill citers; kept authoritative for plan-domain reviewers (`skills/review`, `skills/planning`, `skills/testing`) and workflow reference loaders |
+| `rules/scoring.md` | Superseded by `rules/gates.md` for its migrated goal-skill citers; kept authoritative for plan-domain and test-plan review scoring (`skills/review`, `skills/planning`, `skills/testing`) |
 | `rules/severity.md` | Review, planning, and QA skill loaders |
-| `rules/stop-rules.md` | `review-plan` |
+| `rules/stop-rules.md` | `review-plan`; also kept authoritative for plan-domain review stop conditions (`skills/review`, `skills/testing`) |
 | `rules/shortcut-api.md` | Shortcut skill loader |
 | `rules/input-detection.md` | `create-feature`, `fix-bug`, `run-test-plan`, `test-pr` |
 | `rules/model-assignment.md` | Routed worker contract |
 | `rules/rule-maintenance.md` | Ad hoc rule editing |
+| `rules/cross-cutting.md` | Skill-owned loader |
 
 ## Hooks (optional)
 

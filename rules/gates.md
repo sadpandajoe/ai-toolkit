@@ -2,35 +2,40 @@
 
 Unified six-state gate contract for any workflow checkpoint that can pass,
 fail, need a repeat attempt, need the user, or need reclassification. This
-consolidates the behavior currently split across `skills/action-gate/SKILL.md`
-(execution gate), `rules/review-gate.md` (review status), `rules/stop-rules.md`
-(iteration stop conditions), and `rules/scoring.md` (numeric iteration
-threshold) into one vocabulary and one counting rule.
+consolidates the execution-gate vocabulary previously split out into
+`skills/action-gate/SKILL.md` (deleted in Wave D — folded into this contract
+outright, not left dual-run) plus the review-status/iteration-stop/numeric-
+threshold split still remaining in `rules/review-gate.md` (review status),
+`rules/stop-rules.md` (iteration stop conditions), and `rules/scoring.md`
+(numeric iteration threshold), into one vocabulary and one counting rule.
 
 **Status: dual-run.** `skills/goals/{fix-bug,fix-ci,code-review,
 address-feedback,test-pr}` and `skills/goals/cherry-pick` — this file's complete
 set of migrated citers — now cite this contract's vocabulary at their own
 checkpoints, translating their existing domain-specific verdicts into these
-six states rather than reimplementing them. The four files above remain the
-ones actually enforcing behavior today — none of these callers invoke
+six states rather than reimplementing them. `review-gate.md`, `stop-rules.md`,
+and `scoring.md` remain the ones actually enforcing review/iteration behavior
+today for their own remaining callers — none of the citer goal skills invoke
 `aitk.gates.decide_failure()` or replace their own gate/verdict logic with
 this file's — so this is citation, not yet behavioral migration.
 
 **Permanently out of scope.** Every other consumer of `rules/review-gate.md`
 /`stop-rules.md`/`scoring.md` — this reaches well beyond the ensemble review
 layer and the old workflow router (both separately dual-run pending their
-own replacements): it includes `skills/plan-review`'s reviewer references,
-`skills/planning`'s plan-iteration and finalize helpers, and
-`skills/testing`'s test-review helpers, several of which are also called
-from code that already migrated (e.g. the Wave 5 planning helpers still
-route plan-level review through the old scoring threshold). None of this is
-scheduled for migration by this rebuild. Deleting `review-gate.md`/
-`stop-rules.md`/`scoring.md` is not safe while any non-listed consumer
-depends on them, and given how broadly they're woven through plan- and
-test-review, that may never fully clear under this plan's current scope —
-treat the Wave 8 deletion bullet for these three files as conditional on a
-future, separately-scoped migration of that surface, not as a deletion this
-rebuild will necessarily reach.
+own replacements): it includes the plan-domain reviewers
+(`skills/review/references/{architecture,frontend,backend}.md`, read with
+`lens_domain=plan`, plus `agents/codex/plan-validator.md`'s
+implementation-feasibility lens), `skills/planning`'s plan-iteration and
+finalize helpers, and `skills/testing`'s test-review helpers, several of
+which are also called from code that already migrated (e.g. the Wave 5
+planning helpers still route plan-level review through the old scoring
+threshold). None of this is scheduled for migration by this rebuild. Deleting
+`review-gate.md`/`stop-rules.md`/`scoring.md` is not safe while any
+non-listed consumer depends on them, and given how broadly they're woven
+through plan- and test-review, that may never fully clear under this plan's
+current scope — treat the Wave 8 deletion bullet for these three files as
+conditional on a future, separately-scoped migration of that surface, not as
+a deletion this rebuild will necessarily reach.
 
 ## Canonical Vocabulary
 
@@ -84,6 +89,13 @@ checkpoint reporting, not a sample of them, and `skills/reflection` groups by
 immediately after the block, in the same step, not deferred to the
 workflow's terminal summary.
 
+When the same `(gate, reason)` pair produces a second consecutive
+`RETRY`/`ESCALATE`, or the user explicitly redirects a gate's outcome, also
+emit an `observation` event (`kind: gate-repeat` or `kind: user-correction`)
+per `skills/metrics-emit` — this is the one signal `skills/reflection`
+clusters on to propose a rule or skill change. A single first-time gate
+failure does not warrant one; only a repeat or an explicit correction does.
+
 ## Repeat-Failure Counting Rule
 
 A gate failing does not automatically mean stop. Every failure has a `kind`:
@@ -130,7 +142,7 @@ workflow does *in response to* seeing `ESCALATE`, not part of the function.
 
 For migration reference, once a caller moves onto this contract:
 
-- `skills/action-gate/SKILL.md`'s `Recommendation: Proceed automatically` → `PASS`; `Ask for approval` → `USER_DECISION`; `Stop and escalate` → `BLOCKED` (or `ESCALATE` if this is a repeat of the same escalation reason).
+- The now-deleted `skills/action-gate/SKILL.md`'s `Recommendation: Proceed automatically` → `PASS`; `Ask for approval` → `USER_DECISION`; `Stop and escalate` → `BLOCKED` (or `ESCALATE` if this is a repeat of the same escalation reason).
 - `rules/review-gate.md`'s `Status: clean` / `micro-fix` → `PASS`; `Status: skipped` → `PASS` with the skip reason in `Reason`; `Status: blocked` → `BLOCKED`; `Status: user decision` → `USER_DECISION`.
 - `rules/stop-rules.md`'s "same issue persists across two consecutive rounds" → `ESCALATE`; its other two stop conditions map to `PASS` (nitpicks only) and `USER_DECISION` (user decision required).
 - `rules/scoring.md`'s 8/10 iteration threshold → superseded by the repeat-failure count, not a numeric score: a review that would have scored below 8 becomes `RETRY` on its first pass and `ESCALATE` on any second consecutive reasoning failure (not only a recurrence of the same deficiency), rather than iterating indefinitely toward a number.

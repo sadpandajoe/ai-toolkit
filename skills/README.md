@@ -51,7 +51,6 @@ End-to-end workflow umbrellas:
 | [debug/](debug/) | Investigating bugs, diagnosing failures, RCA review, CI failure classification, fix verification |
 | [feedback/](feedback/) | PR review feedback triage, approved fixes, reviewer replies, and thread handling |
 | [planning/](planning/) | Producing/iterating technical plans, finalize cold read, classifying review findings as plan vs code |
-| [plan-review/](plan-review/) | Reviewer lenses that critique a plan: architecture, backend, frontend, feasibility |
 | [qa/](qa/) | Triage, fix validation, impact assessment, use-case discovery, scenario expansion, bug filing |
 | [testing/](testing/) | HOW to test — creating/updating automated test suites, reviewing test code |
 | [review/](review/) | Reviewing code diffs — dispatching code-review lenses, code-quality, adversarial |
@@ -63,11 +62,9 @@ Workflow scaffolding (mostly orchestrator-only; not auto-routed):
 
 | Umbrella | Use for |
 |----------|---------|
-| [action-gate/](action-gate/) | Execution Gate block (Risk/Confidence/Decision/Verification) after investigation |
 | [reporting/](reporting/) | Final summary + continuation checkpoint shapes |
 | [metrics-emit/](metrics-emit/) | Append structured event to `.ai-toolkit/metrics.jsonl` |
 | [reflection/](reflection/) | Review gate-escalation telemetry, propose rule strengthening for drifting gates |
-| [workstreams/](workstreams/) | Fan-in after parallel implementation subagents finish |
 | [archive-project-file/](archive-project-file/) | Move completed PROJECT.md content to PROJECT_ARCHIVE.md |
 | [agent-setup-maintainer/](agent-setup-maintainer/) | Auditing or updating toolkit skills, rules, interfaces, and generated adapters |
 

@@ -59,8 +59,7 @@ are grouped by role so workflows load only the phase they are entering.
 
 ## Distinction vs Other Umbrellas
 
-- **review/** (this skill) — reviews code (post-implementation)
-- **plan-review/** — reviews plans (pre-implementation)
+- **review/** (this skill) — reviews code (post-implementation); its architecture/frontend/backend lenses are dual-purpose and also back plan review (pre-implementation) via `agents/codex/plan-validator.md`
 - **testing/** — includes `review-tests` + `review-testplan` (test-harness-specific reviewers)
 - **qa/** — scenario-level critique (bug triage, validation)
 
@@ -74,16 +73,16 @@ The `review-pr` workflow uses `pr-review`, `pr-batch`, and `pr-posting` for PR-s
 - [references/adversarial.md](references/adversarial.md)
 - [../testing/references/review-tests.md](../testing/references/review-tests.md)
 - [../testing/references/review-testplan.md](../testing/references/review-testplan.md)
-- [../plan-review/references/architecture.md](../plan-review/references/architecture.md)
-- [../plan-review/references/frontend.md](../plan-review/references/frontend.md)
-- [../plan-review/references/backend.md](../plan-review/references/backend.md)
+- [references/architecture.md](references/architecture.md)
+- [references/frontend.md](references/frontend.md)
+- [references/backend.md](references/backend.md)
 
 Those lanes grade shipped code, so they read `rules/code-review.md` and
 `rules/severity.md` before scoring. The lens files that carry code-review tags
-name both themselves; the two plan-review lenses above are reused here on code
-rather than on a plan, so this boundary supplies the calibration they would
-otherwise lack. Naming it in this span rather than in Required Context above
-keeps it out of the non-code-review routes that also carry this umbrella.
+name both themselves; the three dual-purpose lenses above are reused here on
+code rather than on a plan, so this boundary supplies the calibration they
+would otherwise lack. Naming it in this span rather than in Required Context
+above keeps it out of the non-code-review routes that also carry this umbrella.
 
 Code-judo is not in that fan-out: it dispatches at the `review.code-judo`
 boundary, which carries its own contract closure.

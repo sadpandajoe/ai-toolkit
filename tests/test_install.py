@@ -87,6 +87,8 @@ def test_desired_targets_includes_all_worker_agents(tmp_path: Path):
         "claude-agent:test-worker",
         "claude-agent:implementation-worker",
         "claude-agent:planner",
+        "claude-agent:review-worker",
+        "claude-agent:deep-review-worker",
     }
 
 

@@ -51,11 +51,11 @@ Those three phrases, plus `max`/`ultra` effort, are the *only* things that set `
 | Deep quality | Refactor-shaped diff (see step 3a) OR any STANDARD-tier diff OR the tier's `deep-review` route is otherwise empty (step 3c); always under deep-tier escalation or a bare "deep quality" lens ask. Strict structural findings on the `deep-review` route. | `review/references/deep-quality.md` |
 | Code-judo | Deep-tier escalation OR title matches `^refactor` OR an explicit Code-judo ask. Generative restructuring proposal — routes to `deep-review` (see review SKILL Invocation). A `^refactor` title auto-fires; the refactor **shape signal alone** (step 3a, no `^refactor` title) is **advisory** — recommend it, do not auto-fire. | `review/references/code-judo.md` |
 | Adversarial | Security-sensitive diff (step 4) OR an explicit `--adversarial` / red-team ask. Severity-tagged findings on the `deep-review` route. | `review/references/adversarial.md` |
-| Architecture | STANDARD + logic changes in source files; MODERATE only when ownership/design placement is unclear | `plan-review/references/architecture.md` |
+| Architecture | STANDARD + logic changes in source files; MODERATE only when ownership/design placement is unclear | `review/references/architecture.md` |
 | Tests | MODERATE or STANDARD + test files exist in diff OR test files exist for changed source files | `testing/references/review-tests.md` |
 | Test plan | MODERATE or STANDARD + behavior changed AND no test files exist in diff AND no test files found for changed source files | `testing/references/review-testplan.md` |
-| Frontend | MODERATE or STANDARD + frontend files changed | `plan-review/references/frontend.md` |
-| Backend | MODERATE or STANDARD + backend files changed | `plan-review/references/backend.md` |
+| Frontend | MODERATE or STANDARD + frontend files changed | `review/references/frontend.md` |
+| Backend | MODERATE or STANDARD + backend files changed | `review/references/backend.md` |
 
 **3a. Detect refactor shape** (feeds the Deep quality and Code-judo rows). Compute from the diff and title:
 - **Title signal**: change title / commit subject matches `^refactor` (conventional-commit prefix) or contains "restructure", "extract", "decompose", "clean up".

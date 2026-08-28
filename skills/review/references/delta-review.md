@@ -1,6 +1,6 @@
 ---
 name: delta-review
-description: Run one additional triggered-risk deep review pass when a diff carries a security-sensitive surface, a deep-tier escalation phrase, or an explicit caller request beyond sol-review's baseline pass. Internal helper, escalated to from sol-review.md -- never runs standalone as the only review. Do NOT use for the baseline single-pass review (sol-review's job) or for plan-level review (skills/plan-review's own reviewers).
+description: Run one additional triggered-risk deep review pass when a diff carries a security-sensitive surface, a deep-tier escalation phrase, or an explicit caller request beyond sol-review's baseline pass. Internal helper, escalated to from sol-review.md -- never runs standalone as the only review. Do NOT use for the baseline single-pass review (sol-review's job) or for plan-level review (skills/workflows/references/review-plan.md's own dispatch).
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -48,8 +48,11 @@ Same scope, author identity, and acceptance criteria as the triggering
 ### 1. Dispatch the triggered-risk pass
 
 <!-- aitk-model-route:review.delta-review -->
-Dispatch the Codex `reviewer` contract (`agents/codex/reviewer.md`) again,
-this time applying `adversarial.md`'s red-team posture
+Dispatch the `deep-review` route's reviewer worker again — the native
+`deep-review-worker` (`agents/claude/deep-review-worker.md`) when that
+boundary's `routed_subagent` binding is `native`, otherwise the Codex
+`reviewer` contract (`agents/codex/reviewer.md`) — this time applying
+`adversarial.md`'s red-team posture
 (`skills/review/references/adversarial.md`) whenever the trigger was
 security-sensitivity — construct a concrete triggering scenario per finding,
 not abstract "could be fragile" reasoning, exactly as that file's Posture

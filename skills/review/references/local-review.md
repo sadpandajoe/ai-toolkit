@@ -127,9 +127,9 @@ Use triggered references from `classify-diff.md`, including:
 - [adversarial.md](adversarial.md) — red-team findings on `deep-review`; fires on security sensitivity or an explicit ask
 - [../../testing/references/review-tests.md](../../testing/references/review-tests.md)
 - [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md)
-- [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
-- [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md)
-- [../../plan-review/references/backend.md](../../plan-review/references/backend.md)
+- [architecture.md](architecture.md)
+- [frontend.md](frontend.md)
+- [backend.md](backend.md)
 
 `classify-diff` reports a **Deep-tier escalation** field for this fan-out: on
 **YES**, route every triggered lens through `deep-review` instead of its default
@@ -181,7 +181,7 @@ Skip the final pass only when **all** fix-queue items were: pure deletions, one-
 <!-- aitk-model-route:review.local-final-pass -->
 Use fresh reviewer subagents on `deep-review` for the final pass — never the ones who reviewed the original diff. Its scope is `base..HEAD` of the integrated branch, not the fix-queue commits in isolation. If the final pass surfaces majors, treat them as a new review round and iterate.
 
-The pass runs the findings lenses the integrated diff still triggers, so it fans out over the same menu as the primary lanes — at minimum [code-quality.md](code-quality.md), plus [deep-quality.md](deep-quality.md) when the fix queue changed structure, and any of [adversarial.md](adversarial.md), [../../testing/references/review-tests.md](../../testing/references/review-tests.md), [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md), [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md), [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md), or [../../plan-review/references/backend.md](../../plan-review/references/backend.md) that the integrated diff still triggers. Naming the full menu here is what lets those lanes dispatch at all: a lens this span omits cannot be selected, however clearly the classifier triggered it.
+The pass runs the findings lenses the integrated diff still triggers, so it fans out over the same menu as the primary lanes — at minimum [code-quality.md](code-quality.md), plus [deep-quality.md](deep-quality.md) when the fix queue changed structure, and any of [adversarial.md](adversarial.md), [../../testing/references/review-tests.md](../../testing/references/review-tests.md), [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md), [architecture.md](architecture.md), [frontend.md](frontend.md), or [backend.md](backend.md) that the integrated diff still triggers. Naming the full menu here is what lets those lanes dispatch at all: a lens this span omits cannot be selected, however clearly the classifier triggered it.
 
 ### Resolved-State Audit
 

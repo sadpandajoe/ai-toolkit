@@ -53,7 +53,14 @@ def test_claude_fresh_subagent_and_independent_review_stay_on_fallback():
 def test_claude_provider_doc_describes_native_dispatch_by_name():
     text = (REPO_ROOT / "config/providers/claude.md").read_text()
     assert "Task-tool" in text
-    for worker in ("implementation-worker", "debug-worker", "test-worker", "planner"):
+    for worker in (
+        "implementation-worker",
+        "debug-worker",
+        "test-worker",
+        "planner",
+        "review-worker",
+        "deep-review-worker",
+    ):
         assert worker in text
     assert "model-run --provider claude" in text
 

@@ -33,7 +33,7 @@ A QA scenario list feeds testing; testing implements the suite that protects tho
 <!-- aitk-model-route:testing.test-authoring -->
 - `create-tests` / `update-tests` — orchestrator spawns an `implementation` subagent with handoff back for `review-code`
 - `review-tests` — reviewer subagent dispatched by `review-code` when tests exist in the diff
-- `review-testplan` — reviewer subagent dispatched by `planning/references/iterate-review.md` when reviewing a plan's test strategy
+- `review-testplan` — reviewer subagent dispatched by `workflows/references/review-plan.md` (or `plan-phase.md`'s six-state gate for `MULTI_PHASE`) when reviewing a plan's test strategy
 
 ## Notes
 

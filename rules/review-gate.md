@@ -2,7 +2,7 @@
 
 Output contract for `review-code` and any workflow that invokes it. This defines the block format — it does not override how review findings are produced.
 
-Superseded, for `rules/gates.md`'s listed migrated citers only, by its six-state gate contract. For every other caller — including `skills/plan-review`, `skills/planning`, and `skills/testing`'s review helpers — this rule remains authoritative indefinitely; see `rules/gates.md`'s "Permanently out of scope" note.
+Superseded, for `rules/gates.md`'s listed migrated citers only, by its six-state gate contract. For every other caller — including the plan-domain reviewers (`skills/review/references/{architecture,frontend,backend}.md` plus `agents/codex/plan-validator.md`), `skills/planning`, and `skills/testing`'s review helpers — this rule remains authoritative indefinitely; see `rules/gates.md`'s "Permanently out of scope" note.
 
 ## Block Format
 

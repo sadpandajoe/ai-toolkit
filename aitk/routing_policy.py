@@ -145,7 +145,7 @@ DOMAIN_FINDING_PATTERNS = {
 #
 # So is a heading marker, and here that is not a hypothetical: every plan lens
 # prints its score as `### Score: X/10` under a `## <Lens> Review` heading --
-# see `skills/plan-review/references/architecture.md`. Accepting only the
+# see `skills/review/references/architecture.md`. Accepting only the
 # unheaded form rejected the exact template the worker was handed, which teaches
 # the next one to deviate from its contract rather than to score. The list form
 # rides along for the same reason `_severity_pattern` allows it -- no lens
@@ -224,7 +224,7 @@ SUMMARY_FORMS: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
 # it just costs an edit here, where every boundary's exposure is visible at once.
 LENS_ROUTE_FLOORS: dict[str, tuple[str, ...]] = {
     "skills/review/references/adversarial.md": ("deep-review",),
-    "skills/plan-review/references/architecture.md": ("deep-review",),
+    "skills/review/references/architecture.md": ("deep-review",),
 }
 
 
@@ -235,15 +235,14 @@ LENS_DOMAIN_FLOORS: dict[str, tuple[str, ...]] = {
         "skills/review/references/adversarial.md",
         "skills/testing/references/review-tests.md",
         "skills/testing/references/review-testplan.md",
-        "skills/plan-review/references/architecture.md",
-        "skills/plan-review/references/frontend.md",
-        "skills/plan-review/references/backend.md",
+        "skills/review/references/architecture.md",
+        "skills/review/references/frontend.md",
+        "skills/review/references/backend.md",
     ),
     "plan": (
-        "skills/plan-review/references/architecture.md",
-        "skills/plan-review/references/implementation.md",
-        "skills/plan-review/references/frontend.md",
-        "skills/plan-review/references/backend.md",
+        "skills/review/references/architecture.md",
+        "skills/review/references/frontend.md",
+        "skills/review/references/backend.md",
         "skills/testing/references/review-testplan.md",
     ),
 }

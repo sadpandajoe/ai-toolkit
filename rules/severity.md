@@ -14,7 +14,7 @@ Action tags for iterative review/fix loops (`review-code`, `review-pr`, `review/
 
 ## Plan Review Severity
 
-Impact labels for plan and design review findings (`plan-review/references/architecture.md`, `plan-review/references/implementation.md`, etc.):
+Impact labels for plan and design review findings (`review/references/architecture.md`, `agents/codex/plan-validator.md`'s implementation-feasibility lens, etc.):
 
 | Tag | Meaning | When to use |
 |-----|---------|-------------|

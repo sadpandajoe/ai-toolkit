@@ -8,8 +8,7 @@ tier: Heavy
 
 ## Required Context
 
-Read before starting: `rules/code-review.md`, `rules/severity.md`,
-`rules/scoring.md`, `rules/stop-rules.md`.
+Read before starting: `rules/code-review.md`, `rules/severity.md`.
 Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 
 ## Goal
@@ -96,8 +95,6 @@ Rate the overall adversarial assessment:
 | **Adequate** (6-8) | Minor gaps but no critical vulnerabilities. Some edge cases unhandled. |
 | **Vulnerable** (3-5) | One or more exploitable issues. Missing validation at boundaries. |
 | **Critical** (1-2) | Security vulnerabilities or data integrity risks that must be fixed before merge. |
-
-When consumed by commands that aggregate numeric scores, use the numeric equivalent (1-10) alongside the tier name. See `rules/scoring.md` for the universal scale.
 
 ## Rules
 

@@ -67,4 +67,4 @@ For each failure, end with this block:
 
 For **Pre-existing / not-our-failure** classifications, set `Proposed Fix: N/A` and `Verification: N/A`. The calling workflow handles the early-exit path.
 
-Use `action-gate/` after producing this output to decide whether to proceed automatically. The calling workflow may also use this output for a complexity gate evaluation.
+Use `rules/gates.md`'s Gate block after producing this output to decide whether to proceed automatically. The calling workflow may also use this output for a complexity gate evaluation.

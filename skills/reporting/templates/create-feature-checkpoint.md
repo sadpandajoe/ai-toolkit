@@ -5,7 +5,7 @@ The deterministic checkpoint API owns the machine block in
 following human-readable phase below it:
 
 ```markdown
-- Phase: input / complexity-gate / plan-mode / plan-md-write / review-iterations / action-gate / implement-and-review / summarize
+- Phase: input / complexity-gate / plan-mode / plan-md-write / review-iterations / gate / implement-and-review / summarize
 ```
 
 No additional workflow fields beyond the phase enum are required.

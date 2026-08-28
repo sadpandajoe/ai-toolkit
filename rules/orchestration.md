@@ -77,7 +77,7 @@ When a workflow may process many units, inspect large logs, or run across multip
 - **Subagents own bounded expensive context**: each receives only the unit, wave, or lane it needs plus the output contract.
 - **Subagents return compact handoffs**: status, evidence summary, blockers, verification, residual risk, and next-action implications. Do not return full logs or diffs unless blocked.
 - **The main thread updates durable state after every unit or wave** before starting the next one.
-- **Checkpoint between waves/phases** per `rules/context-management.md`. For STANDARD or expensive work, phase resets are proactive: apply `context_reset` after durable artifacts are updated, not only when context or cost is near a limit.
+- **Checkpoint between waves/phases** per `rules/context-management.md`. Isolation comes from dispatching each wave/phase to its own subagent, not from an explicit reset the orchestrator triggers — checkpoint after durable artifacts are updated, on every boundary, not only when context or cost looks close to a limit.
 
 Use workflow-specific manifests when the work has a natural table of units, for
 example large cherry-pick trains, multi-failure CI fixes, or batch PR reviews.
@@ -100,8 +100,8 @@ Workers load their own domain rules; public workflow references should not
 eagerly import rules used only by workers.
 
 - **Main thread imports**: rules the main thread directly evaluates (complexity gate, input routing, orchestration, planning)
-- **Subagent reads**: domain rules the subagent applies (code-review, testing, implementation, investigation, review-gate, stop-rules, shortcut-api)
-- **Skill files reference rules by path**: e.g., "Read and apply `rules/review-gate.md`"
+- **Subagent reads**: domain rules the subagent applies (code-review, testing, implementation, investigation, gates, shortcut-api)
+- **Skill files reference rules by path**: e.g., "Read and apply `rules/gates.md`"
 - **Workflows tell workers which files to read**: resolve the rule through the
   manifest/root mapping and include its content or stable path in the bounded handoff
 

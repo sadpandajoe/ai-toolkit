@@ -46,7 +46,7 @@ Emit the Complexity Gate block per `rules/complexity-gate.md`.
 least STANDARD before this table is read — size signals can raise that floor but
 never lower it.
 
-Trivial + confidence 8/10+: code quality review only, unless impact assessment escalates. Moderate: triggered reviewer lanes only, with no premise deep-dive unless impact or uncertainty escalates. Standard: premise validation plus full triggered team.
+Trivial + certainty `Clear`: code quality review only, unless impact assessment escalates. Moderate: triggered reviewer lanes only, with no premise deep-dive unless impact or uncertainty escalates. Standard: premise validation plus full triggered team.
 
 ## Assess Impact and Premise
 
@@ -97,9 +97,9 @@ Moderate:
   [adversarial.md](adversarial.md),
   [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
   [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
-  [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md),
-  [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md),
-  [../../plan-review/references/backend.md](../../plan-review/references/backend.md).
+  [architecture.md](architecture.md),
+  [frontend.md](frontend.md),
+  [backend.md](backend.md).
   Code-judo is not one of them — it dispatches at its own boundary below.
 - Keep the main thread compact: collect findings, recommendation, confidence, and any premise uncertainty.
 - Escalate to Standard only when reviewers find cross-cutting risk, unclear ownership, or security-sensitive behavior.
@@ -114,9 +114,9 @@ Standard:
   [adversarial.md](adversarial.md),
   [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
   [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
-  [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md),
-  [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md),
-  [../../plan-review/references/backend.md](../../plan-review/references/backend.md).
+  [architecture.md](architecture.md),
+  [frontend.md](frontend.md),
+  [backend.md](backend.md).
   Code-judo is not one of them — it dispatches at its own boundary below.
 - Use `review` for bounded PR lanes and `deep-review` for architecture,
   security-sensitive, adversarial, or substantial multi-system lanes.
