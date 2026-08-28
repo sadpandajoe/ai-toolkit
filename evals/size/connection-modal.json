@@ -1,0 +1,5 @@
+{
+  "name": "connection-modal",
+  "scenario": "Add a modal dialog to configure a new database connection: a form with host/port/credentials fields, client-side validation, and a single API call to test-and-save the connection.",
+  "expect_size": "M"
+}

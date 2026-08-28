@@ -1,0 +1,6 @@
+{
+  "name": "replan-escalates",
+  "scenario": "Codex plan-validator finds that a decomposition's premise contradicts an accepted invariant from an earlier phase, after one revision attempt already failed to resolve it.",
+  "review_verdict": "REPLAN",
+  "expect_gate_state": "ESCALATE"
+}

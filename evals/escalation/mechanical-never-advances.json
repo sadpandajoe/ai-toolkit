@@ -1,0 +1,10 @@
+{
+  "name": "mechanical-never-advances",
+  "gate": "create-feature-verify",
+  "reason": "CI runner network blip",
+  "skill": "create-feature",
+  "kind": "mechanical",
+  "previous_count": 3,
+  "expect_state": "RETRY",
+  "expect_count": 3
+}

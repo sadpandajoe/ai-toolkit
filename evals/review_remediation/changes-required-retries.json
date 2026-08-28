@@ -1,0 +1,6 @@
+{
+  "name": "changes-required-retries",
+  "scenario": "Codex plan-validator finds a concrete, fixable gap in a phase plan: a missing rollback step for a schema migration.",
+  "review_verdict": "CHANGES REQUIRED",
+  "expect_gate_state": "RETRY"
+}

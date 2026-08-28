@@ -1,0 +1,7 @@
+{
+  "name": "dashboard-editor",
+  "scenario": "Build a new dashboard editor: drag-and-drop chart layout, live data binding per chart, undo/redo history, cross-component state sync between the layout grid and a chart-config side panel, and persistence of the layout schema.",
+  "signal_summary": "Multiple independently verifiable subsystems (layout engine, data binding, undo/redo, persistence) with real dependency ordering between them and enough surface that one shot planning would be unreliable.",
+  "expect_reason": "Distinct architectural boundaries each need their own verification before the next is planned in detail — a single phase or wave can't safely cover all of it.",
+  "expect_execution_shape": "MULTI_PHASE"
+}

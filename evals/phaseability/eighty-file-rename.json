@@ -1,0 +1,7 @@
+{
+  "name": "eighty-file-rename",
+  "scenario": "Rename a widely-used utility function across the codebase: update its definition and every one of its roughly 80 call sites across unrelated modules, with no behavior change and no design decision at any site.",
+  "signal_summary": "High file count but every site applies the identical mechanical edit with no design decision and no dependency between sites.",
+  "expect_reason": "Repetitive, uniform, mechanical edits with no cross-site dependency fit waves of batched work, not architectural phases.",
+  "expect_execution_shape": "BATCHED"
+}

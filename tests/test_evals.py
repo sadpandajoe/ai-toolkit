@@ -93,6 +93,15 @@ def test_cli_evals_run_reports_no_fixtures_when_family_dir_absent(
     assert "no fixtures found" in capsys.readouterr().out
 
 
+def test_cli_evals_run_live_refuses_unconditionally(tmp_path: Path, capsys):
+    exit_code = main(["evals-run", "--family", "complexity", "--live", "--root", str(tmp_path)])
+
+    err = capsys.readouterr().err
+    assert exit_code == 1
+    assert "not implemented" in err
+    assert "dispatch boundary" in err
+
+
 def test_cli_evals_run_aggregates_pass_and_fail(tmp_path: Path, capsys, monkeypatch):
     family_dir = tmp_path / "evals" / "demo"
     family_dir.mkdir(parents=True)

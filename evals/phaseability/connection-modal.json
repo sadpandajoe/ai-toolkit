@@ -1,0 +1,7 @@
+{
+  "name": "connection-modal",
+  "scenario": "Add a modal dialog to configure a new database connection: a form with host/port/credentials fields, client-side validation, and a single API call to test-and-save the connection.",
+  "signal_summary": "One new component, one new endpoint call, no cross-module coupling, no step depends on another unit's completion.",
+  "expect_reason": "Small, self-contained surface with no independent verification boundaries — a single phase covers the whole change.",
+  "expect_execution_shape": "SINGLE_PHASE"
+}

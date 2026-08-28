@@ -61,7 +61,7 @@ if [[ $MATCH -eq 0 ]]; then
 fi
 
 cat <<'EOF'
-{"systemMessage": "You just edited an AI Toolkit setup file. Load the agent-setup-maintainer skill and apply its principles: shared skills are canonical, descriptions are classifiers, rules stay short, adapters contain no workflow logic, and edits stay surgical."}
+{"systemMessage": "You just edited an AI Toolkit setup file. Load the agent-setup-maintainer skill and apply its principles: shared skills are canonical, descriptions are classifiers, rules stay short, adapters contain no workflow logic, and edits stay surgical. If this correction is cross-cutting (spans more than one skill or rule, with no single existing owner), it belongs in rules/cross-cutting.md via the reflection skill's proposal flow, not folded into an unrelated file."}
 EOF
 
 exit 0

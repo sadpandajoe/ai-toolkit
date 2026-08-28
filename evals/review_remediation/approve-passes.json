@@ -1,0 +1,6 @@
+{
+  "name": "approve-passes",
+  "scenario": "Codex plan-validator reviews an architecture decomposition and finds no blocking issues.",
+  "review_verdict": "APPROVE",
+  "expect_gate_state": "PASS"
+}

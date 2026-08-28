@@ -1,0 +1,6 @@
+{
+  "name": "replan-reclassifies",
+  "scenario": "Codex plan-validator finds that a disproven assumption invalidates the phase plan's premise on first review, before any revision has been attempted.",
+  "review_verdict": "REPLAN",
+  "expect_gate_state": "RECLASSIFY"
+}

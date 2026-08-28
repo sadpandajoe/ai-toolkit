@@ -1,0 +1,7 @@
+{
+  "name": "permission-toggle",
+  "scenario": "Add a single boolean permission toggle to the admin settings page for the whole tenant, gating one security-sensitive code path with no existing analogous toggle to model it after.",
+  "signal_summary": "Small surface area (one flag, one gated path) but a novel security-sensitive decision with no prior pattern to copy.",
+  "expect_reason": "Small enough to stay a single phase, but the lack of a precedent means it stays COMPLEX rather than dropping to STANDARD — size and complexity are orthogonal here.",
+  "expect_execution_shape": "SINGLE_PHASE"
+}

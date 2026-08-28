@@ -1,0 +1,10 @@
+{
+  "name": "mechanical-first-failure",
+  "gate": "create-feature-verify",
+  "reason": "flaky integration test timed out",
+  "skill": "create-feature",
+  "kind": "mechanical",
+  "previous_count": 0,
+  "expect_state": "RETRY",
+  "expect_count": 0
+}

@@ -1,0 +1,10 @@
+{
+  "name": "reasoning-first-failure-retries",
+  "gate": "fix-bug-verify",
+  "reason": "root cause misdiagnosed",
+  "skill": "fix-bug",
+  "kind": "reasoning",
+  "previous_count": 0,
+  "expect_state": "RETRY",
+  "expect_count": 1
+}

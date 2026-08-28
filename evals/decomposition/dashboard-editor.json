@@ -1,0 +1,30 @@
+{
+  "name": "dashboard-editor",
+  "scenario": "Build a new dashboard editor: drag-and-drop chart layout, live data binding per chart, undo/redo history, cross-component state sync between the layout grid and a chart-config side panel, and persistence of the layout schema.",
+  "boundaries": [
+    "Layout grid: drag-and-drop placement and resize",
+    "Chart-config side panel and its state sync with the grid",
+    "Live data binding per chart",
+    "Undo/redo history",
+    "Layout schema persistence"
+  ],
+  "dependencies": [
+    "Layout grid must land before chart-config side panel sync",
+    "Layout schema persistence depends on a stable layout grid data model",
+    "Undo/redo depends on both the grid and the config panel emitting a shared change event"
+  ],
+  "invariants": [
+    "The layout grid's in-memory model is the single source of truth chart-config and persistence both read from",
+    "Undo/redo never bypasses the same state-change path the UI uses"
+  ],
+  "risks": [
+    "If the grid's data model changes shape after persistence lands, the schema migration could force re-decomposition"
+  ],
+  "phase_exit_goals": [
+    "Grid: user can place and resize charts and see the change reflected in state",
+    "Config panel: editing a chart's config in the panel updates the grid live",
+    "Data binding: a chart renders live data end to end",
+    "Undo/redo: any single grid or panel change can be undone and redone",
+    "Persistence: a saved layout reloads to an identical state"
+  ]
+}

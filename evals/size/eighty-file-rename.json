@@ -1,0 +1,5 @@
+{
+  "name": "eighty-file-rename",
+  "scenario": "Rename a widely-used utility function across the codebase: update its definition and every one of its roughly 80 call sites across unrelated modules, with no behavior change and no design decision at any site.",
+  "expect_size": "XL"
+}

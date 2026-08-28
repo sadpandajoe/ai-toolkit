@@ -27,6 +27,13 @@ from .checkpoint import (
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
 from .doctor import run_doctor
 from .evals import EvalError, load_fixtures, run_fixture
+from .evals_complexity import make_checker as _make_complexity_checker
+from .evals_decomposition import make_checker as _make_decomposition_checker
+from .evals_escalation import make_checker as _make_escalation_checker
+from .evals_execution_shape import make_checker as _make_execution_shape_checker
+from .evals_phaseability import make_checker as _make_phaseability_checker
+from .evals_review_remediation import make_checker as _make_review_remediation_checker
+from .evals_size import make_checker as _make_size_checker
 from .evals_skill_routing import make_checker as _make_skill_routing_checker
 from .installer import install, resolve_paths, rollback, uninstall
 from .model_routing import (
@@ -60,7 +67,30 @@ from .workflows import load_workflows
 # descriptions, rule files) to catch drift, not just the fixture dict.
 EVAL_CHECKERS: dict[str, Callable[[Path], Callable[[dict], tuple[bool, str]]]] = {
     "skill_routing": _make_skill_routing_checker,
+    "escalation": _make_escalation_checker,
+    "complexity": _make_complexity_checker,
+    "size": _make_size_checker,
+    "execution_shape": _make_execution_shape_checker,
+    "phaseability": _make_phaseability_checker,
+    "decomposition": _make_decomposition_checker,
+    "review_remediation": _make_review_remediation_checker,
 }
+
+# `aitk evals-run --live` mode (PLAN.md's C4): a model-in-the-loop runner using
+# the routed Sonnet transport, for families whose correctness can't be
+# verified by pure structural checks alone (see each EVAL_CHECKERS docstring).
+# Not implemented: `aitk.model_routing.run_model()`/`resolve_route()` require a
+# declared `dispatch_boundaries` entry, and `validate_dispatch_boundaries()`
+# (aitk/routing_manifest.py) only recognizes a boundary's marker inside a
+# `skills/**/*.md` or `extensions/*/skills/**/*.md` file, immediately
+# preceding dispatch prose. This CLI harness has no skill file and no
+# dispatch prose to put a marker in — registering a boundary here would mean
+# writing a fake skill file solely to satisfy the validator. There is
+# deliberately no per-family checker table for this mode: until the transport
+# grows a non-skill dispatch path (or this harness gets its own provider
+# invocation independent of interfaces/model-routing.json), no family can be
+# live-checked, so `--live` always refuses rather than offering a lookup that
+# could never be populated without first resolving the blocker.
 
 
 def _root(value: str | None) -> Path:
@@ -548,6 +578,17 @@ def _gate_state(arguments: argparse.Namespace) -> int:
 
 
 def _evals_run(arguments: argparse.Namespace) -> int:
+    if arguments.live:
+        print(
+            "aitk evals-run --live: not implemented. The routed transport requires "
+            "a declared dispatch boundary whose marker lives in a scanned "
+            "skills/**/*.md file immediately preceding dispatch prose "
+            "(aitk/routing_manifest.py's validate_dispatch_boundaries); a CLI "
+            "harness has no skill file to put one in. Run without --live for "
+            "structural mode.",
+            file=sys.stderr,
+        )
+        return 1
     checker_factory = EVAL_CHECKERS.get(arguments.family)
     if checker_factory is None:
         print(
@@ -857,6 +898,11 @@ def parser() -> argparse.ArgumentParser:
     )
     evals_run.add_argument("--family", required=True)
     evals_run.add_argument("--root", help="Toolkit repository root")
+    evals_run.add_argument(
+        "--live",
+        action="store_true",
+        help="model-in-the-loop mode using the routed Sonnet transport (structural mode is the CI default)",
+    )
     evals_run.set_defaults(handler=_evals_run)
 
     pgm = subparsers.add_parser(

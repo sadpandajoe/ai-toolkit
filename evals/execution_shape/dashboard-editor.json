@@ -1,0 +1,5 @@
+{
+  "name": "dashboard-editor",
+  "scenario": "Build a new dashboard editor: drag-and-drop chart layout, live data binding per chart, undo/redo history, cross-component state sync between the layout grid and a chart-config side panel, and persistence of the layout schema.",
+  "expect_execution_shape": "MULTI_PHASE"
+}

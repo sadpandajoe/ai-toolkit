@@ -1,0 +1,5 @@
+{
+  "name": "permission-toggle",
+  "scenario": "Add a single boolean permission toggle to the admin settings page for the whole tenant, gating one security-sensitive code path with no existing analogous toggle to model it after.",
+  "expect_execution_shape": "SINGLE_PHASE"
+}

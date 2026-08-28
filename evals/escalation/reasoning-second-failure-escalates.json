@@ -1,0 +1,10 @@
+{
+  "name": "reasoning-second-failure-escalates",
+  "gate": "fix-bug-verify",
+  "reason": "fix addressed symptom, not root cause",
+  "skill": "fix-bug",
+  "kind": "reasoning",
+  "previous_count": 1,
+  "expect_state": "ESCALATE",
+  "expect_count": 2
+}

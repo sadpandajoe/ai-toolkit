@@ -30,6 +30,11 @@ The calling workflow provides these values in its prompt:
 - `rounds` — number of review iterations (0 if no review loop)
 - `gate_decisions` — object with gate outcomes (e.g., `{complexity: "standard", action: "proceed", review: "clean"}`)
 - `worker_usage` — object counting subagent/worker usage by runtime-specific effort or model when available
+- `total_tokens` — total input+output+cache tokens spent across every model/route call this run made, summed across all reasoning tiers (`rules/model-assignment.md`'s §17 efficiency measure)
+- `premium_tokens` — the subset of `total_tokens` spent on a premium route: any call routed to `opus` or a Codex `sol` model (per `interfaces/model-routing.json`'s `providers`), as opposed to the `sonnet` control-plane default
+- `retries` — count of this run's gate checkpoints that resolved `RETRY` or `ESCALATE` (`rules/gates.md`'s six-state contract) — the same count `gate` events let `metrics` reconstruct per-gate, offered here pre-summed per run
+- `reclassifications` — count of `rules/complexity-gate.md` reclassifications this run recorded (each paired with a `bin/aitk checkpoint record-reclassification` call)
+- `reviewer_yield` — for a run with an independent-review step (`code-review`, or any goal skill's SOL review phase): confirmed findings ÷ findings raised, as a decimal between 0 and 1 (omit for runs with no review step, or when the reviewer raised zero findings — not 0, which would misreport a review that found nothing wrong as a review that produced no signal)
 
 All fields are best-effort. If a value is unknown or not applicable, omit it rather than guessing.
 
@@ -42,7 +47,12 @@ All fields are best-effort. If a value is unknown or not applicable, omit it rat
   "status": "<outcome>",
   "rounds": <number>,
   "gate_decisions": {},
-  "worker_usage": {}
+  "worker_usage": {},
+  "total_tokens": <number>,
+  "premium_tokens": <number>,
+  "retries": <number>,
+  "reclassifications": <number>,
+  "reviewer_yield": <decimal 0-1>
 }
 ```
 
@@ -104,9 +114,45 @@ One event per model/route selection, when the provider binding makes the resolve
 - `command` — the canonical workflow identifier
 - `role` — the route's name (e.g. `implementation`, `rca`, `review`)
 - `model` — the resolved model identifier
+- `input_tokens`, `output_tokens`, `cache_tokens` — this call's token usage, when the provider binding surfaces it (omit any or all when the runtime doesn't report them — most CLI-transport calls won't); `workflow-summary`'s `total_tokens`/`premium_tokens` are the per-run sums a workflow reports regardless of whether the individual `model` events carry these fields
 
 ```json
-{"event": "model", "timestamp": "<ISO 8601>", "command": "<command-name>", "role": "<route-name>", "model": "<model-id>"}
+{"event": "model", "timestamp": "<ISO 8601>", "command": "<command-name>", "role": "<route-name>", "model": "<model-id>", "input_tokens": <number>, "output_tokens": <number>, "cache_tokens": <number>}
+```
+
+### `observation`
+
+One event per correction signal worth learning from — a moment where the
+workflow's own behavior turned out to be wrong and got fixed, not a normal
+gate failure or classification. Emitted only from an existing checkpoint
+already reached in the course of the workflow — a gate outcome
+(`rules/gates.md`), a reclassification (`bin/aitk checkpoint
+record-reclassification`), or a workflow's terminal `workflow-summary` step.
+There is no hook and no always-on observer watching for these; if none of
+those three steps notices the correction, no event is emitted for it.
+
+- `kind` — one of `user-correction` (the user explicitly redirected a wrong
+  approach), `skill-misroute` (the wrong skill/command handled the request),
+  `reclassify` (a `rules/complexity-gate.md` reclassification — pair with the
+  `record-reclassification` call at the same step), `gate-repeat` (a gate hit
+  `RETRY`/`ESCALATE` more than once for the same reason), `plan-invalidated`
+  (an accepted RCA, decomposition, or phase plan had to be thrown out),
+  `manual-workaround` (the workflow had to route around a missing or broken
+  capability by hand)
+- `skill` — the canonical skill/workflow name the observation is about
+- `phase` — the phase or step the correction happened in
+- `issue` — one line describing what went wrong
+- `suggested_change` — one line describing what should change to prevent it
+- `principle` — optional; a `rules/*.md` principle the issue relates to, when
+  identifiable
+- `status` — `OPEN` when first recorded; a follow-up event with the same
+  `ref` records `ACTIONED` or `DECLINED` once `skills/reflection` (or a
+  human) disposes of it
+- `ref` — optional; present only on an `ACTIONED`/`DECLINED` follow-up event,
+  pointing back to the originating observation (e.g. its timestamp)
+
+```json
+{"event": "observation", "timestamp": "<ISO 8601>", "kind": "<user-correction|skill-misroute|reclassify|gate-repeat|plan-invalidated|manual-workaround>", "skill": "<skill-name>", "phase": "<phase-name>", "issue": "<one line>", "suggested_change": "<one line>", "principle": "<rules/*.md pointer>", "status": "OPEN"}
 ```
 
 ## Steps
@@ -130,5 +176,6 @@ File: .ai-toolkit/metrics.jsonl
 - One line per event, strict JSON — no trailing commas, no multi-line formatting
 - The `.ai-toolkit/` directory is user-local and ignored by git
 - End-to-end workflows should reference this skill context at the very end of their summary step, after all gates have resolved
-- Mid-run event types (`gate`, `phase`, `complexity`, `model`) are optional and additive — a workflow that only ever emits `workflow-summary` is still fully compliant; they exist so per-checkpoint telemetry (gate retry/escalation rates, reclassification frequency) doesn't have to be reconstructed from a single end-of-run event
+- Mid-run event types (`gate`, `phase`, `complexity`, `model`, `observation`) are optional and additive — a workflow that only ever emits `workflow-summary` is still fully compliant; they exist so per-checkpoint telemetry (gate retry/escalation rates, reclassification frequency) doesn't have to be reconstructed from a single end-of-run event
 - The `metrics` workflow reads this file and produces aggregate summaries
+- `skills/reflection` reads `observation` and `gate` events to cluster recurring corrections into proposals — see that skill for how `OPEN` observations get disposed of
