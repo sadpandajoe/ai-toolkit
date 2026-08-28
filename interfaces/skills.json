@@ -1,7 +1,6 @@
 {
   "version": 1,
   "skills": [
-    {"name": "action-gate", "path": "skills/action-gate", "classification": "internal_support"},
     {"name": "address-feedback", "path": "skills/goals/address-feedback", "classification": "public_direct"},
     {"name": "agent-setup-maintainer", "path": "skills/agent-setup-maintainer", "classification": "public_direct"},
     {"name": "archive-project-file", "path": "skills/archive-project-file", "classification": "public_direct"},
@@ -15,7 +14,6 @@
     {"name": "implement-change", "path": "skills/implement-change", "classification": "internal_support"},
     {"name": "metrics-emit", "path": "skills/metrics-emit", "classification": "internal_support"},
     {"name": "pgm", "path": "extensions/pgm/skills/pgm", "classification": "public_router"},
-    {"name": "plan-review", "path": "skills/plan-review", "classification": "internal_support"},
     {"name": "planning", "path": "skills/planning", "classification": "internal_support"},
     {"name": "pr-watch", "path": "skills/pr-watch", "classification": "internal_support"},
     {"name": "preflight", "path": "skills/preflight", "classification": "internal_support"},
@@ -31,7 +29,6 @@
     {"name": "testing", "path": "skills/testing", "classification": "internal_support"},
     {"name": "verification-loop", "path": "skills/verification-loop", "classification": "internal_support"},
     {"name": "watch-pr", "path": "skills/goals/watch-pr", "classification": "public_direct"},
-    {"name": "workflows", "path": "skills/workflows", "classification": "public_router"},
-    {"name": "workstreams", "path": "skills/workstreams", "classification": "internal_support"}
+    {"name": "workflows", "path": "skills/workflows", "classification": "public_router"}
   ]
 }
