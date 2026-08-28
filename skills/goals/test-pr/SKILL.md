@@ -50,24 +50,38 @@ multi-scenario validation runs, which stay `run-test-plan`'s own scope.
 3. Follow `execute.md`'s procedure: run scenarios sequentially (never
    parallelize browser evidence gathering), record by default (skip only
    with `--no-record`), and capture screenshot/video evidence per scenario.
-4. Follow `report.md`'s procedure: assemble the per-scenario results table
+4. Translate the per-scenario results into a `rules/gates.md` Gate block
+   under gate name `test-pr-verify` — this skill is read-only (it does not
+   modify code), so the six states map from scenario outcomes rather than a
+   fix/retry loop: every scenario `PASS` → `PASS`; any scenario `FAIL` →
+   `BLOCKED` (a real behavior break this skill cannot itself fix); any
+   scenario `BLOCKED` on a missing prerequisite (auth, data, feature flag) or
+   unclear expected behavior → `USER_DECISION`. Emit the Gate block and its
+   `gate` telemetry event per `rules/gates.md`'s Telemetry section, then
+   continue to `report.md` regardless of state — for this skill, the
+   terminal summary in step 6 below is what surfaces `BLOCKED`/
+   `USER_DECISION` to the user, not an earlier stop.
+5. Follow `report.md`'s procedure: assemble the per-scenario results table
    and evidence paths. Stop before posting unless `--post` was passed and
    evidence paths are available.
-5. Write the PROJECT.md discipline this workflow requires before any
+6. Write the PROJECT.md discipline this workflow requires before any
    checkpoint + context_reset, and before the chat summary on every run —
    not just STANDARD/expensive ones:
    - After scenario selection (STANDARD/expensive runs only): `## Test-PR
      Scenarios`.
-   - After execution (STANDARD/expensive runs only): `## Test-PR Results`.
+   - After execution (STANDARD/expensive runs only): `## Test-PR Results`,
+     including the `test-pr-verify` Gate state.
    - Every run, at minimum: a single `## Test-PR Results — PR #[number]`
      entry at completion (see `test-pr.md`'s TRIVIAL/MODERATE template).
    - After posting: `## Test-PR Posted`.
 
-   Do not emit the chat summary until the `## PROJECT.md Updated —
-   Test-PR Results` confirmation block has been emitted — this ordering is
-   a hard requirement, not a suggestion.
-6. Emit the terminal `## Test-PR Complete` summary (PR identity, branch,
-   app URL, impact tier, results table, evidence paths, next steps).
+   None of the four leaf references write PROJECT.md themselves — this skill
+   owns every write above. Do not emit the chat summary until the
+   `## PROJECT.md Updated — Test-PR Results` confirmation block has been
+   emitted — this ordering is a hard requirement, not a suggestion.
+7. Emit the terminal `## Test-PR Complete` summary (PR identity, branch,
+   app URL, impact tier, results table, `test-pr-verify` Gate state,
+   evidence paths, next steps).
 
 ## Output
 

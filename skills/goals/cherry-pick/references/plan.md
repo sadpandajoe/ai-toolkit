@@ -1,6 +1,6 @@
 # Cherry-Pick Plan
 
-Per-cherry application strategy. Runs as a subagent — reasoning effort is set by the gate's difficulty classification (standard for trivial, heavy for non-trivial).
+Per-cherry application strategy. Runs as a subagent — reasoning effort is set by the gate's difficulty classification (standard for TRIVIAL/STANDARD, heavy for COMPLEX).
 
 ## Goal
 
@@ -28,7 +28,7 @@ Consumes investigation output and gate decision. Do not re-litigate whether the 
 - **Resolution approach per file**: adapt to target API, import path fix, trivial rename, etc.
 - **Unknown risks**: areas where investigation couldn't determine compatibility
 
-### 3. Adaptation Strategy (non-trivial only)
+### 3. Adaptation Strategy (STANDARD/COMPLEX only)
 
 - **API differences**: target-side APIs that differ, how to adapt
 - **Import/module changes**: paths or modules that need updating

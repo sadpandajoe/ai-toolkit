@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refactor"
+  short_description: "Refactor code while preserving behavior: establish invariants, restructure, verify equivalence, SOL review"
+  default_prompt: "Use $refactor to restructure this code without changing its behavior."

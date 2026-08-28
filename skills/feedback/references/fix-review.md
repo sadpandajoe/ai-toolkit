@@ -25,9 +25,25 @@ When approved fixes are independent, keep the main thread as the orchestrator:
 
 The main thread owns final review, posting, thread resolution, and user-facing summary.
 
+## Verify Fixes
+
+Before the Review Gate, verify each fix wave through
+`skills/verification-loop/SKILL.md` against gate name `address-feedback-verify`
+(evidence: the wave's test/build/lint output; `required_criteria`: the
+project's existing checks pass for the touched scope). Follow its
+RETRY/ESCALATE handling exactly — one fix attempt on `RETRY`, escalate cost
+tier per `rules/gates.md`'s autonomous ladder on `ESCALATE` — before moving to
+the Review Gate below.
+
 ## Review Gate
 
-Run `review-code` on changed files after substantive fixes. The developer emits the Review Gate block from `rules/review-gate.md`.
+Run `review-code` on changed files after substantive fixes reach
+`address-feedback-verify: PASS`. Translate its findings into a `rules/gates.md`
+Gate block via the Mapping From the Old Mechanisms section, the same
+substitution `address-feedback`'s own Steps make: `rules/review-gate.md`'s
+`Status: clean`/`micro-fix` → `PASS`; `skipped` → `PASS` with the skip reason
+in `Reason`; `blocked` → `BLOCKED`; `user decision` → `USER_DECISION`; the
+same finding recurring after a fix attempt → `ESCALATE`.
 
 For truly minimal edits, such as typo fixes or mechanical renames, review may be skipped under the review-gate skip rule. State the skip reason.
 
@@ -54,16 +70,19 @@ git push --force-with-lease
 
 Force-push only after explicit user authorization, only on the current feature branch, and only with `--force-with-lease`. Never force-push main/master or a protected branch.
 
-## Persist Fix Wave to PROJECT.md (Hard Gate Before Clear)
+## Fix Wave Record (Parent-Owned Write)
 
-After each fix wave, before checkpoint + context_reset can fire, the orchestrator must append a `## Feedback Round N` entry to PROJECT.md:
+This reference does not write PROJECT.md itself — `skills/goals/
+address-feedback/SKILL.md` appends the `## Feedback Round N` entry after
+calling this procedure. Produce these fields so the parent has everything it
+needs to write that entry before checkpoint + context_reset can fire:
 
 ```markdown
 ## Feedback Round N
 Wave: [comment ids addressed]
 Files changed: [list]
 Tests: [added/updated/none]
-Verification: [STRONG/PARTIAL/WEAK + result]
+Verification: [address-feedback-verify Gate state + result]
 Review Gate: [status]
 Residual risk: [...]
 Next: [next wave / posting / done]

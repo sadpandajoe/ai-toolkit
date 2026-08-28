@@ -88,7 +88,7 @@ shortest decisive excerpt.
 1. Run [batch sequence planning](batch-sequence.md).
 2. Dispatch after pre-flight and per-cherry gating:
    - `ALREADY_APPLIED`, `NOT_MERGED`, and `PREFLIGHT_BLOCKED` get no workers.
-   - TRIVIAL scope audits use `review`; NON-TRIVIAL audits use `deep-review`.
+   - TRIVIAL/STANDARD scope audits use `review`; COMPLEX audits use `deep-review`.
    - Every other worker uses the stable route at its inventoried dispatch
      marker; difficulty never selects an undeclared model tier.
    - Mutating workers use isolated worktrees/branches or return patch-only

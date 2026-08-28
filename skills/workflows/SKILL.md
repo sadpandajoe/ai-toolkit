@@ -52,15 +52,22 @@ place — durable-contract infrastructure, not dispatch. `create-pr`, a
 utility workflow with no goal-skill counterpart, keeps `PR` in this router's
 own frontmatter description above.
 
+`cherry-pick`, `refactor`, `release-prep`, and `watch-pr` requests match their
+respective `skills/goals/<name>/SKILL.md` directly by each one's own, more
+specific skill description, same pattern as `fix-bug` above. Their
+`interfaces/workflows.json` entries and reference files stay in place —
+durable-contract infrastructure, not dispatch.
+
 1. Read the manifest and match either the explicitly requested workflow name or
    the highest-specificity natural-language trigger. If the matched workflow is
    `fix-bug`, `create-feature`, `fix-ci`, `review-code`,
-   `review-code-adversarial`, `review-pr`, `address-feedback`, or `test-pr`,
-   stop here and dispatch to that workflow's goal skill instead — see the
-   migrated-workflow notes above for which `skills/goals/*/SKILL.md` each maps
-   to. Do not proceed to step 3 for these; their manifest entry and reference
-   file are durable-contract infrastructure, not a dispatch target, even when
-   this router is the one doing the matching.
+   `review-code-adversarial`, `review-pr`, `address-feedback`, `test-pr`,
+   `cherry-pick`, `refactor`, `release-prep`, or `watch-pr`, stop here and
+   dispatch to that workflow's goal skill instead — see the migrated-workflow
+   notes above for which `skills/goals/*/SKILL.md` each maps to. Do not
+   proceed to step 3 for these; their manifest entry and reference file are
+   durable-contract infrastructure, not a dispatch target, even when this
+   router is the one doing the matching.
 2. If no workflow matches, handle the request directly. If equally specific
    triggers name different workflows, ask for the intended workflow.
 3. Confirm the manifest owner is `workflows` and join its `reference_root` with

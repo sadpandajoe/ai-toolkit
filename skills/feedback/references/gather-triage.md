@@ -102,10 +102,12 @@ gh api --paginate repos/<owner>/<repo>/pulls/<number>/reviews
 
 ## Complexity Gate
 
-Classify scope before acting:
+Classify scope before acting, against `rules/complexity-gate.md`'s
+TRIVIAL/STANDARD/COMPLEX vocabulary — the same three tiers every other goal
+skill uses, not a feedback-specific scale:
 
-| Signal | Trivial | Moderate | Standard |
-|--------|---------|----------|----------|
+| Signal | TRIVIAL | STANDARD | COMPLEX |
+|--------|---------|----------|---------|
 | Comment count | 1-2 | 3-6, one subsystem | 7+ or several subsystems |
 | Fix type | Cosmetic, naming | Contained logic or test update | Behavioral, architectural, or cross-cutting |
 | Scope | Single file/area | Single subsystem | Cross-cutting |
@@ -113,9 +115,9 @@ Classify scope before acting:
 
 Emit the Complexity Gate block from `rules/complexity-gate.md`.
 
-Trivial plus confidence 8/10 or higher can use the quick-fix path: fix, draft the reply, summarize, and skip the full triage table. Posting is the default boundary; hold posts only under `--draft` or `--step`.
+TRIVIAL with certainty `Clear` can use the quick-fix path: fix, draft the reply, summarize, and skip the full triage table. Posting is the default boundary; hold posts only under `--draft` or `--step`.
 
-Moderate path: run the triage table, fix approved items inline or in one bounded wave, verify, then draft replies. Use full standard handling only when comments span subsystems, require user/product decisions, or need multiple fix/review waves.
+STANDARD path: run the triage table, fix approved items inline or in one bounded wave, verify, then draft replies. Use full COMPLEX handling only when comments span subsystems, require user/product decisions, or need multiple fix/review waves.
 
 ## Investigate
 
@@ -144,22 +146,24 @@ Verdicts:
 - `Skip`: style preference, out of scope, misunderstanding, or false positive.
 - `Discuss`: architecture disagreement, ambiguous requirement, or user/product trade-off.
 
-## Persist Triage to PROJECT.md (Hard Gate)
+## Feedback Triage Record (Parent-Owned Write)
 
-Before the Confirmation Gate, append a `## Feedback Triage` section to PROJECT.md containing:
+This reference does not write PROJECT.md itself — `skills/goals/
+address-feedback/SKILL.md` appends a `## Feedback Triage` section after
+calling this procedure, containing:
 
 - PR identity (number, URL, head branch)
 - The Reviewer Inventory table from earlier in this reference
 - The triage table (comment id, reviewer, verdict, reasoning, confidence)
 - Open thread IDs that need resolution
 
-This is the source of truth for resuming after `context_reset`. The triage table is the most expensive thing to reconstruct (it requires re-fetching every comment + redoing reviewer judgment), so it MUST land in PROJECT.md before any checkpoint + context_reset. STANDARD path: do not invoke checkpoint + context_reset after triage until this section exists in PROJECT.md.
+This is the source of truth for resuming after `context_reset`. The triage table is the most expensive thing to reconstruct (it requires re-fetching every comment + redoing reviewer judgment), so the parent MUST write it to PROJECT.md before any checkpoint + context_reset. STANDARD path: do not invoke checkpoint + context_reset after triage until this section exists in PROJECT.md.
 
 ## Confirmation Gate
 
-Default: no pause — emit the triage table, complete the PROJECT.md write, and proceed straight to fixes. The triage table must still appear in the final summary.
+Default: no pause — emit the triage table, let the parent complete the PROJECT.md write, and proceed straight to fixes. The triage table must still appear in the final summary.
 
-With `--step`: pause after triage and the PROJECT.md write. Ask the user to confirm, adjust verdicts, or override; do not start fixing or posting until approved.
+With `--step`: pause after triage and the parent's PROJECT.md write. Ask the user to confirm, adjust verdicts, or override; do not start fixing or posting until approved.
 
 `--draft` still runs triage and draft response work, but does not post.
 The PROJECT.md write is required on every path.

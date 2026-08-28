@@ -22,6 +22,9 @@ GOAL_SKILLS = (
     "address-feedback",
     "test-pr",
     "cherry-pick",
+    "refactor",
+    "watch-pr",
+    "release-prep",
 )
 
 

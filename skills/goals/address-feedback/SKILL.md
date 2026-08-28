@@ -18,7 +18,8 @@ rather than reimplementing them — read all three before continuing, since
 this skill's steps assume their Inputs/Procedure/Output shape:
 
 - `skills/feedback/references/gather-triage.md` — gather + triage, with its
-  own Trivial/Moderate/Standard Complexity Gate.
+  own Complexity Gate against `rules/complexity-gate.md`'s TRIVIAL/STANDARD/
+  COMPLEX vocabulary — the same tiers every other goal skill uses.
 - `skills/feedback/references/fix-review.md` — apply approved fixes, review.
 - `skills/feedback/references/reply-resolve.md` — draft/post replies,
   resolve eligible bot threads, PII scrub.
@@ -43,21 +44,26 @@ and CI failures (`skills/goals/fix-ci`).
    before any reply is drafted, and it should surprise no one that this run
    is posting under a given account.
 2. Follow `gather-triage.md`'s procedure in full: the mandatory Reviewer
-   Inventory before any triage, its own Complexity Gate
-   (Trivial/Moderate/Standard — do not re-derive a separate tier here),
-   investigation, the Triage Output table, and the hard-gate `## Feedback
-   Triage` PROJECT.md write before any checkpoint + context_reset. Do not
-   restate its dispatch steps here; this skill delegates rather than
-   reimplementing them.
+   Inventory before any triage, its own Complexity Gate (TRIVIAL/STANDARD/
+   COMPLEX — do not re-derive a separate tier here), investigation, and the
+   Triage Output table. `gather-triage.md` does not write PROJECT.md itself —
+   this skill appends the `## Feedback Triage` section it describes before
+   any checkpoint + context_reset. Do not restate its dispatch steps here;
+   this skill delegates rather than reimplementing them.
 3. Follow `fix-review.md`'s procedure in full: fix order, wave batching for
    independent fixes (reuses the existing `workflows.feedback-fix-wave`
-   dispatch boundary — do not declare a new one), commit strategy, and the
-   hard-gate `## Feedback Round N` PROJECT.md write before any
-   checkpoint + context_reset. Its Review Gate step becomes: dispatch
-   `skills/goals/code-review` against the changed files, translating
+   dispatch boundary — do not declare a new one), and commit strategy. Its
+   Verify Fixes step chains `skills/verification-loop/SKILL.md` against gate
+   name `address-feedback-verify` before its Review Gate step — follow that
+   skill's RETRY/ESCALATE handling exactly. Its Review Gate step becomes:
+   dispatch `skills/goals/code-review` against the changed files, translating
    `rules/review-gate.md`'s skip/micro-fix exceptions through
    `rules/gates.md`'s Mapping From the Old Mechanisms section — the same
    substitution `skills/goals/code-review/SKILL.md` step 2 already makes.
+   `fix-review.md` does not write PROJECT.md itself — this skill appends the
+   `## Feedback Round N` entry it describes, including the
+   `address-feedback-verify` Gate outcome, before any checkpoint +
+   context_reset.
 4. Follow `reply-resolve.md`'s procedure in full: draft replies, run the PII
    scrub over every drafted reply, top-level comment, and commit message
    before posting or pushing, then apply its Posting Rules and Resolve

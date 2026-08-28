@@ -93,10 +93,12 @@ schema in `aitk/size_axis.py`. Only proceed to per-phase planning once
 
 ## Notes
 
-- This file is dual-run alongside [iterate-review.md](iterate-review.md) and
-  [finalize.md](finalize.md) today — nothing routes `MULTI_PHASE` work here
-  yet. Neither older file is retired by this commit; the live create-feature
-  wiring lands in a later commit.
+- `skills/goals/create-feature/SKILL.md`'s Multi-Phase Path routes every
+  `MULTI_PHASE` unit through this file today — this is the live path, not a
+  dual-run alongside the older reviewer-iterate-then-cold-read loop. That
+  loop's 8/10-threshold approach now runs only for `SINGLE_PHASE`/`BATCHED`
+  callers, via `skills/workflows/references/review-plan.md` steps 2–4 (see
+  `skills/planning/SKILL.md`'s Notes).
 - Persistence for the size-axis fields this procedure reads and writes was
   added in `aitk/size_axis.py` and `PROJECT_TEMPLATE.md`'s v2 frontmatter,
   ahead of this file, since a validator has to exist before anything can be

@@ -17,9 +17,12 @@
     {"name": "pgm", "path": "extensions/pgm/skills/pgm", "classification": "public_router"},
     {"name": "plan-review", "path": "skills/plan-review", "classification": "internal_support"},
     {"name": "planning", "path": "skills/planning", "classification": "internal_support"},
+    {"name": "pr-watch", "path": "skills/pr-watch", "classification": "internal_support"},
     {"name": "preflight", "path": "skills/preflight", "classification": "internal_support"},
     {"name": "qa", "path": "skills/qa", "classification": "internal_support"},
     {"name": "reflection", "path": "skills/reflection", "classification": "public_direct"},
+    {"name": "refactor", "path": "skills/goals/refactor", "classification": "public_direct"},
+    {"name": "release-prep", "path": "skills/goals/release-prep", "classification": "public_direct"},
     {"name": "reporting", "path": "skills/reporting", "classification": "internal_support"},
     {"name": "review", "path": "skills/review", "classification": "internal_support"},
     {"name": "shortcut", "path": "skills/shortcut", "classification": "internal_support"},
@@ -27,6 +30,7 @@
     {"name": "test-pr", "path": "skills/goals/test-pr", "classification": "public_direct"},
     {"name": "testing", "path": "skills/testing", "classification": "internal_support"},
     {"name": "verification-loop", "path": "skills/verification-loop", "classification": "internal_support"},
+    {"name": "watch-pr", "path": "skills/goals/watch-pr", "classification": "public_direct"},
     {"name": "workflows", "path": "skills/workflows", "classification": "public_router"},
     {"name": "workstreams", "path": "skills/workstreams", "classification": "internal_support"}
   ]

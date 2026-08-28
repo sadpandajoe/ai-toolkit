@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Use when you want a code review of local changes (uncommitted, staged, or committed) or a PR diff — covers what review-code, review-code-adversarial, and review-pr do today. Do NOT use for plan-level review (skills/plan-review), bug fixing (skills/goals/fix-bug), CI failures (skills/goals/fix-ci), or feature work (skills/goals/create-feature) — this skill only reviews code that has already changed.
+description: Use when you want a code review of local changes (uncommitted, staged, or committed) or a PR diff — covers what review-code, review-code-adversarial, and review-pr do today. Do NOT use for plan-level review (see skills/workflows/references/review-plan.md), bug fixing (skills/goals/fix-bug), CI failures (skills/goals/fix-ci), or feature work (skills/goals/create-feature) — this skill only reviews code that has already changed.
 ---
 
 # Code Review
@@ -22,8 +22,12 @@ author identity, skip cleanly when there is nothing to review, run
 `sol-review.md`'s procedure — which escalates to `delta-review.md` on its own
 trigger conditions — and record the outcome.
 
-**Out of scope:** plan-level review, which stays `skills/plan-review`'s own
-reviewers — never dispatch this skill against a plan artifact. Also out of
+**Out of scope:** plan-level review, which stays
+`skills/workflows/references/review-plan.md`'s own dispatch (the
+`review/references/{architecture,frontend,backend}.md` lenses read in
+`lens_domain=plan` plus `agents/codex/plan-validator.md`'s
+implementation-feasibility lens) — never dispatch this skill against a plan
+artifact. Also out of
 scope: fixing what review finds beyond validating and applying
 `sol-review.md`'s own findings — a broader fix belongs to
 `skills/goals/fix-bug` or `skills/goals/fix-ci` instead.

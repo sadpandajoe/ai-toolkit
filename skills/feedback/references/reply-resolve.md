@@ -117,7 +117,7 @@ PR #[number] - [N] fixed, [N] skipped, [N] discussed
 Record metrics with:
 
 - `command`: `address-feedback`
-- `complexity`: `trivial`, `moderate`, or `standard`
+- `complexity`: `trivial`, `standard`, or `complex`
 - `status`: `clean`, `blocked`, `user-decision`, `skipped`, or `micro-fix`
 - `rounds`: review rounds if any
 - `gate_decisions`: complexity, triage, review

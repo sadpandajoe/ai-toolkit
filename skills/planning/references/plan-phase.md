@@ -109,7 +109,10 @@ caller's per-phase loop, not here.
 
 ## Notes
 
-- This file is dual-run alongside [iterate-review.md](iterate-review.md) and
-  [finalize.md](finalize.md) today, same as `decompose-work.md` — nothing
-  routes phase planning here yet. The live create-feature wiring lands in a
-  later commit.
+- `skills/goals/create-feature/SKILL.md`'s Multi-Phase Path routes every
+  phase of a `MULTI_PHASE` unit through this file today, same as
+  `decompose-work.md` — this is the live path, not a dual-run alongside the
+  older reviewer-iterate-then-cold-read loop, which now runs only for
+  `SINGLE_PHASE`/`BATCHED` callers via
+  `skills/workflows/references/review-plan.md` (see
+  `skills/planning/SKILL.md`'s Notes).

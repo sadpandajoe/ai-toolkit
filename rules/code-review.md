@@ -1,5 +1,18 @@
 # Code Review Principles
 
+## Procedure
+
+The default review shape — one independent reviewer, the implementing side
+validates each finding before fixing it, escalating to a deeper pass only
+when a risk signal triggers it — is owned by
+`skills/review/references/sol-review.md`; that file, not this one, defines
+the dispatch, validation, gate, and escalation steps. This rule owns
+calibration only: what a finding means, how severe it is, and what to ignore.
+A finding that does not hold up on inspection is dropped with a one-line
+reason, never silently fixed and never silently discarded — that check
+happens once, in `sol-review.md`'s procedure, not re-applied per calibration
+rule below.
+
 ## Core Principles
 - **DRY** — Check three forms of duplication before accepting new code:
   1. **Within the repo** — similar logic already exists? Extract if maintained together, parameterize if independent.

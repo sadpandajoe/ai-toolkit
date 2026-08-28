@@ -1,0 +1,4 @@
+interface:
+  display_name: "Watch PR"
+  short_description: "Babysit an open PR: monitor CI and review comments, route fixes and replies, escalate on real blockers"
+  default_prompt: "Use $watch-pr to babysit this open PR until it's stable or needs a human."

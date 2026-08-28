@@ -1,6 +1,6 @@
 ---
 name: finalize-plan
-description: Fresh-eyes final review of a plan for coherence, contradictions, and implementability. Cold read with no prior review history. Returns Go / No-Go with blocking issues and risks. Internal helper called by iterate-plan-review and similar.
+description: Fresh-eyes final review of a plan for coherence, contradictions, and implementability. Cold read with no prior review history. Returns Go / No-Go with blocking issues and risks. Internal helper called by `skills/workflows/references/review-plan.md` and similar.
 user-invocable: false
 disable-model-invocation: true
 tier: Heavy

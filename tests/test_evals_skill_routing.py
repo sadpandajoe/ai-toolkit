@@ -23,6 +23,9 @@ def repo_root(tmp_path: Path) -> Path:
     _write_skill(tmp_path, "address-feedback", "Use for review comments that need investigation.")
     _write_skill(tmp_path, "test-pr", "Use to manually verify a PR's behavior.")
     _write_skill(tmp_path, "cherry-pick", "Cherry-pick, backport, or apply commits.")
+    _write_skill(tmp_path, "refactor", "Refactor, restructure, simplify, clean up code.")
+    _write_skill(tmp_path, "watch-pr", "Watch, babysit, and monitor an open PR until stable.")
+    _write_skill(tmp_path, "release-prep", "Check branch, artifacts, and CI for release readiness.")
     return tmp_path
 
 

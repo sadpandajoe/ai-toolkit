@@ -30,7 +30,7 @@ Use this format at the end of every cherry-pick (single or batch). Lead with the
 
 ### Detailed Notes
 #### `<sha>` — <summary>
-- **Why non-trivial**: [conflict, rejection reason, or intervention point]
+- **Why STANDARD/COMPLEX**: [conflict, rejection reason, or intervention point]
 - **Gate decision**: [PROCEED / REJECT / FORCE-PROCEED + criteria]
 - **Adaptation details**: [What was modified and why]
 - **What was dropped**: [specific functions, files, or sub-fixes omitted]

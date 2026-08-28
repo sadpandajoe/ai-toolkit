@@ -53,22 +53,29 @@ These are warnings, not blockers.
 
 ## Difficulty Classification
 
-After the go/no-go decision, classify the change:
+After the go/no-go decision, classify the change against
+`rules/complexity-gate.md`'s three-tier vocabulary (the same
+TRIVIAL/STANDARD/COMPLEX every other goal skill uses — cherry-pick's own
+signals below select the tier, but the tier names and their downstream
+consequences, review vs deep-review, are shared, not skill-local):
 
-| Signal | Trivial | Non-Trivial |
-|--------|---------|-------------|
-| Files touched | 1–2 | 3+ |
-| Change type | Version bump, config, import fix, one-liner | Logic change, behavioral, multi-component |
-| Conflicts expected | None (clean apply likely) | Conflicts expected or detected |
-| Dependencies | No new dependencies | Adds/changes dependencies |
-| Target compatibility | APIs and modules exist and match | APIs differ, modules missing or renamed |
-| Prerequisite commits | None needed | Prerequisites identified |
+| Signal | TRIVIAL | STANDARD | COMPLEX |
+|--------|---------|----------|---------|
+| Files touched | 1–2 | 3+, one coherent change | 3+, spanning components |
+| Change type | Version bump, config, import fix, one-liner | Logic change, well-understood pattern | Behavioral, multi-component, or architectural |
+| Conflicts expected | None (clean apply likely) | Conflicts expected or detected, resolvable | Conflicts entangled with modify/delete or scope leak risk |
+| Dependencies | No new dependencies | No new dependencies | Adds/changes dependencies |
+| Target compatibility | APIs and modules exist and match | APIs and modules exist and match | APIs differ, modules missing or renamed |
+| Prerequisite commits | None needed | None needed | Prerequisites identified |
 
-Classify as **trivial** only when ALL trivial signals apply. Any single non-trivial signal makes the change **non-trivial**.
+Classify as **TRIVIAL** only when ALL trivial signals apply. Any single
+non-trivial signal makes the change at least **STANDARD**. Any Forced
+Complex Escalation trigger below makes it **COMPLEX** regardless of the
+table.
 
-## Forced Non-Trivial Escalation
+## Forced Complex Escalation
 
-Regardless of signals, classify as **non-trivial** when:
+Regardless of signals, classify as **COMPLEX** when:
 
 - `--force` is overriding a reject-category change
 - Investigation flagged modify/delete risk
@@ -82,7 +89,7 @@ Regardless of signals, classify as **non-trivial** when:
 ## Gate Decision
 
 Verdict: PROCEED / REJECT / FORCE-PROCEED / SKIP
-Difficulty: TRIVIAL / NON-TRIVIAL
+Difficulty: TRIVIAL / STANDARD / COMPLEX
 Reject Criteria Hit: [list or "none"]
 Skip Reason: [e.g. "target not affected — <commit/path> not on <target>", or "none"]
 Force Override: YES / NO
@@ -94,13 +101,13 @@ Adapt Required: YES / NO
 
 ## Worker Route Selection
 
-| Phase | Trivial | Non-Trivial |
-|-------|---------|-------------|
-| Plan | Main thread | Main thread |
-| Apply | Main thread | Main thread |
-| Adapt | skipped | Main thread |
-| Scope-leak audit | `review` | `deep-review` |
-| Correctness validation | Main thread | Main thread |
+| Phase | TRIVIAL | STANDARD | COMPLEX |
+|-------|---------|----------|---------|
+| Plan | Main thread | Main thread | Main thread |
+| Apply | Main thread | Main thread | Main thread |
+| Adapt | skipped | Main thread | Main thread |
+| Scope-leak audit | `review` | `review` | `deep-review` |
+| Correctness validation | Main thread | Main thread | Main thread |
 
 The route names above are stable. Their exact selectors and `high`/`xhigh`
 effort values come only from `interfaces/model-routing.json`.

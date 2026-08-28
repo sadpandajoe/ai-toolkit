@@ -1,0 +1,5 @@
+{
+  "name": "release-prep",
+  "phrase": "clean working tree, build/artifacts succeed, CI is green",
+  "expect_skill": "release-prep"
+}

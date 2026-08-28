@@ -1,6 +1,6 @@
 ---
 name: sol-review
-description: Run one independent SOL code review by default for a changed-code diff, then require the implementing side to validate each finding before applying it. Internal helper for local/PR/workflow review entry points. Do NOT use for plan-level review (skills/plan-review's own reviewers) or for a triggered-risk deep pass -- that is delta-review.md's job.
+description: Run one independent SOL code review by default for a changed-code diff, then require the implementing side to validate each finding before applying it. Internal helper for local/PR/workflow review entry points. Do NOT use for plan-level review (skills/workflows/references/review-plan.md's own dispatch) or for a triggered-risk deep pass -- that is delta-review.md's job.
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -17,9 +17,9 @@ multi-lane roster for the baseline case.
 Whenever code (not a plan artifact) has changed and needs review: local
 uncommitted/staged/committed changes, a PR diff, or any workflow-triggered
 review dispatch. Never for plan-level review — that stays
-`skills/plan-review`'s own reviewers. A triggered-risk deep pass beyond this
-one full review is a separate, sibling procedure, escalated to rather than
-looped here.
+`skills/workflows/references/review-plan.md`'s own dispatch. A triggered-risk
+deep pass beyond this one full review is a separate, sibling procedure,
+escalated to rather than looped here.
 
 ## Inputs
 
@@ -29,19 +29,30 @@ The caller provides:
 - **Author identity**: which worker produced the change (e.g.
   `implementation-worker`), so this procedure can assert independence
 - **Acceptance criteria**, if any, from the originating plan or issue
+- **Gate name** (optional): defaults to `review`. A caller looping this
+  procedure per slice/wave/phase (e.g. `fix-bug`'s Complex or Multi-Phase
+  Path) must pass a scoped name (`fix-bug-slice-2-review`,
+  `fix-bug-phase-<phase name>-review`) — gate history is per `(gate, phase)`
+  per `skills/verification-loop/SKILL.md`'s Notes, so reusing the bare
+  `review` name across independent units would collapse their repeat counts
+  together.
 
 ## Procedure
 
 ### 1. Dispatch one independent review
 
 <!-- aitk-model-route:review.sol-review -->
-Dispatch the Codex `reviewer` contract (`agents/codex/reviewer.md`, per
-`rules/specialist-handoff.md`) against the full scope in one pass — not a
-per-lens fan-out. Never the same identity that authored the change;
+Dispatch the `review` route's reviewer worker against the full scope in one
+pass — not a per-lens fan-out: the provider's native `review-worker`
+(`agents/claude/review-worker.md`) when the `routed_subagent` binding is
+`native` for that boundary, otherwise the Codex `reviewer` contract
+(`agents/codex/reviewer.md`), per `rules/specialist-handoff.md`. Never the
+same identity that authored the change;
 `aitk.gates.assert_independent_verification("implementation-worker",
-"codex-reviewer")` is the machine-checkable slice of that rule. Output is
-findings only (file/line/severity/one-line rationale), per `reviewer.md`'s
-own contract — no narrative.
+"review-worker")` (or `"codex-reviewer"` on the shimmed path) is the
+machine-checkable slice of that rule. Output is findings only
+(file/line/severity/one-line rationale), per the dispatched contract's own
+shape — no narrative.
 
 ### 2. Validate findings before fixing
 

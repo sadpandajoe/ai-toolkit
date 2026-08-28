@@ -152,6 +152,7 @@ def test_implementation_only_boundaries_are_untouched_by_the_codex_retarget():
         "fix-ci.test-authoring",
         "create-feature.implement",
         "create-feature.test-authoring",
+        "refactor.implement",
     }
     assert implementation_only_ids == expected
     for identifier in implementation_only_ids:

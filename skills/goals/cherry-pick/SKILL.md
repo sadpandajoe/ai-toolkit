@@ -37,7 +37,7 @@ If the workflow would cross a contract boundary, stop and ask — do not cross f
 
 Per-cherry push is the default action at step 8 — every successfully validated cherry is pushed to the target branch before the next cherry starts. `--no-push` opts out: validate locally, record `pending-authorization`, and stop before publishing. The per-cherry push boundary (step 8) and its hard-gate confirmation block still run on every cherry regardless; `--no-push` only changes whether the boundary's outcome is `pushed` or `pending-authorization`.
 
-For non-trivial or expensive cherry-picks, follow
+For STANDARD/COMPLEX or expensive cherry-picks, follow
 `rules/context-management.md`: checkpoint and apply `context_reset` after
 investigate/gate/plan is recorded, and again after apply/adapt/validate when
 push authorization and final reporting remain. Batch runs reset between waves.
@@ -75,7 +75,7 @@ Source analysis, target compatibility scan, prerequisite scan, **target-affected
 
 ### 2. Gate
 
-Decide should-we-cherry against the accept/reject matrix (see [references/gate.md](references/gate.md)), classify difficulty (TRIVIAL vs NON-TRIVIAL), and select the stable route for the post-apply scope audit.
+Decide should-we-cherry against the accept/reject matrix (see [references/gate.md](references/gate.md)), classify difficulty against `rules/complexity-gate.md`'s TRIVIAL/STANDARD/COMPLEX vocabulary, and select the stable route for the post-apply scope audit.
 
 `--force` overrides reject decisions only — it does not skip downstream phases.
 
@@ -112,11 +112,11 @@ Always `-x` to preserve source reference. For merge commits, add `-m 1`. For mod
 
 → Full escalation ladder, modify/delete handling, CHERRY_PICK_HEAD recovery: [references/apply.md](references/apply.md)
 
-### 6. Adapt (non-trivial only)
+### 6. Adapt (STANDARD/COMPLEX only)
 
 Resolve conflicts surgically. **Never** use `git checkout --theirs` or `--ours` (see gotchas.md).
 
-If a trivial change unexpectedly hits conflicts, escalate to adapt — the gate classification was wrong.
+If a TRIVIAL change unexpectedly hits conflicts, escalate to adapt — the gate classification was wrong.
 
 → Conflict classification, scope leak detection during resolution, escalation triggers: [references/adapt.md](references/adapt.md)
 
@@ -127,7 +127,7 @@ Two distinct jobs, run on different threads:
 **7a. Scope-leak audit — subagent, mandatory, every cherry, no exceptions.**
 
 <!-- aitk-model-route:cherry-pick.scope-leak-review -->
-Post-apply, spawn a subagent on `review` for trivial or `deep-review` for non-trivial changes. Its only job is leak detection. Single rule: every cherry, every time, including clean applies — clean applies are the highest-risk vector for scope leak.
+Post-apply, spawn a subagent on `review` for TRIVIAL/STANDARD or `deep-review` for COMPLEX changes. Its only job is leak detection. Single rule: every cherry, every time, including clean applies — clean applies are the highest-risk vector for scope leak.
 
 The subagent must:
 1. Resolve this skill's installed directory as `<skill-dir>`, run `<skill-dir>/scripts/scope-audit.sh <source-commit>`, and capture the literal output.
@@ -229,7 +229,7 @@ The full 13-column execution table format is in [examples/execution-table.md](ex
 
 **Record metrics**: include `metrics-emit` context with:
 - `command`: `cherry-pick`
-- `complexity`: from gate (`trivial` / `non-trivial`); use `standard` for batch
+- `complexity`: from gate (`trivial` / `standard` / `complex`); use `standard` for batch
 - `status`: aggregate result (`clean` if all Applied, `blocked` if any Blocked/Rejected requiring intervention, etc.)
 - `rounds`: total plan-review iterations across all cherries (0 if all clean)
 - `gate_decisions`: `{ verdict: PROCEED | REJECT | FORCE-PROCEED, batch_size: <N> }`

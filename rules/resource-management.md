@@ -4,6 +4,7 @@
 - [ ] **Check resources before consuming them** — Docker, test workers, builds
 - [ ] **Fit work to measured capacity** — do not use container count as a proxy
 - [ ] **Scale workers to available resources** — not to CPU count
+- [ ] **Keep subagent spawn depth shallow** — a dispatched worker does its bounded task and returns; it does not itself dispatch further workers unless the calling procedure explicitly defines that second layer
 
 ## Routing
 
@@ -14,6 +15,22 @@ Use this file as the always-on index. Load the scoped rule only when the task ne
 | Starting Docker or local app stacks | `skills/preflight/rules.md` |
 | Entering or preparing a git worktree | `skills/preflight/rules.md` |
 | Running Jest, pytest, Playwright, or similar suites | `skills/testing/rules.md` |
+
+## Subagents as a Resource
+
+A subagent spawn is a resource like Docker memory or test workers: bounded,
+and worth checking before consuming. Two guardrails specific to subagents:
+
+- **Whether to spawn at all** is `rules/orchestration.md`'s Inline-First
+  Principle — this file does not restate that decision.
+- **Spawn depth stays shallow, by default one level**: orchestrator dispatches
+  a worker; that worker completes its bounded task and returns a compact
+  result. A worker fanning out to further workers of its own multiplies cost
+  and makes failures harder to trace — the orchestrator loses visibility into
+  what the second layer did. Only go deeper when the calling procedure names
+  that second layer explicitly (e.g. a decomposition step that hands off
+  per-phase work to its own bounded dispatch) — never as an incidental choice
+  a worker makes on its own.
 
 ## Always-On Guardrails
 

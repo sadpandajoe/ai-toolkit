@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Prep"
+  short_description: "Check branch, artifact, and CI readiness for a release and report a go/no-go verdict"
+  default_prompt: "Use $release-prep to check whether this branch is ready to ship."

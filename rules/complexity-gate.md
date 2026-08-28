@@ -11,14 +11,35 @@ Always emit this block in conversation before branching:
 ```markdown
 ## Complexity Gate
 Classification: TRIVIAL / STANDARD / COMPLEX
-Confidence: X/10
+Certainty: Clear / Uncertain
 Reason: [one line]
 ```
 
+`Certainty` replaces a numeric confidence score. A scalar invited false
+precision — arguing 7 versus 8 is not a judgment the classification actually
+needs. The question that matters is binary: is there real doubt about this
+classification, yes or no?
+
+- **Clear** — the classification signals line up; no material doubt remains.
+- **Uncertain** — any real doubt about scope, root cause, or blast radius.
+  **Uncertain always reclassifies one tier up rather than forcing a fast path
+  through doubt**: `TRIVIAL` + Uncertain becomes `STANDARD`; `STANDARD` +
+  Uncertain becomes `COMPLEX`. Escalate the tier, don't lower the bar for it.
+
+## Size and Shape Gate
+
+This classification pairs with a second gate — size (`S`/`M`/`L`/`XL`) and
+the `execution_shape` it derives (`SINGLE_PHASE`/`BATCHED`/`MULTI_PHASE`),
+per `aitk/size_axis.py`. The canonical block shape, phaseability signal
+table, and derivation rules are defined once, in
+`skills/goals/create-feature/SKILL.md`'s Size Gate step — `fix-bug`,
+`fix-ci`, and `refactor` all point there rather than duplicating it. This
+rule does not restate that table; read it there.
+
 ## Trivial Fast-Path
 
-When classification is `TRIVIAL` and confidence is `8/10` or higher:
-- **Auto-proceed** — do not ask the user for confirmation before implementing; the high-confidence classification is the approval
+When classification is `TRIVIAL` and certainty is `Clear`:
+- **Auto-proceed** — do not ask the user for confirmation before implementing; the clear classification is the approval
 - Skip the formal planning phase, investigation lanes, and RCA validation
 - Go directly to implementation, verification, Review Gate emission, and summary
 - Emit Review Gate `skipped` or `micro-fix` only when `rules/review-gate.md` allows it; otherwise reclassify as STANDARD before logic review
@@ -34,7 +55,7 @@ at least COMPLEX, so it never takes this path at all.
 
 ## Standard Path
 
-When classification is `STANDARD` and confidence is `8/10` or higher:
+When classification is `STANDARD` and certainty is `Clear`:
 - Skip the formal planning phase and parallel investigation-lane subagents
 - Orchestrator scopes, investigates, or plans inline as the workflow requires
 - Still run one workflow-required review phase with at least one fresh reviewer — never review your own work. Review workflows may launch all triggered lanes for the diff; feature work usually runs code review after implementation. Run plan review only when inline design uncovered real design uncertainty.
@@ -51,28 +72,28 @@ STANDARD is the **default classification** — most real work lands here. Use TR
 
 ## Complex Path
 
-When classification is `COMPLEX` (or confidence is below `8/10` for any classification):
+When classification is `COMPLEX` (or certainty is `Uncertain` for any classification):
 - Full workflow: durable plan or investigation artifact as the command requires, reviewer subagents, and validation gates
 - Use `fresh_subagent`/`parallel_fanout` only where the workflow and
   `rules/orchestration.md` reasoning-load boundaries call for them.
-- **Emit a Phase Plan block immediately after the Complexity Gate** (see below). This announces the cadence — including planned checkpoint/context-reset boundaries — upfront, before the first phase starts.
+- **Emit a Phase Plan block immediately after the Complexity Gate** (see below). This announces the cadence — including planned checkpoint boundaries — upfront, before the first phase starts.
 
 ## Phase Plan Block (COMPLEX only)
 
-After emitting the Complexity Gate, emit a Phase Plan that names the remaining phases and where checkpoint/context-reset will fire. This makes context cadence predictable to the user instead of firing silently mid-workflow.
+After emitting the Complexity Gate, emit a Phase Plan that names the remaining phases and where checkpoints will fire. This makes the cadence predictable to the user instead of firing silently mid-workflow. Each phase is its own isolation boundary by dispatch — a worker per phase per `rules/context-management.md`'s Workers as Phase Isolation — not by an explicit clear the orchestrator has to trigger.
 
 Format:
 
 ```markdown
 ## Phase Plan
-Phases: [phase 1] → [clear] → [phase 2] → [clear] → ... → [final phase]
-Checkpoints fire after: [list of durable artifacts that trigger checkpoint + context_reset]
-Resume contract: PROJECT.md (+ manifest if any) carries state across clears.
+Phases: [phase 1] → [checkpoint] → [phase 2] → [checkpoint] → ... → [final phase]
+Checkpoints fire after: [list of durable artifacts that trigger a checkpoint]
+Resume contract: PROJECT.md (+ manifest if any) carries state across any reset — worker dispatch, provider auto-compact, or a fresh session alike.
 ```
 
 Pull the phase list from the selected workflow's COMPLEX happy path. Pull the
-checkpoint/reset list from its contract and `rules/context-management.md`
-Proactive Phase Reset Policy. This rule owns the block shape only; it must not
+checkpoint list from its contract and `rules/context-management.md`'s No
+Explicit-Reset Dependency section. This rule owns the block shape only; it must not
 copy workflow-specific phase sequences.
 
 If the user's request is genuinely too small for COMPLEX (≤2 phases after Complexity Gate), reclassify STANDARD rather than emit a degenerate Phase Plan.
@@ -85,22 +106,22 @@ Always emit the gate block above. Do not silently choose a path — the block mu
 
 ### TRIVIAL
 
-- **Typo in error message**: 1 file, no logic change, no regression risk. Confidence 10/10.
-- **Config value change**: 1-2 files, mechanical substitution, testable in isolation. Confidence 9/10.
-- **Missing import after rename**: 1 file, fix is deterministic from the error, no design decision. Confidence 9/10.
+- **Typo in error message**: 1 file, no logic change, no regression risk. Certainty: Clear.
+- **Config value change**: 1-2 files, mechanical substitution, testable in isolation. Certainty: Clear.
+- **Missing import after rename**: 1 file, fix is deterministic from the error, no design decision. Certainty: Clear.
 
 ### STANDARD
 
-- **Add a small setting to an existing panel**: 2-4 files in one UI subsystem, known pattern, contained user-visible behavior. Confidence 8/10.
-- **Extend an existing API response with tests**: handler/model/test change in one subsystem, no new contract shape beyond one field. Confidence 8/10.
-- **Add one known-pattern validation path**: existing validator and targeted tests, clear error behavior, no adjacent workflow redesign. Confidence 8/10.
+- **Add a small setting to an existing panel**: 2-4 files in one UI subsystem, known pattern, contained user-visible behavior. Certainty: Clear.
+- **Extend an existing API response with tests**: handler/model/test change in one subsystem, no new contract shape beyond one field. Certainty: Clear.
+- **Add one known-pattern validation path**: existing validator and targeted tests, clear error behavior, no adjacent workflow redesign. Certainty: Clear.
 
 ### COMPLEX
 
-- **New export flow across UI and API**: 3+ files, acceptance criteria need a durable plan, and tests/validation span layers. Confidence 7/10 until planned.
-- **Permission-sensitive bulk action**: Cross-cutting impact across UI, backend, authz, and audit paths. Confidence 6/10 until scoped.
-- **Feature flag behavior changes an existing workflow**: Multiple adjacent flows may regress; needs plan-review iteration or multiple review/fix waves and validation. Confidence 7/10.
-- **Bug fix with unclear root cause**: request flow or data path is not yet understood; needs investigation and RCA validation. Confidence 6/10 until investigated.
+- **New export flow across UI and API**: 3+ files, acceptance criteria need a durable plan, and tests/validation span layers. Certainty: Uncertain until planned.
+- **Permission-sensitive bulk action**: Cross-cutting impact across UI, backend, authz, and audit paths. Certainty: Uncertain until scoped.
+- **Feature flag behavior changes an existing workflow**: Multiple adjacent flows may regress; needs plan-review iteration or multiple review/fix waves and validation. Certainty: Uncertain.
+- **Bug fix with unclear root cause**: request flow or data path is not yet understood; needs investigation and RCA validation. Certainty: Uncertain until investigated.
 
 ## Scope
 

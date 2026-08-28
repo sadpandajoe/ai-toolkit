@@ -8,7 +8,7 @@ Validate is two distinct jobs:
 - **Correctness validation (7b)** — runs on the main thread. Build/type-check/tests fail loudly when the cherry is broken; no fresh context required.
 
 <!-- aitk-model-route:cherry-pick.validate-scope-leak -->
-**Route selection** for the scope-leak subagent: the caller spawns the subagent on `review` for trivial or `deep-review` for non-trivial changes.
+**Route selection** for the scope-leak subagent: the caller spawns the subagent on `review` for TRIVIAL/STANDARD or `deep-review` for COMPLEX changes.
 
 ## Goal
 

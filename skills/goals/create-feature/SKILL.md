@@ -7,10 +7,12 @@ description: Use when the user asks to build, add, or implement a new feature or
 
 ## Before Starting
 
-Read `rules/complexity-gate.md`, `rules/gates.md`, and
-`rules/specialist-handoff.md` first — they define the classification block,
-the fast-path rules, the six-state gate contract, and the input/output shape
-for every specialist dispatch this skill uses. For `MULTI_PHASE` work, also
+Read `rules/complexity-gate.md`, `rules/gates.md`,
+`rules/specialist-handoff.md`, and `skills/review/references/sol-review.md`
+first — they define the classification block, the fast-path rules, the
+six-state gate contract, the input/output shape for every specialist
+dispatch this skill uses, and the review procedure this skill's review step
+delegates to. For `MULTI_PHASE` work, also
 read `skills/planning/references/decompose-work.md` and `plan-phase.md`
 before starting the Multi-Phase Path below. This skill is the v2 goal-skill
 entry point for new-feature requests, across every size and execution
@@ -40,7 +42,7 @@ Notes.
    ```markdown
    ## Complexity Gate
    Classification: TRIVIAL / STANDARD / COMPLEX
-   Confidence: X/10
+   Certainty: Clear / Uncertain
    Reason: [one line]
    ```
 2. Emit a Size Gate block, classifying against `aitk/size_axis.py`'s `size`
@@ -84,15 +86,15 @@ Notes.
      fits repetitive volume regardless of reasoning difficulty).
    - `MULTI_PHASE` → follow the Multi-Phase Path below instead of steps
      3–7.
-3. If the classification from step 1 is `COMPLEX`, or confidence is below
-   `8/10` at any tier, or step 2's `execution_shape` is `BATCHED`: follow the
-   Complex Path below instead of implementing inline or using the Standard
-   Path.
-4. If `TRIVIAL` at `8/10` confidence or higher: implement the feature
+3. If the classification from step 1 is `COMPLEX`, or certainty is
+   `Uncertain` at any tier, or step 2's `execution_shape` is `BATCHED`:
+   follow the Complex Path below instead of implementing inline or using the
+   Standard Path.
+4. If `TRIVIAL` with certainty `Clear`: implement the feature
    inline, per the Trivial Fast-Path rules in `rules/complexity-gate.md` — no
    subagent spawns for the implementation itself, no formal planning phase.
    Skip to step 6.
-5. If `STANDARD` at `8/10` confidence or higher, follow the Standard Path
+5. If `STANDARD` with certainty `Clear`, follow the Standard Path
    below instead of implementing inline.
 6. For `TRIVIAL` and `STANDARD` only: verify using
    `skills/verification-loop/SKILL.md` against gate name
@@ -126,15 +128,16 @@ specialist dispatch for the survey itself.
    surface) — not on every `STANDARD` feature.
 
 <!-- aitk-model-route:create-feature.review -->
-3. After verification (step 6) reaches `PASS`, dispatch one fresh reviewer
-   via the `review` route (`rules/model-assignment.md`) against the
-   resulting diff — never the worker that implemented the feature; never
-   review your own work. Translate its findings into a `rules/gates.md` Gate
-   block using the Mapping From the Old Mechanisms section: clean or
-   micro-fix-only findings → `PASS`; a fixable finding → `RETRY`; the same
-   finding recurring after a fix attempt → `ESCALATE`; an unresolved
-   required finding with no ambiguity → `BLOCKED`; a genuine trade-off →
-   `USER_DECISION`.
+3. After verification (step 6) reaches `PASS`, dispatch a fresh reviewer
+   through `skills/review/references/sol-review.md`'s procedure in full —
+   Dispatch, Validate findings before fixing, Gate and record, Escalate only
+   when triggered — with Scope: the resulting diff, Author identity:
+   `implementation-worker` (never the worker that implemented the feature
+   reviews its own work). Do not restate its dispatch or findings-translation
+   steps here; its own Gate and record step already emits the
+   `rules/gates.md` six-state block this workflow branches on, and its own
+   step 4 escalates to `delta-review.md` when triggered — no separate
+   escalation step is needed here.
 
 4. Only proceed to step 7 (completion) once the review Gate block reaches
    `PASS`.
@@ -258,7 +261,7 @@ registers no new dispatch boundary of its own.
 ```markdown
 ## Complexity Gate
 Classification: TRIVIAL / STANDARD / COMPLEX
-Confidence: X/10
+Certainty: Clear / Uncertain
 Reason: [one line]
 ```
 followed by the Size Gate block, the Phase Plan block (`COMPLEX` or

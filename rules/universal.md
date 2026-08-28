@@ -7,13 +7,13 @@
 - **Working solution before optimization** — get it working, commit, then improve
 - **Incremental progress** — small, verified changes over big risky ones
 - **Document decisions and reasoning** — future maintainers need context
-- **TDD and YAGNI** — test first, build only what's needed now
+- **YAGNI** — build only what's needed now. Test-first is a per-workflow decision, not a universal mandate — see `rules/implementation.md`'s Test-First Modes for when a change writes tests before code versus alongside or after it.
 - **Canonical workflows own their internal loops** — planning, review, and
   validation phases continue automatically until a threshold or blocker; do not
   surface internal phases as the next user step unless explicitly requested
 - **Use durable state only for project workflows** — long-running or mutating workflows that need resume context must update PROJECT.md before finishing or crossing a checkpoint. Read-only answers, reviews, diagnostics, and utility commands must not create or modify workflow state unless the user explicitly requests a report artifact. The formal plan lives in PLAN.md when substantial planning produced one; it persists until the user explicitly cleans it up via `archive-project-file`.
 - **Write through symlinks via the resolved real path** — some provider file tools refuse to write through symlinks. When PROJECT.md, PLAN.md, or any toolkit-managed file is a symlink, resolve it (`readlink -f <path>`) and edit the real path. Reads work through symlinks unchanged.
-- **Checkpoint when context is deep** — see `rules/context-management.md` for thresholds and protocol
+- **Checkpoint at every durable-artifact boundary** — see `rules/context-management.md` for worker isolation and the save/continue protocol
 - **Rules evolve from usage** — see `rules/rule-maintenance.md` for how to strengthen, update, or extract rules
 
 ## Agent Context Model
@@ -25,7 +25,7 @@
 - **Be direct about errors** — no unnecessary apologies
 - **Show, don't tell** — include actual commands, outputs, evidence
 - **Explain reasoning** — why one approach over another
-- **Ask for clarification** — don't assume when unclear
+- **Default to autonomous execution** — make the reasonable call and continue rather than pausing to ask; a genuine blocker routes through `rules/gates.md`'s `USER_DECISION`/`BLOCKED` states, not an open-ended clarifying question asked out of caution
 - **Request confirmation** — before destructive changes
 
 ## Override Hierarchy
