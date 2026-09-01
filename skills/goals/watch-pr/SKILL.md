@@ -5,6 +5,25 @@ description: Use to watch, babysit, and monitor an open PR across CI and review 
 
 # Watch PR
 
+## Effect Boundary
+
+Effect: `external_effect`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `watch-pr` entry
+in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
+transition and effect record.
+
+## Authorization Boundary
+
+Authorization mode: `invocation`. Invoking `watch-pr` grants standing
+authorization for fast-forward commits to the PR branch and factual
+replies/resolution within the routed scope — see
+[skills/pr-watch/SKILL.md](../../pr-watch/SKILL.md)'s Authorization Boundary
+for the exact grant and its limits (no amend/rebase/force-push/merge/approve).
+
 ## Before Starting
 
 Read `rules/gates.md` (six-state gate contract), `rules/durable-workflows.md`,

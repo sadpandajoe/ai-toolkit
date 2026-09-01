@@ -47,6 +47,14 @@ def test_worker_agents_discovers_real_source_directory():
         == REPO_ROOT / "agents/claude/implementation-worker.md"
     )
     assert discovered["planner"] == REPO_ROOT / "agents/claude/planner.md"
+    assert (
+        discovered["deep-rca-worker"]
+        == REPO_ROOT / "agents/claude/deep-rca-worker.md"
+    )
+    assert (
+        discovered["operations-worker"]
+        == REPO_ROOT / "agents/claude/operations-worker.md"
+    )
 
 
 def test_worker_agents_ignores_symlinks(tmp_path: Path):
@@ -89,6 +97,8 @@ def test_desired_targets_includes_all_worker_agents(tmp_path: Path):
         "claude-agent:planner",
         "claude-agent:review-worker",
         "claude-agent:deep-review-worker",
+        "claude-agent:deep-rca-worker",
+        "claude-agent:operations-worker",
     }
 
 

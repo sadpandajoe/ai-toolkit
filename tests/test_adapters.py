@@ -60,6 +60,8 @@ def test_claude_provider_doc_describes_native_dispatch_by_name():
         "planner",
         "review-worker",
         "deep-review-worker",
+        "deep-rca-worker",
+        "operations-worker",
     ):
         assert worker in text
     assert "model-run --provider claude" in text

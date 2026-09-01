@@ -372,11 +372,12 @@ provider guidance needs a rebuild because its portable paths are resolved:
 
 - **Add a workflow**: Most new behavior is a new (or extended) goal skill, not
   a router entry — add `skills/goals/<name>/`, register it in
-  `interfaces/workflows.json` and `interfaces/contracts.json`/`skills.json`,
-  then run `bin/aitk build`. A handful of utility references (checkpoint,
-  start, metrics, create-pr) are the exception and stay under
-  `skills/workflows/references/`; see `docs/ARCHITECTURE.md`'s "Adding a
-  workflow" for the full sequence.
+  `interfaces/workflows.json` with `"reference"` pointing at that skill's
+  `SKILL.md`, and add matching entries in `interfaces/contracts.json`/
+  `skills.json`, then run `bin/aitk build`. A handful of utility references
+  (checkpoint, start, metrics, create-pr) are the exception, have no
+  `reference` override, and stay under `skills/workflows/references/`; see
+  `docs/ARCHITECTURE.md`'s "Adding a workflow" for the full sequence.
 - **Modify rules**: Edit files in `rules/`
 - **Add new rules**: Add `.md` files to `rules/`, re-run `./install.sh`
 - **Refresh adapters after edits**: Run `bin/aitk build`, then re-run `./install.sh` to refresh the

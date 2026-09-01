@@ -5,6 +5,17 @@ description: Use when you want a code review of local changes (uncommitted, stag
 
 # Code Review
 
+## Effect Boundary
+
+Effect: `git_mutation`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `review-code` and
+`review-code-adversarial` entries in `interfaces/contracts.json`; use
+`bin/aitk checkpoint` for every durable transition and effect record.
+
 ## Before Starting
 
 Read `rules/gates.md` first — it defines the six-state gate contract this
@@ -36,9 +47,8 @@ scope: fixing what review finds beyond validating and applying
 
 1. Normalize the review target:
    - **Local diff** — uncommitted, staged, or committed changes, optionally
-     scoped to specific files or paths (mirrors
-     `skills/workflows/references/review-code.md`'s `--files`/`--committed`/
-     `--uncommitted` usage patterns).
+     scoped to specific files or paths via `--files`/`--committed`/
+     `--uncommitted` flags.
    - **PR** — a PR number or URL (mirrors
      `skills/workflows/references/review-pr.md`'s scope).
 2. If the normalized target has zero changes, emit a gate block under gate
@@ -78,10 +88,14 @@ once it reaches `PASS`.
 - This skill is now the live dispatch target for natural-language "review my
   code" / "review this PR" requests — Claude Code's own skill selection
   prefers this narrower description over the general `skills/workflows`
-  router, same as `fix-bug`. The old `skills/workflows/references/
-  review-code.md`, `review-code-adversarial.md`, and `review-pr.md`, and
-  their `interfaces/workflows.json` entries, stay in place — durable-contract
-  infrastructure, not dispatch (see `fix-bug`'s Notes for why).
+  router, same as `fix-bug`. The `interfaces/workflows.json` `review-code`
+  and `review-code-adversarial` entries now point their `reference` directly
+  at this file; the standalone `skills/workflows/references/review-code.md`
+  and `review-code-adversarial.md` have been deleted. `review-pr` keeps its
+  own `skills/workflows/references/review-pr.md` reference — its contract
+  effect is `external_effect`, distinct from this file's single
+  `## Effect Boundary` declaration of `git_mutation`, so it cannot share this
+  file's marker.
 - Declares no dispatch boundaries of its own — `review.sol-review` and
   `review.delta-review`, declared when those files were added (C38/C39),
   cover every model dispatch this skill's procedure reaches.

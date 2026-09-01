@@ -261,9 +261,6 @@
     }
   ],
   "dispatch_boundaries": [
-    {"id": "workflows.create-feature-plan-review", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md", "agents/codex/plan-validator.md"]},
-    {"id": "workflows.create-feature-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
-    {"id": "workflows.fix-bug-implementation", "path": "skills/workflows/references/fix-bug.md", "count": 1, "routes": ["implementation"]},
     {"id": "fix-bug.investigate", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["rca", "deep-rca"], "contracts": ["agents/codex/rca.md"]},
     {"id": "fix-bug.implement", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["implementation"]},
     {"id": "fix-bug.test-authoring", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["implementation"]},
@@ -327,9 +324,6 @@
       "skills/review/references/frontend.md",
       "skills/review/references/backend.md"
     ]},
-    {"id": "workflows.adversarial-primary", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"], "contracts": ["skills/review/references/adversarial.md", "agents/codex/reviewer.md"]},
-    {"id": "workflows.adversarial-second-opinion", "path": "skills/workflows/references/review-code-adversarial.md", "count": 1, "routes": ["deep-review"], "contracts": ["skills/review/references/adversarial.md", "agents/codex/reviewer.md"]},
-    {"id": "workflows.review-code-fresh", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/local-review.md", "agents/codex/reviewer.md"]},
     {"id": "workflows.review-plan-fresh", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md", "agents/codex/plan-validator.md"], "lens_domain": "plan", "lenses": [
       "skills/review/references/architecture.md",
       "skills/review/references/frontend.md",
@@ -386,10 +380,6 @@
       "agents/codex/reviewer.md"
     ]},
     {"id": "testing.test-authoring", "path": "skills/testing/SKILL.md", "count": 1, "routes": ["implementation"]},
-    {"id": "workflows.feedback-fix-wave", "path": "skills/workflows/references/address-feedback.md", "count": 1, "routes": ["implementation"]},
-    {"id": "workflows.create-feature-moderate-implementation", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
-    {"id": "workflows.create-feature-moderate-handoff", "path": "skills/workflows/references/create-feature.md", "count": 1, "routes": ["implementation"]},
-    {"id": "workflows.review-code-orchestration", "path": "skills/workflows/references/review-code.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/local-review.md", "rules/review-gate.md", "agents/codex/reviewer.md"]},
     {"id": "review.sol-review", "path": "skills/review/references/sol-review.md", "count": 1, "routes": ["review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "review.delta-review", "path": "skills/review/references/delta-review.md", "count": 1, "routes": ["deep-review"], "contracts": ["agents/codex/reviewer.md", "skills/review/references/adversarial.md"]}
   ],

@@ -130,15 +130,17 @@ mechanically for any `routing-state` block written under the old vocabulary.
 
 ### Model transport
 
-Six of the nine roster roles (`planner`, `implementation-worker`,
-`debug-worker`, `test-worker`, `review-worker`, `deep-review-worker`) dispatch
-natively as Claude Code subagents under `agents/claude/`, with no
-source-linked transport. `bin/aitk model-route` / `model-run` remain the
-transport for the three Codex specialists (`agents/codex/{rca,plan-validator,
-reviewer}.md`) and for three Claude boundaries that have no native worker file
-yet: `deep-rca`, `operations`, and the review-ensemble lanes. The Claude-side
-`model-run` closure code cannot be removed until those three either go native
-or are deleted.
+Eight roster roles (`planner`, `implementation-worker`, `debug-worker`,
+`deep-rca-worker`, `test-worker`, `review-worker`, `deep-review-worker`,
+`operations-worker`) dispatch natively as Claude Code subagents under
+`agents/claude/`, with no source-linked transport. `bin/aitk model-route` /
+`model-run` remain the transport for the three Codex specialists
+(`agents/codex/{rca,plan-validator,reviewer}.md`) and for the one Claude
+boundary that still has no native worker file: the review-ensemble lanes. The
+Claude-side `model-run` closure code cannot be removed until that boundary
+either goes native or is deleted. (Until 2026-09-01 `deep-rca` and
+`operations` were also on the shim; `agents/claude/deep-rca-worker.md` and
+`operations-worker.md` closed that gap.)
 
 **Ratified 2026-08-27 (user, via AskUserQuestion): option (b), "go native."**
 The spec's original text names Codex SOL as the independent verifier for

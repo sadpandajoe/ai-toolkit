@@ -138,14 +138,9 @@ def test_implementation_only_boundaries_are_untouched_by_the_codex_retarget():
         if set(boundary["routes"]) == {"implementation"}
     }
     expected = {
-        "workflows.create-feature-implementation",
-        "workflows.fix-bug-implementation",
         "cherry-pick.headless-implementation",
         "feedback.comment-fix-groups",
         "testing.test-authoring",
-        "workflows.feedback-fix-wave",
-        "workflows.create-feature-moderate-implementation",
-        "workflows.create-feature-moderate-handoff",
         "fix-bug.implement",
         "fix-bug.test-authoring",
         "fix-ci.implement",

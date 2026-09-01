@@ -1031,8 +1031,9 @@ def validate_route_bindings(root: Path) -> list[str]:
             binding = bindings.get(capability) if isinstance(bindings, dict) else None
             if provider == "claude" and capability == "routed_subagent":
                 # Native Task-tool dispatch to agents/claude/*.md workers for the
-                # four roster roles — every other routed boundary still needs
-                # the model-run shim, documented in config/providers/claude.md.
+                # native roster roles — any routed boundary without a worker
+                # file still needs the model-run shim, documented in
+                # config/providers/claude.md.
                 if not isinstance(binding, dict) or (
                     binding.get("mode"),
                     binding.get("fallback"),

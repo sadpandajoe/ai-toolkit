@@ -18,9 +18,12 @@ class Workflow:
     owner_skill: str
     execution_class: str
     reference_root: Path = Path("skills/workflows/references")
+    explicit_reference: Path | None = None
 
     @property
     def reference(self) -> Path:
+        if self.explicit_reference is not None:
+            return self.explicit_reference
         return self.reference_root / f"{self.name}.md"
 
 
@@ -56,7 +59,7 @@ def _load_manifest(path: Path) -> list[Workflow]:
         raise ValueError(f"{path}: reference_root must stay inside the repository")
     workflows: list[Workflow] = []
     for item in payload["workflows"]:
-        expected_item = {
+        required_item = {
             "name",
             "summary",
             "arguments",
@@ -64,9 +67,13 @@ def _load_manifest(path: Path) -> list[Workflow]:
             "triggers",
             "execution_class",
         }
-        if not isinstance(item, dict) or set(item) != expected_item:
+        optional_item = {"reference"}
+        if not isinstance(item, dict) or not required_item.issubset(set(item)) or (
+            set(item) - required_item - optional_item
+        ):
             raise ValueError(
-                f"{path}: every workflow must contain exactly {sorted(expected_item)}"
+                f"{path}: every workflow must contain exactly {sorted(required_item)} "
+                f"plus optionally {sorted(optional_item)}"
             )
         name = item["name"]
         summary = item["summary"]
@@ -74,6 +81,7 @@ def _load_manifest(path: Path) -> list[Workflow]:
         rules = item["rules"]
         triggers = item["triggers"]
         execution_class = item["execution_class"]
+        reference_value = item.get("reference")
         if (
             not isinstance(name, str)
             or not isinstance(summary, str)
@@ -85,6 +93,7 @@ def _load_manifest(path: Path) -> list[Workflow]:
             or not isinstance(triggers, list)
             or not all(isinstance(trigger, str) for trigger in triggers)
             or len(triggers) != len(set(triggers))
+            or (reference_value is not None and not isinstance(reference_value, str))
         ):
             raise ValueError(
                 f"{path}: workflow fields have invalid types or duplicates"
@@ -95,6 +104,17 @@ def _load_manifest(path: Path) -> list[Workflow]:
             rule_path = Path(rule)
             if not rule or rule_path.is_absolute() or ".." in rule_path.parts:
                 raise ValueError(f"{path}: unsafe workflow rule path {rule!r}")
+        explicit_reference: Path | None = None
+        if reference_value is not None:
+            explicit_reference = Path(reference_value)
+            if (
+                not reference_value
+                or explicit_reference.is_absolute()
+                or ".." in explicit_reference.parts
+            ):
+                raise ValueError(
+                    f"{path}: unsafe workflow reference path {reference_value!r}"
+                )
         workflows.append(
             Workflow(
                 name=name,
@@ -105,6 +125,7 @@ def _load_manifest(path: Path) -> list[Workflow]:
                 owner_skill=owner_skill,
                 execution_class=execution_class,
                 reference_root=reference_root,
+                explicit_reference=explicit_reference,
             )
         )
     return workflows
@@ -146,13 +167,18 @@ def _validate_workflows(
 
     if reject_orphans and workflows:
         reference_dir = root / workflows[0].reference_root
-        references = (
-            {path.stem for path in reference_dir.glob("*.md")}
+        reference_files = (
+            {path for path in reference_dir.glob("*.md")}
             if reference_dir.is_dir()
             else set()
         )
-        for orphan in sorted(references - names):
-            problems.append(f"unregistered workflow reference: {orphan}")
+        claimed = {(root / workflow.reference).resolve() for workflow in workflows}
+        for orphan in sorted(
+            path for path in reference_files if path.resolve() not in claimed
+        ):
+            problems.append(
+                f"unregistered workflow reference: {orphan.relative_to(root).as_posix()}"
+            )
     return problems
 
 

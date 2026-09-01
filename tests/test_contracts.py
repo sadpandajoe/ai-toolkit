@@ -14,9 +14,10 @@ responsibility, domain) and proves the three files satisfy it consistently.
 import json
 from pathlib import Path
 
-from aitk import gate_state, routing
+from aitk import gate_state, routing, workflows
 from aitk.checkpoint import canonical_json, read_snapshot
 from aitk.cli import main
+from aitk.conformance import validate_contracts
 from aitk.doctor import _frontmatter
 
 CHECKPOINT_BEGIN = "<!-- aitk-checkpoint:v1 -->"
@@ -185,3 +186,101 @@ def test_codex_contracts_each_cite_specialist_handoff():
     for name in CODEX_CONTRACT_NAMES:
         path = REPO_ROOT / "agents/codex" / f"{name}.md"
         assert "rules/specialist-handoff.md" in path.read_text()
+
+
+# Part 3: `interfaces/workflows.json`'s optional `reference` field — goal-owned
+# workflows resolve straight to their goal skill's SKILL.md instead of a
+# duplicated `skills/workflows/references/<name>.md` file, and the orphan
+# check must not flag a reference that lives outside `reference_root`.
+
+GOAL_OWNED_REFERENCES = {
+    "fix-bug": "skills/goals/fix-bug/SKILL.md",
+    "create-feature": "skills/goals/create-feature/SKILL.md",
+    "fix-ci": "skills/goals/fix-ci/SKILL.md",
+    "review-code": "skills/goals/code-review/SKILL.md",
+    "review-code-adversarial": "skills/goals/code-review/SKILL.md",
+    "address-feedback": "skills/goals/address-feedback/SKILL.md",
+    "test-pr": "skills/goals/test-pr/SKILL.md",
+    "cherry-pick": "skills/goals/cherry-pick/SKILL.md",
+    "refactor": "skills/goals/refactor/SKILL.md",
+    "release-prep": "skills/goals/release-prep/SKILL.md",
+    "watch-pr": "skills/goals/watch-pr/SKILL.md",
+}
+
+
+def test_goal_owned_workflow_reference_resolves_to_the_goal_skill():
+    by_name = {workflow.name: workflow for workflow in workflows.load_workflows(REPO_ROOT)}
+    for name, expected_reference in GOAL_OWNED_REFERENCES.items():
+        assert by_name[name].reference == Path(expected_reference)
+        assert (REPO_ROOT / by_name[name].reference).is_file()
+
+
+def test_review_pr_and_review_plan_keep_the_default_reference_root_fallback():
+    by_name = {workflow.name: workflow for workflow in workflows.load_workflows(REPO_ROOT)}
+    for name in ("review-pr", "review-plan"):
+        workflow = by_name[name]
+        assert workflow.explicit_reference is None
+        assert workflow.reference == workflow.reference_root / f"{name}.md"
+
+
+def test_real_workflow_manifest_has_no_validation_problems():
+    assert workflows.validate_workflows(REPO_ROOT) == []
+
+
+def test_orphan_check_ignores_a_workflow_reference_outside_reference_root(
+    tmp_path: Path,
+):
+    reference_dir = tmp_path / "skills/workflows/references"
+    reference_dir.mkdir(parents=True)
+    orphan = reference_dir / "orphan.md"
+    orphan.write_text("stray file with no manifest entry\n")
+
+    goal_dir = tmp_path / "skills/goals/example"
+    goal_dir.mkdir(parents=True)
+    (goal_dir / "SKILL.md").write_text("# Example\n")
+
+    claimed = reference_dir / "claimed.md"
+    claimed.write_text("still a router-owned utility reference\n")
+
+    manifest = {
+        "version": 1,
+        "skill": "workflows",
+        "reference_root": "skills/workflows/references",
+        "workflows": [
+            {
+                "name": "example",
+                "summary": "An example goal-owned workflow.",
+                "arguments": "",
+                "rules": [],
+                "triggers": ["example"],
+                "execution_class": "single_run",
+                "reference": "skills/goals/example/SKILL.md",
+            },
+            {
+                "name": "claimed",
+                "summary": "An example utility workflow.",
+                "arguments": "",
+                "rules": [],
+                "triggers": ["claimed"],
+                "execution_class": "single_run",
+            },
+        ],
+    }
+    manifest_path = workflows.manifest_path(tmp_path)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest))
+
+    problems = workflows.validate_workflows(tmp_path)
+
+    assert any("orphan.md" in problem for problem in problems)
+    assert not any("claimed.md" in problem for problem in problems)
+    assert not any("example" in problem and "missing" in problem for problem in problems)
+
+
+def test_conformance_validates_against_the_reference_a_workflow_actually_declares():
+    # `validate_contracts` must resolve each workflow's `## Effect Boundary` /
+    # `## Durable Runtime Contract` markers against whatever `reference`
+    # points at — a goal SKILL.md for goal-owned entries, the legacy
+    # `skills/workflows/references/<name>.md` fallback for utilities — not a
+    # hardcoded `skills/workflows/references/<name>.md` path.
+    assert validate_contracts(REPO_ROOT) == []

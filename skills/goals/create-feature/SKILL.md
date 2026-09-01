@@ -5,6 +5,17 @@ description: Use when the user asks to build, add, or implement a new feature or
 
 # Create Feature
 
+## Effect Boundary
+
+Effect: `git_mutation`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `create-feature`
+entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
+durable transition and effect record.
+
 ## Before Starting
 
 Read `rules/complexity-gate.md`, `rules/gates.md`,
@@ -275,11 +286,13 @@ gate reaches `PASS`.
 - This skill is now the live dispatch target for natural-language "create
   feature" / "build" / "implement" requests — Claude Code's own skill
   selection prefers this narrower description over the general
-  `skills/workflows` router, same as `fix-bug`. The old
-  `skills/workflows/references/create-feature.md` and its
-  `interfaces/workflows.json` entry stay in place — they're durable-contract
-  infrastructure (`aitk/checkpoint.py`'s `_contract()` cross-validates
-  against them), not dispatch, so they're not deleted by this cutover.
+  `skills/workflows` router, same as `fix-bug`. The
+  `interfaces/workflows.json` `create-feature` entry now points its
+  `reference` directly at this file; `aitk/checkpoint.py`'s `_contract()`
+  never read reference content (only `load_workflows` and
+  `interfaces/contracts.json`), so nothing required the old duplicate — the
+  standalone `skills/workflows/references/create-feature.md` has been
+  deleted.
 - Enforcing never-self-verify specifically for planner output (the Complex
   and Multi-Phase Paths' own plan step) is a later commit's extension to
   `aitk.gates`'s tests, not this one's.

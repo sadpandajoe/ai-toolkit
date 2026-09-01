@@ -7,6 +7,24 @@ description: Cherry-pick, backport, or apply commits/PRs onto another branch wit
 
 Safely move one or more isolated changes (bug fixes, isolated features) onto a target branch.
 
+## Effect Boundary
+
+Effect: `external_effect`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `cherry-pick`
+entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
+durable transition and effect record.
+
+## Authorization Boundary
+
+Authorization mode: `invocation`. Per-cherry push is the default action once
+validation passes — invoking `cherry-pick` is itself the authorization,
+subject to the per-cherry push confirmation block. `--no-push` opts out:
+validate locally and record `pending-authorization` instead of pushing.
+
 ## Before Starting
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present. Cherry-picking has a small set of recurring failure modes; do not relearn them.

@@ -35,7 +35,7 @@ Most QA phases are checklist + output-template work the orchestrator does inline
 3. Emit its output block into the conversation.
 
 <!-- aitk-model-route:qa.fresh-validation -->
-When fresh context matters (long-running session, parallel work, separation from the implementation thread), spawn a subagent on `review` for validation judgment or `operations` for deterministic evidence collection and pass the reference content as the prompt.
+When fresh context matters (long-running session, parallel work, separation from the implementation thread), spawn a subagent on `review` for validation judgment or `operations` for deterministic evidence collection and pass the reference content as the prompt: dispatch native `review-worker` (for `review`) or `operations-worker` (for `operations`) when `routed_subagent` is native for the provider, otherwise the Codex `reviewer` contract for `review`, or the plain `operations` route via `model-run` (no named Codex specialist contract) for `operations`.
 
 ## Phase Composition
 

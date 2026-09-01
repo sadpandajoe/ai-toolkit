@@ -9,69 +9,46 @@ This is the provider-neutral public router. Workflow identity and routing data
 come only from [the core manifest](../../interfaces/workflows.json); this skill
 does not maintain a second workflow table.
 
-`fix-bug` requests match `skills/goals/fix-bug/SKILL.md` directly by its own,
-more specific skill description — this router's own "Do NOT use... when a
-narrower domain skill completely covers the request" clause defers to it. The
-`interfaces/workflows.json` `fix-bug` entry and its reference file
-(`skills/workflows/references/fix-bug.md`) stay in place indefinitely:
-`aitk/checkpoint.py`'s `_contract()` cross-validates a workflow's durable
-state against both that manifest entry and `interfaces/contracts.json`,
-regardless of which skill dispatches it, so neither is deletable by a
-cutover — confirmed empirically when deleting this entry broke checkpoint,
-contract, and model-routing tests despite nothing dispatching through this
-router anymore.
+Every manifest entry below is owned by a goal skill: its natural-language
+description already matches these requests more specifically than this
+router's own, so Claude Code's skill selection dispatches there directly —
+this router's own "Do NOT use... when a narrower domain skill completely
+covers the request" clause defers to it. Each entry's `reference` field
+points straight at that goal skill's `SKILL.md`, so there is no separate
+duplicate reference file to keep in sync.
 
-`create-feature` requests match `skills/goals/create-feature/SKILL.md`
-directly by its own, more specific skill description, same pattern as
-`fix-bug` above. The `interfaces/workflows.json` `create-feature` entry and
-its reference file stay in place — durable-contract infrastructure, not
-dispatch (see `fix-bug`'s note above).
+| Workflow(s) | Goal skill |
+|---|---|
+| `fix-bug` | `skills/goals/fix-bug/SKILL.md` |
+| `create-feature` | `skills/goals/create-feature/SKILL.md` |
+| `fix-ci` | `skills/goals/fix-ci/SKILL.md` |
+| `review-code`, `review-code-adversarial` | `skills/goals/code-review/SKILL.md` |
+| `address-feedback` | `skills/goals/address-feedback/SKILL.md` |
+| `test-pr` | `skills/goals/test-pr/SKILL.md` |
+| `cherry-pick` | `skills/goals/cherry-pick/SKILL.md` |
+| `refactor` | `skills/goals/refactor/SKILL.md` |
+| `release-prep` | `skills/goals/release-prep/SKILL.md` |
+| `watch-pr` | `skills/goals/watch-pr/SKILL.md` |
 
-`fix-ci` requests match `skills/goals/fix-ci/SKILL.md` directly by its own,
-more specific skill description, same pattern as `fix-bug` above. The
-`interfaces/workflows.json` `fix-ci` entry and its reference file stay in
-place — durable-contract infrastructure, not dispatch.
-
-`review-code`, `review-code-adversarial`, and `review-pr` requests match
-`skills/goals/code-review/SKILL.md` directly by its own, more specific skill
-description — one goal skill covers all three manifest workflows, same
-pattern as `fix-bug` above. Their `interfaces/workflows.json` entries and
-reference files stay in place — durable-contract infrastructure, not
-dispatch.
-
-`address-feedback` requests match `skills/goals/address-feedback/SKILL.md`
-directly by its own, more specific skill description, same pattern as
-`fix-bug` above. The `interfaces/workflows.json` `address-feedback` entry and
-its reference file stay in place — durable-contract infrastructure, not
-dispatch.
-
-`test-pr` requests match `skills/goals/test-pr/SKILL.md` directly by its own,
-more specific skill description, same pattern as `fix-bug` above. The
-`interfaces/workflows.json` `test-pr` entry and its reference file stay in
-place — durable-contract infrastructure, not dispatch. `create-pr`, a
-utility workflow with no goal-skill counterpart, keeps `PR` in this router's
-own frontmatter description above.
-
-`cherry-pick`, `refactor`, `release-prep`, and `watch-pr` requests match their
-respective `skills/goals/<name>/SKILL.md` directly by each one's own, more
-specific skill description, same pattern as `fix-bug` above. Their
-`interfaces/workflows.json` entries and reference files stay in place —
-durable-contract infrastructure, not dispatch.
+`review-pr` is not in this table: its contract effect (`external_effect`)
+differs from `review-code`/`review-code-adversarial`'s (`git_mutation`), so it
+cannot share `code-review/SKILL.md`'s single `## Effect Boundary` marker. It
+keeps its own `skills/workflows/references/review-pr.md` reference and is
+dispatched by this router like any other utility workflow below.
+`create-pr`, a utility workflow with no goal-skill counterpart, keeps `PR` in
+this router's own frontmatter description above.
 
 1. Read the manifest and match either the explicitly requested workflow name or
-   the highest-specificity natural-language trigger. If the matched workflow is
-   `fix-bug`, `create-feature`, `fix-ci`, `review-code`,
-   `review-code-adversarial`, `review-pr`, `address-feedback`, `test-pr`,
-   `cherry-pick`, `refactor`, `release-prep`, or `watch-pr`, stop here and
-   dispatch to that workflow's goal skill instead — see the migrated-workflow
-   notes above for which `skills/goals/*/SKILL.md` each maps to. Do not
-   proceed to step 3 for these; their manifest entry and reference file are
-   durable-contract infrastructure, not a dispatch target, even when this
-   router is the one doing the matching.
+   the highest-specificity natural-language trigger. If the matched workflow
+   is one of the goal-owned names in the table above, stop here and dispatch
+   to that workflow's goal skill instead. Do not proceed to step 3 for these —
+   their manifest entry's `reference` already points at the goal skill, not a
+   router-owned reference file.
 2. If no workflow matches, handle the request directly. If equally specific
    triggers name different workflows, ask for the intended workflow.
-3. Confirm the manifest owner is `workflows` and join its `reference_root` with
-   `<workflow.name>.md`. Reject absolute paths or traversal.
+3. Resolve the matched workflow's `reference` field from the manifest entry
+   (falling back to `<reference_root>/<workflow.name>.md` when a workflow
+   declares no explicit `reference`). Reject absolute paths or traversal.
 4. Load exactly that canonical reference, its declared rules, and only the
    logical domain-skill dependencies it names. Resolve domain skills through
    `interfaces/skills.json` against the toolkit/package root, never relative to

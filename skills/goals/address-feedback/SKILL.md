@@ -5,6 +5,24 @@ description: Use when a PR has review comments that need investigation, fixes, r
 
 # Address Feedback
 
+## Effect Boundary
+
+Effect: `external_effect`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `address-feedback`
+entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
+durable transition and effect record.
+
+## Authorization Boundary
+
+Authorization mode: `invocation`. The workflow invocation grants only the
+documented default commit, current-branch push, bot reply, and eligible
+thread resolution scope; every invariant pause still requires explicit
+input.
+
 ## Before Starting
 
 Read `rules/gates.md` (six-state gate contract) and the `address-feedback`
@@ -51,7 +69,7 @@ and CI failures (`skills/goals/fix-ci`).
    any checkpoint + context_reset. Do not restate its dispatch steps here;
    this skill delegates rather than reimplementing them.
 3. Follow `fix-review.md`'s procedure in full: fix order, wave batching for
-   independent fixes (reuses the existing `workflows.feedback-fix-wave`
+   independent fixes (reuses the existing `feedback.comment-fix-groups`
    dispatch boundary — do not declare a new one), and commit strategy. Its
    Verify Fixes step chains `skills/verification-loop/SKILL.md` against gate
    name `address-feedback-verify` before its Review Gate step — follow that
@@ -108,11 +126,14 @@ to resume.
 - This skill is now the live dispatch target for natural-language "address PR
   feedback" / "fix review comments" requests — Claude Code's own skill
   selection prefers this narrower description over the general
-  `skills/workflows` router, same as `fix-bug`. The old
-  `skills/workflows/references/address-feedback.md` and its
-  `interfaces/workflows.json` entry stay in place — durable-contract
-  infrastructure, not dispatch (see `fix-bug`'s Notes for why).
-- Declares no dispatch boundaries of its own — `workflows.feedback-fix-wave`,
+  `skills/workflows` router, same as `fix-bug`. The
+  `interfaces/workflows.json` `address-feedback` entry now points its
+  `reference` directly at this file; the standalone
+  `skills/workflows/references/address-feedback.md` (`aitk/checkpoint.py`'s
+  `_contract()` never read its content) has been deleted, along with its
+  now-orphaned `workflows.feedback-fix-wave` dispatch boundary — the marker
+  it matched only ever lived in that deleted file.
+- Declares no dispatch boundaries of its own — `feedback.comment-fix-groups`,
   already registered in `interfaces/model-routing.json`, covers the fix-wave
   batching this skill's procedure reaches; the Review Gate step dispatches
   `skills/goals/code-review`, which likewise declares no boundaries of its

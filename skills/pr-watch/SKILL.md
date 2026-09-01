@@ -25,7 +25,10 @@ never from chat memory.
 1. **Poll.** Run polling deterministically in the parent/tool layer (`gh pr
    checks`, `gh api .../comments` or equivalent). An `operations` worker may
    summarize only the already-collected read-only evidence; it does not
-   execute API calls itself. Return only changed run IDs, brief failure
+   execute API calls itself — the native `operations-worker` handles this
+   summarization when `routed_subagent` is native for the provider,
+   otherwise the plain `operations` route runs via `model-run` (no named
+   Codex specialist contract). Return only changed run IDs, brief failure
    evidence, new comment/thread IDs, and a no-change marker.
 2. **Classify.** Classify each delta on the main reasoning tier, against the
    Routing table below.

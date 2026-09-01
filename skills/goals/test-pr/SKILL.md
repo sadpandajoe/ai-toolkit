@@ -5,6 +5,23 @@ description: Use when you want to manually verify a PR's user-visible behavior i
 
 # Test PR
 
+## Effect Boundary
+
+Effect: `external_effect`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `test-pr` entry
+in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
+transition and effect record.
+
+## Authorization Boundary
+
+Authorization mode: `explicit`. Local/staging scenario execution follows the
+declared gates; posting requires `--post`, checkout requires `--checkout`,
+and destructive or production actions remain refused.
+
 ## Before Starting
 
 Read `rules/gates.md` (six-state gate contract) and the `test-pr` entry in
@@ -14,7 +31,7 @@ authorization mode `explicit` with gates `production-refusal`/
 prepare→execute→verify→report, resumable via `PROJECT.md`) before
 continuing. This skill is the v2 goal-skill entry point for manual PR
 testing; it delegates the actual procedure to four existing references
-under `skills/qa/references/test-pr/` rather than reimplementing them —
+under skills/qa/references/test-pr/ rather than reimplementing them —
 read all four before continuing, since this skill's steps assume their
 Inputs/Procedure/Output shape:
 
@@ -94,9 +111,10 @@ URL, production URL, or a posting gate not yet satisfied) with the reason.
 - This skill is now the live dispatch target for natural-language "test this
   PR" / "manually test pr" requests — Claude Code's own skill selection
   prefers this narrower description over the general `skills/workflows`
-  router, same as `fix-bug`. The old `skills/workflows/references/test-pr.md`
-  and its `interfaces/workflows.json` entry stay in place — durable-contract
-  infrastructure, not dispatch (see `fix-bug`'s Notes for why).
+  router, same as `fix-bug`. The `interfaces/workflows.json` `test-pr` entry
+  now points its `reference` directly at this file; the standalone
+  `skills/workflows/references/test-pr.md` (`aitk/checkpoint.py`'s
+  `_contract()` never read its content) has been deleted.
 - This command does not modify code or file bugs — mirrors
   `test-pr.md`'s own Notes.
 - Declares no dispatch boundaries of its own — `qa.fresh-validation`,

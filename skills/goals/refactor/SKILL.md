@@ -5,6 +5,17 @@ description: Use when the user asks to refactor, restructure, simplify, clean up
 
 # Refactor
 
+## Effect Boundary
+
+Effect: `git_mutation`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `refactor` entry
+in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
+transition and effect record.
+
 ## Before Starting
 
 Read `rules/complexity-gate.md`, `rules/gates.md`, `rules/specialist-handoff.md`,

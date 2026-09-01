@@ -69,7 +69,7 @@ For each `NEEDS_INVESTIGATION` candidate from the pre-flight table, run these an
 - Build the dependency graph from `batch-deps.sh` output: nodes = SHAs, edges = pairs flagged as sharing files.
 - Topologically sort. Author-date order from the script is a valid topo-sort *iff* no later commit reverts or replaces content from an earlier one — verify by inspecting any pair where the later commit is a `chore: remove`, `revert`, or `refactor` of code touched by the earlier commit. If you find a revert/replace pattern, swap those two.
 <!-- aitk-model-route:cherry-pick.batch-investigation -->
-- Independent SHAs (the script's "Independence Check" section) may be investigated in parallel — the orchestrator should spawn one subagent per island concurrently on `rca` or `deep-rca` according to gate difficulty.
+- Independent SHAs (the script's "Independence Check" section) may be investigated in parallel — the orchestrator should spawn one subagent per island concurrently on `rca` or `deep-rca` according to gate difficulty: dispatch native `debug-worker`/`deep-rca-worker` when `routed_subagent` is native for the provider, otherwise the Codex `rca` contract via `model-run`.
 - Actual cherry-pick application on the target branch remains sequential.
 - Flag circular dependencies or ambiguous prerequisite chains as requiring user decision.
 - Do not optimize only for throughput. Prefer smaller waves when conflicts, shared files, dependency manifests, migrations, generated files, or API-shape changes appear.

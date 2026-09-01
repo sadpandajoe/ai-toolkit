@@ -5,6 +5,17 @@ description: Use to check whether a branch is ready to ship — clean working tr
 
 # Release Prep
 
+## Effect Boundary
+
+Effect: `local_mutation`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `release-prep`
+entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
+durable transition and effect record.
+
 ## Before Starting
 
 Read `rules/gates.md` (six-state gate contract), `rules/durable-workflows.md`,

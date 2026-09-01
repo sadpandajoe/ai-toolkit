@@ -211,19 +211,27 @@ Most new behavior is a new (or extended) goal skill, not a new router entry:
 1. Add `skills/goals/<name>/` with its own `SKILL.md` describing the
    pipeline: classify, dispatch workers, drive `skills/verification-loop`.
 2. Register the name, summary, arguments, rules, and routing triggers in
-   `interfaces/workflows.json` (`skills/workflows/` picks this up as its
-   shim entry — do not add router logic there).
+   `interfaces/workflows.json`, with `"reference": "skills/goals/<name>/SKILL.md"`
+   pointing straight at the new goal skill (`skills/workflows/` picks this up
+   as its shim entry — do not add router logic there). Omit `reference` only
+   for a utility workflow with no goal skill of its own; it then falls back to
+   `<reference_root>/<name>.md`.
 3. Add a total v2 entry to `interfaces/contracts.json`; use the canonical
-   durable runtime rule and runtime-contract section when execution is durable.
+   durable runtime rule and runtime-contract section when execution is
+   durable, and give the goal `SKILL.md` a matching `## Effect Boundary` (plus
+   `## Authorization Boundary` for `external_effect`) and
+   `## Durable Runtime Contract` section — `aitk/conformance.py` validates
+   these markers against whatever file `reference` resolves to, goal skill or
+   not.
 4. Classify any new skill in `interfaces/skills.json`.
 5. Run `bin/aitk build` (or `--with-pgm` to validate the bundled extension).
 6. Add positive and negative routing, semantic, recovery, and provider cases,
    then run `bin/aitk check`.
 
-A handful of utility references (checkpoint, start, metrics, create-pr, and
-similar) live directly under `skills/workflows/references/` rather than as
-their own goal skill — these are still registered the same way, via
-`interfaces/workflows.json`.
+A handful of utility workflows (checkpoint, start, metrics, create-pr, and
+similar) have no goal-skill counterpart; they keep a standalone reference
+directly under `skills/workflows/references/` and are registered the same
+way, via `interfaces/workflows.json`, just without an explicit `reference`.
 
 Do not add workflow logic to provider config, hooks, or the manifest.
 

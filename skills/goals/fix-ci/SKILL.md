@@ -5,6 +5,17 @@ description: Use when a CI build or check has failed and you want to diagnose an
 
 # Fix CI
 
+## Effect Boundary
+
+Effect: `git_mutation`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `fix-ci` entry in
+`interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
+transition and effect record.
+
 ## Before Starting
 
 Read `rules/complexity-gate.md`, `rules/gates.md`,
@@ -178,7 +189,9 @@ shape — never architecture-decomposition phases; those belong only to
 3. If a slice's investigation surfaces an ambiguous, intermittent,
    historical, or cross-system root cause, escalate that slice's
    `fix-ci.investigate` dispatch from `rca` to `deep-rca` (the boundary
-   declares both routes; see `rules/model-assignment.md`) and check the
+   declares both routes; see `rules/model-assignment.md`) — dispatch native
+   `deep-rca-worker` when `routed_subagent` is native for the provider,
+   otherwise the Codex `rca` contract via `model-run` — and check the
    result against `skills/debug/references/review-rca.md`'s RCA Gate
    Evidence Checklist before treating it as ready for implementation.
 
@@ -234,7 +247,8 @@ phase for `MULTI_PHASE`), the review Gate block (every path except plain
 - This skill is now the live dispatch target for natural-language "fix CI" /
   "CI failure" requests — Claude Code's own skill selection prefers this
   narrower description over the general `skills/workflows` router, same as
-  `fix-bug`. The old `skills/workflows/references/fix-ci.md` and its
-  `interfaces/workflows.json` entry stay in place — durable-contract
-  infrastructure, not dispatch (see `fix-bug`'s Notes for why); they stay on
-  the pre-rename trivial/moderate/standard vocabulary indefinitely.
+  `fix-bug`. The `interfaces/workflows.json` `fix-ci` entry now points its
+  `reference` directly at this file; the standalone
+  `skills/workflows/references/fix-ci.md` (pre-rename
+  trivial/moderate/standard vocabulary; `aitk/checkpoint.py`'s `_contract()`
+  never read its content) has been deleted.

@@ -11,7 +11,7 @@ routing, safe-fix scope, and commit recommendation strategy.
 ## Classify and Group
 
 <!-- aitk-model-route:debug.ci-triage -->
-The orchestrator classifies failures inline by default. Spawn a triage subagent on `rca` or `deep-rca` only when:
+The orchestrator classifies failures inline by default. Spawn a triage subagent on `rca` or `deep-rca` (native `debug-worker`/`deep-rca-worker` when `routed_subagent` is native for the provider, otherwise the Codex `rca` contract via `model-run`) only when:
 - multiple independent failures need parallel analysis
 - logs are very large (>500 lines) and need focused extraction
 - the failure pattern is novel and benefits from isolated reasoning

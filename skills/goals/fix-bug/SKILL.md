@@ -5,6 +5,17 @@ description: Use when the user reports a bug, broken behavior, or asks to fix or
 
 # Fix Bug
 
+## Effect Boundary
+
+Effect: `git_mutation`.
+
+## Durable Runtime Contract
+
+Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
+phase graph, authorization gates, and effect keys are the `fix-bug` entry in
+`interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
+transition and effect record.
+
 ## Before Starting
 
 Read `rules/complexity-gate.md`, `rules/gates.md`,
@@ -166,7 +177,9 @@ those belong only to `MULTI_PHASE`'s Multi-Phase Path below.
 3. If a slice's investigation surfaces an ambiguous, intermittent,
    historical, or cross-system root cause, escalate that slice's
    `fix-bug.investigate` dispatch from `rca` to `deep-rca` (the boundary
-   declares both routes; see `rules/model-assignment.md`) before running
+   declares both routes; see `rules/model-assignment.md`) — dispatch native
+   `deep-rca-worker` when `routed_subagent` is native for the provider,
+   otherwise the Codex `rca` contract via `model-run` — before running
    step 2's RCA gate against `skills/debug/references/review-rca.md`'s
    checklist.
 
@@ -225,11 +238,9 @@ fix once every gate reaches `PASS`.
 - This skill is now the live dispatch target for natural-language "fix bug" /
   "diagnose" / "broken behavior" requests — Claude Code's own skill selection
   prefers this narrower description over the general `skills/workflows`
-  router. `skills/workflows/references/fix-bug.md` and its
-  `interfaces/workflows.json` entry stay in place indefinitely as
-  durable-contract infrastructure for literal `fix-bug`-command-name
-  compatibility (`aitk/checkpoint.py`'s `_contract()` cross-validates against
-  both regardless of which skill dispatches it — confirmed empirically when
-  deleting the entry broke checkpoint, contract, and model-routing tests) —
-  they are not deleted by this retrofit and stay on the pre-rename
-  TRIVIAL/MODERATE/STANDARD vocabulary.
+  router. The `interfaces/workflows.json` `fix-bug` entry now points its
+  `reference` directly at this file; `aitk/checkpoint.py`'s `_contract()`
+  never reads reference content (only `load_workflows` and
+  `interfaces/contracts.json`), so nothing required the old duplicate — the
+  standalone `skills/workflows/references/fix-bug.md` (pre-rename
+  TRIVIAL/MODERATE/STANDARD vocabulary) has been deleted.

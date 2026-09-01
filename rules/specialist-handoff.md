@@ -9,8 +9,8 @@ boundary.
 
 **Status: authoritative.** This is the handoff contract every goal skill
 (`skills/goals/fix-bug`, `cherry-pick`, and the rest) and every native worker
-(`agents/claude/{implementation-worker,debug-worker,test-worker,planner,
-review-worker,deep-review-worker}.md`) actually dispatch and return against —
+(`agents/claude/{implementation-worker,debug-worker,deep-rca-worker,
+test-worker,planner,review-worker,deep-review-worker,operations-worker}.md`) actually dispatch and return against —
 not an aspirational future shape. `skills/implement-change/SKILL.md`'s
 `## Implementation Handoff` block is this contract's concrete instance for
 the `implement` phase.
