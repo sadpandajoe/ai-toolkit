@@ -609,7 +609,7 @@ def _check(arguments: argparse.Namespace) -> int:
     findings = run_doctor(root)
     doctor_problems = [finding for finding in findings if finding.status != "PASS"]
     tests = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        [sys.executable, "-m", "pytest", "-p", "no:cov", "-q", "tests"],
         cwd=root,
         text=True,
         capture_output=True,
@@ -637,7 +637,7 @@ def _check(arguments: argparse.Namespace) -> int:
         "doctor_problems": [asdict(finding) for finding in doctor_problems],
     }
     if arguments.json:
-        payload["test_output"] = tests.stderr
+        payload["test_output"] = tests.stdout + tests.stderr
         payload["hook_output"] = "" if hook is None else hook.stdout + hook.stderr
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -646,7 +646,7 @@ def _check(arguments: argparse.Namespace) -> int:
         print(f"Tests: {payload['tests']}")
         print(f"Hook tests: {payload['hook-tests']}")
         if tests.returncode:
-            print(tests.stderr)
+            print(tests.stdout + tests.stderr)
         if hook is not None and hook.returncode:
             print(hook.stdout + hook.stderr)
     return (
