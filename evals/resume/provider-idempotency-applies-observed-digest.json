@@ -1,0 +1,13 @@
+{
+  "name": "provider-idempotency-applies-observed-digest",
+  "scenario": "A pending effect under provider_idempotency where the lookup finds a matching observed digest must apply that observed digest rather than retrying.",
+  "effect": {
+    "status": "pending",
+    "operation_id": "op-7",
+    "result_digest": null
+  },
+  "strategy": "provider_idempotency",
+  "observed_digest": "sha256:67356158065b326f660d7fde787b01bda7e40f5c5ef9ffdedd72dace5d9e69ca",
+  "expect_action": "apply-observed",
+  "expect_digest": "sha256:67356158065b326f660d7fde787b01bda7e40f5c5ef9ffdedd72dace5d9e69ca"
+}

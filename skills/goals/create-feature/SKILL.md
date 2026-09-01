@@ -121,151 +121,33 @@ Notes.
 ## Standard Path
 
 Runs between steps 5 and 6 above, in place of inline implementation. Unlike
-`fix-bug`, there is no root-cause investigation phase — a feature request
-starts from what the user described, not a symptom. Survey existing patterns
-to follow inline, as the orchestrator (`rules/complexity-gate.md`'s Standard
-Path already allows inline investigation/planning at this tier); no
-specialist dispatch for the survey itself.
+`fix-bug`, there is no root-cause investigation phase — survey existing
+patterns inline, implement with a native specialist, then review. Registers
+dispatch boundaries `create-feature.implement` /
+`create-feature.test-authoring` / `create-feature.review`.
 
-<!-- aitk-model-route:create-feature.implement -->
-1. Dispatch `implementation-worker` per `rules/specialist-handoff.md` (Phase:
-   implement), handing it the feature request, the surveyed pattern to
-   follow, and a Scope naming the files it may touch. It writes tests first
-   per `rules/implementation.md`'s Test-First Modes, then the feature code.
-
-<!-- aitk-model-route:create-feature.test-authoring -->
-2. Dispatch `test-worker` separately only when the feature needs coverage
-   beyond the implementation worker's own tests (e.g. a new integration
-   surface) — not on every `STANDARD` feature.
-
-<!-- aitk-model-route:create-feature.review -->
-3. After verification (step 6) reaches `PASS`, dispatch a fresh reviewer
-   through `skills/review/references/sol-review.md`'s procedure in full —
-   Dispatch, Validate findings before fixing, Gate and record, Escalate only
-   when triggered — with Scope: the resulting diff, Author identity:
-   `implementation-worker` (never the worker that implemented the feature
-   reviews its own work). Do not restate its dispatch or findings-translation
-   steps here; its own Gate and record step already emits the
-   `rules/gates.md` six-state block this workflow branches on, and its own
-   step 4 escalates to `delta-review.md` when triggered — no separate
-   escalation step is needed here.
-
-4. Only proceed to step 7 (completion) once the review Gate block reaches
-   `PASS`.
+→ Full procedure: [references/standard-path.md](references/standard-path.md)
 
 ## Complex Path
 
-Runs in place of the Trivial and Standard branches when step 3 routes here
-— for a `COMPLEX`/low-confidence `SINGLE_PHASE` unit, or for any `BATCHED`
-unit regardless of complexity tier. Emit the Phase Plan block per
-`rules/complexity-gate.md`'s Complex Path section immediately after the Size
-Gate, before step 1 below. Its `Phases:` list names this workflow's own
-execution units — implementation slices for a `SINGLE_PHASE` unit, or
-waves/items for a `BATCHED` one — never architecture-decomposition phases;
-those belong only to `MULTI_PHASE`'s Multi-Phase Path below, via
-`decompose-work.md`.
+Runs in place of the Trivial and Standard branches when step 3 routes here —
+for a `COMPLEX`/low-confidence `SINGLE_PHASE` unit, or for any `BATCHED`
+unit regardless of complexity tier. Plans via a dedicated `planner`, then
+runs the Standard Path per slice or wave/item. Registers dispatch boundary
+`create-feature.plan`.
 
-<!-- aitk-model-route:create-feature.plan -->
-1. Dispatch the `planner` subagent per `rules/specialist-handoff.md` (Phase:
-   plan), handing it the feature request as Goal. It returns a plan
-   decomposed into the smallest implementable slices, each with
-   entrance/exit criteria and a scope boundary, per
-   `skills/implement-change/SKILL.md`'s Slice Awareness section. Never
-   implement from an unreviewed plan the planner itself approved — the
-   planner only proposes.
-
-2. For each slice or wave/item, in order: dispatch the Standard Path's
-   implement and optional test-authoring steps (steps 1–2) against that
-   unit's scope; then verify it using `skills/verification-loop/SKILL.md`
-   against gate name `create-feature-verify`, scoped to that unit — follow
-   its RETRY/ESCALATE handling exactly, same as step 6 above; once that
-   verification reaches `PASS`, dispatch the Standard Path's review step
-   (step 3). This reuses the `create-feature.implement` /
-   `create-feature.test-authoring` / `create-feature.review` boundaries
-   above per unit — it is a loop over the same dispatch sites, not new ones.
-   Move to the next unit only once this one's review Gate block reaches
-   `PASS`. For a `BATCHED` shape specifically, also run one final aggregate
-   verification against gate name `create-feature-verify` after the last
-   wave/item, before step 7 — per-wave verification alone does not confirm
-   the waves compose correctly together.
-
-3. Every slice or wave/item verifies and reviews within its own iteration of
-   step 2 — step 6 above does not run again once the Complex Path is
-   running. Only proceed to step 7 (completion) once every unit's review
-   Gate block reaches `PASS` (and, for `BATCHED`, the final aggregate
-   verification also reaches `PASS`).
+→ Full procedure: [references/complex-path.md](references/complex-path.md)
 
 ## Multi-Phase Path
 
 Runs in place of every other path when step 2's Size Gate derives
-`execution_shape: MULTI_PHASE`. Complexity (step 1) does not select a path
-for the unit as a whole here — `decompose-work.md` reclassifies each phase
-independently, and that phase's own classification picks its path.
+`execution_shape: MULTI_PHASE`. Runs `decompose-work.md` once, then
+`plan-phase.md` and implementation/verification per phase, tracked via
+hand-set `PROJECT.md` frontmatter and phase-scoped `aitk gate-state` — not
+`bin/aitk checkpoint advance()`, which only resumes a fixed pre-declared
+phase list. This is the canonical Multi-Phase Path other goal skills mirror.
 
-**This path does not use `bin/aitk checkpoint advance()`.** That mechanism
-resumes only through a fixed, pre-declared phase list keyed to a named
-workflow contract in `interfaces/contracts.json` (e.g. its own legacy
-`create-feature` contract there hardcodes `plan`/`implement`/`verify`/
-`review`) — it has no way to accept the phase names `decompose-work.md`
-derives at runtime for this specific feature. Cross-phase persistence here
-is hand-set `PROJECT.md` frontmatter (same convention as the Size Gate
-fields above) plus `aitk gate-state set` under a gate name scoped per phase
-— never the checkpoint contract system, which stays reserved for the fixed
-utility/legacy workflows that already declare their phases up front.
-
-`decompose-work.md` and `plan-phase.md` each carry their own
-`aitk-model-route` marker; this path calls them as procedures, so it
-registers no new dispatch boundary of its own.
-
-1. Run `skills/planning/references/decompose-work.md` once for the whole
-   unit. Its `architecture_plan_status` must reach `PASS` before continuing
-   — on `RECLASSIFY`/`ESCALATE`, stop and surface it rather than guessing a
-   phase list. Persist its architecture artifact (boundaries, dependencies,
-   global invariants, phase exit goals) as its own section in the durable
-   plan artifact for this unit (`PLAN.md`, or a `PROJECT.md` body section if
-   no `PLAN.md` was opened) — never inside the frontmatter fields below,
-   which hold only the current phase's own classification.
-
-2. For each phase, in the decomposition's declared order:
-   a. Hand-set `current_phase` to that phase's name on `PROJECT.md`'s
-      frontmatter — a short slug, matching the source plan's own example
-      (`current_phase: layout-editing`).
-   b. Reclassify complexity and size for this phase alone
-      (`phase_complexity`, `phase_size`, `phase_execution_shape`, and — if
-      needed — a fresh `phaseability_reason`) using steps 1–2 above, scoped
-      to this phase's work only. A phase that itself classifies
-      `MULTI_PHASE` recurses into this same path one level down rather than
-      being forced flat.
-   c. Run `skills/planning/references/plan-phase.md` for this phase; its
-      `phase_plan_status` must reach `PASS` before implementation starts.
-      `plan-phase.md`'s own planning retry budget
-      (`reasoning_attempts.phase_plan`) is independent from the gate-state
-      repeat-failure count in step (e) below — do not conflate the two, and
-      do not reset one when the other resets.
-   d. Implement and verify this phase using whichever path its own
-      `phase_execution_shape` selects from step (b) — steps 3–7 above for
-      `SINGLE_PHASE`, the Complex Path's per-slice/wave loop for `BATCHED`,
-      or a nested Multi-Phase Path for a rare nested `MULTI_PHASE` phase —
-      reusing the same `create-feature.implement` /
-      `create-feature.test-authoring` / `create-feature.review` boundaries;
-      no new dispatch boundaries per phase.
-   e. Verify the phase against gate name
-      `create-feature-phase-<phase name>-verify` (substituting this phase's
-      `current_phase` slug) via `skills/verification-loop/SKILL.md`, so
-      `aitk.gates.decide_failure`'s repeat-failure counting stays scoped to
-      this phase and does not bleed into the next one's history. Record the
-      decided state via `aitk gate-state set` before moving on — this is the
-      phase checkpoint: a fresh context resuming mid-unit reads
-      `current_phase` plus this phase-scoped gate history to know exactly
-      which phase is in flight and what it has already tried, with no need
-      to replay the whole unit.
-   f. On `PASS`, move to the next phase. On `RECLASSIFY`/`ESCALATE` from
-      either the phase plan or its verification, stop and surface it — do
-      not silently reorder or drop a phase from the decomposition.
-
-3. Once every phase's gate reaches `PASS`, proceed to step 7 (completion),
-   recording the full phase history (every phase's gate outcome), not just
-   the last phase's frontmatter fields.
+→ Full procedure: [references/multi-phase-path.md](references/multi-phase-path.md)
 
 ## Output
 

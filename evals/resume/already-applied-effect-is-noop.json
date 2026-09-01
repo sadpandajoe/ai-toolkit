@@ -1,0 +1,13 @@
+{
+  "name": "already-applied-effect-is-noop",
+  "scenario": "An effect already marked applied is resumed under provider_idempotency; reconcile_pending must report already-applied and return the stored digest without touching the lookup or strategy at all.",
+  "effect": {
+    "status": "applied",
+    "operation_id": "op-1",
+    "result_digest": "sha256:71a0ef7195df486543f63f0cb1dff83ee245c10fb566219b128a7fa99a8bbbac"
+  },
+  "strategy": "provider_idempotency",
+  "observed_digest": null,
+  "expect_action": "already-applied",
+  "expect_digest": "sha256:71a0ef7195df486543f63f0cb1dff83ee245c10fb566219b128a7fa99a8bbbac"
+}

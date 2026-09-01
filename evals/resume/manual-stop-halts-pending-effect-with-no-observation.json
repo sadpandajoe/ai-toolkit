@@ -1,0 +1,13 @@
+{
+  "name": "manual-stop-halts-pending-effect-with-no-observation",
+  "scenario": "A pending effect under a manual_stop key with nothing observed yet must halt resume with stop-for-user and no digest, never attempting a lookup.",
+  "effect": {
+    "status": "pending",
+    "operation_id": "op-4",
+    "result_digest": null
+  },
+  "strategy": "manual_stop",
+  "observed_digest": null,
+  "expect_action": "stop-for-user",
+  "expect_digest": null
+}

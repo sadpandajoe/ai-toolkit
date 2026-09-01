@@ -1,0 +1,20 @@
+{
+  "name": "reserve-after-apply-is-still-a-noop",
+  "scenario": "Reserving an operation id again after it has already been applied must remain a safe no-op rather than an error.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op-7"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-7",
+      "result_digest": "sha256:b908bd0360f5dc683d73c99815b9c7fda23327411ae478b554ea058d0ab172f6"
+    },
+    {
+      "action": "reserve",
+      "operation_id": "op-7"
+    }
+  ],
+  "expect_outcome": "ok"
+}

@@ -1,0 +1,21 @@
+{
+  "name": "apply-twice-same-digest-is-a-noop",
+  "scenario": "Applying the same operation id twice with an identical result digest must be an idempotent no-op on the second call, not an error.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op-4"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-4",
+      "result_digest": "sha256:b908bd0360f5dc683d73c99815b9c7fda23327411ae478b554ea058d0ab172f6"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-4",
+      "result_digest": "sha256:b908bd0360f5dc683d73c99815b9c7fda23327411ae478b554ea058d0ab172f6"
+    }
+  ],
+  "expect_outcome": "ok"
+}

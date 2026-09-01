@@ -1,0 +1,7 @@
+{
+  "name": "create-feature-plan-to-verify-skips-a-phase",
+  "scenario": "Advancing create-feature from plan straight to verify skips implement and is not a declared edge, so advance() must reject it.",
+  "workflow": "create-feature",
+  "to_phase": "verify",
+  "expect_result": "illegal"
+}

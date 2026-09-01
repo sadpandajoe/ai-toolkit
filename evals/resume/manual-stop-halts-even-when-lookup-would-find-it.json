@@ -1,0 +1,13 @@
+{
+  "name": "manual-stop-halts-even-when-lookup-would-find-it",
+  "scenario": "A pending effect under manual_stop must stop for the user even though the lookup function would have found a matching observed digest, because manual_stop is checked before the lookup call.",
+  "effect": {
+    "status": "pending",
+    "operation_id": "op-5",
+    "result_digest": null
+  },
+  "strategy": "manual_stop",
+  "observed_digest": "sha256:d1add1645ade0bc335ec0fc5cf0b86e82e0f95a28f7de8179662a8bef27e24dd",
+  "expect_action": "stop-for-user",
+  "expect_digest": null
+}

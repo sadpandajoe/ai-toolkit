@@ -1,0 +1,12 @@
+{
+  "name": "reserve-with-invalid-operation-id-token-fails",
+  "scenario": "Reserving with an operation id containing a space, which is not a valid portable token, must fail at that first step with a validation error.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op with spaces"
+    }
+  ],
+  "expect_outcome": "portable token",
+  "expect_fail_step": 0
+}

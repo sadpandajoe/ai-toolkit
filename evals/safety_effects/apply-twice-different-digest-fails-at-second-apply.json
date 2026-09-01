@@ -1,0 +1,22 @@
+{
+  "name": "apply-twice-different-digest-fails-at-second-apply",
+  "scenario": "Applying the same operation id twice with two different result digests must fail at the second apply, since an applied result's digest cannot be changed.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op-5"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-5",
+      "result_digest": "sha256:b908bd0360f5dc683d73c99815b9c7fda23327411ae478b554ea058d0ab172f6"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-5",
+      "result_digest": "sha256:fd35c21a1bb01c058e035131ae1d42e5b6feb3dcf81072ecbfabf868c11be4e8"
+    }
+  ],
+  "expect_outcome": "cannot be changed",
+  "expect_fail_step": 2
+}

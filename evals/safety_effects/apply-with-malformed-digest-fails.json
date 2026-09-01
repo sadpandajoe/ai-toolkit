@@ -1,0 +1,17 @@
+{
+  "name": "apply-with-malformed-digest-fails",
+  "scenario": "Applying with a result digest that is not a lowercase sha256: hex digest must fail at that step with a validation error, not silently accept the bad value.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op-9"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-9",
+      "result_digest": "not-a-real-digest"
+    }
+  ],
+  "expect_outcome": "lowercase sha256",
+  "expect_fail_step": 1
+}

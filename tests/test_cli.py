@@ -366,3 +366,51 @@ def test_gate_state_set_on_missing_file_fails(tmp_path: Path, capsys):
     )
     assert exit_code == 1
     assert "gate-state artifact is missing" in capsys.readouterr().err
+
+
+def test_usage_reports_json_against_an_empty_projects_root(tmp_path: Path, capsys):
+    exit_code = main(["usage", "--projects-root", str(tmp_path), "--json"])
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "usage"
+    assert payload["sessions"] == []
+    assert payload["total_tokens"] == 0
+    assert payload["premium_tokens"] == 0
+
+
+def test_usage_reports_a_session_row_from_real_jsonl(tmp_path: Path, capsys):
+    project_dir = tmp_path / "-Users-joeli-example"
+    project_dir.mkdir()
+    (project_dir / "session-1.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "cwd": "/Users/joeli/example",
+                "sessionId": "session-1",
+                "timestamp": "2026-08-01T00:00:00Z",
+                "message": {
+                    "model": "claude-opus-4-8",
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            }
+        )
+        + "\n"
+    )
+    exit_code = main(["usage", "--projects-root", str(project_dir.parent), "--json"])
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["sessions"]) == 1
+    session = payload["sessions"][0]
+    assert session["cwd"] == "/Users/joeli/example"
+    assert session["session_id"] == "session-1"
+    assert session["total_tokens"] == 150
+    # claude-opus-4-8 resolves to the "opus" role, which is premium.
+    assert session["premium_tokens"] == 150
+    assert payload["total_tokens"] == 150
+    assert payload["premium_tokens"] == 150
+
+
+def test_usage_prints_a_text_table_and_total_line(tmp_path: Path, capsys):
+    exit_code = main(["usage", "--projects-root", str(tmp_path)])
+    assert exit_code == 0
+    assert "TOTAL:" in capsys.readouterr().out

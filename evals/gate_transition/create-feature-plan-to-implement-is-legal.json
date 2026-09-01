@@ -1,0 +1,7 @@
+{
+  "name": "create-feature-plan-to-implement-is-legal",
+  "scenario": "create-feature's declared phase order allows plan to advance directly to implement; advance() must accept this transition.",
+  "workflow": "create-feature",
+  "to_phase": "implement",
+  "expect_result": "legal"
+}

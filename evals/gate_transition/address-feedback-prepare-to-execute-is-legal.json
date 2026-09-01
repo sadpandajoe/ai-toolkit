@@ -1,0 +1,7 @@
+{
+  "name": "address-feedback-prepare-to-execute-is-legal",
+  "scenario": "address-feedback's declared phase order allows prepare to advance directly to execute; advance() must accept this transition.",
+  "workflow": "address-feedback",
+  "to_phase": "execute",
+  "expect_result": "legal"
+}

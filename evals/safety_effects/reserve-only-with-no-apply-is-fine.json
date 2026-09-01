@@ -1,0 +1,11 @@
+{
+  "name": "reserve-only-with-no-apply-is-fine",
+  "scenario": "Reserving an operation id and never applying it must succeed with no error; reserve alone does not require a matching apply in the same run.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op-6"
+    }
+  ],
+  "expect_outcome": "ok"
+}

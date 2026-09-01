@@ -1,0 +1,13 @@
+{
+  "name": "apply-without-reserve-fails-at-first-step",
+  "scenario": "Calling apply for an operation id that was never reserved must fail at that first step with an error explaining the operation must be reserved before it is applied.",
+  "steps": [
+    {
+      "action": "apply",
+      "operation_id": "op-2",
+      "result_digest": "sha256:b908bd0360f5dc683d73c99815b9c7fda23327411ae478b554ea058d0ab172f6"
+    }
+  ],
+  "expect_outcome": "reserved before",
+  "expect_fail_step": 0
+}

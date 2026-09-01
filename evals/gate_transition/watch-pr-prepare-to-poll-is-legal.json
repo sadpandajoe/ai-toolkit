@@ -1,0 +1,7 @@
+{
+  "name": "watch-pr-prepare-to-poll-is-legal",
+  "scenario": "watch-pr's declared phase order allows prepare to advance directly to poll; advance() must accept this transition.",
+  "workflow": "watch-pr",
+  "to_phase": "poll",
+  "expect_result": "legal"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "address-feedback-prepare-to-prepare-is-not-a-declared-edge",
+  "scenario": "Advancing address-feedback from prepare back to prepare is a self-loop that is not a declared transition, so advance() must reject it.",
+  "workflow": "address-feedback",
+  "to_phase": "prepare",
+  "expect_result": "illegal"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "fix-bug-reproduce-to-implement-skips-diagnose",
+  "scenario": "Advancing fix-bug from reproduce straight to implement skips diagnose and is not a declared edge, so advance() must reject it.",
+  "workflow": "fix-bug",
+  "to_phase": "implement",
+  "expect_result": "illegal"
+}

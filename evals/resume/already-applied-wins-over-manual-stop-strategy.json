@@ -1,0 +1,13 @@
+{
+  "name": "already-applied-wins-over-manual-stop-strategy",
+  "scenario": "An already-applied effect sits under a manual_stop key; already-applied status must short-circuit before the manual_stop strategy check ever runs.",
+  "effect": {
+    "status": "applied",
+    "operation_id": "op-2",
+    "result_digest": "sha256:e85fddc91eb032ab01ba4273740111289939def3322ad7da2c163273fa3e19d4"
+  },
+  "strategy": "manual_stop",
+  "observed_digest": null,
+  "expect_action": "already-applied",
+  "expect_digest": "sha256:e85fddc91eb032ab01ba4273740111289939def3322ad7da2c163273fa3e19d4"
+}

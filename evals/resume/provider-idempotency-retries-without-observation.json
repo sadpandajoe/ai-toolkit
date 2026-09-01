@@ -1,0 +1,13 @@
+{
+  "name": "provider-idempotency-retries-without-observation",
+  "scenario": "A pending effect under provider_idempotency with no observed result must resolve to retry-same-operation-id, since the provider itself dedupes retries.",
+  "effect": {
+    "status": "pending",
+    "operation_id": "op-6",
+    "result_digest": null
+  },
+  "strategy": "provider_idempotency",
+  "observed_digest": null,
+  "expect_action": "retry-same-operation-id",
+  "expect_digest": null
+}

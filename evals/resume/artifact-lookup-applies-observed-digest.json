@@ -1,0 +1,13 @@
+{
+  "name": "artifact-lookup-applies-observed-digest",
+  "scenario": "A pending effect under artifact_lookup where the lookup finds an observed digest must apply that observed digest directly.",
+  "effect": {
+    "status": "pending",
+    "operation_id": "op-8",
+    "result_digest": null
+  },
+  "strategy": "artifact_lookup",
+  "observed_digest": "sha256:18aaa49166d08ca39b59a78f82731812a2805af1ba3e9ff0e9abc5e3ad9d3d75",
+  "expect_action": "apply-observed",
+  "expect_digest": "sha256:18aaa49166d08ca39b59a78f82731812a2805af1ba3e9ff0e9abc5e3ad9d3d75"
+}

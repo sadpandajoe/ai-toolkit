@@ -1,0 +1,7 @@
+{
+  "name": "create-feature-plan-to-review-skips-to-the-end",
+  "scenario": "Advancing create-feature from plan straight to review skips both implement and verify and is not a declared edge, so advance() must reject it.",
+  "workflow": "create-feature",
+  "to_phase": "review",
+  "expect_result": "illegal"
+}

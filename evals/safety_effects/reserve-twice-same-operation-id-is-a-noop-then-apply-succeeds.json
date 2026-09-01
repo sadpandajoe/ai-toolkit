@@ -1,0 +1,20 @@
+{
+  "name": "reserve-twice-same-operation-id-is-a-noop-then-apply-succeeds",
+  "scenario": "Reserving the same operation id twice must be an idempotent no-op, and the subsequent apply must still succeed normally.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op-3"
+    },
+    {
+      "action": "reserve",
+      "operation_id": "op-3"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-3",
+      "result_digest": "sha256:b908bd0360f5dc683d73c99815b9c7fda23327411ae478b554ea058d0ab172f6"
+    }
+  ],
+  "expect_outcome": "ok"
+}

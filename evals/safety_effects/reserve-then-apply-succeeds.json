@@ -1,0 +1,16 @@
+{
+  "name": "reserve-then-apply-succeeds",
+  "scenario": "A normal reserve followed by apply for the same operation id must succeed end to end with no errors at any step.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op-1"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-1",
+      "result_digest": "sha256:b908bd0360f5dc683d73c99815b9c7fda23327411ae478b554ea058d0ab172f6"
+    }
+  ],
+  "expect_outcome": "ok"
+}

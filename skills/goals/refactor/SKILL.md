@@ -94,120 +94,31 @@ through this skill's equivalence gate.
 
 ## Standard Path
 
-Runs between steps 5 and 6 above, in place of inline refactoring:
+Runs between steps 5 and 6 above, in place of inline refactoring: establish
+invariants with `debug-worker`, gate them, implement with a native
+specialist, then review. Registers dispatch boundaries `refactor.invariants`
+/ `refactor.implement` / `refactor.review`.
 
-<!-- aitk-model-route:refactor.invariants -->
-1. Dispatch `debug-worker` per `rules/specialist-handoff.md` (Phase:
-   investigate) to establish the invariants this refactor must preserve:
-   the existing tests, contracts, or observable behavior that must read
-   identically before and after. If no existing test coverage exercises the
-   scope, its Evidence summary must say so explicitly — that gap becomes a
-   `required_criteria` entry for step 6's verification (write the missing
-   characterization test first, then refactor), not a silent assumption. If
-   the scope's current behavior is itself ambiguous or contested, emit
-   `State: RECLASSIFY` toward `COMPLEX` (step 3 above) instead of continuing
-   — do not refactor against an invariant nobody actually agreed to.
-
-2. Check the invariant evidence against a minimal checklist — behavior
-   named, existing coverage identified (or its absence flagged), scope
-   boundary named — and emit its Gate block explicitly, under gate name
-   `refactor-invariants`: all three items evidenced is `PASS`; a missing
-   item is `RETRY` (re-dispatch step 1 with the gap named); the same item
-   still missing on the next attempt is `ESCALATE` per `rules/gates.md`'s
-   Repeat-Failure Counting Rule. Do not start step 3 before this gate
-   reaches `PASS`.
-
-<!-- aitk-model-route:refactor.implement -->
-3. Dispatch `implementation-worker` (Phase: implement), handing it the
-   invariant evidence pointer and a Scope naming the files the refactor may
-   touch. It performs the restructuring without changing the invariants'
-   observable behavior — no new features, no bug fixes folded in, per
-   `rules/implementation.md`.
-
-<!-- aitk-model-route:refactor.review -->
-4. After verification (step 6) reaches `PASS`, dispatch a fresh reviewer
-   through `skills/review/references/sol-review.md`'s procedure in full —
-   Dispatch, Validate findings before fixing, Gate and record, Escalate only
-   when triggered — with Scope: the resulting diff, Author identity:
-   `implementation-worker` (never the worker that performed the refactor
-   reviews its own work). Do not restate its dispatch or findings-
-   translation steps here; its own Gate and record step already emits the
-   `rules/gates.md` six-state block this workflow branches on, and its own
-   step 4 escalates to `delta-review.md` when triggered — no separate
-   escalation step is needed here.
-
-5. Only proceed to step 7 (completion) once the review Gate block reaches
-   `PASS`.
+→ Full procedure: [references/standard-path.md](references/standard-path.md)
 
 ## Complex Path
 
 Runs in place of the Trivial and Standard branches when step 3 routes here —
 for a `COMPLEX`/low-confidence `SINGLE_PHASE` refactor, or for any `BATCHED`
-shape regardless of complexity tier. Emit the Phase Plan block per
-`rules/complexity-gate.md`'s Complex Path section immediately after the Size
-Gate, before step 1 below. Its `Phases:` list names this workflow's own
-execution units — refactor slices for a `SINGLE_PHASE` change, or
-waves/items for a `BATCHED` one — never architecture-decomposition phases;
-those belong only to `MULTI_PHASE`'s Multi-Phase Path below.
+shape regardless of complexity tier. Plans via a dedicated `planner`, then
+runs the Standard Path per slice or wave/item. Registers dispatch boundary
+`refactor.plan`.
 
-<!-- aitk-model-route:refactor.plan -->
-1. Dispatch the `planner` subagent per `rules/specialist-handoff.md` (Phase:
-   plan), handing it the refactor request as Goal. It returns a plan
-   decomposed into the smallest independently-verifiable slices, each with
-   its own invariant, entrance/exit criteria, and a scope boundary, per
-   `skills/implement-change/SKILL.md`'s Slice Awareness section. Never
-   implement from an unreviewed plan the planner itself approved — the
-   planner only proposes.
-
-2. For each slice or wave/item, in order: dispatch the Standard Path's
-   invariants, invariants-gate, and implement steps (steps 1–3) against that
-   unit's scope; then verify equivalence using
-   `skills/verification-loop/SKILL.md` against gate name `refactor-verify`,
-   scoped to that unit — follow its RETRY/ESCALATE handling exactly, same
-   as step 6 above; once that verification reaches `PASS`, dispatch the
-   Standard Path's review step (step 4). This reuses the `refactor.invariants`
-   / `refactor.implement` / `refactor.review` boundaries above per unit — it
-   is a loop over the same dispatch sites, not new ones. Move to the next
-   unit only once this unit's review Gate block reaches `PASS`. For a
-   `BATCHED` shape specifically, also run one final aggregate verification
-   against gate name `refactor-verify` after the last wave/item, before
-   step 7 — per-wave verification alone does not confirm the waves compose
-   correctly together.
-
-3. Every slice or wave/item verifies and reviews within its own iteration of
-   step 2 — step 6 above does not run again once the Complex Path is
-   running. Only proceed to step 7 (completion) once every unit's review
-   Gate block reaches `PASS` (and, for `BATCHED`, the final aggregate
-   verification also reaches `PASS`).
+→ Full procedure: [references/complex-path.md](references/complex-path.md)
 
 ## Multi-Phase Path
 
 Runs in place of every other path when step 2's Size Gate derives
-`execution_shape: MULTI_PHASE` — a refactor whose scope genuinely decomposes
-into distinct, independently-verifiable restructurings. Mirrors
-`skills/goals/create-feature/SKILL.md`'s Multi-Phase Path exactly,
-substituting this skill's own dispatch boundaries and gate names:
+`execution_shape: MULTI_PHASE`. Mirrors `create-feature`'s Multi-Phase Path,
+decomposing then planning and executing per phase with this skill's own
+dispatch boundaries and gate names.
 
-1. Run `skills/planning/references/decompose-work.md` once for the whole
-   refactor. Its `architecture_plan_status` must reach `PASS` before
-   continuing — on `RECLASSIFY`/`ESCALATE`, stop and surface it rather than
-   guessing a phase list. Persist its architecture artifact per
-   `create-feature`'s Multi-Phase Path step 1.
-
-2. For each phase, in the decomposition's declared order, following
-   `create-feature`'s Multi-Phase Path step 2 (a)–(f) exactly: hand-set
-   `current_phase`; reclassify `phase_complexity`/`phase_size`/
-   `phase_execution_shape` for that phase alone; run `plan-phase.md` to
-   `phase_plan_status: PASS`; implement and verify via whichever path the
-   phase's own `phase_execution_shape` selects — reusing
-   `refactor.invariants` / `refactor.implement` / `refactor.review`,
-   including the Standard Path's invariants gate for any phase that runs it
-   — and verify against gate name `refactor-phase-<phase name>-verify`. On
-   `RECLASSIFY`/`ESCALATE`, stop and surface rather than silently reordering
-   phases.
-
-3. Once every phase's gate reaches `PASS`, proceed to step 7 (completion),
-   recording the full phase history.
+→ Full procedure: [references/multi-phase-path.md](references/multi-phase-path.md)
 
 ## Output
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -25,14 +26,18 @@ from .checkpoint import (
     validate as validate_checkpoint,
 )
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
+from .context_budget import measure_goal_skills
 from .doctor import run_doctor
 from .evals import EvalError, load_fixtures, run_fixture
 from .evals_complexity import make_checker as _make_complexity_checker
 from .evals_decomposition import make_checker as _make_decomposition_checker
 from .evals_escalation import make_checker as _make_escalation_checker
 from .evals_execution_shape import make_checker as _make_execution_shape_checker
+from .evals_gate_transition import make_checker as _make_gate_transition_checker
 from .evals_phaseability import make_checker as _make_phaseability_checker
+from .evals_resume import make_checker as _make_resume_checker
 from .evals_review_remediation import make_checker as _make_review_remediation_checker
+from .evals_safety_effects import make_checker as _make_safety_effects_checker
 from .evals_size import make_checker as _make_size_checker
 from .evals_skill_routing import make_checker as _make_skill_routing_checker
 from .installer import install, resolve_paths, rollback, uninstall
@@ -56,6 +61,7 @@ from .routing import (
     read as read_routing_state,
     set_classification,
 )
+from .usage import collect_usage, default_projects_root, premium_selectors
 from .workflows import load_workflows
 
 
@@ -73,6 +79,9 @@ EVAL_CHECKERS: dict[str, Callable[[Path], Callable[[dict], tuple[bool, str]]]] =
     "phaseability": _make_phaseability_checker,
     "decomposition": _make_decomposition_checker,
     "review_remediation": _make_review_remediation_checker,
+    "resume": _make_resume_checker,
+    "gate_transition": _make_gate_transition_checker,
+    "safety_effects": _make_safety_effects_checker,
 }
 
 # `aitk evals-run --live` mode (PLAN.md's C4): a model-in-the-loop runner using
@@ -175,6 +184,43 @@ def _doctor(arguments: argparse.Namespace) -> int:
     }
     _print(payload, arguments.json)
     return 1 if summary["FAIL"] or (arguments.strict and summary["DRIFT"]) else 0
+
+
+def _context_budget(arguments: argparse.Namespace) -> int:
+    root = _root(arguments.root)
+    results = measure_goal_skills(root)
+    skills = [
+        {
+            "name": result.name,
+            "path": result.path.relative_to(root).as_posix(),
+            "bytes": result.byte_count,
+            "budget": result.budget,
+            "status": "PASS" if result.passed else "FAIL",
+            "overage": result.overage,
+        }
+        for result in results
+    ]
+    failing = [skill for skill in skills if skill["status"] == "FAIL"]
+    payload: dict[str, object] = {
+        "command": "context-budget",
+        "skills": skills,
+        "summary": {"PASS": len(skills) - len(failing), "FAIL": len(failing)},
+    }
+    if arguments.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(f"{'SKILL':<20}{'BYTES':>10}{'BUDGET':>10}  STATUS")
+        for skill in skills:
+            print(
+                f"{skill['name']:<20}{skill['bytes']:>10}{skill['budget']:>10}  "
+                f"{skill['status']}"
+                + (f" (+{skill['overage']} over)" if skill["overage"] else "")
+            )
+        print(
+            f"Context budget: {payload['summary']['PASS']} pass, "
+            f"{payload['summary']['FAIL']} fail"
+        )
+    return 1 if failing else 0
 
 
 def _list(arguments: argparse.Namespace) -> int:
@@ -658,6 +704,50 @@ def _check(arguments: argparse.Namespace) -> int:
     )
 
 
+def _usage(arguments: argparse.Namespace) -> int:
+    root = _root(arguments.root)
+    selectors = premium_selectors(root)
+    projects_root = (
+        Path(arguments.projects_root)
+        if arguments.projects_root
+        else default_projects_root()
+    )
+    since = None
+    if arguments.period != "all":
+        days = {"7d": 7, "30d": 30}[arguments.period]
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+    report = collect_usage(projects_root, selectors, since=since)
+    payload: dict[str, object] = {"command": "usage", **report.as_dict()}
+    if arguments.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    print(
+        f"{'CWD':<60} {'SESSION':<10} {'TOKENS':>12} {'PREMIUM':>12} "
+        f"{'PREM%':>7} {'COST':>10}"
+    )
+    for session in report.sessions:
+        share = (
+            100.0 * session.premium_tokens / session.total_tokens
+            if session.total_tokens
+            else 0.0
+        )
+        cwd = session.cwd if len(session.cwd) <= 60 else "..." + session.cwd[-57:]
+        print(
+            f"{cwd:<60} {session.session_id[:8]:<10} {session.total_tokens:>12} "
+            f"{session.premium_tokens:>12} {share:>6.1f}% {session.cost:>10.2f}"
+        )
+    total_share = (
+        100.0 * report.premium_tokens / report.total_tokens
+        if report.total_tokens
+        else 0.0
+    )
+    print(
+        f"TOTAL: {report.total_tokens} tokens, {report.premium_tokens} premium "
+        f"({total_share:.1f}%), ${report.cost:.2f}"
+    )
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         prog="aitk", description="Build and validate AI Toolkit"
@@ -696,6 +786,14 @@ def parser() -> argparse.ArgumentParser:
     doctor.add_argument("--codex-home", help="selected Codex home directory")
     doctor.add_argument("--agents-dir", help="selected Agent Skills directory")
     doctor.set_defaults(handler=_doctor)
+
+    context_budget = subparsers.add_parser(
+        "context-budget", help="check goal skill SKILL.md files against their byte budget"
+    )
+    context_budget.add_argument(
+        "--json", action="store_true", help="emit machine-readable output"
+    )
+    context_budget.set_defaults(handler=_context_budget)
 
     listing = subparsers.add_parser("list", help="list stable public workflows")
     listing.add_argument(
@@ -878,6 +976,25 @@ def parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="emit machine-readable output"
     )
     check.set_defaults(handler=_check)
+
+    usage = subparsers.add_parser(
+        "usage",
+        help="summarize Claude Code session token usage and cost per session",
+    )
+    usage.add_argument(
+        "--period",
+        choices=("7d", "30d", "all"),
+        default="all",
+        help="restrict to lines timestamped within this window (default: all)",
+    )
+    usage.add_argument(
+        "--projects-root",
+        help="Claude Code projects directory (default: ~/.claude/projects)",
+    )
+    usage.add_argument(
+        "--json", action="store_true", help="emit machine-readable output"
+    )
+    usage.set_defaults(handler=_usage)
     return result
 
 

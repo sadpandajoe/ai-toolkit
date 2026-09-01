@@ -1,0 +1,7 @@
+{
+  "name": "watch-pr-prepare-to-route-skips-poll",
+  "scenario": "Advancing watch-pr from prepare straight to route skips poll and is not a declared edge, so advance() must reject it.",
+  "workflow": "watch-pr",
+  "to_phase": "route",
+  "expect_result": "illegal"
+}

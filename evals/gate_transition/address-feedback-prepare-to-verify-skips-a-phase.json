@@ -1,0 +1,7 @@
+{
+  "name": "address-feedback-prepare-to-verify-skips-a-phase",
+  "scenario": "Advancing address-feedback from prepare straight to verify skips the execute phase and is not a declared edge, so advance() must reject it.",
+  "workflow": "address-feedback",
+  "to_phase": "verify",
+  "expect_result": "illegal"
+}

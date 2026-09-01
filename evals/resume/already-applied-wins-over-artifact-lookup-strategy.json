@@ -1,0 +1,13 @@
+{
+  "name": "already-applied-wins-over-artifact-lookup-strategy",
+  "scenario": "An already-applied effect sits under an artifact_lookup key; the applied status must win over the strategy branch and return the stored digest directly.",
+  "effect": {
+    "status": "applied",
+    "operation_id": "op-3",
+    "result_digest": "sha256:905d208fdee6e81bedd03140fe9613bdf2700110f6d2b8417f581c78bcbd0b1a"
+  },
+  "strategy": "artifact_lookup",
+  "observed_digest": null,
+  "expect_action": "already-applied",
+  "expect_digest": "sha256:905d208fdee6e81bedd03140fe9613bdf2700110f6d2b8417f581c78bcbd0b1a"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "artifact-lookup-falls-back-to-inspection-without-observation",
+  "scenario": "A pending effect under artifact_lookup with nothing found by the lookup must fall back to inspect-artifact rather than retrying blindly.",
+  "effect": {
+    "status": "pending",
+    "operation_id": "op-9",
+    "result_digest": null
+  },
+  "strategy": "artifact_lookup",
+  "observed_digest": null,
+  "expect_action": "inspect-artifact",
+  "expect_digest": null
+}

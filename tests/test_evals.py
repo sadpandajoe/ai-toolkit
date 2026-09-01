@@ -8,6 +8,8 @@ from aitk import cli
 from aitk.cli import main
 from aitk.evals import EvalError, EvalResult, load_fixtures, run_family, run_fixture
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 def test_load_fixtures_on_missing_directory_returns_empty(tmp_path: Path):
     assert load_fixtures(tmp_path / "does-not-exist") == []
@@ -493,3 +495,204 @@ class TestSkillRoutingChecker:
         exit_code = main(["evals-run", "--family", "skill_routing"])
 
         assert exit_code == 0
+
+
+class TestResumeChecker:
+    """aitk.evals_resume"""
+
+    def test_pending_effect_with_observed_digest_applies_it(self, tmp_path: Path):
+        from aitk.evals_resume import make_checker
+
+        checker = make_checker(tmp_path)
+        digest = "sha256:" + "ab" * 32
+        passed, reason = checker(
+            {
+                "effect": {"status": "pending", "operation_id": "op-1"},
+                "strategy": "provider_idempotency",
+                "observed_digest": digest,
+                "expect_action": "apply-observed",
+                "expect_digest": digest,
+            }
+        )
+        assert passed, reason
+
+    def test_manual_stop_strategy_always_halts(self, tmp_path: Path):
+        from aitk.evals_resume import make_checker
+
+        checker = make_checker(tmp_path)
+        passed, reason = checker(
+            {
+                "effect": {"status": "pending", "operation_id": "op-2"},
+                "strategy": "manual_stop",
+                "observed_digest": "sha256:" + "cd" * 32,
+                "expect_action": "stop-for-user",
+            }
+        )
+        assert passed, reason
+
+    def test_wrong_expected_action_fails(self, tmp_path: Path):
+        from aitk.evals_resume import make_checker
+
+        checker = make_checker(tmp_path)
+        passed, reason = checker(
+            {
+                "effect": {"status": "pending", "operation_id": "op-3"},
+                "strategy": "provider_idempotency",
+                "observed_digest": None,
+                "expect_action": "apply-observed",
+            }
+        )
+        assert not passed
+        assert "expected 'apply-observed'" in reason
+
+    def test_missing_field_fails_cleanly(self, tmp_path: Path):
+        from aitk.evals_resume import make_checker
+
+        checker = make_checker(tmp_path)
+        passed, reason = checker({"effect": {"status": "pending", "operation_id": "op-4"}})
+        assert not passed
+        assert "missing required field" in reason
+
+    def test_malformed_effect_fails_cleanly(self, tmp_path: Path):
+        from aitk.evals_resume import make_checker
+
+        checker = make_checker(tmp_path)
+        passed, reason = checker(
+            {
+                "effect": {"operation_id": "op-5"},
+                "strategy": "provider_idempotency",
+                "expect_action": "retry-same-operation-id",
+            }
+        )
+        assert not passed
+        assert "missing required field" in reason
+
+    def test_cli_evals_run_against_real_repo_fixtures(self):
+        assert main(["evals-run", "--family", "resume"]) == 0
+
+
+class TestGateTransitionChecker:
+    """aitk.evals_gate_transition"""
+
+    def test_legal_single_step_transition_passes(self):
+        from aitk.evals_gate_transition import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        passed, reason = checker(
+            {"workflow": "address-feedback", "to_phase": "execute", "expect_result": "legal"}
+        )
+        assert passed, reason
+
+    def test_illegal_skip_transition_passes_when_expected_illegal(self):
+        from aitk.evals_gate_transition import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        passed, reason = checker(
+            {"workflow": "address-feedback", "to_phase": "verify", "expect_result": "illegal"}
+        )
+        assert passed, reason
+
+    def test_wrong_expectation_fails_with_reason(self):
+        from aitk.evals_gate_transition import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        passed, reason = checker(
+            {"workflow": "address-feedback", "to_phase": "verify", "expect_result": "legal"}
+        )
+        assert not passed
+        assert "'illegal'" in reason
+        assert "expected 'legal'" in reason
+
+    def test_missing_field_fails_cleanly(self):
+        from aitk.evals_gate_transition import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        passed, reason = checker({"workflow": "address-feedback", "to_phase": "execute"})
+        assert not passed
+        assert "missing required field" in reason
+
+    def test_unknown_workflow_fails_cleanly(self):
+        from aitk.evals_gate_transition import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        passed, reason = checker(
+            {"workflow": "not-a-real-workflow", "to_phase": "execute", "expect_result": "legal"}
+        )
+        assert not passed
+        assert "raised" in reason
+
+    def test_cli_evals_run_against_real_repo_fixtures(self):
+        assert main(["evals-run", "--family", "gate_transition"]) == 0
+
+
+class TestSafetyEffectsChecker:
+    """aitk.evals_safety_effects"""
+
+    def test_reserve_then_apply_succeeds(self):
+        from aitk.evals_safety_effects import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        digest = "sha256:" + "12" * 32
+        passed, reason = checker(
+            {
+                "steps": [
+                    {"action": "reserve", "operation_id": "op-1"},
+                    {"action": "apply", "operation_id": "op-1", "result_digest": digest},
+                ],
+                "expect_outcome": "ok",
+            }
+        )
+        assert passed, reason
+
+    def test_apply_without_reserve_fails_at_expected_step(self):
+        from aitk.evals_safety_effects import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        digest = "sha256:" + "34" * 32
+        passed, reason = checker(
+            {
+                "steps": [{"action": "apply", "operation_id": "op-2", "result_digest": digest}],
+                "expect_outcome": "reserved before",
+                "expect_fail_step": 0,
+            }
+        )
+        assert passed, reason
+
+    def test_failure_at_wrong_step_is_rejected(self):
+        from aitk.evals_safety_effects import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        digest = "sha256:" + "56" * 32
+        passed, reason = checker(
+            {
+                "steps": [{"action": "apply", "operation_id": "op-3", "result_digest": digest}],
+                "expect_outcome": "reserved before",
+                "expect_fail_step": 1,
+            }
+        )
+        assert not passed
+        assert "expected the failure at step 1" in reason
+
+    def test_missing_field_fails_cleanly(self):
+        from aitk.evals_safety_effects import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        passed, reason = checker({"steps": []})
+        assert not passed
+        assert "missing required field" in reason or "nonempty list" in reason
+
+    def test_malformed_step_fails_cleanly(self):
+        from aitk.evals_safety_effects import make_checker
+
+        checker = make_checker(REPO_ROOT)
+        passed, reason = checker(
+            {
+                "steps": [{"action": "teleport", "operation_id": "op-4"}],
+                "expect_outcome": "ok",
+            }
+        )
+        assert not passed
+        assert "invalid action" in reason
+
+    def test_cli_evals_run_against_real_repo_fixtures(self):
+        assert main(["evals-run", "--family", "safety_effects"]) == 0

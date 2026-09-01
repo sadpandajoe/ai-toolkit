@@ -1,0 +1,13 @@
+{
+  "name": "realistic-operation-id-full-round-trip-to-observed-digest",
+  "scenario": "A realistic operation id round-trips through a provider_idempotency effect whose lookup returns a matching observed digest, exercising the full apply-observed path end to end.",
+  "effect": {
+    "status": "pending",
+    "operation_id": "gh-pr-4821-comment-99",
+    "result_digest": null
+  },
+  "strategy": "provider_idempotency",
+  "observed_digest": "sha256:c82403b50d245ac5650fb44a2d35b9854669d725f758dcb3e68f4a15041ceda4",
+  "expect_action": "apply-observed",
+  "expect_digest": "sha256:c82403b50d245ac5650fb44a2d35b9854669d725f758dcb3e68f4a15041ceda4"
+}

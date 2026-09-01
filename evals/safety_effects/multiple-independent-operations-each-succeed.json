@@ -1,0 +1,25 @@
+{
+  "name": "multiple-independent-operations-each-succeed",
+  "scenario": "Two unrelated operation ids each reserved and applied independently must both succeed without interfering with one another.",
+  "steps": [
+    {
+      "action": "reserve",
+      "operation_id": "op-8a"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-8a",
+      "result_digest": "sha256:b908bd0360f5dc683d73c99815b9c7fda23327411ae478b554ea058d0ab172f6"
+    },
+    {
+      "action": "reserve",
+      "operation_id": "op-8b"
+    },
+    {
+      "action": "apply",
+      "operation_id": "op-8b",
+      "result_digest": "sha256:fd35c21a1bb01c058e035131ae1d42e5b6feb3dcf81072ecbfabf868c11be4e8"
+    }
+  ],
+  "expect_outcome": "ok"
+}

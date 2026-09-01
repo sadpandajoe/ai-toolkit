@@ -1,0 +1,7 @@
+{
+  "name": "fix-bug-reproduce-to-diagnose-is-legal",
+  "scenario": "fix-bug's declared phase order allows reproduce to advance directly to diagnose; advance() must accept this transition.",
+  "workflow": "fix-bug",
+  "to_phase": "diagnose",
+  "expect_result": "legal"
+}
