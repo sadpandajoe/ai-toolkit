@@ -58,7 +58,7 @@ The umbrella unifies them by workflow domain (diagnosis), not by shape.
 ## Notes
 
 - `investigate-change` has a "When Investigating a Bug" section with bug-specific framing fields — use it for `fix-bug`.
-- `review-rca` is a *critic* — it scores and returns findings, unlike investigate-change which *produces* the RCA. Its RCA Gate Evidence Checklist section is what a `rules/gates.md`-driven RCA gate consumes for a PASS/RETRY/ESCALATE decision; the `Score: X/10` output above it is the older shape, kept for existing callers.
+- `review-rca` is a *critic* — it checks evidence and returns findings, unlike investigate-change which *produces* the RCA. Its RCA Gate Evidence Checklist is what a `rules/gates.md`-driven RCA gate consumes for a PASS/RETRY/ESCALATE decision; every caller emits that Gate block directly, not a numeric score.
 - `check-existing-fix` can be skipped when the change is a dependency upgrade or structural refactor (not an isolated defect correction).
 - End-to-end sequencing belongs in the selected canonical workflow reference.
   This skill owns diagnostic phases only; the workflow routes implementation,

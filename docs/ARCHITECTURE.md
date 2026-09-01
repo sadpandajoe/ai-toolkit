@@ -39,9 +39,11 @@ agents/
     planner.md
     implementation-worker.md
     debug-worker.md
+    deep-rca-worker.md
     test-worker.md
     review-worker.md
     deep-review-worker.md
+    operations-worker.md
   codex/
     rca.md
     plan-validator.md
@@ -64,11 +66,13 @@ Two differences from the source spec's file layout are deliberate, not drift:
 - Agents live at `agents/claude/*.md` and `agents/codex/*.md`, not
   `.claude/agents/*.md`. The installer symlinks them into place; the
   source-linked location is what this repo's own tooling and tests operate on.
-- The Claude side has **six** native worker files, not four. Review and
+- The Claude side has **eight** native worker files, not four. Review and
   deep-review went native alongside the original four (planner,
   implementation-worker, debug-worker, test-worker) because
   `interfaces/model-routing.json` pins them to different models, so they
-  needed two files. This is coverage beyond the spec's minimum, not a gap.
+  needed two files; `deep-rca-worker` and `operations-worker` closed the
+  remaining two routed boundaries. This is coverage beyond the spec's
+  minimum, not a gap.
 
 `skills/goals/address-feedback` (not `pr-feedback`) is an open naming
 decision, not a settled deviation — see `PLAN.md`'s "Open decisions for the
