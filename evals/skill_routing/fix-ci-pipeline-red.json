@@ -1,0 +1,5 @@
+{
+  "name": "fix-ci-pipeline-red",
+  "phrase": "pipeline has gone red",
+  "expect_skill": "fix-ci"
+}

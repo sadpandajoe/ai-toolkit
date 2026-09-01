@@ -1,6 +1,6 @@
 ---
 name: fix-ci
-description: Use when a CI build or check has failed and you want to diagnose and fix it. Covers TRIVIAL, STANDARD, and COMPLEX under rules/complexity-gate.md, and the full S/M/L/XL size axis under aitk/size_axis.py. Do NOT use for bug fixes unrelated to CI (skills/goals/fix-bug), feature work (skills/goals/create-feature), or refactors — this skill only fixes failing CI runs.
+description: Use when a CI build or check has failed, a pipeline has gone red, or you want to diagnose and fix it. Covers TRIVIAL, STANDARD, and COMPLEX under rules/complexity-gate.md, and the full S/M/L/XL size axis under aitk/size_axis.py. Do NOT use for bug fixes unrelated to CI (skills/goals/fix-bug), feature work (skills/goals/create-feature), or refactors — this skill only fixes failing CI runs.
 ---
 
 # Fix CI
