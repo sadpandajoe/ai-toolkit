@@ -84,21 +84,21 @@ EVAL_CHECKERS: dict[str, Callable[[Path], Callable[[dict], tuple[bool, str]]]] =
     "safety_effects": _make_safety_effects_checker,
 }
 
-# `aitk evals-run --live` mode (PLAN.md's C4): a model-in-the-loop runner using
-# the routed Sonnet transport, for families whose correctness can't be
-# verified by pure structural checks alone (see each EVAL_CHECKERS docstring).
-# Not implemented: `aitk.model_routing.run_model()`/`resolve_route()` require a
-# declared `dispatch_boundaries` entry, and `validate_dispatch_boundaries()`
-# (aitk/routing_manifest.py) only recognizes a boundary's marker inside a
-# `skills/**/*.md` or `extensions/*/skills/**/*.md` file, immediately
-# preceding dispatch prose. This CLI harness has no skill file and no
-# dispatch prose to put a marker in — registering a boundary here would mean
-# writing a fake skill file solely to satisfy the validator. There is
-# deliberately no per-family checker table for this mode: until the transport
-# grows a non-skill dispatch path (or this harness gets its own provider
-# invocation independent of interfaces/model-routing.json), no family can be
-# live-checked, so `--live` always refuses rather than offering a lookup that
-# could never be populated without first resolving the blocker.
+# `aitk evals-run --live` mode (PLAN.md's C4): a model-in-the-loop check, for
+# families whose correctness can't be verified by pure structural checks
+# alone (see each EVAL_CHECKERS docstring — skill_routing, complexity, size,
+# execution_shape, phaseability). This CLI flag still refuses: the routed
+# transport (aitk.model_routing.run_model()/resolve_route()) requires a
+# declared `dispatch_boundaries` entry whose marker lives inside a
+# `skills/**/*.md` file immediately preceding real dispatch prose
+# (aitk/routing_manifest.py's validate_dispatch_boundaries), and a bare CLI
+# harness has no skill file to host one honestly — registering a boundary
+# here would mean writing a fake skill solely to satisfy the validator, with
+# no agent ever reading its prose. Live checking is instead the `evals`
+# skill's job (skills/evals/SKILL.md, boundary `evals.live-check`): an agent
+# follows it to dispatch each fixture and compare verdicts. There is
+# deliberately no per-family checker table for `--live` — this flag only
+# points at that skill.
 
 
 def _root(value: str | None) -> Path:
@@ -593,12 +593,12 @@ def _gate_state(arguments: argparse.Namespace) -> int:
 def _evals_run(arguments: argparse.Namespace) -> int:
     if arguments.live:
         print(
-            "aitk evals-run --live: not implemented. The routed transport requires "
-            "a declared dispatch boundary whose marker lives in a scanned "
-            "skills/**/*.md file immediately preceding dispatch prose "
-            "(aitk/routing_manifest.py's validate_dispatch_boundaries); a CLI "
-            "harness has no skill file to put one in. Run without --live for "
-            "structural mode.",
+            "aitk evals-run --live: not a CLI feature. Live checking needs an "
+            "agent reading real dispatch prose, not a script looping over "
+            "fixtures — follow skills/evals/SKILL.md instead, which dispatches "
+            "each fixture on the 'operations' route (boundary "
+            "evals.live-check) and compares verdicts. Run without --live here "
+            "for structural mode.",
             file=sys.stderr,
         )
         return 1

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Evals"
+  short_description: "Run an evals/ fixture family through a live model"
+
+policy:
+  allow_implicit_invocation: false

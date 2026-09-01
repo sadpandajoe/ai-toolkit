@@ -135,6 +135,7 @@ BOUNDARY_INVARIANTS = {
     "create-feature.review": ("review",),
     "create-feature.plan": ("planning",),
     "debug.ci-triage": ("rca", "deep-rca"),
+    "evals.live-check": ("operations",),
     "feedback.comment-fix-groups": ("implementation",),
     "fix-bug.investigate": ("rca", "deep-rca"),
     "fix-bug.implement": ("implementation",),

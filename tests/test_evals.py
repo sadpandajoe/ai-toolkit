@@ -100,8 +100,8 @@ def test_cli_evals_run_live_refuses_unconditionally(tmp_path: Path, capsys):
 
     err = capsys.readouterr().err
     assert exit_code == 1
-    assert "not implemented" in err
-    assert "dispatch boundary" in err
+    assert "not a CLI feature" in err
+    assert "skills/evals/SKILL.md" in err
 
 
 def test_cli_evals_run_aggregates_pass_and_fail(tmp_path: Path, capsys, monkeypatch):

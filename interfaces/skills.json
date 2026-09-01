@@ -8,6 +8,7 @@
     {"name": "code-review", "path": "skills/goals/code-review", "classification": "public_direct"},
     {"name": "create-feature", "path": "skills/goals/create-feature", "classification": "public_direct"},
     {"name": "debug", "path": "skills/debug", "classification": "internal_support"},
+    {"name": "evals", "path": "skills/evals", "classification": "internal_support"},
     {"name": "feedback", "path": "skills/feedback", "classification": "internal_support"},
     {"name": "fix-bug", "path": "skills/goals/fix-bug", "classification": "public_direct"},
     {"name": "fix-ci", "path": "skills/goals/fix-ci", "classification": "public_direct"},

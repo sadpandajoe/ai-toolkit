@@ -254,6 +254,7 @@
     {"id": "cherry-pick.validate-scope-leak", "path": "skills/goals/cherry-pick/references/validate.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "cherry-pick.validate-scope-leak-rerun", "path": "skills/goals/cherry-pick/references/validate.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "debug.ci-triage", "path": "skills/debug/references/ci-fix-orchestration.md", "count": 1, "routes": ["rca", "deep-rca"], "contracts": ["agents/codex/rca.md"]},
+    {"id": "evals.live-check", "path": "skills/evals/SKILL.md", "count": 1, "routes": ["operations"]},
     {"id": "feedback.comment-fix-groups", "path": "skills/feedback/SKILL.md", "count": 1, "routes": ["implementation"]},
     {"id": "qa.fresh-validation", "path": "skills/qa/SKILL.md", "count": 1, "routes": ["review", "operations"], "contracts": ["skills/qa/SKILL.md"]},
     {"id": "review.pr-lenses", "path": "skills/review/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code"},
