@@ -24,9 +24,11 @@ rule below.
 - **Spaghetti growth** — new ad-hoc conditionals or one-off branches inserted into unrelated flows are a design problem, not a style nit; prefer a helper/model/module over tangling an existing path. `[minor]` when it worsens legibility, `[major]` when it makes an existing flow materially harder to reason about.
 - **Test quality** — tests should not silently pass (always-green tests are noise); data should match types
 
-## Scoring
+## What To Evaluate
 
-Use the universal rubric in `rules/scoring.md`. Score each component:
+No numeric score. Evaluate these dimensions and tag findings against them
+with the severity vocabulary from `rules/severity.md` (`[major]` / `[minor]`
+/ `[nitpick]`) rather than a per-component number:
 
 | Component | What to evaluate |
 |-----------|-----------------|
@@ -36,7 +38,14 @@ Use the universal rubric in `rules/scoring.md`. Score each component:
 | **Code** | Is the code readable, consistent, and correct? |
 | **Docs** | Are changes self-explanatory or properly documented? |
 
-A single blocking component (1-2) pulls the overall score into the 3-5 range — the overall is not a simple average.
+The gate outcome is `rules/gates.md`'s six-state contract, decided by
+`skills/review/references/sol-review.md`'s procedure: `PASS` requires every
+validated `[major]` finding resolved (an unresolved `[minor]`/`[nitpick]`
+does not block — record it in the summary's Remaining section instead); the
+first unresolved-required outcome is `RETRY`, a second consecutive reasoning
+failure at the same checkpoint is `ESCALATE`. A single blocking `[major]`
+finding is enough to keep the gate off `PASS` regardless of how clean the
+rest of the diff is — severity is not averaged across components.
 
 ## Severity Tags
 
@@ -73,7 +82,7 @@ level and move it to the summary's Remaining section rather than blocking on it.
 
 **Impact escalation**: When the impact assessment (from the `qa` skill's `references/assess-impact.md`) is CORE, shift all "missing test" findings up one severity level. A config change with no test is normally `[minor]` — but if it touches a CORE workflow (login, auth, payment), it becomes `[major]`.
 
-When reviewing, **assess what the PR does before scoring test coverage**. A blanket "no tests = major" penalizes trivial PRs unfairly and lets risky PRs hide behind a few token tests.
+When reviewing, **assess what the PR does before grading test coverage**. A blanket "no tests = major" penalizes trivial PRs unfairly and lets risky PRs hide behind a few token tests.
 
 ## Invalid Review Patterns
 - Minor formatting (periods, spacing)

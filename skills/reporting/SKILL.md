@@ -57,3 +57,13 @@ When adding a workflow, add a summary template only when it needs structured
 domain output. Add human checkpoint details only when the generic status would
 lose material resume context; the v2 contract and deterministic checkpoint API
 remain authoritative.
+
+## Phase Handoff
+
+For a `MULTI_PHASE` plan, `skills/planning/references/plan-phase.md`'s
+completed-phase checkpointing step (after each phase is implemented and
+verified) uses
+[phase-handoff.md](templates/phase-handoff.md) instead of a
+per-workflow checkpoint extension — it records the closing gate, accepted
+artifact(s), what the next phase must know, and any reclassification,
+independent of which top-level workflow is running the decomposition.

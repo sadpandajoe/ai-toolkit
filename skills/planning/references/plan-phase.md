@@ -94,7 +94,8 @@ once `phase_plan_status` reaches `PASS`.
 Completed-phase checkpointing — recording what landed, any learned
 constraints, global-invariant changes, and the verification evidence
 pointer — happens after this phase is implemented and verified, in the
-caller's per-phase loop, not here.
+caller's per-phase loop, not here, using
+[skills/reporting/templates/phase-handoff.md](../../reporting/templates/phase-handoff.md).
 
 ## Constraints
 

@@ -86,6 +86,27 @@ not the canonical location to edit.
 `pr-feedback`; keeping that name is still an open decision (see PLAN.md's
 "Open decisions for the user"), not a completed rename.
 
+### Vocabulary: v1 complexity tiers → v2
+
+v1's three-tier complexity vocabulary does not carry over 1:1 — the same word
+means a different tier in v1 and v2, so a reader following an old note must
+remap it, not skim it:
+
+| v1 term | v2 term |
+|---|---|
+| `TRIVIAL` | `TRIVIAL` |
+| `MODERATE` | `STANDARD` |
+| `STANDARD` | `COMPLEX` |
+
+`NON-TRIVIAL` and any `/10` numeric review score are v1-only; the six-state
+gate contract (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED) replaces
+scored thresholds for every migrated goal-skill path. `rules/{scoring,
+stop-rules,review-gate}.md` still use the old scored-threshold vocabulary, but
+only for the plan-domain reviewers named in "Kept, not deleted" below — that
+is a recorded deferral, not a second live scoring system for goal workflows.
+`aitk/routing.py`'s `_LEGACY_COMPLEXITY_MAP` performs this same remap
+mechanically for any `routing-state` block written under the old vocabulary.
+
 ### Deleted
 
 - `skills/workstreams`, `skills/action-gate`, `skills/plan-review` — repointed
@@ -118,6 +139,20 @@ reviewer}.md`) and for three Claude boundaries that have no native worker file
 yet: `deep-rca`, `operations`, and the review-ensemble lanes. The Claude-side
 `model-run` closure code cannot be removed until those three either go native
 or are deleted.
+
+**Ratified 2026-08-27 (user, via AskUserQuestion): option (b), "go native."**
+The spec's original text names Codex SOL as the independent verifier for
+`review`/`deep-review` unconditionally. This repo instead runs those two
+boundaries as native Claude subagents when the active provider is Claude:
+`agents/claude/review-worker.md` (the `review` route, Opus) and
+`agents/claude/deep-review-worker.md` (the `deep-review` route, Fable) — two
+files, not one, because `interfaces/model-routing.json` pins the two routes
+to different models and a single frontmatter `model:` field cannot carry
+both. Codex SOL (`agents/codex/reviewer.md`) remains the independent verifier
+only when the active provider is Codex, which has no native worker roster.
+`config/providers/claude.md`'s `routed_subagent` entry and `independent_review`
+entry record the binding; `rules/model-assignment.md` and
+`docs/ARCHITECTURE.md`'s "Model workers" section carry the same decision.
 
 ### Docs and telemetry
 

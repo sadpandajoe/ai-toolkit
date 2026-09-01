@@ -1,108 +1,117 @@
 # Orchestration Principles
 
-## Primary Orchestrator Model
+## The Parent Session Is A Control Plane
 
-The active coding agent is the primary orchestrator: planning, investigation, complex reasoning, verification, durable state, and final synthesis. Secondary tools, CLIs, models, or subagents are optional delegatees for bounded, well-specified tasks when available.
+The active parent session is a Sonnet-class control plane by default: it
+classifies incoming work (`rules/complexity-gate.md`'s TRIVIAL/STANDARD/
+COMPLEX tier crossed with the S/M/L/XL size axis, deriving execution shape
+SINGLE_PHASE/BATCHED/MULTI_PHASE — see `skills/goals/create-feature/
+SKILL.md`'s Size Gate step), owns `PROJECT.md`/`PLAN.md` as the only writer,
+dispatches bounded workers for phases needing heavy reasoning, and reviews
+their compact returned results. Route table, effort ladder, and per-provider
+dispatch transport live in `rules/model-assignment.md`, not here.
 
-| Role | Owner | Examples |
-|------|-------|---------|
-| **Orchestrator** | Active coding agent | Planning, architecture, RCA, multi-file refactors, security-sensitive code |
-| **Delegatee** (optional) | Secondary tool/model/CLI | Single-file implementations, boilerplate, mechanical transforms, test generation from spec |
-| **Internal workers** | Subagents/workers | Exploration, planning, research |
-| **Domain reviewers** | Skill subagents | Architecture, implementation, testing, frontend, backend perspectives |
+## Goal Skills Own The Loop
 
-## Model Routes And Effort
+`skills/goals/*` (`fix-bug`, `create-feature`, `code-review`, `fix-ci`,
+`address-feedback`, `test-pr`, `watch-pr`, `refactor`, `release-prep`,
+`cherry-pick`, …) each own their workflow end to end — classification,
+branching by tier, dispatch, gates, completion. This file states the
+cross-cutting principles those skills all follow; it is not itself an entry
+point and does not replace a goal skill's own steps.
 
-The active parent session is the orchestrator and keeps the user's selected
-workhorse configuration. Every spawned model worker uses a stable route from
-`rules/model-assignment.md`; the route resolver supplies the exact current
-selector, effort, permission boundary, and output contract.
-
-Use the normal `implementation`, `review`, or `rca` route for bounded work. Use
-`deep-review` for architecture, security, adversarial analysis, and meaningful
-final cold reads. Use `deep-rca` when evidence is ambiguous, intermittent,
-history-dependent, or crosses systems. Use `operations` only for its narrow,
-non-development allowlist. Automatic implementation and RCA synthesis run on
-the Sol/Sonnet route; `review`/`deep-review`/`deep-rca` stay on Opus/Fable so
-a stronger model always checks Sonnet's output — see `rules/gates.md` for how
-a non-`PASS` gate outcome routes back through review, never back through the
-same Sonnet worker.
-
-High is the automatic baseline; xhigh is reserved for deep routes. Automatic
-dispatch never selects max and never falls back to a weaker model or effort.
-Resolve the toolkit/package root from the installed skill, then check the
-provider's `routed_subagent` binding: `fallback` resolves with
-`<toolkit-root>/bin/aitk model-route --boundary <marker-id>` and launches with
-`<toolkit-root>/bin/aitk model-run --boundary <marker-id>`; `native` dispatches
-by name to a provider-native worker instead (see
-`config/providers/claude.md`). Codex has no native roster, so its dispatch is
-always `fallback`; its `rca`/`review`/`deep-review` boundaries carry a named
-Codex specialist contract instead — see `rules/model-assignment.md`.
-
-**Cherry-pick routing**: the cherry-pick gate classifies difficulty (TRIVIAL vs
-NON-TRIVIAL) and selects `review` or `deep-review` for the mandatory post-apply
-scope audit. Planning, application, adaptation, and correctness validation stay
-with the main thread. See `skills/goals/cherry-pick/references/gate.md` for the route
-table; exact effort values remain manifest-owned.
-
-The orchestrator may run on any user-selected model that satisfies the user's
-workhorse policy. The stable routes apply to **subagents/workers** spawned from
-it and cannot retroactively change the parent session.
+**Cherry-pick's classification is the same gate, not a special case.**
+`skills/goals/cherry-pick` classifies each change against the identical
+TRIVIAL/STANDARD/COMPLEX vocabulary from `rules/complexity-gate.md` (its own
+`references/gate.md` supplies the difficulty-signal table cherry-picks need,
+same shape as any other goal skill's signal table) and uses that
+classification to select the mandatory post-apply scope-audit route: `review`
+for TRIVIAL/STANDARD, `deep-review` for COMPLEX. Planning, application,
+conflict adaptation, and correctness validation stay on the parent thread
+regardless of tier.
 
 ## Inline-First Principle
 
-Every subagent spawn costs orchestrator messages. On subscription plans, this directly reduces how much work fits in a session. Before spawning a subagent, ask: **does this task need a separate agent, or can the orchestrator do it inline?**
+Every subagent spawn costs orchestrator messages and, on subscription plans,
+directly reduces how much work fits in a session. Before spawning a
+subagent, ask: **does this task need a separate agent, or can the parent do
+it inline?**
 
-Spawn a subagent when:
-- Parallelism provides a clear wall-clock win (multiple independent investigation lanes)
-- Isolation matters (reviewer should not see implementation context, cold read needs fresh eyes)
-- The work is a **review** — never review your own work; always use a separate subagent for code and plan reviews
+Stay inline for:
+- Classification (`rules/complexity-gate.md`'s gate itself) and all
+  `PROJECT.md`/`PLAN.md` state writes — these are parent-only regardless of
+  tier.
+- The entire TRIVIAL fast-path implementation — per
+  `rules/complexity-gate.md`'s Trivial Fast-Path, zero subagent spawns for
+  the implementation itself.
 
-Do it inline when:
-- The work is sequential anyway (classification, single-file investigation, planning a scoped fix)
-- The orchestrator already has the relevant context loaded
-- The task is bounded and the result is short (triage, RCA for a single failure mode)
+Dispatch a bounded worker for:
+- Any phase that requires heavy reasoning — investigation, RCA, planning,
+  non-trivial implementation, review — per `rules/model-assignment.md`'s
+  route table. The parent is a control plane; it hands these phases to the
+  matching route rather than reasoning through them itself.
+- **Every review** — never review your own work. A fresh reviewer subagent
+  is the floor at every tier, TRIVIAL included, whenever the workflow's
+  product involves reviewing changed code.
+- Parallel investigation lanes, when wall-clock parallelism gives a clear
+  win and the units are genuinely independent.
 
-When the complexity gate classifies work as MODERATE, default to inline for
-scoping, investigation, and planning, but still use `fresh_subagent` for the
-required reviewer. When STANDARD, follow the workflow's declared capability
-steps.
+STANDARD and COMPLEX work follow their goal skill's declared dispatch steps;
+this section states the default, not a per-workflow override.
 
-## Long-Running Workflow Pattern
+## Worker Isolation And Bounded Handoffs
 
-When a workflow may process many units, inspect large logs, or run across multiple phases, the main thread should stay as a thin orchestrator rather than becoming the durable memory for every raw detail.
+Every dispatch to a worker follows `rules/specialist-handoff.md`'s input/
+output field contract — Goal, Phase, Scope, Evidence pointer, Constraints,
+Exit criteria in; Status, Evidence summary, Changed artifacts, Blockers,
+Residual risk, Next-action implication out. Workers never see the parent's
+raw conversation transcript and never write `PROJECT.md`/`PLAN.md` — only the
+parent does, after folding a worker's compact result back in. See
+`rules/context-management.md`'s Workers as Phase Isolation for why dispatch,
+not an explicit reset, is the isolation mechanism, and its Save and Continue
+Protocol for what the parent checkpoints after each handoff.
 
-- **Main thread owns** ordering, dependency tracking, user decisions, checkpoint boundaries, and final synthesis.
-- **Durable state lives in files**: use `PROJECT.md`, `PLAN.md`, or a workflow-specific local manifest when chat history would otherwise become the state store.
-- **Subagents own bounded expensive context**: each receives only the unit, wave, or lane it needs plus the output contract.
-- **Subagents return compact handoffs**: status, evidence summary, blockers, verification, residual risk, and next-action implications. Do not return full logs or diffs unless blocked.
-- **The main thread updates durable state after every unit or wave** before starting the next one.
-- **Checkpoint between waves/phases** per `rules/context-management.md`. Isolation comes from dispatching each wave/phase to its own subagent, not from an explicit reset the orchestrator triggers — checkpoint after durable artifacts are updated, on every boundary, not only when context or cost looks close to a limit.
+## Max Nesting Depth
 
-Use workflow-specific manifests when the work has a natural table of units, for
-example large cherry-pick trains, multi-failure CI fixes, or batch PR reviews.
-Keep those files local-only unless the workflow explicitly says otherwise.
+Spawn depth stays at one level by default: the parent dispatches a worker,
+that worker returns rather than dispatching further workers of its own.
+`rules/resource-management.md` owns this rule and its narrow exception (a
+calling procedure that explicitly names a second dispatch layer); this file
+does not restate the exception list.
+
+## How Gates Route
+
+Every checkpoint a goal skill or worker hits — verification, review, RCA
+validation, plan review — emits `rules/gates.md`'s six-state block and
+follows its repeat-failure counting rule. `RETRY`/`ESCALATE` are autonomous;
+only `USER_DECISION`/`BLOCKED` surface to the user; `RECLASSIFY` sends the
+workflow back through the Complexity Gate. This file does not restate
+`rules/gates.md`'s vocabulary or counting rule — read it there.
 
 ## Subagent Batch Rules
 
-Use these rules whenever a workflow delegates implementation, investigation lanes, review batches, cherry-pick waves, or CI failure groups.
+Applies whenever a goal skill dispatches multiple units — cherry-pick waves,
+CI failure groups, batch PR reviews, or a `BATCHED` shape's per-item loop:
 
-- Start with one unit unless the plan already proves independence.
-- Batch 2-3 units only when ownership is disjoint and dependencies are clear.
-- Use a single unit when work touches shared APIs, migrations, auth, routing, state models, generated artifacts, or cross-cutting contracts.
-- Each subagent gets only the unit scope, relevant context excerpt, entrance criteria, exit criteria, expected validation, and handoff format.
-- After each wave, collect compact handoffs, update durable state, run any required fan-in or review gate, then decide the next wave.
-- Do not start the next wave while the current wave has failed acceptance, merge conflicts, unresolved review findings, or an open user decision.
+- Start with one unit unless the plan already proves independence; batch 2-3
+  only when ownership is disjoint and dependencies are clear. Use a single
+  unit when work touches shared APIs, migrations, auth, routing, state
+  models, or cross-cutting contracts.
+- Each unit's dispatch carries only that unit's scope and the
+  `rules/specialist-handoff.md` fields — never the whole batch's context.
+- After each wave: collect compact handoffs, update `PROJECT.md`, run any
+  required fan-in or review gate, then decide the next wave. Do not start
+  the next wave while the current one has failed acceptance, merge
+  conflicts, unresolved review findings, or an open `USER_DECISION`.
 
 ## Subagent Context Loading
 
-Workers load their own domain rules; public workflow references should not
-eagerly import rules used only by workers.
-
-- **Main thread imports**: rules the main thread directly evaluates (complexity gate, input routing, orchestration, planning)
-- **Subagent reads**: domain rules the subagent applies (code-review, testing, implementation, investigation, gates, shortcut-api)
-- **Skill files reference rules by path**: e.g., "Read and apply `rules/gates.md`"
-- **Workflows tell workers which files to read**: resolve the rule through the
-  manifest/root mapping and include its content or stable path in the bounded handoff
-
-Avoid redundantly loading the same rule in both contexts unless the main thread must evaluate a returned gate or handoff against that rule.
+Workers load their own domain rules; the parent should not eagerly import
+rules used only by workers. The parent imports what it directly evaluates —
+the complexity gate, gates, orchestration, and (for COMPLEX work) planning.
+Workers read the domain rules they apply — code-review, testing,
+implementation, investigation, gates — resolved via their own frontmatter or
+the dispatching skill's instructions. Goal skills reference rules by path
+(e.g. "Read and apply `rules/gates.md`") rather than inlining their content,
+and avoid loading the same rule in both contexts unless the parent must
+evaluate a returned gate or handoff against it directly.

@@ -157,10 +157,11 @@ those belong only to `MULTI_PHASE`'s Multi-Phase Path below.
    / `fix-bug.implement` / `fix-bug.test-authoring` / `fix-bug.review`
    boundaries above per unit — it is a loop over the same dispatch sites,
    not new ones. Move to the next unit only once this unit's review Gate
-   block reaches `PASS`. For a `BATCHED` shape specifically, also run one
-   final aggregate verification against gate name `fix-bug-verify` after the
-   last wave/item, before step 7 — per-wave verification alone does not
-   confirm the waves compose correctly together.
+   block reaches `PASS`. For a `BATCHED` shape specifically, follow
+   `skills/verification-loop/SKILL.md`'s BATCHED shape subsection: after the
+   last wave/item, before step 7, run the AGGREGATE verification against its
+   own gate name (`fix-bug-verify-aggregate`, never reusing a wave's
+   `fix-bug-verify` history).
 
 3. If a slice's investigation surfaces an ambiguous, intermittent,
    historical, or cross-system root cause, escalate that slice's

@@ -29,9 +29,21 @@ native worker's frontmatter carries its restrictions. See
 
 Rules:
 
-- Keep the main coding session on the user's current Sol-or-newer or Opus
-  workhorse at high effort. Routes govern spawned workers, not the already
-  active parent session.
+- The parent session is a Sonnet-class control plane by default: it
+  classifies work (complexity × size → execution shape), owns PROJECT.md,
+  dispatches bounded workers through the routes above, and reviews their
+  compact results. Heavy reasoning is never performed inline by the parent —
+  it is always dispatched to the matching route, including `planning`
+  (Opus, COMPLEX-only) and `review`/`deep-review` (Opus/Fable) when the
+  parent's own output needs an independent check. A user may still choose a
+  stronger model for their own interactive session; that is a separate
+  choice from worker routing and does not change which route a dispatched
+  worker uses.
+- On the Claude provider, the independent verifier for `review`/`deep-review`
+  is the native Claude `review-worker` (Opus) / `deep-review-worker` (Fable)
+  under `agents/claude/` — this is the ratified "go native" decision, not a
+  Codex fallback. Codex SOL (`agents/codex/*`) is the independent verifier
+  only when the active provider is Codex, which has no native worker roster.
 - Codex development workers never go below the current Sol family. Claude
   `implementation` and `rca` workers use Sonnet; `review`, `deep-review`, and
   `deep-rca` stay on Opus/Fable so a stronger model always checks Sonnet's

@@ -129,6 +129,21 @@ Evidence: [pointer]
 Next action: [what happens next]
 ```
 
+## BATCHED shape
+
+For `BATCHED` execution (`rules/complexity-gate.md`'s execution shapes),
+each slice or wave runs this loop on its own scope and records its own
+gate — same as any other checkpoint above. After the last wave, run one
+additional AGGREGATE verification over the whole change set (a full test
+run plus review of the combined diff, not just the final wave's diff) using
+its own `gate` name (e.g. `<workflow>-verify-aggregate`) — never the same
+name a per-wave call already used, per this skill's own Notes on gate
+naming ("a fast local run and a slower CI run still gives each its own
+`gate` name"); reusing a wave's gate name would make the aggregate inherit
+that wave's repeat-count history instead of starting its own. A slice or
+wave `PASS` never substitutes for the aggregate — only the aggregate's own
+`PASS` closes the implementation gate for a `BATCHED` unit.
+
 ## Notes
 
 - Only `USER_DECISION` and `BLOCKED` are ever handed back to the user as a

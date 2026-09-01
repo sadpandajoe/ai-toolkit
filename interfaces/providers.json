@@ -5,7 +5,7 @@
     {"name": "fresh_subagent", "required": true},
     {"name": "parallel_fanout", "required": true},
     {"name": "isolated_worktree", "required": true},
-    {"name": "context_reset", "required": true},
+    {"name": "context_reset", "required": false},
     {"name": "recurrence", "required": true},
     {"name": "independent_review", "required": false},
     {"name": "routed_subagent", "required": true}

@@ -97,3 +97,24 @@ Public workflow references should load only the short rules needed at entry.
 Resolve detailed domain skills through `interfaces/skills.json` when entering
 their phase. Provider adapters are never behavior owners; canonical skills and
 references are.
+
+## Recommended Provider Settings
+
+Two Claude Code environment variables reinforce the two mechanisms above —
+neither is required, and the toolkit never sets them for the user:
+
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000` — auto-compact is the Auto-Compact
+  Safety Net above, a backstop, not the primary isolation mechanism. A larger
+  window keeps the parent's own context from compacting mid-phase, so the
+  primary mechanism (worker isolation) stays the thing that actually keeps
+  context light, rather than the backstop firing early and papering over a
+  phase that should have been isolated in its own worker.
+- `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2` — enforces
+  `rules/resource-management.md`'s shallow spawn depth at the runtime level:
+  parent dispatches a worker, that worker completes and returns; it cannot
+  itself spawn a further worker unless the calling procedure explicitly
+  names that second layer.
+
+Set these in the user's own shell profile or `settings.json` if desired —
+`bin/aitk install`/`install.sh` print them as a recommendation at the end of
+a successful install but do not write them anywhere automatically.

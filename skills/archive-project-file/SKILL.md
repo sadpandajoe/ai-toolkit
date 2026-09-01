@@ -11,8 +11,20 @@ description: Move completed-phase PROJECT.md content to PROJECT_ARCHIVE.md, or r
 ## Before Starting
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
+Read `PROJECT_TEMPLATE.md` — it defines the YAML frontmatter block's default
+(empty) shape, which step 7 below resets PROJECT.md to.
 
 This command should be owned by one main agent. Do not split the write across multiple agents — the archive boundary, breadcrumb, and preserved active context must stay consistent.
+
+PROJECT.md carries v2 machine state beyond its prose sections: the YAML
+frontmatter (`workflow`, `complexity`, `size`, `execution_shape`,
+`reasoning_attempts`, gate-status enums — see `PROJECT_TEMPLATE.md`), plus
+three marker-delimited JSON blocks in the body (`aitk-checkpoint:v1` —
+`workflow`, `reclassifications`, accepted artifacts; `aitk-gate:v1` — final
+`PASS`/`RETRY`/`ESCALATE`/... state per gate; `aitk-routing:v1` — the
+complexity/size snapshot). `aitk project-state --file PROJECT.md` reads all
+of these back as one JSON payload — use it rather than re-parsing the
+markers by hand.
 
 ## Contract
 
@@ -58,7 +70,11 @@ Only ask the user if multiple candidates are equally plausible or the boundary i
 
 ### 2. Read current PROJECT.md
 
-Use the `Read` tool to view PROJECT.md contents.
+Use the `Read` tool to view PROJECT.md contents. Also run `aitk project-state
+--file PROJECT.md` to capture the current `workflow`, per-gate final states,
+`reasoning_attempts` counts, and any `reclassifications` — this is the v2
+machine-state snapshot step 4 folds into the archive summary and step 7
+resets.
 
 ### 3. Determine sections to archive
 
@@ -74,7 +90,16 @@ Use the `Read` tool to view PROJECT.md contents.
 
 ### 4. Create archive entry
 
-Use the template at [templates/archive-entry.md](templates/archive-entry.md). Append to PROJECT_ARCHIVE.md (don't rewrite prior archive entries).
+Use the template at [templates/archive-entry.md](templates/archive-entry.md), including its v2 State fields (`workflow`, final gate states, `reasoning_attempts`, reclassifications) from step 2's snapshot. Append to PROJECT_ARCHIVE.md (don't rewrite prior archive entries).
+
+Do not treat any `OPEN` `observation` event (`skills/metrics-emit/SKILL.md`)
+or pending proposal (`skills/reflection/SKILL.md`) as archived phase content
+to drop — both live outside PROJECT.md, in `.ai-toolkit/metrics.jsonl` and
+`.ai-toolkit/proposals/<date>/` respectively, and archiving PROJECT.md does
+not dispose of them; only `skills/reflection` (or a human) does. If the
+Development Log or Notes sections being archived reference a specific OPEN
+observation or proposal, carry that pointer into the archive entry's "Full
+Details" rather than letting the reference disappear with the archived text.
 
 ### 5. Update PROJECT.md
 
@@ -97,13 +122,31 @@ The audit trail of what was built lives in git (commits, PR description). Don't 
 
 If a Continuation Checkpoint references PLAN.md, leave it in place and surface to the user — they may have an unfinished workflow.
 
-### 8. Verify
+### 8. Reset frontmatter for a fresh file
 
-- [ ] Archive entry written to PROJECT_ARCHIVE.md
+Only when no workflow continues after this archive — no Continuation
+Checkpoint remains, and step 7 found no active `PLAN.md` reference — reset
+PROJECT.md's YAML frontmatter block to `PROJECT_TEMPLATE.md`'s empty
+defaults (every field blank/null, `modifiers: []`, the nested
+`reasoning_attempts:` sub-keys present but empty) so the file is ready for
+the next workflow to classify from scratch. Leave the `aitk-checkpoint:v1`,
+`aitk-gate:v1`, and `aitk-routing:v1` body blocks alone if the next workflow
+run recreates them itself; do not hand-edit those markers.
+
+If a workflow is still in progress (a Continuation Checkpoint or an active
+`PLAN.md` reference remains), skip this step entirely — this skill archives
+completed content, it does not reset live machine state out from under a
+running workflow.
+
+### 9. Verify
+
+- [ ] Archive entry written to PROJECT_ARCHIVE.md, including v2 State fields
 - [ ] Critical info preserved
+- [ ] Pending observation/proposal pointers preserved, not dropped
 - [ ] PROJECT.md more concise
 - [ ] References resolve
 - [ ] Stale PLAN.md handled (deleted or left for active workflow)
+- [ ] Frontmatter reset to defaults only if no workflow continues
 
 For a worked before/after, see [examples/worked-example.md](examples/worked-example.md).
 

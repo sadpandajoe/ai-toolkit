@@ -4,6 +4,10 @@ A provider-portable toolkit for repeatable AI-assisted software delivery. Canoni
 
 ## Mental Model
 
+- **Goal skills** under `skills/goals/` are the entry point: the parent (a
+  Sonnet-class control plane) classifies the request, dispatches bounded
+  workers, and drives every workflow to one of `rules/gates.md`'s six
+  terminal states (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED).
 - **Rules** are short, always-on safety and routing constraints.
 - **Skills** are the canonical provider-neutral workflows and domain procedures.
 - **Interfaces** declare the stable public workflow names in `interfaces/workflows.json`.
@@ -13,23 +17,31 @@ A provider-portable toolkit for repeatable AI-assisted software delivery. Canoni
 
 ## Model and Effort Routing
 
-Keep the main coding session on a current Sol-or-newer or Opus workhorse at
-high effort. Spawned workers use stable routes, so normal skills choose the
-right family and effort without copying volatile model IDs into workflow text.
+The parent session is a Sonnet-class control plane by default: it classifies
+the request, owns `PROJECT.md`, dispatches bounded workers through the stable
+routes below, and reviews their compact results. Heavy reasoning is always
+dispatched to a worker, never done inline by the parent. Normal skills name a
+route, never a volatile model ID; see `rules/model-assignment.md` for the full
+policy and escalation ladder.
 
 | Job | Route | Automatic effort | Codex | Claude |
 |---|---|---|---|---|
-| Implementation | `implementation` | high | Sol | Opus |
+| Implementation | `implementation` | high | Sol | Sonnet |
 | Plan/code/test/PR review | `review` | high | Sol | Opus |
 | Architecture, security, adversarial, final cold review | `deep-review` | xhigh | Sol | Fable |
-| RCA | `rca` | high | Sol | Opus |
+| RCA | `rca` | high | Sol | Sonnet |
 | Ambiguous or cross-system RCA | `deep-rca` | xhigh | Sol | Fable |
 | Read-only evidence and deterministic operational summaries | `operations` | high | Sol | Sonnet |
+| COMPLEX-only durable plan/investigation artifact | `planning` | high | Sol | Opus |
 
-Sonnet does not perform development judgment or effects: no implementation,
-test execution/design, API/ticket mutation, diagnosis, RCA, or review. Fable is
-a read-only deep advisor for reviews and RCA. Automatic routing never selects max and never falls back
-to a weaker model or effort.
+The route, not the model family, sets each boundary's authority: Sonnet may
+edit files and run tests on `implementation`/`rca`, but stays read-only on
+`operations`. Sonnet never reviews or gate-decides its own output — every
+result is graded by an independent `review`/`deep-review` pass: the native
+`review-worker` (Opus) / `deep-review-worker` (Fable) on Claude (the ratified
+"go native" decision, see `docs/MIGRATION.md`), or Codex SOL when the
+provider is Codex, which has no native roster. Routing never selects max or
+falls back to a weaker model or effort.
 
 Exact current selectors live only in `interfaces/model-routing.json`. A future
 Sol, Opus, Fable, or Sonnet promotion changes one catalog entry; route names,
@@ -87,7 +99,7 @@ Only skills classified `public_router` or `public_direct` in
 skills remain packaged for resolver-based use without becoming standalone
 public entrypoints.
 
-The repository root is also a validated Codex plugin package (`.codex-plugin/plugin.json`) with bundled core skills and lifecycle hooks. Use `install.sh` for source-linked local development; use the plugin form when publishing the core toolkit through a personal or team marketplace. The optional PGM extension is source-linked-only in version 0.2.0 because Codex plugin manifests expose one `skills/` tree; this boundary is explicit in `interfaces/support.json`. Codex supports both [Agent Skills locations](https://learn.chatgpt.com/docs/customization/skills) and [plugin distribution](https://learn.chatgpt.com/docs/build-plugins).
+The repository root is also a validated Codex plugin package (`.codex-plugin/plugin.json`) with bundled core skills and lifecycle hooks — use `install.sh` for source-linked local development, the plugin form when publishing through a marketplace. PGM stays source-linked-only in 0.2.0 (Codex plugin manifests expose one `skills/` tree; see `interfaces/support.json`). Codex supports both [Agent Skills locations](https://learn.chatgpt.com/docs/customization/skills) and [plugin distribution](https://learn.chatgpt.com/docs/build-plugins).
 
 ### Claude Adapter Capabilities
 | Feature | Purpose |
@@ -212,35 +224,18 @@ The command-line interface is also stable and scriptable:
 | `bin/aitk check` | Run build drift, doctor, tests, and hook smoke tests |
 
 See [Architecture](docs/ARCHITECTURE.md), [migration guidance](docs/MIGRATION.md),
-[telemetry support](docs/TELEMETRY.md), the [10/10 completion audit](docs/COMPLETION_AUDIT.md),
+[telemetry support](docs/TELEMETRY.md), the [completion audit](docs/COMPLETION_AUDIT.md),
 and the [changelog](CHANGELOG.md).
 
 The Python package also exposes `aitk`. Run it anywhere inside a toolkit checkout (the root is discovered from parent directories), or pass `--root <checkout>` explicitly from elsewhere.
 
 ## Migrating from Slash Commands
 
-AI Toolkit 0.2.0 removes its generated Claude slash aliases. Workflow behavior
-is unchanged: ask naturally or invoke the public router skill explicitly.
-
-| Before 0.2.0 | 0.2.0 and later |
-|---|---|
-| `/fix-bug <report>` | `Fix this bug: <report>` or `$workflows fix-bug <report>` |
-| `/create-feature <request>` | `Build this feature: <request>` or `$workflows create-feature <request>` |
-| `/review-code` | `Review my local changes` or `$workflows review-code` |
-| `/review-plan` | `Review this technical plan` or `$workflows review-plan` |
-| `/fix-ci` | `Fix the failing CI checks` or `$workflows fix-ci` |
-| `/test-pr <pr>` | `Test PR <pr>` or `$workflows test-pr <pr>` |
-| `/watch-pr <pr>` | `Watch PR <pr>` or `$workflows watch-pr <pr>` |
-| Any other core `/name [args]` | `$workflows name [args]` or its natural-language trigger |
-| `/create-status-report` | `$pgm create-status-report` after `--with-pgm` installation |
-| `/create-velocity-report` | `$pgm create-velocity-report` after `--with-pgm` installation |
-
-Upgrading with `./install.sh` removes only old aliases recorded as toolkit-owned
-in `~/.ai-toolkit/install-state.json`. Personal files under
-`~/.claude/commands/` are left untouched. Claude's built-in `/review` remains
-available; use `$workflows review-code` for the toolkit's review/fix/verify loop.
-Ignored legacy `build/commands/` output may remain solely so one-level rollback
-can restore a working 0.1.x installation; 0.2.0 never installs or routes it.
+AI Toolkit 0.2.0 removed its generated Claude slash aliases in favor of
+natural-language requests and goal skills; 0.3.0 moved workflow behavior into
+`skills/goals/` and shrank `skills/workflows/` to a compatibility shim. Full
+before/after tables, the v1→v2 vocabulary mapping, and the "go native" decision
+live in [migration guidance](docs/MIGRATION.md), not duplicated here.
 
 The `agent-setup-maintainer` skill activates automatically when you edit agent
 setup files such as skills, rules, provider guidance, or hooks—see
@@ -283,7 +278,7 @@ $workflows run-test-plan https://github.com/owner/repo/pull/123
 
 `$workflows run-test-plan` owns the standalone QA validation loop:
 - derive or normalize a compact runnable matrix
-- iterate it with `review-testplan` until it reaches 8/10 or blockers stop execution
+- iterate it with `review-testplan` until it clears the plan-domain review threshold in `rules/scoring.md` (a documented v1 deferral, not the v2 six-state gate contract) or blockers stop execution
 - execute it through QA helpers and summarize findings locally
 
 ### Plan Review
@@ -291,7 +286,7 @@ $workflows run-test-plan https://github.com/owner/repo/pull/123
 $workflows review-plan                # Review PLAN.md or PROJECT.md-referenced plan
 ```
 
-`$workflows review-plan` is standalone plan quality review, without a full `create-feature` run: fresh reviewer subagents (selected from the plan-lens menu — architecture, implementation-feasibility, test-plan, and conditionally frontend/backend) iterate `PLAN.md` to 8/10 per `rules/scoring.md`, then a fresh cold read gates completion.
+`$workflows review-plan` is standalone plan quality review, without a full `create-feature` run: fresh reviewer subagents (selected from the plan-lens menu — architecture, implementation-feasibility, test-plan, and conditionally frontend/backend) iterate `PLAN.md` against the plan-domain review threshold in `rules/scoring.md`, then a fresh cold read gates completion.
 
 ### PR Feedback Analysis
 ```text
@@ -300,7 +295,7 @@ $workflows address-feedback <pr-url>  # Address review comments by URL
 $workflows address-feedback 123 --draft  # Local only, don't post
 ```
 
-`$workflows address-feedback` is action-first: investigate comments, fix valid issues, post replies. Its reference defines the exact authorization boundary.
+The `address-feedback` goal skill (`$workflows address-feedback` is its stable alias) is action-first: investigate comments, fix valid issues, post replies. Its `SKILL.md` defines the exact authorization boundary.
 
 ### GitHub PR Reviews
 ```text
@@ -329,7 +324,7 @@ does not exist.
 | `rules/code-review.md` | Review skill loader |
 | `rules/complexity-gate.md` | `address-feedback`, `cherry-pick`, `create-feature`, `fix-bug`, `fix-ci`, `refactor`, `review-code`, `review-pr` |
 | `rules/gates.md` | Six-state gate contract (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED); loaded directly by every `skills/goals/*` skill, independent of this manifest's per-workflow rule imports |
-| `rules/specialist-handoff.md` | Specialist dispatch input/output field contract; loaded by `skills/goals/{create-feature,fix-bug,fix-ci,refactor}` today — dual-run, other goal skills still use ad hoc handoff prose |
+| `rules/specialist-handoff.md` | Specialist dispatch input/output field contract; authoritative for every goal-skill dispatch and every native worker under `agents/claude/` |
 | `rules/review-gate.md` | Superseded by `rules/gates.md` for its migrated goal-skill citers; kept authoritative for plan-domain reviewers (`skills/review`, `skills/planning`, `skills/testing`) and workflow reference loaders |
 | `rules/scoring.md` | Superseded by `rules/gates.md` for its migrated goal-skill citers; kept authoritative for plan-domain and test-plan review scoring (`skills/review`, `skills/planning`, `skills/testing`) |
 | `rules/severity.md` | Review, planning, and QA skill loaders |
@@ -375,12 +370,21 @@ bin/aitk doctor --installed --strict
 Edit files directly in this repo. Skills take effect through source links;
 provider guidance needs a rebuild because its portable paths are resolved:
 
-- **Add a workflow**: Add its canonical reference under `skills/workflows/references/`, register it in `interfaces/workflows.json`, then run `bin/aitk build`
+- **Add a workflow**: Most new behavior is a new (or extended) goal skill, not
+  a router entry — add `skills/goals/<name>/`, register it in
+  `interfaces/workflows.json` and `interfaces/contracts.json`/`skills.json`,
+  then run `bin/aitk build`. A handful of utility references (checkpoint,
+  start, metrics, create-pr) are the exception and stay under
+  `skills/workflows/references/`; see `docs/ARCHITECTURE.md`'s "Adding a
+  workflow" for the full sequence.
 - **Modify rules**: Edit files in `rules/`
 - **Add new rules**: Add `.md` files to `rules/`, re-run `./install.sh`
 - **Refresh adapters after edits**: Run `bin/aitk build`, then re-run `./install.sh` to refresh the
   managed guidance block. A second unchanged run is a
   no-op and preserves all unrelated configuration.
+
+Recommended Claude Code settings for this toolkit are documented in
+`rules/context-management.md`.
 
 ## Environment Variables
 
@@ -410,11 +414,16 @@ Rollback refuses drift or a corrupt/missing backup and can be applied once.
 User: "build bulk dashboard editing" (or `$workflows create-feature ...`)
 
 AI Toolkit:
-1. Routes to the provider-neutral `workflows` skill
-2. Loads only `skills/workflows/references/create-feature.md`
-3. Loads narrower PM, planning, implementation, QA, and review skills as needed
-4. Uses the provider adapter for tool-specific invocation details
-5. Persists resumable state and applies the same gates on every provider
+1. Routes directly to the matching goal skill (`skills/goals/create-feature`);
+   `$workflows create-feature` is a stable alias, not the canonical location
+2. The parent (Sonnet-class control plane) classifies complexity/size, picks
+   the smallest execution shape, and dispatches bounded workers through the
+   stable routes in `interfaces/model-routing.json`
+3. Drives `skills/verification-loop` to a six-state terminal
+   (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED); only
+   USER_DECISION/BLOCKED surface to the user
+4. Persists resumable state on `PROJECT.md` and applies the same gates on
+   every provider
 ```
 
 **Skills** = canonical behavior. **Adapters** = provider syntax. **`aitk`** = deterministic build and validation.

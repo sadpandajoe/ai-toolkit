@@ -41,8 +41,8 @@ rule does not restate that table; read it there.
 When classification is `TRIVIAL` and certainty is `Clear`:
 - **Auto-proceed** — do not ask the user for confirmation before implementing; the clear classification is the approval
 - Skip the formal planning phase, investigation lanes, and RCA validation
-- Go directly to implementation, verification, Review Gate emission, and summary
-- Emit Review Gate `skipped` or `micro-fix` only when `rules/review-gate.md` allows it; otherwise reclassify as STANDARD before logic review
+- Go directly to implementation, verification, `rules/gates.md` Gate block emission, and summary
+- A skipped or micro-fix-only review is `PASS` with the skip reason recorded in `Reason`, per `rules/gates.md`; if the change actually needs logic review, reclassify STANDARD instead of skipping it
 - Zero subagent spawns **for the implementation path** — the orchestrator scopes, implements, and verifies inline
 
 **Scope of the zero-spawn rule.** It governs the implementation path only. A
@@ -59,7 +59,7 @@ When classification is `STANDARD` and certainty is `Clear`:
 - Skip the formal planning phase and parallel investigation-lane subagents
 - Orchestrator scopes, investigates, or plans inline as the workflow requires
 - Still run one workflow-required review phase with at least one fresh reviewer — never review your own work. Review workflows may launch all triggered lanes for the diff; feature work usually runs code review after implementation. Run plan review only when inline design uncovered real design uncertainty.
-- Still run tests and emit a Review Gate block
+- Still run tests and emit a `rules/gates.md` Gate block for the review checkpoint
 - Spawn additional subagents only when parallelism provides a clear wall-clock win
 
 **When to classify STANDARD** (any of these signals):
@@ -97,6 +97,22 @@ Explicit-Reset Dependency section. This rule owns the block shape only; it must 
 copy workflow-specific phase sequences.
 
 If the user's request is genuinely too small for COMPLEX (≤2 phases after Complexity Gate), reclassify STANDARD rather than emit a degenerate Phase Plan.
+
+## Modifiers
+
+When the request or `PROJECT.md`'s frontmatter `modifiers` list contains
+`hotfix` or `p1`, apply these overrides on top of whatever tier steps 1-2
+land on:
+
+- **(a) Floor at STANDARD** — never classify below `STANDARD`, even if the
+  change would otherwise read as `TRIVIAL`.
+- **(b) Review required before publish** — the review pass (per
+  `rules/gates.md`) must reach `PASS` before any push, PR, or release step.
+- **(c) Review moves earlier** — pull the independent review in right after
+  the first implementation slice instead of waiting for the last one.
+- **(d) Tighter reasoning budget** — override `rules/gates.md`'s
+  Repeat-Failure Counting Rule for this workflow: skip the informed retry and
+  `ESCALATE` on the first reasoning failure at any gate.
 
 ## Never Silently Decide
 

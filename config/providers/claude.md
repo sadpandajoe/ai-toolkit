@@ -8,7 +8,7 @@ provider syntax.
 - `fresh_subagent`: launch the assigned stable route through the source-linked `model-run` transport so the fresh process has the pinned selector, effort, permissions, and bounded scope.
 - `parallel_fanout`: run independent routed `model-run` processes concurrently; native fan-out schedules them but does not replace their route controls.
 - `isolated_worktree`: enter a provider-managed worktree before mutation.
-- `context_reset`: use a fresh Claude context after saving the durable checkpoint.
+- `context_reset`: use a fresh Claude context after saving the durable checkpoint. Not required for conformance (`interfaces/providers.json`) — `rules/context-management.md`'s "No Explicit-Reset Dependency" makes worker isolation primary and auto-compact the backstop; `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` are the recommended, non-default env vars that reinforce those two mechanisms (see that rule file's "Recommended Provider Settings").
 - `recurrence`: use Claude's recurring workflow facility with explicit stop conditions.
 - `independent_review`: `routed_subagent`'s dispatch (native worker or shim,
   per boundary — see below) already supplies a fresh, non-implementing

@@ -399,6 +399,23 @@ def _lifecycle(arguments: argparse.Namespace) -> int:
         for value in result.conflicts:
             print(f"  {value}", file=sys.stderr)
         print(f"  ledger: {result.ledger}")
+        if arguments.command == "install" and result.exit_code == 0:
+            print("")
+            print("Recommended provider settings (not set automatically):")
+            print(
+                "  CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000  "
+                "(keeps parent context from compacting mid-phase; "
+                "worker isolation stays primary)"
+            )
+            print(
+                "  CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2  "
+                "(enforces the shallow spawn depth in "
+                "rules/resource-management.md)"
+            )
+            print(
+                "  See rules/context-management.md's "
+                "'Recommended Provider Settings' section."
+            )
     return result.exit_code
 
 

@@ -13,7 +13,7 @@ CAPABILITIES = {
     "fresh_subagent": True,
     "parallel_fanout": True,
     "isolated_worktree": True,
-    "context_reset": True,
+    "context_reset": False,
     "recurrence": True,
     "independent_review": False,
     "routed_subagent": True,

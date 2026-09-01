@@ -4,9 +4,13 @@ AI Toolkit separates stable workflow behavior from provider syntax. Sonnet is
 the control plane: it classifies the request, owns `PROJECT.md`, and drives
 the shared verification loop to evidence-backed completion. Opus is a bounded
 planning specialist invoked only for `COMPLEX` decomposition and phase
-planning. Codex SOL is an independent verifier — RCA, plan validation, and
-code review never run in the same context that produced the artifact under
-review. Skills own workflows; agents exist for context isolation; rules hold
+planning. RCA, plan validation, and code review always run independent of the
+context that produced the artifact under review — on the Claude provider that
+independent check is the native `review-worker` (Opus) / `deep-review-worker`
+(Fable) roster (the ratified "go native" decision; see `PLAN.md`'s "Open
+decisions for the user"); Codex SOL is the independent verifier only when the
+active provider is Codex, which has no native worker roster of its own.
+Skills own workflows; agents exist for context isolation; rules hold
 only short cross-cutting constraints. `skills/verification-loop` is the one
 shared PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED contract every
 goal workflow drives through. `PROJECT.md` is durable state; chat history is
@@ -121,11 +125,13 @@ Provider adapters may translate invocation syntax, tool names, planning controls
 
 Most of the roster dispatches natively, as Claude Code subagents defined
 under `agents/claude/`: `planner` (Opus, `COMPLEX` decomposition and phase
-planning only), `implementation-worker`, `debug-worker`, `test-worker`,
-`review-worker`, and `deep-review-worker` (all Sonnet). These carry no
-source-linked transport — a goal skill invokes them the same way it would any
-other Claude subagent, and each one is the phase-level context reset: fresh
-context in, a compact handoff out.
+planning only), `implementation-worker`, `debug-worker`, and `test-worker`
+(Sonnet), plus the native independent verifiers `review-worker` (Opus) and
+`deep-review-worker` (Fable) — the two files the "go native" decision added
+so the `review`/`deep-review` boundaries never grade the Sonnet work that
+produced them. These carry no source-linked transport — a goal skill invokes
+them the same way it would any other Claude subagent, and each one is the
+phase-level context reset: fresh context in, a compact handoff out.
 
 The stricter source-linked boundary — `<toolkit-root>/bin/aitk model-route`
 plus `<toolkit-root>/bin/aitk model-run` — still exists for the Codex
