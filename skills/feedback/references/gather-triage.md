@@ -135,9 +135,9 @@ Always produce this table. With `--step`, present it and wait for approval befor
 ```markdown
 | # | Reviewer | Comment | Verdict | Reasoning | Confidence |
 |---|----------|---------|---------|-----------|------------|
-| 1 | @user | ... | Fix | Evidence and actual risk | 9/10 |
-| 2 | @user | ... | Skip | Evidence for why current code is valid | 7/10 |
-| 3 | @user | ... | Discuss | Trade-off or missing product decision | 5/10 |
+| 1 | @user | ... | Fix | Evidence and actual risk | HIGH |
+| 2 | @user | ... | Skip | Evidence for why current code is valid | MED |
+| 3 | @user | ... | Discuss | Trade-off or missing product decision | LOW |
 ```
 
 Verdicts:

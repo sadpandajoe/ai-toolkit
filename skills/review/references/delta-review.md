@@ -9,8 +9,7 @@ disable-model-invocation: true
 
 Shared procedure for the one additional, triggered-risk review pass that
 [sol-review.md](sol-review.md) escalates to — never a second independent lane
-run by default, and never a return to the ensemble's tier-resolved multi-lane
-roster.
+run by default, and never a return to per-lens fan-out.
 
 ## When this runs
 
@@ -88,17 +87,16 @@ meaningful `ESCALATE` if both passes report through the same gate name.
   `sol-review.md` pass.
 - Do not re-derive `classify-diff.md`'s trigger predicates here; cite them.
 - Do not fan out to multiple lenses/providers; this is one additional pass,
-  not a return to the ensemble roster.
+  not a return to per-lens fan-out.
 
 ## Notes
 
-- `skills/review/SKILL.md`'s Invocation section now documents
-  [sol-review.md](sol-review.md) and this file as the default dispatch path
-  (C40). The five orchestration references it lists (`local-review.md`,
+- `skills/review/SKILL.md`'s Invocation section documents
+  [sol-review.md](sol-review.md) and this file as the single dispatch path.
+  The five orchestration references it lists (`local-review.md`,
   `pr-review.md`, `pr-batch.md`, `workflow-review.md`,
-  `adversarial-orchestration.md`) still dispatch through
-  [ensemble.md](ensemble.md)/[classify-diff.md](classify-diff.md)/the lens
-  files internally, unchanged — that internal switch is not this commit's
-  scope. Ensemble stays live and directly callable via
-  `bin/aitk review-ensemble` until a full goal-skill review cycle has run on
-  this pair (Wave 8).
+  `adversarial-orchestration.md`) each resolve their own fixed dispatch
+  boundary directly — one reviewer pass per boundary, reading whichever lens
+  contracts that boundary (and the triggered set from
+  [classify-diff.md](classify-diff.md)) name, in one context. There is no
+  ensemble table and no `review-ensemble` CLI subcommand any more.

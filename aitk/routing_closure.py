@@ -107,12 +107,12 @@ def _structural_seeds(
         # This used to ride in on the review umbrella's Required Context, which
         # is why the umbrella had to be injected everywhere; seeding it here is
         # what let the umbrella narrow to the lanes that actually own it. The
-        # seed stays scoped to the review route: stop-rules is a review/fix-loop
-        # contract that directs the worker to emit a Review Gate and cites
-        # severity and review-gate, none of which reach an implementation, RCA,
-        # or operations closure -- shipping it there would hand those workers
-        # instructions pointing at documents they do not have.
-        *(("rules/stop-rules.md",) if responsibility == "review" else ()),
+        # seed stays scoped to the review route: gates.md is the review/fix-loop
+        # contract that directs the worker to emit a Gate block and cites
+        # severity, none of which reach an implementation, RCA, or operations
+        # closure -- shipping it there would hand those workers instructions
+        # pointing at documents they do not have.
+        *(("rules/gates.md",) if responsibility == "review" else ()),
         owner.as_posix(),
         route_contract,
         path.as_posix(),

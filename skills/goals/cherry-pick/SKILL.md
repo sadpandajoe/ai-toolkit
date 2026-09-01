@@ -102,7 +102,8 @@ Decide should-we-cherry against the accept/reject matrix (see [references/gate.m
 Translates to `rules/gates.md`: `PROCEED`/`FORCE-PROCEED` → `PASS` (a
 force-override still records its warning in `Reason`); `REJECT` → `BLOCKED`;
 `SKIP` → `PASS` with the skip reason in `Reason` — the same shape as
-`rules/gates.md`'s Mapping section gives `review-gate.md`'s `skipped` status.
+`rules/gates.md`'s Mapping section gives the former review-status
+vocabulary's `skipped` status.
 
 ### 3. Plan (main thread)
 

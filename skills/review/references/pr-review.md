@@ -30,23 +30,22 @@ Read full contents of changed files. Review comments target changed lines, but t
 
 ## Complexity Gate
 
-Classify the PR scope with the shared TRIVIAL / MODERATE / STANDARD gate and this review-specific routing:
+Classify the PR scope with the shared TRIVIAL / STANDARD / COMPLEX gate and this review-specific routing:
 
-| Signal | Trivial | Moderate | Standard |
+| Signal | Trivial | Standard | Complex |
 |--------|---------|----------|----------|
 | Files changed | 1-3 | 4-8 in one subsystem | 9+ or unclear ownership |
 | Lines changed | < 100 | 100-400 | 400+ |
 | Behavioral change | None / cosmetic | Contained functional change | Cross-cutting or contract change |
 | Reviewer lanes | Code quality only | Triggered lanes only | Full triggered team, plus optional second opinion |
-| Ensemble ([ensemble.md](ensemble.md)) | `trivial` | `moderate` | `standard` (`deep` in deep review mode) |
 
 Emit the Complexity Gate block per `rules/complexity-gate.md`.
 
 `review-pr --deep` (and the phrase "deep review PR #N") pins the tier to at
-least STANDARD before this table is read — size signals can raise that floor but
+least COMPLEX before this table is read — size signals can raise that floor but
 never lower it.
 
-Trivial + certainty `Clear`: code quality review only, unless impact assessment escalates. Moderate: triggered reviewer lanes only, with no premise deep-dive unless impact or uncertainty escalates. Standard: premise validation plus full triggered team.
+Trivial + certainty `Clear`: code quality review only, unless impact assessment escalates. Standard: triggered reviewer lanes only, with no premise deep-dive unless impact or uncertainty escalates. Complex: premise validation plus full triggered team.
 
 ## Assess Impact and Premise
 
@@ -56,8 +55,8 @@ Impact escalation:
 - TRIVIAL + CORE -> code quality plus only the lens matching why the workflow is
   CORE. Use the full team only when multiple CORE lenses apply or the relevant
   safety lens is ambiguous.
-- MODERATE + CORE -> triggered reviewer lanes plus stricter severity calibration
-- STANDARD + CORE -> full team + suggest adversarial review for security-sensitive areas
+- STANDARD + CORE -> triggered reviewer lanes plus stricter severity calibration
+- COMPLEX + CORE -> full team + suggest adversarial review for security-sensitive areas
 
 For Standard, CORE-impact, or low-confidence PRs, validate the premise before reviewing implementation details:
 1. Read linked issue/ticket, PR description, author comments, and prior reviewer comments.
@@ -78,21 +77,23 @@ For Standard or CORE-escalated PRs, include pattern analysis:
 
 ## Launch Review Lanes
 
-`review.pr-moderate` and `review.pr-standard` are lens fan-out boundaries: they
-declare a `lenses` menu, so each dispatch names exactly one lens with
-`--lens <repo-relative lens path>` and resolving either without it fails closed.
-One worker receives one reviewer contract, never the whole set the marker lists
-below, so resolve a separate route per triggered lens rather than batching them.
+`review.pr-moderate` and `review.pr-standard` each resolve to one reviewer
+dispatch — there is no lens menu and no per-lens selection flag. The dispatch prompt
+carries whichever lenses `classify-diff` triggered for this diff on top of
+the boundary's fixed `rules/code-review.md` + `agents/codex/reviewer.md`
+contracts; the single worker reads all of them and applies each in one pass,
+the same way `review.pr-batch` applies its full lens set in one pass (see
+SKILL.md's Invocation section).
 
 Trivial:
 <!-- aitk-model-route:review.pr-trivial -->
 - Dispatch exactly one fresh code-quality reviewer on `review`. That single lane **is** the independent review — never zero, never a second lane, and never an orchestrator self-review in its place.
 - If clean, return a compact approve recommendation. Post/approve only when `--auto` or explicit user authorization grants that boundary.
 
-Moderate:
+Standard:
 <!-- aitk-model-route:review.pr-moderate -->
-- Launch only the triggered reviewer lenses needed by the diff classification.
-  Triggered lenses come from this set: [code-quality.md](code-quality.md),
+- One dispatch carrying only the triggered reviewer lenses needed by the diff
+  classification. Triggered lenses come from this set: [code-quality.md](code-quality.md),
   [deep-quality.md](deep-quality.md),
   [adversarial.md](adversarial.md),
   [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
@@ -102,45 +103,32 @@ Moderate:
   [backend.md](backend.md).
   Code-judo is not one of them — it dispatches at its own boundary below.
 - Keep the main thread compact: collect findings, recommendation, confidence, and any premise uncertainty.
-- Escalate to Standard only when reviewers find cross-cutting risk, unclear ownership, or security-sensitive behavior.
+- Escalate to Complex only when reviewers find cross-cutting risk, unclear ownership, or security-sensitive behavior.
 
-Standard:
+Complex:
 <!-- aitk-model-route:review.pr-standard -->
-- Launch triggered reviewer lenses in parallel on the origin provider, bounded by
-  the ensemble's lens lane budget and the priority order in
-  [classify-diff.md](classify-diff.md).
-  Triggered lenses come from this set: [code-quality.md](code-quality.md),
-  [deep-quality.md](deep-quality.md),
-  [adversarial.md](adversarial.md),
-  [../../testing/references/review-tests.md](../../testing/references/review-tests.md),
-  [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md),
-  [architecture.md](architecture.md),
-  [frontend.md](frontend.md),
-  [backend.md](backend.md).
-  Code-judo is not one of them — it dispatches at its own boundary below.
-- Use `review` for bounded PR lanes and `deep-review` for architecture,
-  security-sensitive, adversarial, or substantial multi-system lanes.
+- One dispatch carrying every triggered reviewer lens, in the priority order
+  from [classify-diff.md](classify-diff.md). Triggered lenses come from the
+  same set listed under Standard, above. Code-judo is not one of them — it
+  dispatches at its own boundary below.
+- Use `review` for bounded PR passes and `deep-review` for architecture,
+  security-sensitive, adversarial, or substantial multi-system diffs.
 - Optional second opinion when available.
-- Adversarial lane only with `--adversarial` or security-sensitive detection.
-  It is one of the fan-out lenses above, so dispatch it like any other — its own
-  `--lens` selection, on `deep-review` per the route rule above. That rule is a
-  manifest constraint, not just orchestrator guidance: the boundary's `routes`
-  list permits both routes for the lane as a whole, but `lens_routes` declares a
-  per-lens floor, so `--lens adversarial` on `review` is rejected at resolve time
-  rather than buying a cheaper pass than the lane is worth. On a
-  TRIVIAL PR the flag escalates the tier to Moderate, because TRIVIAL runs a
-  single pass with no fan-out boundary to launch it from; security-sensitive
-  detection escalates to Standard under the existing rule. Its findings are
-  severity-tagged, so they merge with the other lanes rather than getting their
-  own section — that split belongs to Code-judo alone.
+- Include the adversarial lens whenever `--adversarial` is passed or
+  security-sensitive content is detected. Its findings are severity-tagged, so
+  they merge with the rest of the pass's findings rather than getting their
+  own section — that split belongs to Code-judo alone. On a TRIVIAL PR the
+  flag escalates the tier to Standard, because TRIVIAL runs a single pass with
+  no room for an extra lens; security-sensitive detection escalates to
+  Complex under the existing rule.
 
 <!-- aitk-model-route:review.pr-cross-provider-cold -->
-Standard and deep PR reviews also dispatch the ensemble's cross-provider cold reviewer as a separate stage: resolve the roster with `bin/aitk review-ensemble <tier> --provider <origin> --available <reachable>`, then run `bin/aitk model-run --provider <cross-provider>` on the resolved cross lane route with PR scope and diff only — never the origin lanes' findings. It does not consume the lens lane budget. Verify each `[major]`/`[minor]` with a lane from a different family than the one that raised it (a different provider at `deep`/`security`), and keep `provider/family` provenance on every finding through dedup into the report.
+Standard and Complex PR reviews also dispatch a cross-provider cold reviewer as a separate stage: run `bin/aitk model-run --provider <cross-provider>` on the `review.pr-cross-provider-cold` boundary with PR scope and diff only — never the origin pass's findings. Verify each `[major]`/`[minor]` with a lane from a different family than the one that raised it (a different provider in deep review mode), and keep `provider/family` provenance on every finding through dedup into the report.
 
 **Deep review mode.** When `classify-diff` reports **Deep-tier escalation: YES**
 (`ultra`/`max` effort, `--deep`, or a deep-tier phrase — `classify-diff` owns
 the phrase list), follow the review SKILL's *Deep review mode* section: pin the
-tier to at least STANDARD, route every triggered lens through `deep-review` —
+tier to at least COMPLEX, route every triggered lens through `deep-review` —
 both `review.pr-moderate` and `review.pr-standard` permit it — and run the
 cross-provider cold lane on `deep-review`.
 
@@ -158,14 +146,14 @@ on `Code-judo lane: YES`,
 run the findings lenses only, and record the proposals slot as
 `suppressed (batch)` rather than `none`.
 
-If the cross provider is unreachable, the `deep` ensemble **blocks**: report the
-resolver's disclosure and stop, or continue only on explicit user override with
-the disclosure retained in the output. A single-provider run is never reported as
-a deep review.
+If the cross provider is unreachable on a Complex or deep review, the review
+**blocks**: report the resolver's disclosure and stop, or continue only on
+explicit user override with the disclosure retained in the output. A
+single-provider run is never reported as a deep review.
 
-## Synthesize and Score
+## Synthesize Findings
 
-Merge findings, deduplicate, and score:
+Merge findings from all lanes and deduplicate, organized by component so the summary stays scannable:
 
 | Component | Meaning |
 |-----------|---------|
@@ -187,17 +175,16 @@ Clean reviews skip the reasoning review and proceed to posting rules.
 
 ## Recommendation
 
-- **Approve**: overall 8/10+, zero `[major]`
-- **Request Changes**: any `[major]`, or overall below 6/10
-- **Comment**: overall 6-7/10, no `[major]` but notable `[minor]`
+- **Approve**: zero `[major]` findings
+- **Request Changes**: any unresolved `[major]` finding
+- **Comment**: no `[major]`, but notable `[minor]` findings worth the author's attention before merge
 
 ## Output
 
 Return the synthesized review plus:
 - recommendation
 - team selected, with each lane's route and `provider/family`
-- ensemble name, resolved `Model coverage:` level, and the resolver's disclosure sentence whenever it returns one (below floor, dropped lane, or no diverse verifier)
-- component scores
+- resolved `Model coverage:` level, and the resolver's disclosure sentence whenever it returns one (below floor, dropped lane, or no diverse verifier)
 - finding counts, each finding carrying raiser and verifier `provider/family`
 - posting mode needed (`draft`, `confirm`, `auto`)
 

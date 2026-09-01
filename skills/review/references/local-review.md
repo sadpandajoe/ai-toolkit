@@ -49,21 +49,20 @@ keeps every round branch-wide.
 
 Classify scope with `rules/complexity-gate.md` and this review-specific routing:
 
-| Signal | Trivial | Moderate | Standard |
+| Signal | Trivial | Standard | Complex |
 |--------|---------|----------|----------|
 | Files changed | 1-2 | 2-4 in one subsystem | 5+ or unclear ownership |
 | Lines changed | < 50 | 50-200 | 200+ |
 | Logic changes | None or cosmetic | Contained functional change | Cross-cutting behavior |
 | Reviewer lanes | Code quality only | Triggered lanes only | Full triggered team |
-| Ensemble ([ensemble.md](ensemble.md)) | `trivial` | `moderate` | `standard` (`deep` in deep review mode) |
 
 At TRIVIAL the single code-quality lens **is** the independent review — one
 fresh reviewer, not zero and not two. The separate second-opinion capability
-lane starts at MODERATE, where it is requested concurrently with the triggered
+lane starts at STANDARD, where it is requested concurrently with the triggered
 lanes whenever it is available. Deep review mode pins the tier to at least
-STANDARD, so it never lands in the TRIVIAL column.
+COMPLEX, so it never lands in the TRIVIAL column.
 
-Formatting-only diffs and micro-fixes may skip the review loop under `rules/review-gate.md`.
+Formatting-only diffs and micro-fixes may skip the review loop under `rules/gates.md`.
 
 ## Classify + Impact
 
@@ -75,8 +74,8 @@ Run these in parallel when possible:
 Escalate CORE impact:
 
 - TRIVIAL + CORE: run code-quality plus **only the reviewer lens that matches why the change is CORE** (e.g., security/auth → adversarial; data-loss/migration → backend; hooks/safety → code-quality alone is sufficient). Escalate to the full team only when multiple CORE lenses apply or the safety-relevant lens is ambiguous. The point of CORE is calibration, not fan-out.
-- MODERATE + CORE: run triggered reviewer lanes and escalate any security-sensitive or data-loss risk to Standard handling.
-- STANDARD + CORE: run full team and suggest adversarial review for security-sensitive areas.
+- STANDARD + CORE: run triggered reviewer lanes and escalate any security-sensitive or data-loss risk to Complex handling.
+- COMPLEX + CORE: run full team and suggest adversarial review for security-sensitive areas.
 - CORE test gaps use stricter severity calibration.
 
 ## Pre-Flight Verification
@@ -103,13 +102,14 @@ contract (`agents/codex/reviewer.md`) from this boundary's declared
 `contracts`, the same way a Claude native worker's frontmatter carries its
 restrictions (see `rules/model-assignment.md`).
 
-Lens fan-out boundaries take **one dispatch per lens**, each resolved with
-`--lens <repo-relative lens path>`. That flag is required there and the boundary
-fails closed without it: one worker must receive one reviewer contract, never the
-whole menu the marker names. A lens the marker does not name is rejected, so
-resolve each triggered lens separately rather than batching them into one call.
+<!-- aitk-model-route-exempt:describes-boundary-not-dispatch -->
+Each dispatch boundary resolves to **one reviewer pass** that reads whichever
+lens contracts that boundary — and the triggered set from
+[classify-diff.md](classify-diff.md) — name, in one context. There is no
+per-lens fan-out flag and no lens menu to select from at dispatch time; the
+classifier decides which lenses are in scope before the single pass runs.
 
-**STANDARD tier (or ≥3 triggered lanes): dispatch via [workflow-review.md](workflow-review.md)** — lens fan-out, dedup, and adversarial verification run off-thread; the main thread ingests only confirmed findings, then resumes at the Review Record step below. TRIVIAL/MODERATE continue with direct spawns:
+**COMPLEX tier (or ≥3 triggered lanes): dispatch via [workflow-review.md](workflow-review.md)** — lens fan-out, dedup, and adversarial verification run off-thread; the main thread ingests only confirmed findings, then resumes at the Review Record step below. TRIVIAL/STANDARD continue with direct spawns:
 
 <!-- aitk-model-route:review.local-primary-lanes -->
 The main thread is an orchestrator. Dispatch fresh-context reviewer subagents on `review`/`deep-review` with:
@@ -139,12 +139,12 @@ escalation **NO**, so dispatch it on `Code-judo lane: YES` and never gate it on
 the escalation field.
 
 <!-- aitk-model-route:review.local-independent-second-opinion -->
-On MODERATE and above, launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
+On STANDARD and above, launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
 
 <!-- aitk-model-route:review.local-cross-provider-cold -->
-On STANDARD and above — and at MODERATE only when the user or workflow asked to cross providers, passing `--cross-provider` — also dispatch the ensemble's cross-provider cold reviewer concurrently, resolved with `bin/aitk review-ensemble <tier> --provider <origin> --available <reachable>`: run `bin/aitk model-run --provider <cross-provider>` on the ensemble's cross lane route with scope and diff only — never the origin lanes' findings. It is a separate stage and does not consume the lens lane budget. If the cross provider is unreachable, apply the ensemble's degraded action (`continue`/`disclose` proceed with the disclosure sentence; `deep` and `security` block pending explicit user override) and never substitute another model for it.
+On COMPLEX and above — and at STANDARD only when the user or workflow asked to cross providers, passing `--cross-provider` — also dispatch a cross-provider cold reviewer concurrently: run `bin/aitk model-run --provider <cross-provider>` on the resolved cross lane route with scope and diff only — never the origin lanes' findings. It is a separate stage and does not consume the lens lane budget. If the cross provider is unreachable, apply the resolver's degraded-coverage action (continue with the disclosure sentence for a baseline pass; block pending explicit user override in deep review mode or for a security-sensitive lane) and never substitute another model for it.
 
-Collect findings from all primary lanes, the cross-provider lane, and the independent lane; dedupe while **merging** each finding's `provider/family` provenance; sort by the `rules/severity.md` scale; and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing. Verify each `[major]`/`[minor]` with a lane from a different family than the one that raised it (a different provider in deep review mode), per [ensemble.md](ensemble.md).
+Collect findings from all primary lanes, the cross-provider lane, and the independent lane; dedupe while **merging** each finding's `provider/family` provenance; sort by the `rules/severity.md` scale; and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing. Verify each `[major]`/`[minor]` with a lane from a different family than the one that raised it (a different provider in deep review mode).
 
 ### Code-Judo Lane (Dispatched at Its Own Boundary)
 
@@ -168,7 +168,7 @@ original diff did not, and narrowing the span hides which lenses now apply.
 
 ### Final Pass After Fix Queue
 
-When the fix queue introduced new code paths (not just deletions, one-line reverts, or check-driven fixes), spawn **one additional fresh-eyes review pass on the integrated diff** before emitting the Review Gate. Frame the prompt explicitly as "final pass on the integrated state, not a re-read of the original diff."
+When the fix queue introduced new code paths (not just deletions, one-line reverts, or check-driven fixes), spawn **one additional fresh-eyes review pass on the integrated diff** before emitting the Gate. Frame the prompt explicitly as "final pass on the integrated state, not a re-read of the original diff."
 
 Trigger signals (any one is enough):
 - ≥2 fix-queue items added new branches, helpers, fixtures, or guard clauses.
@@ -185,7 +185,7 @@ The pass runs the findings lenses the integrated diff still triggers, so it fans
 
 ### Resolved-State Audit
 
-Runs once per review, after the fix queue is drained and before the Review Gate,
+Runs once per review, after the fix queue is drained and before the Gate,
 on STANDARD tier or whenever any round recorded a `[major]`. Unlike the final
 pass, it is not a lens: it audits the *bookkeeping*, and it is the only lane that
 reads the Review Record rather than the diff alone.
@@ -214,7 +214,7 @@ round with the same recorded base.
 
 ## Independent Second Opinion (capability-based)
 
-MODERATE and above request an independent review in addition to the primary reviewer lanes. The lane degrades gracefully and never blocks the review. TRIVIAL does not run it — its one code-quality lens already satisfies the never-review-your-own-work rule, and a second lane on a one-line diff buys nothing.
+STANDARD and above request an independent review in addition to the primary reviewer lanes. The lane degrades gracefully and never blocks the review. TRIVIAL does not run it — its one code-quality lens already satisfies the never-review-your-own-work rule, and a second lane on a one-line diff buys nothing.
 
 <!-- aitk-model-route:review.local-independent-capability -->
 Launch the runtime's configured `independent-review` capability on `review` concurrently with reviewer dispatch. Provider adapters own discovery, authentication, and invocation; this shared skill owns only the stable input and output contract.
@@ -233,7 +233,7 @@ problem is in the file they excluded. Path args still filter the primary lanes;
 they never filter this one. Say so in the Review Record when the two scopes
 differ, so a finding outside the primary scope is not mistaken for noise.
 
-The adapter returns normalized findings with `severity`, `file`, `line`, `evidence`, and `recommendation`. If the capability is unavailable or errors, record `Independent review: skipped (unavailable)` in the Review Gate and continue with the primary lanes.
+The adapter returns normalized findings with `severity`, `file`, `line`, `evidence`, and `recommendation`. If the capability is unavailable or errors, record `Independent review: skipped (unavailable)` in the Gate and continue with the primary lanes.
 
 Map independent findings into the toolkit severity scale (`rules/severity.md`), then dedupe against the primary lanes:
 
@@ -243,24 +243,32 @@ Map independent findings into the toolkit severity scale (`rules/severity.md`), 
 
 Fix new `[major]` issues and verify again. Surface **independent-only** findings (those no primary lane flagged) explicitly in the Review Record so cross-reviewer divergence stays visible.
 
-The whole-loop skip for formatting-only and micro-fix diffs (per `rules/review-gate.md`) skips this lane too — there is no diff worth a second opinion.
+The whole-loop skip for formatting-only and micro-fix diffs (per `rules/gates.md`) skips this lane too — there is no diff worth a second opinion.
 
-## Review Gate
+## Gate
 
 Emit after all review lanes finish:
 
 ```markdown
-## Review Gate
+## Gate
+State: PASS / RETRY / ESCALATE / USER_DECISION / BLOCKED / RECLASSIFY
+Reason: [one line]
+Kind: mechanical / reasoning
+Repeat count: N
 Rounds: [N]
 Base: [short-sha — every round measured against this]
 Pre-flight: [pass/fail/skipped]
 Independent review: [clean/findings (N) /skipped (unavailable) /skipped (trivial tier) /skipped (micro-fix)]
 Resolved-state audit: [clean/reopened (N) /not required]
-Ensemble: [trivial/moderate/standard/deep/security]
 Model coverage: [provider-diverse/family-diverse/single-family] — lanes: [provider/family list]
 Verification: [model-diverse/reduced (reason)]
-Status: [clean/blocked/user decision/skipped/micro-fix]
 ```
+
+Map per `rules/gates.md`'s Mapping From the Old Mechanisms: clean, skipped, and
+micro-fix all reach `PASS` (record the skip reason on `Reason:`); blocked ->
+`BLOCKED`; user decision -> `USER_DECISION`; a round that does not converge is
+`RETRY`, and `ESCALATE` when the same finding persists across two consecutive
+rounds.
 
 `Model coverage:` is the resolver's level verbatim. Whenever the resolver
 returns a disclosure sentence, append it on the next line — it fires when
@@ -281,8 +289,8 @@ Write or update this compact record before fixing findings or clearing context. 
 **Scope:** <changed files or path filter>
 **Independent scope:** <branch (base..HEAD) — note it here when it is wider than Scope>
 **Pre-flight:** <pass/fail/skipped — command or reason>
-**Ensemble / coverage:** <ensemble> / <coverage level> <resolver disclosure, when it returns one>
-**Review Gate:** <pending/clean/blocked/user decision/skipped/micro-fix>
+**Model coverage:** <coverage level> <resolver disclosure, when it returns one>
+**Gate:** <pending/PASS/RETRY/ESCALATE/USER_DECISION/BLOCKED>
 **Resolved-state audit:** <pending/clean/reopened (N)/not required>
 
 ### Findings
@@ -298,10 +306,10 @@ Write or update this compact record before fixing findings or clearing context. 
 - [ ] R1 — <specific next action>
 
 ### Resume Notes
-- Next: <fix R1 / re-run verification / emit Review Gate / continue caller workflow>
+- Next: <fix R1 / re-run verification / emit Gate / continue caller workflow>
 ```
 
-If there are no actionable findings, write `Findings: none` and the clean Review Gate status so checkpoint + context_reset can resume without reconstructing review context from chat.
+If there are no actionable findings, write `Findings: none` and the `PASS` Gate status so checkpoint + context_reset can resume without reconstructing review context from chat.
 
 ## Summary
 
@@ -309,7 +317,7 @@ Use the standalone summary only when `review-code` is user-invoked directly. Int
 
 ```markdown
 ## Review-Code Complete
-Rounds: [N] | Pre-flight: [pass/fail/skipped] | Status: [clean/blocked]
+Rounds: [N] | Pre-flight: [pass/fail/skipped] | Gate: [PASS/BLOCKED/USER_DECISION]
 Model coverage: [level] — [provider/family lanes] [+ resolver disclosure, when it returns one]
 
 ### Team Selected

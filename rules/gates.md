@@ -13,16 +13,13 @@ contract's vocabulary at their own checkpoints as the source of truth for
 gate state, translating their existing domain-specific verdicts into these
 six states rather than reimplementing gate logic.
 
-**Scheduled for deletion in Wave F once the last citers migrate.**
 `rules/review-gate.md`, `rules/stop-rules.md`, and `rules/scoring.md` are
-superseded by this contract for every workflow above, but remain live for
-consumers that have not migrated: the plan-domain reviewers
-(`skills/review/references/{architecture,frontend,backend}.md`, read with
-`lens_domain=plan`, plus `agents/codex/plan-validator.md`'s
-implementation-feasibility lens), `skills/planning`'s plan-iteration and
-finalize helpers, and `skills/testing`'s test-review helpers. Do not delete
-those three files until those remaining consumers migrate onto this
-contract — that migration is out of scope here.
+deleted (Wave F): every former consumer — the plan-domain reviewers
+(`skills/review/references/{architecture,frontend,backend}.md`,
+`agents/codex/plan-validator.md`'s implementation-feasibility lens),
+`skills/planning`'s plan-iteration and finalize helpers, and
+`skills/testing`'s test-review helpers — now emits this contract's `## Gate`
+block directly.
 
 ## Canonical Vocabulary
 

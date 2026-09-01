@@ -40,10 +40,10 @@ the Review Gate below.
 Run `review-code` on changed files after substantive fixes reach
 `address-feedback-verify: PASS`. Translate its findings into a `rules/gates.md`
 Gate block via the Mapping From the Old Mechanisms section, the same
-substitution `address-feedback`'s own Steps make: `rules/review-gate.md`'s
-`Status: clean`/`micro-fix` → `PASS`; `skipped` → `PASS` with the skip reason
-in `Reason`; `blocked` → `BLOCKED`; `user decision` → `USER_DECISION`; the
-same finding recurring after a fix attempt → `ESCALATE`.
+substitution `address-feedback`'s own Steps make: the former review-status
+vocabulary's `clean`/`micro-fix` → `PASS`; `skipped` → `PASS` with the skip
+reason in `Reason`; `blocked` → `BLOCKED`; `user decision` → `USER_DECISION`;
+the same finding recurring after a fix attempt → `ESCALATE`.
 
 For truly minimal edits, such as typo fixes or mechanical renames, review may be skipped under the review-gate skip rule. State the skip reason.
 

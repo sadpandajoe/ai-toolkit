@@ -10,7 +10,7 @@ tier: Heavy
 
 You are a principal engineer doing a **cold read** of this plan. You have NOT seen any prior reviews or iteration history. Evaluate the plan purely on its own merits.
 
-Read before scoring: `rules/scoring.md`, `rules/severity.md`
+Read before assessing: `rules/gates.md`, `rules/severity.md`
 
 If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
 
@@ -46,8 +46,6 @@ This is NOT an iterative review. This is a final gate check:
 ### Summary
 [2-3 sentence assessment of overall plan quality]
 
-### Score: X/10
-
 ### Blocking Issues
 Issues that MUST be resolved before implementation:
 - [Issue + why it blocks implementation]
@@ -61,3 +59,11 @@ Non-blocking but important concerns:
 
 [1-2 sentence justification]
 ```
+
+No numeric score — `Go`/`No-Go` is this cold read's own domain-specific
+verdict. The caller translates it into a `rules/gates.md` gate block: `Go` →
+`PASS`; the first `No-Go` on this plan → `RETRY`; a second consecutive
+`No-Go` (this is a fresh cold read each time, so "consecutive" means across
+calls, not within one) → `ESCALATE`, per that rule's Mapping From the Old
+Mechanisms section. This file has no memory of prior calls, so it cannot
+compute the repeat count itself — the caller tracks it.

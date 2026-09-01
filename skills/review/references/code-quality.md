@@ -7,8 +7,8 @@ tier: Heavy
 Use this phase when repo-tracked files have changed and need a code quality review/fix loop. Works for both local changes (`review-code`) and PR reviews (`review-pr`).
 
 ## Required Context
-Read before starting: `rules/code-review.md`, `rules/review-gate.md`, `rules/stop-rules.md`
-Findings use severity tags from `rules/severity.md` and scoring from `rules/code-review.md`.
+Read before starting: `rules/code-review.md`, `rules/gates.md`
+Findings use severity tags from `rules/severity.md` and calibration from `rules/code-review.md`.
 
 ## Goal
 
@@ -44,7 +44,7 @@ apply as if it were applied.
    - **Uncommitted mode** (default): unstaged and staged diffs.
    - **Committed mode** (`--committed` or when invoked on already-committed changes): `git diff <base>..HEAD`. Skip stage/commit steps in the calling workflow.
    - Apply any explicit path filtering.
-2. Perform a code review using the criteria in `rules/code-review.md`. Read each changed file, examine the diff, and assess against the scoring framework and severity tags.
+2. Perform a code review using the criteria in `rules/code-review.md`. Read each changed file, examine the diff, and assess against the calibration framework and severity tags.
 3. **DRY + modeling check.** For any new helper, utility, or non-trivial logic introduced in the diff:
    - Check the dependency manifest (`package.json`, `requirements.txt`, `pyproject.toml`, `go.mod`, etc.) for a library that already provides this. Flag reimplementations of installed packages as `[minor]` (or `[major]` if the reimplementation has bugs the library has already fixed).
    - Grep the repo for sibling implementations of the same logic. Flag duplication and propose extraction or reuse.
@@ -71,12 +71,15 @@ Only the main thread runs these.
    Use `review` for a bounded pass and `deep-review` when the integrated diff is
    cross-system, security-sensitive, adversarial, or otherwise high-risk. Check
    error paths, async ordering, state consistency, and boundary conditions.
-   Prefer a model family that did not raise the findings being re-checked, per
-   [ensemble.md](ensemble.md).
+   Prefer a model family that did not raise the findings being re-checked.
 
-## Stop Rules
+## Gate
 
-Apply stop rules from `rules/stop-rules.md`.
+Apply `rules/gates.md` to the fix loop: a re-run that still surfaces
+`[major]`/`[minor]` findings is `RETRY` on the first pass and `ESCALATE` on a
+second consecutive reasoning failure (the fix attempt not converging). Only
+nitpicks remaining, or an explicit user decision, reaches `PASS` and ends the
+loop.
 
 ## Notes
 

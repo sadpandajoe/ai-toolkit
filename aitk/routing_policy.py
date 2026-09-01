@@ -14,6 +14,8 @@ import json
 from pathlib import Path
 import re
 
+from aitk.gates import GATE_STATES
+
 
 PROVIDERS = {"codex", "claude"}
 
@@ -79,27 +81,12 @@ ROUTE_RESTRICTIONS = {
 LENS_DOMAINS = ("code", "plan")
 
 
-# Review-ensemble vocabulary. A review tier names a roster of provider/model
-# lanes rather than a single route, so that "deep review" can mean a claim about
-# which models actually ran instead of how hard one model was asked to think.
-ENSEMBLE_NAMES = {"trivial", "moderate", "standard", "deep", "security"}
-CROSS_PROVIDER_POLICIES = {"forbidden", "optional", "required"}
-VERIFIER_DIVERSITY = {"none", "family", "provider"}
-DEGRADED_ACTIONS = {"continue", "disclose", "block"}
-LANE_ORIGINS = {"origin", "cross"}
-# Ordered weakest to strongest: a run's coverage is compared against its tier's
-# floor by index, so the order is load-bearing rather than cosmetic.
-COVERAGE_LEVELS = ("single-family", "family-diverse", "provider-diverse")
-MAX_LENS_LANES = 6
-
-
-# The output vocabulary each lens domain grades in (`rules/severity.md`), and the
-# score a plan lane must carry (`rules/scoring.md`). These exist as data because
-# `lens_domain` used to reach only the worker prompt: a code lane could return
-# `[High]` findings and a plan lane could return no score at all, and both passed
-# the generic envelope check. The domain is the contract the aggregator relies on
-# -- code findings dedupe by severity tag, plan findings iterate to 8/10 -- so it
-# is enforced on the result, not just described in the prompt.
+# The output vocabulary each review domain grades in (`rules/severity.md`). This
+# exists as data because `lens_domain` used to reach only the worker prompt: a
+# code lane could return `[High]` findings and a plan lane could return an
+# untagged finding, and both passed the generic envelope check. The domain is
+# the contract the aggregator relies on -- code findings dedupe by severity tag
+# -- so it is enforced on the result, not just described in the prompt.
 CODE_SEVERITIES = ("[major]", "[minor]", "[nitpick]")
 
 
@@ -137,23 +124,16 @@ DOMAIN_FINDING_PATTERNS = {
 }
 
 
-# The labelled score line `rules/scoring.md` defines, anchored to its own line.
-# An unanchored `\b(?:10|[1-9])/10\b` matched any incidental ratio -- "7/10 of
-# the call sites", "covers 3/10 branches" -- so a plan review that never scored
-# itself passed as long as it mentioned a fraction somewhere. Emphasis around
-# the label is formatting, for the same reason `_severity_pattern` allows it.
-#
-# So is a heading marker, and here that is not a hypothetical: every plan lens
-# prints its score as `### Score: X/10` under a `## <Lens> Review` heading --
-# see `skills/review/references/architecture.md`. Accepting only the
-# unheaded form rejected the exact template the worker was handed, which teaches
-# the next one to deviate from its contract rather than to score. The list form
-# rides along for the same reason `_severity_pattern` allows it -- no lens
-# template prints it that way today, and a worker that does has still scored
-# itself on a line of its own, which is all this check is asked to establish.
-PLAN_SCORE_PATTERN = re.compile(
-    r"^[ \t]*(?:[-*+][ \t]+|#{1,6}[ \t]+)?[*_]{0,2}Score:[*_]{0,2}[ \t]*"
-    r"(?:10|[1-9])[ \t]*/[ \t]*10[ \t]*$",
+# The six-state gate block `rules/gates.md` defines (state vocabulary owned by
+# `aitk.gates.GATE_STATES`), anchored so a `## Gate` heading must be followed by
+# a `State:` line naming one of the six states. A heading marker and
+# surrounding emphasis around `State:` are formatting, not content, for the
+# same reason `_severity_pattern` allows them around a severity tag.
+GATE_BLOCK_PATTERN = re.compile(
+    r"^[ \t]*#{1,6}[ \t]+Gate[ \t]*$"
+    r"(?:\r?\n[ \t]*$)*"
+    r"\r?\n[ \t]*[*_]{0,2}State:[*_]{0,2}[ \t]*"
+    r"(?:" + "|".join(sorted(GATE_STATES)) + r")[ \t]*$",
     re.MULTILINE,
 )
 
@@ -209,45 +189,6 @@ SUMMARY_FORMS: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
 }
 
 
-# The floors `interfaces/model-routing.json` must honour, pinned here for the
-# same reason the route table is: `_lens_route_problems` and
-# `_lens_floor_problems` used to accept `null` and `{}`, so deleting the
-# adversarial route floor or emptying the plan menu floor validated cleanly and
-# the protection each exists to give disappeared with one quiet manifest edit.
-#
-# The two comparisons run in opposite directions, because the two floors fail in
-# opposite directions. A *route* floor is breached by widening -- adding `review`
-# to the adversarial lens lets the expensive lens run cheap -- so the manifest's
-# allowed set must stay within the pinned one. A *menu* floor is breached by
-# narrowing -- dropping a lens from a domain makes that lane unreachable -- so
-# the manifest's floor must contain the pinned one. Either may still be edited;
-# it just costs an edit here, where every boundary's exposure is visible at once.
-LENS_ROUTE_FLOORS: dict[str, tuple[str, ...]] = {
-    "skills/review/references/adversarial.md": ("deep-review",),
-    "skills/review/references/architecture.md": ("deep-review",),
-}
-
-
-LENS_DOMAIN_FLOORS: dict[str, tuple[str, ...]] = {
-    "code": (
-        "skills/review/references/code-quality.md",
-        "skills/review/references/deep-quality.md",
-        "skills/review/references/adversarial.md",
-        "skills/testing/references/review-tests.md",
-        "skills/testing/references/review-testplan.md",
-        "skills/review/references/architecture.md",
-        "skills/review/references/frontend.md",
-        "skills/review/references/backend.md",
-    ),
-    "plan": (
-        "skills/review/references/architecture.md",
-        "skills/review/references/frontend.md",
-        "skills/review/references/backend.md",
-        "skills/testing/references/review-testplan.md",
-    ),
-}
-
-
 LENS_CATALOG = "skills/review/references/classify-diff.md"
 
 
@@ -255,9 +196,6 @@ ROUTE_ERROR = "MODEL_ROUTE_INVALID"
 
 
 UNAVAILABLE_ERROR = "MODEL_ROUTE_UNAVAILABLE"
-
-
-ENSEMBLE_BLOCKED_ERROR = "REVIEW_ENSEMBLE_BLOCKED"
 
 
 PROMPT_LIMIT = 1024 * 1024
@@ -344,15 +282,15 @@ class ResolvedRoute:
     controls: dict[str, object]
     minimum_cli: str
     unscored: bool = False
+    # Retired with the reviewer-lens fan-out mechanism; always `None` now. Kept
+    # as a field (rather than deleted) because `routing_transport.py`'s worker
+    # prompt still emits it as a header line every worker reads.
     lens: str | None = None
     # Which artefact this dispatch grades: `code` for shipped code, `plan` for a
-    # written plan, `None` off a fan-out boundary. Several lenses sit in both a
-    # code menu and a plan menu -- architecture review and test review most
-    # obviously -- and the two want different output: severity tags for code,
-    # scores for a plan. A document's Required Context cannot vary by dispatch,
-    # so the mode travels here and the dual-use lens keys its output section on
-    # it. Without it those lenses had to pick one vocabulary and be wrong at the
-    # other boundary.
+    # written plan, `None` for a lane that grades neither (e.g. implementation).
+    # A code lane and a plan lane want different output vocabularies -- severity
+    # tags for code, `rules/gates.md`'s block for plan -- so the mode travels
+    # here and `_domain_problem` keys its result check on it.
     lens_domain: str | None = None
     # Which named summary grammar (`SUMMARY_FORMS`) this lane's result is checked
     # against, or `None` for the lanes whose summary is free prose.
@@ -419,12 +357,6 @@ def _safe_dispatch_path(root: Path, value: object) -> Path | None:
     return None
 
 
-def _lens_menu(boundary: dict[str, object]) -> tuple[str, ...]:
-    """Return the boundary's declared reviewer menu, empty when it does not fan out."""
-    lenses = boundary.get("lenses")
-    return tuple(lenses) if isinstance(lenses, list) else ()
-
-
 def _boundary_contracts(boundary: dict[str, object]) -> tuple[str, ...]:
     """Return the contracts this one dispatch lane declares for itself.
 
@@ -446,17 +378,10 @@ def _boundary_contracts(boundary: dict[str, object]) -> tuple[str, ...]:
 def _lens_domain(boundary: dict[str, object]) -> str | None:
     """Return which artefact a lane grades -- shipped `code` or a written `plan`.
 
-    Lenses shared by both domains (architecture review, test review) read it to
-    pick their output vocabulary: `code` means the severity tags in
-    `rules/code-review.md`, `plan` means the scores in `rules/scoring.md`.
-
-    This used to be spelled `lens_fanout` and doubled as the fan-out flag. The
-    two are not the same property. A lane can grade code without fanning out --
-    the batch PR reviewer applies its lenses sequentially in one context,
-    precisely because a review route cannot dispatch -- and conflating them left
-    that lane with `lens_domain=None`, so every result check keyed on the domain
-    skipped it and its findings went ungraded. Fan-out is now what it always
-    described in the data: the presence of a `lenses` menu (`_lens_menu`).
+    Reference docs shared by both domains (architecture review, test review)
+    read it to pick their output vocabulary: `code` means the severity tags in
+    `rules/code-review.md`, `plan` means `rules/gates.md`'s block. A lane that
+    grades neither (implementation, operations) leaves this `None`.
     """
     domain = boundary.get("lens_domain")
     return domain if isinstance(domain, str) and domain in LENS_DOMAINS else None
@@ -468,40 +393,6 @@ def _summary_form(boundary: dict[str, object]) -> str | None:
     return form if isinstance(form, str) and form in SUMMARY_FORMS else None
 
 
-def _lens_routes(payload: dict[str, object]) -> dict[str, tuple[str, ...]]:
-    """Return each lens's declared minimum-route set, keyed by lens path."""
-    floors = payload.get("lens_routes")
-    if not isinstance(floors, dict):
-        return {}
-    return {
-        str(lens): tuple(str(route) for route in routes)
-        for lens, routes in floors.items()
-        if isinstance(routes, list)
-    }
-
-
-def _lens_floors(payload: dict[str, object]) -> dict[str, tuple[str, ...]]:
-    """Return the lenses every fan-out of a domain must offer, keyed by domain.
-
-    `lens_routes` is a floor on *which route* a lens may run on; this is a floor
-    on *which lenses a menu must contain*. Without it, per-boundary menus were
-    checked for containment only and completeness was checked across their union,
-    so a lens could vanish from one workflow's menu while a sibling menu still
-    listed it and the union stayed whole. Narrowing a menu is still allowed --
-    that is what scoping a lane means -- but it now costs an edit here, where the
-    consequence is visible for every boundary at once, instead of one quiet
-    deletion in one boundary's list.
-    """
-    floors = payload.get("lens_floors")
-    if not isinstance(floors, dict):
-        return {}
-    return {
-        str(domain): tuple(str(lens) for lens in lenses)
-        for domain, lenses in floors.items()
-        if isinstance(lenses, list)
-    }
-
-
 def _route_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
     routes = payload.get("routes")
     if not isinstance(routes, list):
@@ -511,91 +402,3 @@ def _route_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
         for item in routes
         if isinstance(item, dict) and isinstance(item.get("name"), str)
     }
-
-
-def _ensemble_map(payload: dict[str, object]) -> dict[str, dict[str, object]]:
-    entries = payload.get("ensembles")
-    if not isinstance(entries, list):
-        return {}
-    return {
-        str(item.get("name")): item
-        for item in entries
-        if isinstance(item, dict) and isinstance(item.get("name"), str)
-    }
-
-
-@dataclass(frozen=True)
-class EnsembleLane:
-    role: str
-    provider: str
-    route: str
-    family: str
-    selector: str
-    effort: str
-
-    def as_dict(self) -> dict[str, object]:
-        return {
-            "role": self.role,
-            "provider": self.provider,
-            "route": self.route,
-            "family": self.family,
-            "selector": self.selector,
-            "effort": self.effort,
-        }
-
-
-@dataclass(frozen=True)
-class ResolvedEnsemble:
-    """One review tier resolved to its exact provider/model roster.
-
-    ``lens`` holds one entry per lens route the origin provider must exercise.
-    The routes are mandatory, not a menu: at least one lens lane runs on each,
-    which is what makes ``coverage`` a statement about the run instead of about
-    the palette. ``lens_lanes`` is the concurrent lens-lane budget for a single
-    fan-out stage; verification and cross-provider lanes are separate stages and
-    do not consume it.
-    """
-
-    name: str
-    origin_provider: str
-    cross_provider: str | None
-    cross_provider_policy: str
-    lens_lanes: int
-    lens: tuple[EnsembleLane, ...]
-    cross: tuple[EnsembleLane, ...]
-    dropped_lanes: tuple[str, ...]
-    unverifiable_lanes: tuple[str, ...]
-    verification_lanes: int
-    verifier_diversity: str
-    verification_pool: tuple[EnsembleLane, ...]
-    coverage_floor: str
-    coverage: str
-    providers: tuple[str, ...]
-    families: tuple[str, ...]
-    on_degraded: str
-    status: str
-    disclosure: str
-
-    def as_dict(self) -> dict[str, object]:
-        return {
-            "ensemble": self.name,
-            "origin_provider": self.origin_provider,
-            "cross_provider": self.cross_provider,
-            "cross_provider_policy": self.cross_provider_policy,
-            "lens_lanes": self.lens_lanes,
-            "lens": [lane.as_dict() for lane in self.lens],
-            "cross": [lane.as_dict() for lane in self.cross],
-            "dropped_lanes": list(self.dropped_lanes),
-            "unverifiable_lanes": list(self.unverifiable_lanes),
-            "verification": {
-                "lanes": self.verification_lanes,
-                "diversity": self.verifier_diversity,
-            },
-            "coverage_floor": self.coverage_floor,
-            "coverage": self.coverage,
-            "providers": list(self.providers),
-            "families": list(self.families),
-            "on_degraded": self.on_degraded,
-            "status": self.status,
-            "disclosure": self.disclosure,
-        }

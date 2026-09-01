@@ -96,16 +96,17 @@ the worker to fan out describes a lane no provider can run.
 
 **The applied set is the batch set, not the full menu.** The worker applies only
 the lenses inlined in its own closure — code quality, deep quality, test review,
-test-plan review, frontend, and backend. The two lenses that carry a
-`deep-review` route floor, **adversarial** and **architecture**, are excluded
-here for the same reason Code-judo is: batch runs on `review` as often as not,
-and a floored lens applied on the cheap route is the floor defeated rather than
-honoured. The exclusion is enforced, not merely written down: a lane with no lens
-menu never passes `--lens`, so the resolver's per-lens floor cannot see it, and
-the manifest check instead rejects any menu-less boundary that inlines a floored
-lens on a route below that lens's floor. Restricting the lane to `deep-review`
-would not lift the exclusion either — the closure is the same 16 contracts on
-both routes, so a costlier batch would still be a batch without those two lenses.
+test-plan review, frontend, and backend. The two lenses that require the
+`deep-review` route, **adversarial** and **architecture**, are excluded here
+for the same reason Code-judo is: batch runs on `review` as often as not, and
+applying a `deep-review`-only lens on the cheap route defeats the route
+requirement rather than honouring it. The exclusion is enforced by omission,
+not by a runtime check: `review.pr-batch`'s declared `contracts` in
+`interfaces/model-routing.json` simply do not include the adversarial or
+architecture lens files, so a worker dispatched at this boundary has no prompt
+for either regardless of route. Restricting the lane to `deep-review` would not
+lift the exclusion either — the closure is the same contract set on both
+routes, so a costlier batch would still be a batch without those two lenses.
 
 `classify-diff` still reports both truthfully, so **a worker that sees either
 triggered names it in the `Deferred lenses:` line** rather than skipping it or

@@ -15,7 +15,7 @@ This skill replaces inline reviewer-selection logic in commands. The calling wor
 
 The caller provides:
 - The diff (staged, unstaged, or commit range)
-- The complexity tier (`TRIVIAL`, `MODERATE`, or `STANDARD`) from the Complexity Gate
+- The complexity tier (`TRIVIAL`, `STANDARD`, or `COMPLEX`) from the Complexity Gate
 - The requested review effort, if the command supplied one (`high` / `max` / `ultra`). Treat an explicit **deep-tier phrase** as `ultra` — these are escalation phrases, not route names.
 - The change title / commit subjects, when available (PR title or commit messages)
 
@@ -48,14 +48,14 @@ Those three phrases, plus `max`/`ultra` effort, are the *only* things that set `
 | Review Domain | Trigger | Skill |
 |---------------|---------|-------|
 | Code quality | Always | `review/references/code-quality.md` |
-| Deep quality | Refactor-shaped diff (see step 3a) OR any STANDARD-tier diff OR the tier's `deep-review` route is otherwise empty (step 3c); always under deep-tier escalation or a bare "deep quality" lens ask. Strict structural findings on the `deep-review` route. | `review/references/deep-quality.md` |
+| Deep quality | Refactor-shaped diff (see step 3a) OR any COMPLEX-tier diff OR the tier's `deep-review` route is otherwise empty (step 3c); always under deep-tier escalation or a bare "deep quality" lens ask. Strict structural findings on the `deep-review` route. | `review/references/deep-quality.md` |
 | Code-judo | Deep-tier escalation OR title matches `^refactor` OR an explicit Code-judo ask. Generative restructuring proposal — routes to `deep-review` (see review SKILL Invocation). A `^refactor` title auto-fires; the refactor **shape signal alone** (step 3a, no `^refactor` title) is **advisory** — recommend it, do not auto-fire. | `review/references/code-judo.md` |
 | Adversarial | Security-sensitive diff (step 4) OR an explicit `--adversarial` / red-team ask. Severity-tagged findings on the `deep-review` route. | `review/references/adversarial.md` |
-| Architecture | STANDARD + logic changes in source files; MODERATE only when ownership/design placement is unclear | `review/references/architecture.md` |
-| Tests | MODERATE or STANDARD + test files exist in diff OR test files exist for changed source files | `testing/references/review-tests.md` |
-| Test plan | MODERATE or STANDARD + behavior changed AND no test files exist in diff AND no test files found for changed source files | `testing/references/review-testplan.md` |
-| Frontend | MODERATE or STANDARD + frontend files changed | `review/references/frontend.md` |
-| Backend | MODERATE or STANDARD + backend files changed | `review/references/backend.md` |
+| Architecture | COMPLEX + logic changes in source files; STANDARD only when ownership/design placement is unclear | `review/references/architecture.md` |
+| Tests | STANDARD or COMPLEX + test files exist in diff OR test files exist for changed source files | `testing/references/review-tests.md` |
+| Test plan | STANDARD or COMPLEX + behavior changed AND no test files exist in diff AND no test files found for changed source files | `testing/references/review-testplan.md` |
+| Frontend | STANDARD or COMPLEX + frontend files changed | `review/references/frontend.md` |
+| Backend | STANDARD or COMPLEX + backend files changed | `review/references/backend.md` |
 
 **3a. Detect refactor shape** (feeds the Deep quality and Code-judo rows). Compute from the diff and title:
 - **Title signal**: change title / commit subject matches `^refactor` (conventional-commit prefix) or contains "restructure", "extract", "decompose", "clean up".
@@ -65,20 +65,20 @@ Those three phrases, plus `max`/`ultra` effort, are the *only* things that set `
 
 Rules:
 - Code quality **always** triggers regardless of complexity tier.
-- **Deep quality vs Code-judo (cost discipline).** Both run on `deep-review`; the difference is budget and output. Deep quality is *findings* and occupies one of the tier's lens lanes — auto-fire it on refactor shape, on STANDARD, or to fill an empty `deep-review` route (step 3c). Code-judo is a *generative* pass that runs outside the lane budget as an extra stage — auto-fire it only on high-confidence intent (deep-tier escalation, `^refactor` title, or an explicit Code-judo ask). When only the shape signal fires, **recommend** Code-judo in the output ("looks like a refactor — consider a code-judo pass") rather than triggering it; do not spend an extra deep stage on a heuristic guess.
+- **Deep quality vs Code-judo (cost discipline).** Both run on `deep-review`; the difference is budget and output. Deep quality is *findings* and occupies one of the tier's lens lanes — auto-fire it on refactor shape, on COMPLEX, or to fill an empty `deep-review` route (step 3c). Code-judo is a *generative* pass that runs outside the lane budget as an extra stage — auto-fire it only on high-confidence intent (deep-tier escalation, `^refactor` title, or an explicit Code-judo ask). When only the shape signal fires, **recommend** Code-judo in the output ("looks like a refactor — consider a code-judo pass") rather than triggering it; do not spend an extra deep stage on a heuristic guess.
 - TRIVIAL diffs never **auto**-trigger Deep quality or Code-judo by tier or shape alone (a rename or one-liner needs neither). Explicit asks still fire on TRIVIAL, each to its own scope: a bare "deep quality" ask fires the Deep quality lens only; a Code-judo ask fires the Code-judo lane only; deep-tier escalation fires both.
-- **Deep-tier escalation.** When effort is `ultra`/`max` or the request carries a deep-tier phrase (see *Deep-tier phrases* above), report that deep-tier escalation applies. It has three effects, all owned downstream: the complexity tier is **pinned to at least STANDARD** regardless of diff size, *every* triggered lens routes through `deep-review`, and the Code-judo lane is added. Report the pinned tier as the Complexity value, with the size-derived tier in parentheses, so a one-file deep review is never silently handled as TRIVIAL. Escalation is *sufficient* for the Code-judo lane, not necessary — a `^refactor` title or an explicit Code-judo ask triggers the lane on its own with escalation `NO`. classify-diff only flags these facts; the review SKILL Invocation owns the routing (see its Deep review mode section).
+- **Deep-tier escalation.** When effort is `ultra`/`max` or the request carries a deep-tier phrase (see *Deep-tier phrases* above), report that deep-tier escalation applies. It has three effects, all owned downstream: the complexity tier is **pinned to at least COMPLEX** regardless of diff size, *every* triggered lens routes through `deep-review`, and the Code-judo lane is added. Report the pinned tier as the Complexity value, with the size-derived tier in parentheses, so a one-file deep review is never silently handled as TRIVIAL. Escalation is *sufficient* for the Code-judo lane, not necessary — a `^refactor` title or an explicit Code-judo ask triggers the lane on its own with escalation `NO`. classify-diff only flags these facts; the review SKILL Invocation owns the routing (see its Deep review mode section).
 - TRIVIAL complexity: code quality reviewer only **by default** — this is the baseline when no explicit escalation applies. Explicit asks and deep-tier escalation still fire the deep lenses (per the TRIVIAL rule above), and impact or security sensitivity can escalate the tier.
-- MODERATE complexity: triggered lanes only; do not launch the full review team just because one lane triggers.
-- STANDARD complexity: launch all triggered lanes, include architecture for logic changes, and consider optional second opinion.
-- Frontend and Backend are additive for MODERATE/STANDARD diffs — both can trigger on the same diff.
+- STANDARD complexity: triggered lanes only; do not launch the full review team just because one lane triggers.
+- COMPLEX complexity: launch all triggered lanes, include architecture for logic changes, and consider optional second opinion.
+- Frontend and Backend are additive for STANDARD/COMPLEX diffs — both can trigger on the same diff.
 - Tests and Test Plan are mutually exclusive — if tests exist, use Tests; if not, use Test Plan.
-- Security-sensitive diffs escalate to STANDARD handling even when initial size signals look MODERATE.
+- Security-sensitive diffs escalate to COMPLEX handling even when initial size signals look STANDARD.
 - **Adversarial is a findings lens, not a separate workflow.** It sits inside the reviewer fan-out on the `deep-review` route, so its `[major]`/`[minor]` findings merge and dedupe with the other lanes — unlike Code-judo, which returns unscored proposals at its own boundary. The `review-code-adversarial` workflow is a different thing: a whole review run made of adversarial lanes. Triggering this row does not start that workflow.
-- The Adversarial row fires on any tier — a one-line auth change is exactly the TRIVIAL diff that wants it. Local review dispatches it at its own TRIVIAL fan-out; PR review's Trivial path is a single pass with no fan-out boundary, so that procedure bumps an explicitly-asked adversarial PR to Moderate rather than dropping the lane. Security sensitivity escalates to STANDARD under the rule above either way.
+- The Adversarial row fires on any tier — a one-line auth change is exactly the TRIVIAL diff that wants it. Local review dispatches it at its own TRIVIAL fan-out; PR review's Trivial path is a single pass with no fan-out boundary, so that procedure bumps an explicitly-asked adversarial PR to Standard rather than dropping the lane. Security sensitivity escalates to COMPLEX under the rule above either way.
 
-**3b. Lens priority order** (used only when more lenses trigger than the tier's
-lane budget allows — see [ensemble.md](ensemble.md)). Keep lanes in this order
+**3b. Lens priority order** (used only when more lenses trigger than a single
+reviewer pass can practically carry). Keep lanes in this order
 and shed from the bottom:
 
 1. Adversarial — when the diff is security-sensitive
@@ -94,9 +94,9 @@ Report every shed lane by name and reason in the output so a truncated team is
 never mistaken for a full one. Code-judo is not in this order — it runs outside
 the findings fan-out and does not consume a lane.
 
-**3c. Cover every mandatory lens route.** The tier's roster lists the routes it
-must exercise, and the reported coverage level assumes each one carried a lane.
-If the triggered set leaves a route empty — the common case is a MODERATE diff
+**3c. Cover every mandatory lens route.** Each tier's boundary declares the
+routes (`review`/`deep-review`) it must exercise, and the reported coverage level assumes each one carried a lane.
+If the triggered set leaves a route empty — the common case is a STANDARD diff
 where only `review`-route lenses fire and nothing runs on `deep-review` — add
 Deep quality as the `deep-review` lane before shedding anything else. Shedding
 happens within a route, never to the point of emptying one.
@@ -121,11 +121,10 @@ happens within a route, never to the point of emptying one.
 ```markdown
 ## Diff Classification
 
-Complexity: TRIVIAL / MODERATE / STANDARD   (when pinned: "STANDARD (pinned by deep review; size signal MODERATE)")
+Complexity: TRIVIAL / STANDARD / COMPLEX   (when pinned: "COMPLEX (pinned by deep review; size signal STANDARD)")
 Security-sensitive: YES / NO
-Deep-tier escalation: YES / NO   (YES only on `max`/`ultra` effort or a deep-tier phrase — the tier is then pinned to at least STANDARD, every triggered lens routes through `deep-review`, and the Code-judo lane is added)
+Deep-tier escalation: YES / NO   (YES only on `max`/`ultra` effort or a deep-tier phrase — the tier is then pinned to at least COMPLEX, every triggered lens routes through `deep-review`, and the Code-judo lane is added)
 Code-judo lane: YES / NO         (YES iff a Code-judo row appears in Triggered Reviewers below — set by escalation, a `^refactor` title, or an explicit Code-judo ask. Orchestrators dispatch the judo pass on this field, never on the escalation field.)
-Ensemble: trivial / moderate / standard / deep / security   (deep whenever escalation is YES; security when the diff is security-sensitive)
 Files analyzed: [count]
 
 ### Triggered Reviewers

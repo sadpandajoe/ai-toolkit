@@ -23,8 +23,8 @@ from aitk.routing_policy import (
     DOMAIN_FINDING_PATTERNS,
     DOMAIN_SEVERITIES,
     FAILED_EXIT,
+    GATE_BLOCK_PATTERN,
     ModelRouteError,
-    PLAN_SCORE_PATTERN,
     PREFLIGHT_TIMEOUT,
     PROMPT_LIMIT,
     ResolvedRoute,
@@ -98,15 +98,19 @@ def worker_prompt(
     restrictions = json.dumps(route.restrictions, separators=(",", ":"))
     # The vocabulary the result is checked against, stated to the worker that has
     # to produce it. `_domain_problem` and `_summary_problem` reject a finding
-    # that does not open with its domain's tag, a plan summary with no `Score:`
-    # line, and a summary missing its declared form -- and a rule enforced
+    # that does not open with its domain's tag, a plan summary with no `## Gate`
+    # block, and a summary missing its declared form -- and a rule enforced
     # without being stated is a trap rather than a contract.
     grading = "-"
     if route.lens_domain is not None:
         tags = "|".join(DOMAIN_SEVERITIES[route.lens_domain])
         grading = f"every finding must begin with one of {tags}"
         if route.lens_domain == "plan":
-            grading += "; summary must contain a `Score: X/10` line of its own"
+            grading += (
+                "; summary must contain a `## Gate` heading followed by a "
+                "`State:` line naming one of the six gate states in "
+                "rules/gates.md"
+            )
     if route.summary_form is not None:
         lines = "; ".join(label for label, _ in SUMMARY_FORMS[route.summary_form])
         form = f"summary must contain these lines, one per line: {lines}"
@@ -161,15 +165,17 @@ def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | No
 
     `_valid_worker` only proves the envelope is well-formed: every string passes.
     But the domain decides how the caller *consumes* the result -- code findings
-    dedupe and escalate by `[major]`/`[minor]`/`[nitpick]`, plan findings iterate
-    against a `X/10` score -- so an untagged or cross-tagged finding is silently
-    dropped by the aggregator rather than rejected here. Enforcing the vocabulary
-    at the boundary is what makes `lens_domain` more than prompt prose.
+    dedupe and escalate by `[major]`/`[minor]`/`[nitpick]`, plan findings gate
+    on `rules/gates.md`'s six-state `## Gate` block -- so an untagged or
+    ungated result is silently dropped by the aggregator rather than rejected
+    here. Enforcing the vocabulary at the boundary is what makes `lens_domain`
+    more than prompt prose.
 
-    The tag must open the finding and the score must own its line. Both were
-    substring searches, which the aggregator's own parse is not: a plan finding
-    that named `[major]` somewhere in its prose satisfied a code-domain check,
-    and a summary that mentioned any `N/10` satisfied the plan score check.
+    The tag must open the finding and the gate block must be well-formed. Both
+    were substring searches, which the aggregator's own parse is not: a plan
+    finding that named `[major]` somewhere in its prose satisfied a
+    code-domain check, and a summary that mentioned any state name in passing
+    satisfied the plan gate check.
 
     Only `completed` results are graded. A `blocked` or `failed` worker is
     reporting why it could not review, and demanding severity tags on that
@@ -186,12 +192,12 @@ def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | No
             f"{len(untagged)} finding(s) that do not open with a "
             f"{'/'.join(tags)} tag; the first is: {str(untagged[0])[:120]}"
         )
-    if route.lens_domain == "plan" and not PLAN_SCORE_PATTERN.search(
+    if route.lens_domain == "plan" and not GATE_BLOCK_PATTERN.search(
         str(result["summary"])
     ):
         return (
-            f"plan-domain boundary {route.boundary} returned no `Score: X/10` line "
-            "in its summary; plan review iterates against that score"
+            f"plan-domain boundary {route.boundary} returned no `## Gate` block "
+            "with a valid State: line in its summary; plan review gates on that block"
         )
     return None
 

@@ -25,13 +25,9 @@ Read full file contents and diff context.
 
 ## Launch Reviewers
 
-This workflow runs the `security` ensemble from [ensemble.md](ensemble.md): a
-three-vote panel spanning **both** providers, every adversarial lane on
-`deep-review`. Resolve the exact roster first:
-
-```bash
-<toolkit-root>/bin/aitk review-ensemble security --provider <origin> --available <reachable> --json
-```
+This workflow runs a fixed three-vote panel spanning **both** providers, every
+adversarial lane on `deep-review` — the panel composition below is not
+resolved from a roster, it is the shape of the `review.adversarial-cross-provider-panel` boundary itself.
 
 <!-- aitk-model-route:review.adversarial-cross-provider-panel -->
 Dispatch the resolved panel reviewers in parallel through `bin/aitk model-run --provider <provider>`, one per resolved lane: the origin-provider adversarial lane on `deep-review` using [adversarial.md](adversarial.md), the cross-provider cold adversarial lane on `deep-review` (scope and diff only, never the origin lane's findings), and the origin third-vote lane. Three lanes on one model is not this panel — it is a single-model review with extra cost.
@@ -51,11 +47,11 @@ than collapsing it:
 - Found by two lanes on the same model family: agreement, not independence — treat as one lane's finding.
 - Unique to one reviewer: include at normal confidence; verify with a lane from a different provider before promoting past `[minor]`.
 
-Draw those verifying lanes from `select_verifiers()` on the resolved `security`
-roster — never the origin lane, never the same lane twice. It returns up to the
-tier's two, and fewer when the roster cannot supply them; record the vote count
-actually achieved (`verified 1/2`) rather than implying a full panel. That count
-is the verifier tally, not the three-lane panel roster above.
+Draw those verifying lanes from the panel's other two lanes — never the origin
+lane, never the same lane twice. That is up to two verifiers, and fewer when a
+lane could not be dispatched; record the vote count actually achieved
+(`verified 1/2`) rather than implying a full panel. That count is the verifier
+tally, not the three-lane panel above.
 
 Apply the finding calibration in `rules/code-review.md` before sorting: drop any finding whose `file:line` is not in the diff (scope is upstream of correctness — settle this before adjudicating whether the two reviewers disagree on a bug's reality), and cap unchanged-sibling symmetry findings at `[minor]`.
 
@@ -77,26 +73,33 @@ After each fix:
 - Re-review the fixed files through the adversarial lens.
 - Iterate until clean or blocked.
 
-## Review Gate
+## Gate
 
 ```markdown
-## Review Gate
+## Gate
+State: PASS / RETRY / ESCALATE / USER_DECISION / BLOCKED / RECLASSIFY
+Reason: [one line]
+Kind: mechanical / reasoning
+Repeat count: N
 Rounds: [N]
 Pre-flight: [pass/fail/skipped]
-Status: [clean/blocked/user decision]
 Adversarial Rating: [Hardened/Adequate/Vulnerable/Critical]
 Reviewers: [resolved panel lanes as provider/family | primary only]
 Model coverage: [provider-diverse/family-diverse/single-family] [+ disclosure when below floor]
 ```
 
-Never claim dual-reviewer coverage when only one reviewer ran, and never claim
-multi-model coverage when every lane ran on one model family.
+Map per `rules/gates.md`'s Mapping From the Old Mechanisms: clean -> `PASS`,
+blocked -> `BLOCKED`, user decision -> `USER_DECISION`; a fix loop that does
+not converge is `RETRY` on the first pass and `ESCALATE` on a second
+consecutive reasoning failure. Never claim dual-reviewer coverage when only
+one reviewer ran, and never claim multi-model coverage when every lane ran on
+one model family.
 
 ## Summary
 
 ```markdown
 ## Review-Code-Adversarial Complete
-Rating: [Hardened/Adequate/Vulnerable/Critical] | Rounds: [N] | Status: [clean/blocked]
+Rating: [Hardened/Adequate/Vulnerable/Critical] | Rounds: [N] | Gate: [PASS/BLOCKED/USER_DECISION]
 Reviewers: [resolved panel lanes as provider/family | primary only]
 Model coverage: [provider-diverse/family-diverse/single-family] [+ disclosure when below floor]
 

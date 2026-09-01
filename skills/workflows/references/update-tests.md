@@ -26,13 +26,13 @@ update-tests --function normalize_query
 ## Command Contract
 
 - Only the main thread writes PROJECT.md. Subagents return compact handoffs.
-- For STANDARD or expensive runs (large suite, multi-subsystem target, repeated `review-code` rounds), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then checkpoint + context_reset before the next expensive phase. The internal `review-code` loop counts as one of those phases.
-- Required PROJECT.md updates on STANDARD/expensive runs:
+- For COMPLEX or expensive runs (large suite, multi-subsystem target, repeated `review-code` rounds), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then checkpoint + context_reset before the next expensive phase. The internal `review-code` loop counts as one of those phases.
+- Required PROJECT.md updates on COMPLEX/expensive runs:
   - After step 3 (gap analysis): `## Test Suite Analysis` (target, weak tests, missing coverage, planned updates).
   - After step 6 (updates applied): `## Test Updates Applied` (files changed, tests added/updated, replaced low-signal tests).
   - After step 7 (verify + review): `## Test Review Status` (verification strength, review rounds, Review Gate status).
-- These writes are **hard gates before any checkpoint + context_reset** on STANDARD/expensive runs — clearing without them loses the gap analysis or fix queue.
-- For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` after classification.
+- These writes are **hard gates before any checkpoint + context_reset** on COMPLEX/expensive runs — clearing without them loses the gap analysis or fix queue.
+- For COMPLEX work, emit the Phase Plan block from `rules/complexity-gate.md` after classification.
 
 ## Steps
 
@@ -146,9 +146,9 @@ update-tests --function normalize_query
 - Favor replacing low-signal tests over adding redundant ones
 - Write the failing test first when feasible; if blocked, document why before changing the suite
 - `review-code` is an internal phase here, not the expected next top-level user step
-- Every run writes at least a one-line `## Tests Updated` entry to PROJECT.md before the chat summary so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) after `update-tests` does not lose the record. TRIVIAL/MODERATE runs satisfy this with a single end-of-run entry; STANDARD/expensive runs follow the hard-gate cadence in the Command Contract.
+- Every run writes at least a one-line `## Tests Updated` entry to PROJECT.md before the chat summary so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) after `update-tests` does not lose the record. TRIVIAL/STANDARD runs satisfy this with a single end-of-run entry; COMPLEX/expensive runs follow the hard-gate cadence in the Command Contract.
 
-  Minimum entry shape for TRIVIAL/MODERATE:
+  Minimum entry shape for TRIVIAL/STANDARD:
 
   ```markdown
   ## Tests Updated

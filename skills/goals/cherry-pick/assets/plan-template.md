@@ -33,7 +33,7 @@ Gaps: [what can't be validated locally]
 ### Execution Table Row
 | SHA | PR | Description | Risk | Confidence | Decision | Status | Adaptation | Validation | Notes |
 |-----|----|-------------|------|------------|----------|--------|------------|------------|-------|
-| `<sha>` | #NNN | <summary> | LOW/MED/HIGH | X/10 | Auto/Approval/Escalate | Planned | None/Minor/Medium/High | Not run | <notes> |
+| `<sha>` | #NNN | <summary> | LOW/MED/HIGH | LOW/MED/HIGH | Auto/Approval/Escalate | Planned | None/Minor/Medium/High | Not run | <notes> |
 
 ### Risk Summary
 Overall risk: LOW / MED / HIGH

@@ -2,7 +2,7 @@
 
 
 > **When**: You have a `PLAN.md` or PROJECT.md-referenced plan and want a quality review without the full `create-feature` workflow.
-> **Produces**: Reviewed `PLAN.md`, all applicable reviewers at 8/10, cold read passed, and final scores in PROJECT.md.
+> **Produces**: Reviewed `PLAN.md`, all applicable reviewers gated `PASS`, cold read passed, and final gate outcomes in PROJECT.md.
 
 ## Effect Boundary
 
@@ -23,7 +23,9 @@ review-plan
 
 ## Required Context
 
-Scores use `rules/scoring.md`.
+Each reviewer's checkpoint uses `rules/gates.md`'s six-state contract
+(`PASS`/`RETRY`/`ESCALATE`/`USER_DECISION`/`BLOCKED`/`RECLASSIFY`), not a
+numeric score.
 
 The reviewer lenses themselves are **not** listed here. Both dispatch boundaries
 below fan out over the plan-lens menu declared in `interfaces/model-routing.json`,
@@ -48,9 +50,9 @@ implement it, or turn review comments into code changes.
   Naming the menu here is what makes those lanes dispatchable: a lens this span
   omits cannot be selected, however clearly step 2 chose it.
 - Reuse a reviewer only to clarify that reviewer's own finding in the same pass.
-- The main thread revises `PLAN.md`; PROJECT.md stores state/pointers and final scores. Subagents return scored findings only.
-- Continue after material findings are resolved and the cold read says Go; otherwise stop on blocker, stop rule, or user decision.
-- For STANDARD plans or runs that hit 3+ review iterations, follow `rules/context-management.md`: after each review round, persist scores to PROJECT.md (`## Plan Review Round N`), then checkpoint + context_reset before the next revision-plus-rereview cycle. After a cold-read No-Go, checkpoint + context_reset before launching the revision. This is a hard gate — the score history is needed for resume and pattern detection across rounds.
+- The main thread revises `PLAN.md`; PROJECT.md stores state/pointers and final gate outcomes. Subagents return gated findings only.
+- Continue after material findings are resolved and the cold read says Go; otherwise stop on a `BLOCKED` or `USER_DECISION` gate per `rules/gates.md`.
+- For STANDARD plans or runs that hit 3+ review iterations, follow `rules/context-management.md`: after each review round, persist gate outcomes to PROJECT.md (`## Plan Review Round N`), then checkpoint + context_reset before the next revision-plus-rereview cycle. After a cold-read `No-Go`, checkpoint + context_reset before launching the revision. This is a hard gate — the gate history is needed for resume and pattern detection across rounds.
 
 ## Steps
 
@@ -93,36 +95,51 @@ a route floor rather than leaving to the dispatcher's reading of this sentence.
 Each reviewer:
 - Reads only PROJECT.md plus the active plan content needed for its lens
 - Receives the exact inventoried reviewer contract closure inline from the route runner
-- Produces a scored review block (X/10 with strengths, issues, suggestions) per
-  `rules/scoring.md` — this is a **plan** fan-out, so lenses shared with code
-  review use their plan-mode output
+- Produces a `rules/gates.md` gate block (`State`/`Reason`, plus strengths,
+  issues, suggestions) — this is a **plan** fan-out, so lenses shared with
+  code review use their plan-mode output. Each reviewer's own `State` is
+  `PASS` or `RETRY` only — a fresh reviewer pass has no memory of prior
+  rounds, so it cannot itself compute a repeat count or return `ESCALATE`.
 
-After collecting scores:
-- If all reviewers are at 8/10 or better → proceed to step 4
-- If any reviewer is below 8/10 → revise `PLAN.md` based on their feedback, or PROJECT.md only when the plan is embedded there, then re-run fresh reviewers for material revisions. Reuse the same reviewer only to clarify their own finding in the same pass.
+After collecting gate blocks, track a `plan-review` round count (one counter
+for the round, not per-lens) and apply `aitk.gates.decide_failure`:
+- If every reviewer's `State` is `PASS` → proceed to step 4
+- If any reviewer is `RETRY` and this is the first unresolved round →
+  `decide_failure` returns `RETRY`: revise `PLAN.md` based on their feedback,
+  or PROJECT.md only when the plan is embedded there, then re-run fresh
+  reviewers for material revisions. Reuse the same reviewer only to clarify
+  their own finding in the same pass.
+- If any reviewer is still not `PASS` on a second consecutive round →
+  `decide_failure` returns `ESCALATE`: escalate one cost dimension per
+  `rules/gates.md`'s autonomous ladder (`rules/model-assignment.md`), then
+  make one more revise-and-rereview attempt at the new tier
+- If that attempt still leaves a reviewer not `PASS` and the ladder is
+  exhausted → `BLOCKED` (unresolved, no ambiguity to ask about) or
+  `USER_DECISION` (a real trade-off or scope question) — stop and surface it
+  to the user
 - Auto-iterate — do not ask the user whether to continue or which reviewers to re-run
-- Only stop for a blocking decision that requires user input, or if stop rules trigger
 
 ### 4. Cold Read
 
-Run `planning/references/finalize.md` on `deep-review` as a fresh-eyes final check:
-- If **Go** → proceed to step 5
-- If **No-Go** with blocking issues → revise the plan and re-run finalize-plan
-- If **No-Go** after two revisions → stop and surface the blocking issues to the user
+Run `planning/references/finalize.md` on `deep-review` as a fresh-eyes final check. Translate its `Go`/`No-Go` recommendation into a `rules/gates.md` gate block the same way `finalize.md`'s Output section describes, tracking this checkpoint's own repeat count separately from step 3's:
+- `Go` → `PASS`: proceed to step 5
+- First `No-Go` → `RETRY`: revise the plan and re-run finalize-plan
+- A second consecutive `No-Go` → `ESCALATE`: escalate one cost dimension per `rules/gates.md`'s autonomous ladder and make one more attempt
+- If the ladder is exhausted and issues remain unresolved → `BLOCKED` (or `USER_DECISION` if it is a real trade-off) — stop and surface the blocking issues to the user
 
 ### 5. Update PROJECT.md
 
-Write final review scores to PROJECT.md:
+Write final gate outcomes to PROJECT.md:
 
 ```markdown
-## Plan Review Scores
-| Reviewer | Score |
-|----------|-------|
-| Architecture | X/10 |
-| Implementation | X/10 |
-| Test Plan | X/10 |
-| [conditional reviewers] | X/10 |
-| Cold Read | Go / No-Go |
+## Plan Review Gates
+| Reviewer | Gate |
+|----------|------|
+| Architecture | PASS / RETRY / ESCALATE |
+| Implementation | PASS / RETRY / ESCALATE |
+| Test Plan | PASS / RETRY / ESCALATE |
+| [conditional reviewers] | PASS / RETRY / ESCALATE |
+| Cold Read | PASS / RETRY / ESCALATE |
 ```
 
 ### 6. Summary
@@ -131,10 +148,10 @@ Write final review scores to PROJECT.md:
 ## Review-Plan Complete
 [1-2 lines: plan quality assessment and whether it's ready for implementation]
 
-### Review Scores
-| Reviewer | Score |
-|----------|-------|
-| [reviewer] | [score] |
+### Review Gates
+| Reviewer | Gate |
+|----------|------|
+| [reviewer] | [PASS / RETRY / ESCALATE] |
 
 ### Key Revisions
 - [What changed based on review feedback — omit if no revisions needed]
@@ -145,15 +162,15 @@ Write final review scores to PROJECT.md:
 
 ## Non-Negotiable Gates
 
-- [ ] All applicable reviewers at 8/10
-- [ ] Cold read passed (Go)
-- [ ] PROJECT.md updated with final scores
+- [ ] All applicable reviewers gated `PASS`
+- [ ] Cold read gated `PASS` (Go)
+- [ ] PROJECT.md updated with final gate outcomes
 - [ ] Summary emitted
 
 ## PROJECT.md Update Discipline
 
-- After each review round: append a `## Plan Review Round N` block with reviewer scores, key findings, and cold-read result (when run).
-- After review iterations complete: write final scores under `## Plan Review Scores`.
+- After each review round: append a `## Plan Review Round N` block with reviewer gate outcomes, key findings, and cold-read result (when run).
+- After review iterations complete: write final gate outcomes under `## Plan Review Gates`.
 - If revisions were made: update `PLAN.md`, or PROJECT.md only when the plan is embedded there.
 - Per-round writes are hard gates before checkpoint + context_reset on STANDARD or 3+ round runs.
 

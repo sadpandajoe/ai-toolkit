@@ -152,17 +152,14 @@ ai-toolkit/
 │   ├── complexity-gate.md  # Complexity classification and fast-path
 │   ├── gates.md            # Six-state gate contract (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED)
 │   ├── specialist-handoff.md # Specialist dispatch input/output field contract
-│   ├── review-gate.md      # Review gate output contract — kept for plan-domain reviewers, see rules/gates.md
-│   ├── scoring.md          # Review scoring scale — kept for plan-domain reviewers, see rules/gates.md
 │   ├── severity.md         # Finding severity levels
-│   ├── stop-rules.md       # Universal stop conditions for iterative loops — kept for plan-domain reviewers, see rules/gates.md
 │   ├── shortcut-api.md     # Shortcut REST API routing hint
 │   ├── input-detection.md  # Route ticket/issue inputs to Shortcut or GitHub
 │   └── cross-cutting.md    # Catch-all for principles that don't fit one existing rule file
 ├── skills/                  # Canonical Agent Skills; references load lazily (see skills/README.md for anatomy)
 │   ├── workflows/          # Compatibility shim over interfaces/workflows.json; utility references (checkpoint, start, metrics, create-pr, ...) still live here
 │   ├── planning/            # Technical planning — plan-implementation, decompose-work, plan-phase, finalize, feedback-classify
-│   ├── review/              # Code/plan reviewer orchestration + lenses — local-review, pr-review, classify-diff, adversarial, architecture/backend/frontend (dual plan+code lenses)
+│   ├── review/              # Code/plan reviewer orchestration — local-review, pr-review, classify-diff, adversarial, architecture/backend/frontend
 │   ├── feedback/            # PR feedback response — triage comments, fix approved items, post replies
 │   ├── debug/               # Diagnostic umbrella — investigate-change, review-rca, check-existing-fix, CI gather/classify/fix/verify
 │   ├── qa/                  # QA — triage-bug, validate-fix, assess-impact, analyze/expand/execute-use-cases, file-bug
@@ -211,7 +208,6 @@ The command-line interface is also stable and scriptable:
 | `bin/aitk doctor [--strict] [--installed]` | Run structured repository and optional ownership-ledger checks |
 | `bin/aitk model-route <route> --provider <codex\|claude>` | Resolve a stable worker route to its pinned model and effort |
 | `bin/aitk model-run <route> --provider <p> --boundary <b> --prompt-file <f>` | Run one fail-closed worker with pinned model and effort, no downgrade |
-| `bin/aitk review-ensemble <tier> --provider <codex\|claude>` | Resolve a review tier to its exact provider/model roster |
 | `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply\|accept-rca\|accept-decomposition\|accept-phase-plan\|record-evidence\|record-reclassification` | Serialize durable phases, idempotent effects, and accepted-artifact/evidence/reclassification references; use init `--replace` only to start a new completed/stale run |
 | `bin/aitk project-state [--file <path>]` | Read the v2 routing snapshot from PROJECT.md without loading history |
 | `bin/aitk routing-state set --complexity <c> --confidence <n> --reason <r>` | Record the complexity-gate classification snapshot |
@@ -278,7 +274,7 @@ $workflows run-test-plan https://github.com/owner/repo/pull/123
 
 `$workflows run-test-plan` owns the standalone QA validation loop:
 - derive or normalize a compact runnable matrix
-- iterate it with `review-testplan` until it clears the plan-domain review threshold in `rules/scoring.md` (a documented v1 deferral, not the v2 six-state gate contract) or blockers stop execution
+- iterate it with `review-testplan` until it reaches `PASS` under `rules/gates.md`'s six-state gate contract, or blockers stop execution
 - execute it through QA helpers and summarize findings locally
 
 ### Plan Review
@@ -286,7 +282,7 @@ $workflows run-test-plan https://github.com/owner/repo/pull/123
 $workflows review-plan                # Review PLAN.md or PROJECT.md-referenced plan
 ```
 
-`$workflows review-plan` is standalone plan quality review, without a full `create-feature` run: fresh reviewer subagents (selected from the plan-lens menu — architecture, implementation-feasibility, test-plan, and conditionally frontend/backend) iterate `PLAN.md` against the plan-domain review threshold in `rules/scoring.md`, then a fresh cold read gates completion.
+`$workflows review-plan` is standalone plan quality review, without a full `create-feature` run: fresh reviewer subagents (architecture, implementation-feasibility, test-plan, and conditionally frontend/backend) iterate `PLAN.md` against `rules/gates.md`'s six-state gate contract, then a fresh cold read gates completion.
 
 ### PR Feedback Analysis
 ```text
@@ -323,12 +319,9 @@ does not exist.
 | `rules/preset-environments.md` | `run-test-plan`, `test-pr`, `release-prep`, `watch-pr` |
 | `rules/code-review.md` | Review skill loader |
 | `rules/complexity-gate.md` | `address-feedback`, `cherry-pick`, `create-feature`, `fix-bug`, `fix-ci`, `refactor`, `review-code`, `review-pr` |
-| `rules/gates.md` | Six-state gate contract (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED); loaded directly by every `skills/goals/*` skill, independent of this manifest's per-workflow rule imports |
+| `rules/gates.md` | Six-state gate contract (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED); `review-plan`; also loaded directly by every `skills/goals/*` skill and `skills/review`, independent of this manifest's per-workflow rule imports |
 | `rules/specialist-handoff.md` | Specialist dispatch input/output field contract; authoritative for every goal-skill dispatch and every native worker under `agents/claude/` |
-| `rules/review-gate.md` | Superseded by `rules/gates.md` for its migrated goal-skill citers; kept authoritative for plan-domain reviewers (`skills/review`, `skills/planning`, `skills/testing`) and workflow reference loaders |
-| `rules/scoring.md` | Superseded by `rules/gates.md` for its migrated goal-skill citers; kept authoritative for plan-domain and test-plan review scoring (`skills/review`, `skills/planning`, `skills/testing`) |
 | `rules/severity.md` | Review, planning, and QA skill loaders |
-| `rules/stop-rules.md` | `review-plan`; also kept authoritative for plan-domain review stop conditions (`skills/review`, `skills/testing`) |
 | `rules/shortcut-api.md` | Shortcut skill loader |
 | `rules/input-detection.md` | `create-feature`, `fix-bug`, `run-test-plan`, `test-pr` |
 | `rules/model-assignment.md` | Routed worker contract |

@@ -25,15 +25,14 @@ re-derives the conditions here.
 
 Two route facts belong to this lens rather than the classifier: it runs on the
 `deep-review` route, which is also how a tier whose mandatory `deep-review`
-route would otherwise carry no lane gets one (see `references/ensemble.md`); and
+route would otherwise carry no lane gets one; and
 a bare "deep quality" ask fires *this lens only* — that ask is not a deep-tier
 phrase, so it neither pins the tier, nor escalates the other lenses' routes, nor
 adds a Code-judo pass.
 
 ## Required Context
 
-Read before starting: `rules/code-review.md`, `rules/severity.md`,
-`rules/stop-rules.md`.
+Read before starting: `rules/code-review.md`, `rules/severity.md`.
 Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 
 ## Standards
@@ -98,8 +97,7 @@ decomposition concerns, (5) modularity and abstraction issues, (6) legibility.
 Prefer a small number of high-conviction findings over a long list of cosmetic
 notes. Do not flood the review with nits when larger structural issues exist.
 
-## Stop Rules
+## Grading Discipline
 
-Apply stop rules from `rules/stop-rules.md`. Grade only in-scope findings per the
-`rules/code-review.md` Finding Calibration (scope-before-correctness, symmetry
-cap at `[minor]`).
+Grade only in-scope findings per the `rules/code-review.md` Finding Calibration
+(scope-before-correctness, symmetry cap at `[minor]`).

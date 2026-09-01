@@ -7,8 +7,8 @@ For large runs, the full table belongs in local `CHERRY_PICK.md` using [../templ
 ```markdown
 | # | SHA | PR | Description | Depends On | Risk | Confidence | Decision | Status | Adaptation | Scope Audit | Validation | Notes |
 |---|-----|----|-------------|------------|------|------------|----------|--------|------------|-------------|------------|-------|
-| 1 | `<sha>` | #123 | <summary> | — | LOW | 9/10 | Auto | Applied | None | CLEAN | Tested | Clean apply |
-| 2 | `<sha>` | #124 | <summary> | #123 | MED | 7/10 | Approval | Partial | Medium | CLEAN (1 hunk reverted) | Checked | 2 of 3 sub-fixes applied |
+| 1 | `<sha>` | #123 | <summary> | — | LOW | HIGH | Auto | Applied | None | CLEAN | Tested | Clean apply |
+| 2 | `<sha>` | #124 | <summary> | #123 | MED | MED | Approval | Partial | Medium | CLEAN (1 hunk reverted) | Checked | 2 of 3 sub-fixes applied |
 ```
 
 ## Field Meanings
@@ -21,7 +21,7 @@ For large runs, the full table belongs in local `CHERRY_PICK.md` using [../templ
 | `Description` | One-line summary | investigate |
 | `Depends On` | Other `#` or `—` | batch-sequence |
 | `Risk` | `LOW`, `MED`, `HIGH` | gate |
-| `Confidence` | `X/10` | gate |
+| `Confidence` | `LOW`, `MED`, `HIGH` | gate |
 | `Decision` | `Auto`, `Approval`, `Escalate` | gate |
 | `Status` | `Planned`, `Applied`, `Partial`, `Blocked`, `Rejected`, `Skipped` | apply/adapt |
 | `Adaptation` | `None`, `Minor`, `Medium`, `High` | adapt (see plan.md for definitions) |

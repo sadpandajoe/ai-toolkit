@@ -105,13 +105,12 @@ phrase, or explicit ask) so that procedure can scope its dispatch.
 
 ## Notes
 
-- `skills/review/SKILL.md`'s Invocation section now documents this file as
-  the default dispatch (C40), with [delta-review.md](delta-review.md) as its
-  escalation. The five orchestration references it lists
-  (`local-review.md`, `pr-review.md`, `pr-batch.md`, `workflow-review.md`,
-  `adversarial-orchestration.md`) still dispatch through
-  [ensemble.md](ensemble.md)/[classify-diff.md](classify-diff.md)/the lens
-  files internally, unchanged — that internal switch is not this commit's
-  scope. Ensemble stays live and directly callable via
-  `bin/aitk review-ensemble` until a full goal-skill review cycle has run on
-  this pair (Wave 8).
+- `skills/review/SKILL.md`'s Invocation section documents this file as the
+  single dispatch, with [delta-review.md](delta-review.md) as its escalation.
+  The five orchestration references it lists (`local-review.md`,
+  `pr-review.md`, `pr-batch.md`, `workflow-review.md`,
+  `adversarial-orchestration.md`) each resolve their own fixed dispatch
+  boundary directly — one reviewer pass per boundary, reading whichever lens
+  contracts that boundary (and the triggered set from
+  [classify-diff.md](classify-diff.md)) name, in one context. There is no
+  ensemble table and no `review-ensemble` CLI subcommand any more.

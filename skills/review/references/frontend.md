@@ -8,15 +8,16 @@ tier: Heavy
 
 Evaluate the plan's frontend approach including component design, state management, and user experience.
 
-Read before scoring: `rules/scoring.md`, `rules/severity.md`
+Read before reviewing: `rules/severity.md`
 
 This lens sits in both a plan-review menu and a code-review menu, and the two want
 different output. The route runner names which in its `lens_domain` header: `plan`
 means the written plan, `code` means the diff. Read that field and use the matching
 Output block below; the code-review grading contract arrives from the code fan-out
 boundary itself, which is what knows its own domain. Neither vocabulary is a
-default — guessing produced a lane that returned `X/10` scores into a code review
-that merges severity tags, where they are either dropped or silently reweighted.
+default — guessing produced a lane that mixed plan-severity tags into a code
+review that merges its own severity tags, where they are either dropped or
+silently reweighted.
 
 If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
 
@@ -46,7 +47,6 @@ When `lens_domain=plan` (reviewing the written plan):
 
 ```markdown
 ## Frontend Review
-### Score: X/10
 ### Strengths
 - [What the plan does well for frontend]
 ### Issues

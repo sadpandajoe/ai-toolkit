@@ -27,16 +27,16 @@ run-test-plan https://github.com/owner/repo/pull/123
 ## Command Contract
 
 - The main thread owns scenario state, evidence paths, and reporting destinations. Subagents return compact scenario/review handoffs only.
-- For STANDARD or expensive runs (large scenario matrix, multi-flow validation, repeated plan-review rounds), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then checkpoint + context_reset before the next expensive phase.
-- Required PROJECT.md updates on STANDARD/expensive runs:
-  - After step 3 (plan at 8/10): `## Test Plan` (final scenario matrix, plan source, review score).
+- For COMPLEX or expensive runs (large scenario matrix, multi-flow validation, repeated plan-review rounds), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then checkpoint + context_reset before the next expensive phase.
+- Required PROJECT.md updates on COMPLEX/expensive runs:
+  - After step 3 (plan gated `PASS`): `## Test Plan` (final scenario matrix, plan source, review gate outcome).
   - After step 4 (execution): `## Test Plan Results` (per-scenario PASS/FAIL/BLOCKED/SKIP, evidence paths).
   - After step 6 (report): `## Test Plan Reported` (where posted: Shortcut story link, PR comment, or local only).
-- These writes are **hard gates before any checkpoint + context_reset** on STANDARD/expensive runs — chat-only scenario state is unrecoverable after clear.
+- These writes are **hard gates before any checkpoint + context_reset** on COMPLEX/expensive runs — chat-only scenario state is unrecoverable after clear.
 - The plan matrix and per-scenario evidence paths must land in PROJECT.md before clear regardless of whether the run is reactive or proactive checkpoint.
-- **Every run** (including TRIVIAL/MODERATE) writes at least a `## Test Plan Results` entry to PROJECT.md before the chat summary so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) after `run-test-plan` does not lose the QA record. TRIVIAL/MODERATE runs may fold plan + results + report into a single end-of-run entry; STANDARD/expensive runs follow the per-phase cadence above.
+- **Every run** (including TRIVIAL/STANDARD) writes at least a `## Test Plan Results` entry to PROJECT.md before the chat summary so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) after `run-test-plan` does not lose the QA record. TRIVIAL/STANDARD runs may fold plan + results + report into a single end-of-run entry; expensive runs follow the per-phase cadence above.
 
-  Minimum entry shape for TRIVIAL/MODERATE:
+  Minimum entry shape for TRIVIAL/STANDARD:
 
   ```markdown
   ## Test Plan Results
@@ -73,10 +73,10 @@ run-test-plan https://github.com/owner/repo/pull/123
    If no plan is provided:
    - derive a compact use-case matrix from the target area or external context
 
-3. **Iterate the Plan to 8/10**
+3. **Iterate the Plan to a Passing Gate**
 
    Load [skills/testing/references/review-testplan.md](../../testing/references/review-testplan.md) and review the matrix with a fresh test-plan reviewer after material revisions.
-   Revise the plan until it reaches `8/10`, or stop early only if blockers or unresolved ambiguities make execution unsafe or misleading.
+   Revise the plan until its `rules/gates.md` gate reaches `PASS` — a `RETRY` means revise and re-review, a second consecutive `RETRY` escalates per that rule's autonomous ladder — or stop early only if blockers or unresolved ambiguities make execution unsafe or misleading.
 
 4. **Execute the Plan**
 
@@ -124,7 +124,7 @@ run-test-plan https://github.com/owner/repo/pull/123
    - [Plan doc, area, story, or PR]
 
    ### Plan Quality
-   - [Final review score or blocker]
+   - [Final review gate outcome or blocker]
 
    ### Results
    - [PASS / FAIL / BLOCKED / SKIP by scenario]
@@ -147,5 +147,5 @@ run-test-plan https://github.com/owner/repo/pull/123
 - `run-test-plan` is validation-only in v1
 - Prefer a small runnable matrix over a broad exploratory sweep
 - Keep findings factual and local-first
-- The command should keep tightening and executing the plan automatically until the matrix reaches threshold or a real blocker stops it
+- The command should keep tightening and executing the plan automatically until the matrix's review gate reaches `PASS` or a real blocker stops it
 - The main thread owns scenario execution, state, evidence paths, and reporting destinations; use `operations` only to summarize already-collected evidence, use `review` for independent test-result judgment, and keep test design or diagnosis on the main thread; any subagent returns compact scenario/review handoffs only

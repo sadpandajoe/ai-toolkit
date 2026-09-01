@@ -5,23 +5,24 @@ operations. Shared workflows own behavior and gates; these bindings only select
 provider syntax.
 
 - `planning_boundary`: enter and exit Claude's plan-only boundary.
-- `fresh_subagent`: for a boundary with a native `agents/claude/` worker (see
-  `routed_subagent` below for the current roster), the native Task-tool
-  dispatch already is the fresh, bounded process — a separate `model-run`
-  call is redundant there. For a boundary still on the `routed_subagent`
-  shim (the review-ensemble lanes), launch the assigned stable route through
-  the source-linked `model-run` transport so the fresh process has the
-  pinned selector, effort, permissions, and bounded scope. This capability's
-  own binding in `interfaces/providers.json` stays `fallback`/
+- `fresh_subagent`: every Claude-side dispatch boundary now has a native
+  `agents/claude/` worker (see `routed_subagent` below for the roster), so
+  native Task-tool dispatch is always the fresh, bounded process — a
+  separate `model-run` call is never needed on the Claude side. This
+  capability's own binding in `interfaces/providers.json` stays `fallback`/
   `source_linked_model_run` regardless, for the same schema-independence
-  reason `independent_review`'s does below.
+  reason `independent_review`'s does below; that declared fallback has no
+  live Claude-side consumer, but the binding stays as written because
+  `fresh_subagent` and `routed_subagent` are validated as independent
+  capabilities and one going fully native does not change the other's
+  schema requirement.
 - `parallel_fanout`: run independent routed `model-run` processes concurrently; native fan-out schedules them but does not replace their route controls.
 - `isolated_worktree`: enter a provider-managed worktree before mutation.
 - `context_reset`: use a fresh Claude context after saving the durable checkpoint. Not required for conformance (`interfaces/providers.json`) — `rules/context-management.md`'s "No Explicit-Reset Dependency" makes worker isolation primary and auto-compact the backstop; `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` are the recommended, non-default env vars that reinforce those two mechanisms (see that rule file's "Recommended Provider Settings").
 - `recurrence`: use Claude's recurring workflow facility with explicit stop conditions.
-- `independent_review`: `routed_subagent`'s dispatch (native worker or shim,
-  per boundary — see below) already supplies a fresh, non-implementing
-  process for `review`/`deep-review`; this capability's own binding stays
+- `independent_review`: `routed_subagent`'s native dispatch (see below)
+  already supplies a fresh, non-implementing process for `review`/
+  `deep-review`; this capability's own binding stays
   `fallback`/`source_linked_model_run` regardless, since `independent_review`
   and `routed_subagent` are validated as fully independent capabilities
   (`aitk/routing_manifest.py`'s `validate_route_bindings`) — going native on
@@ -39,27 +40,20 @@ provider syntax.
   `deep-review` and `rca`/`deep-rca` are each two worker files, not one,
   because `interfaces/model-routing.json` pins their plain and deep tiers to
   different models (Opus/Fable and Sonnet/Fable respectively) and a single
-  frontmatter `model:` field cannot carry both. For the review-ensemble
-  lanes — the one remaining routed dispatch surface with no native worker
-  file — this capability's old transport remains the documented, explicit
-  shim: resolve the toolkit/package root from the installed skill, resolve
-  the declared route with `<toolkit-root>/bin/aitk model-route --boundary
-  <marker-id>`, then run it through `<toolkit-root>/bin/aitk model-run --provider claude --boundary <marker-id>`. The runner derives and inlines
-  the boundary's validated transitive contract closure because safe mode
-  disables ambient skills; per-file SHA-256 labels are diagnostic content
-  identifiers, not an independently trusted integrity gate. This transport
-  sends one exact selector and effort, never supplies `--fallback-model`, and
-  fails if the CLI rejects the request or result contract. The supported
-  success envelope does not attest the provider's internal serving-model
-  identity, so backend substitution remains outside the toolkit's evidence
-  boundary. Do not use a generic Agent worker when it reports
-  `MODEL_ROUTE_UNAVAILABLE`. This shim now stays live only for the
-  review-ensemble lanes, independent of the eight now-native roles above,
-  which already dispatch without it. Removal condition: either a native
-  `agents/claude/` worker file is added for that boundary (same pattern as
-  the eight native roles), or the boundary itself is deleted (the
-  review-ensemble lanes go with `review/references/ensemble.md` and
-  `bin/aitk review-ensemble` in Wave D2). Until then,
-  `aitk/routing_transport.py`/`routing_closure.py` and the Claude-side
-  `model-run` path stay — D4's "remove Claude-side closure code" is not yet
-  executable as stated; see PLAN.md's D4 note.
+  frontmatter `model:` field cannot carry both. Every route that appears in
+  `interfaces/model-routing.json` now has a native worker in this roster —
+  `deep-rca`, `deep-review`, `implementation`, `operations`, `planning`,
+  `rca`, and `review` — so **no Claude-side dispatch boundary remains on the
+  old `model-route`/`model-run` shim**; `interfaces/providers.json` declares
+  `routed_subagent` as `native` with no fallback for this reason. The old
+  transport (resolve the toolkit/package root from the installed skill,
+  resolve the declared route with `<toolkit-root>/bin/aitk model-route
+  --boundary <marker-id>`, then run it through `<toolkit-root>/bin/aitk
+  model-run --provider claude --boundary <marker-id>`) is documented here
+  only as history: do not use a generic Agent worker when it reports
+  `MODEL_ROUTE_UNAVAILABLE` — dispatch the named native worker instead.
+  `aitk/routing_transport.py` and `aitk/routing_closure.py` are not dead
+  code, though: Codex's specialists (`agents/codex/rca.md`,
+  `plan-validator.md`, `reviewer.md`) still resolve routes and run through
+  `model-run` on that path, so it stays live for the Codex provider adapter
+  even though no Claude boundary calls it any more.

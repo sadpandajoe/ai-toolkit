@@ -9,8 +9,8 @@ disable-model-invocation: true
 
 Shared procedure for producing a small, just-in-time implementation plan for
 exactly one phase of an accepted architecture decomposition, then gating it
-through `rules/gates.md`'s six-state contract rather than
-`rules/scoring.md`'s numeric threshold.
+through `rules/gates.md`'s six-state contract rather than a numeric
+threshold.
 
 This runs once per phase, called from the caller's per-phase loop —
 never as a way to plan the whole `MULTI_PHASE` unit up front. Sibling
@@ -79,9 +79,9 @@ proceeds, rather than forcing an oversized phase through.
 
 Record the outcome as `phase_plan_status` using `aitk.gates`' six-state
 vocabulary (`PASS`/`RETRY`/`ESCALATE`/`USER_DECISION`/`BLOCKED`/
-`RECLASSIFY`) — never `rules/scoring.md`'s 8/10 threshold, which this
-procedure replaces for phase plans. Only proceed to implementing this phase
-once `phase_plan_status` reaches `PASS`.
+`RECLASSIFY`) — never a numeric threshold, which this procedure replaces for
+phase plans. Only proceed to implementing this phase once `phase_plan_status`
+reaches `PASS`.
 
 ## Output
 

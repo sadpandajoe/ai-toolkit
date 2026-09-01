@@ -67,7 +67,7 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
      - Active plan: [PLAN.md or none]
      - Resume target: [saved item or iteration]
      ```
-   - **For STANDARD top-level commands, emit a Remaining Phase Plan block** showing what's left and where clears will fire. Derive it from the command's STANDARD happy path minus the phases already completed (use the saved Phase + Current Status `Done:` list). Example:
+   - **For COMPLEX top-level commands, emit a Remaining Phase Plan block** showing what's left and where clears will fire. Derive it from the command's COMPLEX happy path minus the phases already completed (use the saved Phase + Current Status `Done:` list). Example:
 
      ```markdown
      ### Remaining Phase Plan
@@ -76,7 +76,7 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
      Next clear after: `## Slice 1 Complete` written to PROJECT.md.
      ```
 
-     This makes the cadence visible after every resume, so the user knows when the next clear fires without needing to recall the original phase plan. Skip this block for MODERATE/TRIVIAL resumes — they don't have planned phase boundaries.
+     This makes the cadence visible after every resume, so the user knows when the next clear fires without needing to recall the original phase plan. Skip this block for STANDARD/TRIVIAL resumes — they don't have planned phase boundaries.
    - **Defer loading PLAN.md.** Read PROJECT.md alone for orientation. Only load PLAN.md when the next phase actually requires it (entering review iterations or starting an implementation slice). This keeps context lean for resumes that are just status checks or fix-it work.
    - **Automatically resume the saved top-level workflow** from the checkpoint. Do not prompt the user.
    - The resumed command loads its own rules, skills, and supporting files on demand.

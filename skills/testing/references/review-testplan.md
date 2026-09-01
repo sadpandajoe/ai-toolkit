@@ -8,15 +8,16 @@ tier: Heavy
 
 Evaluate whether the plan's testing strategy will provide meaningful regression protection.
 
-Read before scoring: `rules/scoring.md`, `rules/severity.md`
+Read before assessing: `rules/gates.md`, `rules/severity.md`
 
 This lens sits in both a plan-review menu and a code-review menu, and the two want
 different output. The route runner names which in its `lens_domain` header: `plan`
 means the written plan, `code` means the diff. Read that field and use the matching
 Output block below; the code-review grading contract arrives from the code fan-out
 boundary itself, which is what knows its own domain. Neither vocabulary is a
-default — guessing produced a lane that returned `X/10` scores into a code review
-that merges severity tags, where they are either dropped or silently reweighted.
+default — guessing produced a lane that returned a plan-review gate block into a
+code review that merges severity tags, where it is either dropped or silently
+reweighted.
 
 If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
 
@@ -45,7 +46,11 @@ When `lens_domain=plan` (reviewing the written plan):
 
 ```markdown
 ## Test Plan Review
-### Score: X/10
+
+## Gate
+State: PASS / RETRY
+Reason: [one line]
+
 ### Strengths
 - [What the plan does well for testing]
 ### Issues
@@ -55,6 +60,14 @@ When `lens_domain=plan` (reviewing the written plan):
 ### Missing
 - [What the plan should address from a testing perspective]
 ```
+
+`State` is this pass's own verdict — `PASS` when the testing strategy is
+adequate, `RETRY` when it needs revision. This lens has no memory of prior
+rounds, so it cannot compute a repeat count or emit `ESCALATE` itself: the
+caller (`skills/workflows/references/review-plan.md`'s Review Iterations
+step) tracks how many consecutive `RETRY`s this lens has returned and, per
+`rules/gates.md`'s repeat-failure counting rule, turns a second consecutive
+one into `ESCALATE`.
 
 When `lens_domain=code` (reviewing a diff): no score, and findings carry the
 canonical severity tags from `rules/code-review.md` so they merge and dedupe

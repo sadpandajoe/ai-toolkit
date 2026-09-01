@@ -83,13 +83,15 @@ multi-scenario validation runs, which stay `run-test-plan`'s own scope.
    evidence paths are available.
 6. Write the PROJECT.md discipline this workflow requires before any
    checkpoint + context_reset, and before the chat summary on every run —
-   not just STANDARD/expensive ones:
-   - After scenario selection (STANDARD/expensive runs only): `## Test-PR
+   not just COMPLEX/expensive ones:
+   - After scenario selection (COMPLEX/expensive runs only): `## Test-PR
      Scenarios`.
-   - After execution (STANDARD/expensive runs only): `## Test-PR Results`,
+   - After execution (COMPLEX/expensive runs only): `## Test-PR Results`,
      including the `test-pr-verify` Gate state.
    - Every run, at minimum: a single `## Test-PR Results — PR #[number]`
-     entry at completion (see `test-pr.md`'s TRIVIAL/MODERATE template).
+     entry at completion (scenario outcomes, evidence paths, and the
+     `test-pr-verify` Gate state, folded into one end-of-run block for a
+     small or mechanical run).
    - After posting: `## Test-PR Posted`.
 
    None of the four leaf references write PROJECT.md themselves — this skill

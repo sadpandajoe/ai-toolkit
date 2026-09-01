@@ -27,11 +27,10 @@ silently downgrading the model.
 
 ## Required Context
 
-Read before starting: `rules/stop-rules.md`.
 Input: the diff (uncommitted, committed range, or PR) and, when available, the
 change title / commit subjects. This lens emits unscored **proposals**, not
 severity-tagged findings, so the toolkit grading contracts (code-review,
-severity, scoring) are deliberately absent here — named without backticked paths
+severity) are deliberately absent here — named without backticked paths
 so this section does not inline the very contracts it excludes. Do not import
 them, and do not tag proposals with severities.
 
@@ -108,7 +107,8 @@ Effort / blast radius: [rough size of the restructure]
 Frame every proposal as a **recommendation requiring behavior-preserving
 verification**, never an assertion that the current code is wrong. If a proposal
 cannot be shown behavior-preserving from the diff alone, say so and name what
-would need to be checked. Apply the stop rules in `rules/stop-rules.md`.
+would need to be checked. Do not force a verdict past what the evidence in the
+diff supports.
 
 ### Routed result mapping
 

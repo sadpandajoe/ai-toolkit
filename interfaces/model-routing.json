@@ -205,61 +205,6 @@
       }
     }
   ],
-  "ensembles": [
-    {
-      "name": "trivial",
-      "lens_lanes": 1,
-      "lens_routes": ["review"],
-      "cross_provider": "forbidden",
-      "cross_lanes": [],
-      "verification": {"lanes": 0, "diversity": "none"},
-      "coverage_floor": "single-family",
-      "on_degraded": "continue"
-    },
-    {
-      "name": "moderate",
-      "lens_lanes": 4,
-      "lens_routes": ["review", "deep-review"],
-      "cross_provider": "optional",
-      "cross_lanes": [{"provider": "cross", "route": "review"}],
-      "verification": {"lanes": 1, "diversity": "family"},
-      "coverage_floor": "family-diverse",
-      "on_degraded": "continue"
-    },
-    {
-      "name": "standard",
-      "lens_lanes": 6,
-      "lens_routes": ["review", "deep-review"],
-      "cross_provider": "required",
-      "cross_lanes": [{"provider": "cross", "route": "review"}],
-      "verification": {"lanes": 1, "diversity": "family"},
-      "coverage_floor": "provider-diverse",
-      "on_degraded": "disclose"
-    },
-    {
-      "name": "deep",
-      "lens_lanes": 6,
-      "lens_routes": ["deep-review"],
-      "cross_provider": "required",
-      "cross_lanes": [{"provider": "cross", "route": "deep-review"}],
-      "verification": {"lanes": 1, "diversity": "provider"},
-      "coverage_floor": "provider-diverse",
-      "on_degraded": "block"
-    },
-    {
-      "name": "security",
-      "lens_lanes": 2,
-      "lens_routes": ["deep-review"],
-      "cross_provider": "required",
-      "cross_lanes": [
-        {"provider": "cross", "route": "deep-review"},
-        {"provider": "origin", "route": "review"}
-      ],
-      "verification": {"lanes": 2, "diversity": "provider"},
-      "coverage_floor": "provider-diverse",
-      "on_degraded": "block"
-    }
-  ],
   "dispatch_boundaries": [
     {"id": "fix-bug.investigate", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["rca", "deep-rca"], "contracts": ["agents/codex/rca.md"]},
     {"id": "fix-bug.implement", "path": "skills/goals/fix-bug/SKILL.md", "count": 1, "routes": ["implementation"]},
@@ -286,56 +231,19 @@
     {"id": "review.local-cross-provider-cold", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"]},
     {"id": "review.pr-cross-provider-cold", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"]},
     {"id": "review.adversarial-cross-provider-panel", "path": "skills/review/references/adversarial-orchestration.md", "count": 1, "routes": ["deep-review"], "contracts": ["skills/review/references/adversarial.md", "agents/codex/reviewer.md"]},
-    {"id": "review.local-final-pass", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code", "lenses": [
-      "skills/review/references/code-quality.md",
-      "skills/review/references/deep-quality.md",
-      "skills/review/references/adversarial.md",
-      "skills/testing/references/review-tests.md",
-      "skills/testing/references/review-testplan.md",
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md"
-    ]},
+    {"id": "review.local-final-pass", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code"},
     {"id": "review.local-resolved-audit", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["deep-review"], "contracts": [
       "rules/code-review.md",
       "rules/severity.md",
       "skills/review/references/classify-diff.md",
       "agents/codex/reviewer.md"
     ]},
-    {"id": "review.local-independent-capability", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"], "contracts": ["rules/review-gate.md", "agents/codex/reviewer.md"]},
+    {"id": "review.local-independent-capability", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review"], "contracts": ["rules/gates.md", "agents/codex/reviewer.md"]},
     {"id": "review.pr-trivial", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"]},
-    {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code", "lenses": [
-      "skills/review/references/code-quality.md",
-      "skills/review/references/deep-quality.md",
-      "skills/review/references/adversarial.md",
-      "skills/testing/references/review-tests.md",
-      "skills/testing/references/review-testplan.md",
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md"
-    ]},
-    {"id": "review.pr-standard", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code", "lenses": [
-      "skills/review/references/code-quality.md",
-      "skills/review/references/deep-quality.md",
-      "skills/review/references/adversarial.md",
-      "skills/testing/references/review-tests.md",
-      "skills/testing/references/review-testplan.md",
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md"
-    ]},
-    {"id": "workflows.review-plan-fresh", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md", "agents/codex/plan-validator.md"], "lens_domain": "plan", "lenses": [
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md",
-      "skills/testing/references/review-testplan.md"
-    ]},
-    {"id": "workflows.review-plan-selected", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/scoring.md", "agents/codex/plan-validator.md"], "lens_domain": "plan", "lenses": [
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md",
-      "skills/testing/references/review-testplan.md"
-    ]},
+    {"id": "review.pr-moderate", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code"},
+    {"id": "review.pr-standard", "path": "skills/review/references/pr-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code"},
+    {"id": "workflows.review-plan-fresh", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/gates.md", "agents/codex/plan-validator.md"], "lens_domain": "plan"},
+    {"id": "workflows.review-plan-selected", "path": "skills/workflows/references/review-plan.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/gates.md", "agents/codex/plan-validator.md"], "lens_domain": "plan"},
     {"id": "workflows.review-pr-fresh", "path": "skills/workflows/references/review-pr.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/review/references/pr-review.md", "skills/review/references/pr-posting.md", "agents/codex/reviewer.md"]},
     {"id": "pgm.status-collection", "path": "extensions/pgm/skills/pgm/references/create-status-report.md", "count": 1, "routes": ["operations"]},
     {"id": "cherry-pick.scope-leak-review", "path": "skills/goals/cherry-pick/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["skills/goals/cherry-pick/references/validate.md", "agents/codex/reviewer.md"]},
@@ -348,27 +256,9 @@
     {"id": "debug.ci-triage", "path": "skills/debug/references/ci-fix-orchestration.md", "count": 1, "routes": ["rca", "deep-rca"], "contracts": ["agents/codex/rca.md"]},
     {"id": "feedback.comment-fix-groups", "path": "skills/feedback/SKILL.md", "count": 1, "routes": ["implementation"]},
     {"id": "qa.fresh-validation", "path": "skills/qa/SKILL.md", "count": 1, "routes": ["review", "operations"], "contracts": ["skills/qa/SKILL.md"]},
-    {"id": "review.pr-lenses", "path": "skills/review/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code", "lenses": [
-      "skills/review/references/code-quality.md",
-      "skills/review/references/deep-quality.md",
-      "skills/review/references/adversarial.md",
-      "skills/testing/references/review-tests.md",
-      "skills/testing/references/review-testplan.md",
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md"
-    ]},
+    {"id": "review.pr-lenses", "path": "skills/review/SKILL.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code"},
     {"id": "review.code-judo", "path": "skills/review/references/code-judo.md", "count": 1, "routes": ["deep-review"], "unscored": true, "contracts": ["skills/review/references/code-judo.md", "agents/codex/reviewer.md"]},
-    {"id": "review.local-primary-lanes", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code", "lenses": [
-      "skills/review/references/code-quality.md",
-      "skills/review/references/deep-quality.md",
-      "skills/review/references/adversarial.md",
-      "skills/testing/references/review-tests.md",
-      "skills/testing/references/review-testplan.md",
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md"
-    ]},
+    {"id": "review.local-primary-lanes", "path": "skills/review/references/local-review.md", "count": 1, "routes": ["review", "deep-review"], "contracts": ["rules/code-review.md", "agents/codex/reviewer.md"], "lens_domain": "code"},
     {"id": "review.pr-batch", "path": "skills/review/references/pr-batch.md", "count": 1, "routes": ["review", "deep-review"], "lens_domain": "code", "summary_form": "pr-batch", "contracts": [
       "rules/code-review.md",
       "skills/review/references/code-quality.md",
@@ -383,28 +273,6 @@
     {"id": "review.sol-review", "path": "skills/review/references/sol-review.md", "count": 1, "routes": ["review"], "contracts": ["agents/codex/reviewer.md"]},
     {"id": "review.delta-review", "path": "skills/review/references/delta-review.md", "count": 1, "routes": ["deep-review"], "contracts": ["agents/codex/reviewer.md", "skills/review/references/adversarial.md"]}
   ],
-  "lens_routes": {
-    "skills/review/references/adversarial.md": ["deep-review"],
-    "skills/review/references/architecture.md": ["deep-review"]
-  },
-  "lens_floors": {
-    "code": [
-      "skills/review/references/code-quality.md",
-      "skills/review/references/deep-quality.md",
-      "skills/review/references/adversarial.md",
-      "skills/testing/references/review-tests.md",
-      "skills/testing/references/review-testplan.md",
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md"
-    ],
-    "plan": [
-      "skills/review/references/architecture.md",
-      "skills/review/references/frontend.md",
-      "skills/review/references/backend.md",
-      "skills/testing/references/review-testplan.md"
-    ]
-  },
   "dispatch_exemptions": [
     {"path": "skills/review/references/adversarial-orchestration.md", "marker": "describes-reviewers-not-dispatch", "count": 1},
     {"path": "skills/agent-setup-maintainer/lessons.md", "marker": "historical-handoff-lesson", "count": 1},
@@ -416,6 +284,8 @@
     {"path": "skills/review/references/local-review.md", "marker": "pre-launch-condition", "count": 1},
     {"path": "skills/testing/rules.md", "marker": "test-runner-process-workers", "count": 1},
     {"path": "skills/workflows/references/start.md", "marker": "preflight-before-later-dispatch", "count": 1},
-    {"path": "skills/workflows/SKILL.md", "marker": "meta-routing-policy", "count": 1}
+    {"path": "skills/workflows/SKILL.md", "marker": "meta-routing-policy", "count": 1},
+    {"path": "skills/review/SKILL.md", "marker": "describes-boundary-not-dispatch", "count": 1},
+    {"path": "skills/review/references/local-review.md", "marker": "describes-boundary-not-dispatch", "count": 1}
   ]
 }

@@ -34,8 +34,9 @@ the former decomposes the whole unit once, the latter plans one phase at a
 time against that decomposition, each gated through `rules/gates.md`'s
 six-state contract instead of a numeric threshold. `create-feature`'s
 Multi-Phase Path already routes every `MULTI_PHASE` unit through both today.
-For `SINGLE_PHASE`/`BATCHED`, the 8/10-threshold reviewer-iterate-then-cold-read
-loop is owned directly by `skills/workflows/references/review-plan.md`
+For `SINGLE_PHASE`/`BATCHED`, the reviewer-iterate-then-cold-read loop —
+gated through `rules/gates.md`'s six-state contract instead of a numeric
+threshold — is owned directly by `skills/workflows/references/review-plan.md`
 (steps 2–4), not by this umbrella — `iterate-review.md` (the umbrella-owned
 version of that loop) was deleted in Wave D once its only caller migrated.
 
@@ -58,8 +59,9 @@ size classification before this umbrella is entered:
    the goal workflow, not by this umbrella) → dispatches the plan-domain
    reviewers (`review/references/{architecture,frontend,backend}.md` plus
    `agents/codex/plan-validator.md`'s implementation-feasibility lens) on
-   `review`/`deep-review` until 8/10 threshold, then
-   [`finalize`](references/finalize.md) cold-read "stay or move" gate
+   `review`/`deep-review` until every reviewer's `rules/gates.md` gate block
+   reaches `PASS`, then [`finalize`](references/finalize.md) cold-read "stay
+   or move" gate
 3. Hand off to implementation
 
 During post-implementation review, if findings surface:
@@ -76,7 +78,8 @@ During post-implementation review, if findings surface:
 - For `SINGLE_PHASE`/`BATCHED`, the goal workflow (not this umbrella) drives
   the reviewer-iterate-then-cold-read loop directly via
   `skills/workflows/references/review-plan.md` steps 2–4, dispatching the
-  plan-domain lens subagents on `review`/`deep-review`. `iterate-review.md`
+  plan-domain lens subagents on `review`/`deep-review` and gating each round
+  through `rules/gates.md`'s six-state contract. `iterate-review.md`
   was this umbrella's own copy of that loop; it was deleted in Wave D once
   `review-plan` (its only remaining caller) migrated to dispatching the
   lenses directly instead of going through it.

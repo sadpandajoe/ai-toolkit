@@ -53,8 +53,8 @@ scope: fixing what review finds beyond validating and applying
      `skills/workflows/references/review-pr.md`'s scope).
 2. If the normalized target has zero changes, emit a gate block under gate
    name `review` with `Reason: no changes to review`, per `rules/gates.md`'s
-   Mapping From the Old Mechanisms section (`rules/review-gate.md`'s
-   `Status: skipped` maps to `PASS` with the skip reason), and stop — no
+   Mapping From the Old Mechanisms section (the former review-status
+   vocabulary's `skipped` maps to `PASS` with the skip reason), and stop — no
    reviewer dispatch.
 3. Determine author identity for `sol-review.md`'s Inputs: when this skill
    runs as an internal phase dispatched by another goal skill, use the

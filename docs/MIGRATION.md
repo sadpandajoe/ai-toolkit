@@ -100,10 +100,9 @@ remap it, not skim it:
 
 `NON-TRIVIAL` and any `/10` numeric review score are v1-only; the six-state
 gate contract (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED) replaces
-scored thresholds for every migrated goal-skill path. `rules/{scoring,
-stop-rules,review-gate}.md` still use the old scored-threshold vocabulary, but
-only for the plan-domain reviewers named in "Kept, not deleted" below — that
-is a recorded deferral, not a second live scoring system for goal workflows.
+scored thresholds everywhere, including the plan-domain reviewers and
+`skills/planning`/`skills/testing`'s review helpers that formerly deferred to
+`rules/{scoring,stop-rules,review-gate}.md` — those three files are deleted.
 `aitk/routing.py`'s `_LEGACY_COMPLEXITY_MAP` performs this same remap
 mechanically for any `routing-state` block written under the old vocabulary.
 
@@ -113,34 +112,35 @@ mechanically for any `routing-state` block written under the old vocabulary.
   to native Claude subagents, `rules/gates.md`, and
   `agents/codex/plan-validator.md` respectively. `planning/references/
   iterate-review.md` was deleted alongside them.
-
-### Kept, not deleted (deliberate deferral)
-
-- `rules/{scoring,stop-rules,review-gate}.md` remain authoritative for the
-  plan-domain reviewers (`skills/review/references/{architecture,frontend,
-  backend}.md`, `agents/codex/plan-validator.md`) and for `skills/planning`'s
-  and `skills/testing`'s review helpers. `rules/gates.md`'s six-state contract
-  (PASS/RETRY/ESCALATE/RECLASSIFY/USER_DECISION/BLOCKED) supersedes them only
-  for its own listed migrated citers.
-- `review/references/ensemble.md` and `bin/aitk review-ensemble` remain live.
-  Four orchestration references still dispatch through the ensemble roster in
-  live steps, and sol-review/delta-review's retirement gate isn't fully met
-  yet. Lifting this deferral is unscoped follow-up work, not part of this
-  migration.
+- `skills/review/references/ensemble.md` and the `bin/aitk review-ensemble`
+  subcommand — the ensemble-roster and per-lens-floor mechanism they
+  implemented is fully retired. `skills/review/**` and
+  `skills/workflows/references/review-pr.md` now describe every dispatch
+  boundary as one reviewer pass reading a fixed lens/contract set (the
+  triggered set from `classify-diff.md`), not a resolved roster.
+- `rules/{scoring,stop-rules,review-gate}.md` — every former citer (the
+  plan-domain reviewers, `skills/planning`'s plan-iteration/finalize
+  helpers, `skills/testing`'s test-review helpers) now emits
+  `rules/gates.md`'s `## Gate` block directly.
 
 ### Model transport
 
 Eight roster roles (`planner`, `implementation-worker`, `debug-worker`,
 `deep-rca-worker`, `test-worker`, `review-worker`, `deep-review-worker`,
 `operations-worker`) dispatch natively as Claude Code subagents under
-`agents/claude/`, with no source-linked transport. `bin/aitk model-route` /
-`model-run` remain the transport for the three Codex specialists
-(`agents/codex/{rca,plan-validator,reviewer}.md`) and for the one Claude
-boundary that still has no native worker file: the review-ensemble lanes. The
-Claude-side `model-run` closure code cannot be removed until that boundary
-either goes native or is deleted. (Until 2026-09-01 `deep-rca` and
-`operations` were also on the shim; `agents/claude/deep-rca-worker.md` and
-`operations-worker.md` closed that gap.)
+`agents/claude/`, with no source-linked transport. Every route declared in
+`interfaces/model-routing.json` now has a native worker in this roster, so
+no Claude-side boundary uses the source-linked `model-route`/`model-run`
+shim any more (`interfaces/providers.json` declares Claude's
+`routed_subagent` binding `native` with no fallback). That transport remains
+live only for the three Codex specialists
+(`agents/codex/{rca,plan-validator,reviewer}.md`), which have no native
+roster of their own. (Until 2026-09-01, `deep-rca`, `operations`, and the
+review-ensemble lanes were still on the shim; `agents/claude/deep-rca-worker.md`
+and `operations-worker.md` closed the first two gaps, and retiring the
+ensemble mechanism itself — routing every review boundary through `review`/
+`deep-review`'s existing native workers instead of a resolved roster —
+closed the third.)
 
 **Ratified 2026-08-27 (user, via AskUserQuestion): option (b), "go native."**
 The spec's original text names Codex SOL as the independent verifier for

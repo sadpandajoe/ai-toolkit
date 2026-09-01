@@ -2,17 +2,16 @@
 tier: Heavy
 ---
 
-# Capability-Orchestrated Review (Standard Tier)
+# Capability-Orchestrated Review (Complex Tier)
 
-Use for `review-code` and `review-pr` when the Complexity Gate is STANDARD or
+Use for `review-code` and `review-pr` when the Complexity Gate is COMPLEX or
 when at least three independent reviewer lanes trigger.
 
 ## Capability Contract
 
 1. The main thread gathers base SHA, changed files, acceptance criteria,
-   preflight result, and triggered lens references, then resolves the tier
-   roster per [ensemble.md](ensemble.md) (`standard`, or `deep` in deep review
-   mode, or `security` for the security panel). Record the resolved coverage
+   preflight result, and the triggered lens set from
+   [classify-diff.md](classify-diff.md). Record the resolved `Model coverage:`
    level before dispatching anything.
 2. Use `parallel_fanout` with at most six **findings** lanes **on the origin
    provider**. Each lane runs in a `fresh_subagent`, reads the actual diff, and
@@ -20,7 +19,7 @@ when at least three independent reviewer lanes trigger.
    proof, suggested fix, and the lane's `provider/family` provenance. Follow the
    lens priority order in [classify-diff.md](classify-diff.md) when more than six
    lanes trigger, and `log` what was shed rather than silently truncating.
-3. Concurrently, dispatch the ensemble's **cross-provider lane** as a separate
+3. Concurrently, dispatch a **cross-provider lane** as a separate
    stage. It is a cold whole-diff review: it receives scope and diff only, never
    the origin lanes' findings, and it does not consume the six-lane lens budget.
    The six-lane cap is per fan-out stage, not per review.
@@ -62,13 +61,15 @@ when at least three independent reviewer lanes trigger.
   which is the sole exception. Route its proposals to a dedicated Restructuring
   Proposals section of the Review Record; never coerce them into the
   schema-shaped findings pipeline.
-- A security-sensitive finding uses the `security` ensemble's three-vote panel,
-  which spans both providers. Do not approximate it with three lanes on one
-  model.
-- When a provider is unreachable, apply the ensemble's degraded-coverage action:
-  `standard` continues with the disclosure sentence; `deep` and `security` block
-  pending explicit user override. Never substitute another model for the missing
-  one, and never describe a single-provider run as ensemble coverage.
+- A security-sensitive finding uses the fixed three-vote adversarial panel
+  (`review.adversarial-cross-provider-panel`, see
+  [adversarial-orchestration.md](adversarial-orchestration.md)), which spans
+  both providers. Do not approximate it with three lanes on one model.
+- When a provider is unreachable, apply the resolver's degraded-coverage
+  action: a baseline pass continues with the disclosure sentence; deep review
+  mode and the security panel block pending explicit user override. Never
+  substitute another model for the missing one, and never describe a
+  single-provider run as diverse coverage.
 - Provider adapters may execute fan-out sequentially only through the declared
   fallback; they may not weaken fresh-context or evidence requirements.
 - Raw worker transcripts never become durable state. Confirmed findings and a

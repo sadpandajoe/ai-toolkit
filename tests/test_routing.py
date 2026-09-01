@@ -200,3 +200,85 @@ def test_contract_dependency_allowed_permits_only_the_codex_agents_directory():
     assert _contract_dependency_allowed(PurePosixPath("agents/codex/rca.md"))
     assert not _contract_dependency_allowed(PurePosixPath("agents/claude/debug-worker.md"))
     assert not _contract_dependency_allowed(PurePosixPath("agents/codex/nested/rca.md"))
+
+
+def test_manifest_rejects_a_reintroduced_top_level_ensembles_key():
+    # The reviewer-lens fan-out mechanism is retired end to end: a manifest
+    # that resurrects the old `ensembles` table must fail schema validation
+    # rather than silently being ignored.
+    payload = copy.deepcopy(_payload())
+    payload["ensembles"] = {}
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any("does not match schema version 1" in p for p in problems)
+
+
+def test_manifest_rejects_a_boundary_with_a_lenses_key():
+    # Per-boundary lens menus are retired along with the ensemble table --
+    # a boundary carrying a `lenses` key is no longer a valid shape.
+    payload = copy.deepcopy(_payload())
+    boundary = payload["dispatch_boundaries"][0]
+    boundary["lenses"] = ["architecture"]
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any("invalid dispatch boundary" in p for p in problems)
+
+
+def test_gate_block_pattern_matches_a_well_formed_gate_block():
+    from aitk.routing_policy import GATE_BLOCK_PATTERN
+
+    assert GATE_BLOCK_PATTERN.search("## Gate\nState: PASS\nReason: looks good\n")
+    assert GATE_BLOCK_PATTERN.search("## Gate\nState: RETRY\n")
+
+
+def test_gate_block_pattern_rejects_missing_block_or_unknown_state():
+    from aitk.routing_policy import GATE_BLOCK_PATTERN
+
+    assert not GATE_BLOCK_PATTERN.search("Looks fine, ship it.")
+    assert not GATE_BLOCK_PATTERN.search("## Gate\nState: MAYBE\n")
+    assert not GATE_BLOCK_PATTERN.search("Score: 8/10\n")
+
+
+def _resolved_route(**overrides: object):
+    from aitk.routing_policy import ResolvedRoute
+
+    fields: dict[str, object] = dict(
+        name="review",
+        boundary="review.sol-review",
+        required_contracts=(),
+        provider="claude",
+        family="opus",
+        selector="opus",
+        effort="high",
+        responsibility="review",
+        restrictions=(),
+        controls={},
+        minimum_cli="0.0.0",
+        lens_domain="plan",
+    )
+    fields.update(overrides)
+    return ResolvedRoute(**fields)
+
+
+def test_domain_problem_accepts_a_plan_result_carrying_a_gate_block():
+    from aitk.routing_transport import _domain_problem
+
+    route = _resolved_route()
+    result = {
+        "status": "completed",
+        "summary": "## Gate\nState: PASS\nReason: plan is sound\n",
+        "findings": [],
+    }
+    assert _domain_problem(route, result) is None
+
+
+def test_domain_problem_rejects_a_plan_result_missing_a_gate_block():
+    from aitk.routing_transport import _domain_problem
+
+    route = _resolved_route()
+    result = {
+        "status": "completed",
+        "summary": "Looks fine overall, 9/10.",
+        "findings": [],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+    assert "## Gate" in problem

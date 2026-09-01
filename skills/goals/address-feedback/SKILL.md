@@ -75,7 +75,7 @@ and CI failures (`skills/goals/fix-ci`).
    name `address-feedback-verify` before its Review Gate step — follow that
    skill's RETRY/ESCALATE handling exactly. Its Review Gate step becomes:
    dispatch `skills/goals/code-review` against the changed files, translating
-   `rules/review-gate.md`'s skip/micro-fix exceptions through
+   the former review-status vocabulary's skip/micro-fix exceptions through
    `rules/gates.md`'s Mapping From the Old Mechanisms section — the same
    substitution `skills/goals/code-review/SKILL.md` step 2 already makes.
    `fix-review.md` does not write PROJECT.md itself — this skill appends the

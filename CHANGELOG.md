@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- **Review ensemble mechanism retired (wave F3).** Deleted
+  `skills/review/references/ensemble.md`, the `bin/aitk review-ensemble`
+  subcommand, and the roster-resolution/per-lens-floor mechanism behind them
+  across `interfaces/model-routing.json`, `aitk/routing_manifest.py`,
+  `routing_resolver.py`, `routing_policy.py`, `model_routing.py`,
+  `aitk/cli.py`, and `bin/aitk`. `skills/review/**` and
+  `skills/workflows/references/review-pr.md` now describe every dispatch
+  boundary as one reviewer pass over a fixed lens/contract set (the
+  triggered set from `classify-diff.md`), migrated onto `rules/gates.md`'s
+  six-state contract (PASS/RETRY/ESCALATE/USER_DECISION/BLOCKED) in place of
+  numeric `/10` scoring and the old MODERATE/STANDARD tier names
+  (MODERATE→STANDARD, STANDARD→COMPLEX).
+- **Native worker roster completed.** With `agents/claude/deep-rca-worker.md`
+  and `operations-worker.md` (wave F1+F2) and the ensemble retirement above,
+  every route declared in `interfaces/model-routing.json` — `deep-rca`,
+  `deep-review`, `implementation`, `operations`, `planning`, `rca`, `review`
+  — now dispatches through a native `agents/claude/*.md` worker.
+  `interfaces/providers.json` declares Claude's `routed_subagent` binding
+  `native` with no fallback; the source-linked `model-route`/`model-run`
+  transport remains live only for the three Codex specialists
+  (`agents/codex/{rca,plan-validator,reviewer}.md`), which have no native
+  roster of their own.
+
 ## 0.3.0 — 2026-08-27
 
 v2 refactor closing the gaps between this toolkit and its spec's 8-wave

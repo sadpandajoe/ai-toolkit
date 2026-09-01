@@ -54,9 +54,6 @@ rules/
   resource-management.md rule-maintenance.md input-detection.md
   shortcut-api.md preset-environments.md gates.md cross-cutting.md
   specialist-handoff.md
-  scoring.md stop-rules.md review-gate.md   # kept for plan-domain reviewers,
-                                             # see rules/gates.md's
-                                             # "Permanently out of scope" note
 
 evals/   # model judgment (skill routing, classification, escalation, ...)
 tests/   # deterministic guarantees (state parsing, gate transitions, ...)
@@ -123,42 +120,50 @@ Provider adapters may translate invocation syntax, tool names, planning controls
 
 ## Model workers
 
-Most of the roster dispatches natively, as Claude Code subagents defined
-under `agents/claude/`: `planner` (Opus, `COMPLEX` decomposition and phase
-planning only), `implementation-worker`, `debug-worker`, and `test-worker`
-(Sonnet), plus the native independent verifiers `review-worker` (Opus) and
-`deep-review-worker` (Fable) — the two files the "go native" decision added
-so the `review`/`deep-review` boundaries never grade the Sonnet work that
-produced them. These carry no source-linked transport — a goal skill invokes
-them the same way it would any other Claude subagent, and each one is the
-phase-level context reset: fresh context in, a compact handoff out.
+The full roster dispatches natively, as Claude Code subagents defined under
+`agents/claude/`: `planner` (Opus, `COMPLEX` decomposition and phase planning
+only), `implementation-worker`, `debug-worker`, `test-worker`, and
+`operations-worker` (Sonnet), `deep-rca-worker` (Fable), plus the native
+independent verifiers `review-worker` (Opus) and `deep-review-worker`
+(Fable) — the two files the "go native" decision added so the
+`review`/`deep-review` boundaries never grade the Sonnet work that produced
+them. These carry no source-linked transport — a goal skill invokes them the
+same way it would any other Claude subagent, and each one is the
+phase-level context reset: fresh context in, a compact handoff out. Every
+route declared in `interfaces/model-routing.json` (`deep-rca`, `deep-review`,
+`implementation`, `operations`, `planning`, `rca`, `review`) now has a native
+worker in this roster, so no Claude-side dispatch boundary uses the
+source-linked shim below any more; `interfaces/providers.json` declares
+Claude's `routed_subagent` binding `native` with no fallback for this reason.
 
 The stricter source-linked boundary — `<toolkit-root>/bin/aitk model-route`
 plus `<toolkit-root>/bin/aitk model-run` — still exists for the Codex
 specialists (`agents/codex/{rca,plan-validator,reviewer}.md`, run at SOL High,
-escalating to SOL XHigh only for exceptional adjudication) and for three
-Claude boundaries that have not yet gotten a native worker file:
-`deep-rca`, `operations`, and the review-ensemble lanes
-(`config/providers/claude.md`'s `routed_subagent` binding documents the
-split). `model-route` resolves the exact selector, effort, and permissions
-from `interfaces/model-routing.json`; `model-run` validates the boundary,
-provider CLI, and route before launching one structured worker without
-downgrade or generic-worker fallback. Each boundary deterministically derives
-a validated transitive inline contract closure from the shared model rule,
-owner and responsibility skills, required-context dependencies, selected
-review lenses, and canonical dispatch document; callers cannot substitute
-arbitrary files. Codex launches from a sanitized temporary project root and
-exposes the target only through `--add-dir`, while also disabling project-document discovery,
-user config, hooks, MCP servers, and exec-policy rules. The toolkit guarantees
-the requested CLI configuration and validates the returned envelope. Inline
-SHA-256 labels identify the exact content sent for diagnostics; they are not
-compared with a separately trusted expected digest. Neither supported provider
-result format attests the internal serving-model identity, so provider backend
-execution and substitution remain the provider's responsibility.
+escalating to SOL XHigh only for exceptional adjudication). Codex has no
+native roster of its own — every Codex route dispatches through this
+transport (`config/providers/codex.md`'s `routed_subagent` binding), while
+`config/providers/claude.md`'s equivalent binding documents the Claude side
+as fully native. `model-route` resolves the exact selector, effort, and
+permissions from `interfaces/model-routing.json`; `model-run` validates the
+boundary, provider CLI, and route before launching one structured worker
+without downgrade or generic-worker fallback. Each boundary deterministically
+derives a validated transitive inline contract closure from the shared model
+rule, owner and responsibility skills, required-context dependencies,
+selected review lenses, and canonical dispatch document; callers cannot
+substitute arbitrary files. Codex launches from a sanitized temporary
+project root and exposes the target only through `--add-dir`, while also
+disabling project-document discovery, user config, hooks, MCP servers, and
+exec-policy rules. The toolkit guarantees the requested CLI configuration and
+validates the returned envelope. Inline SHA-256 labels identify the exact
+content sent for diagnostics; they are not compared with a separately
+trusted expected digest. Neither supported provider result format attests
+the internal serving-model identity, so provider backend execution and
+substitution remain the provider's responsibility.
 
-The review-ensemble lanes' removal is deferred, not scheduled — see
-`PLAN.md`'s D2 "Corrected scope" note for the precondition. The Codex path
-cannot be removed while any of these three boundaries still calls it.
+`aitk/routing_transport.py` and `aitk/routing_closure.py` stay live for this
+reason — the Codex path still calls them on every route — even though no
+Claude boundary does. Removing them is not scheduled; it depends on Codex
+also gaining a native roster, which is a separate, unstarted piece of work.
 
 The Codex plugin bundle retains `bin/`, `aitk/`, `config/`, `interfaces/`,
 `rules/`, and `skills/` beneath one plugin root. Routed skills resolve that root

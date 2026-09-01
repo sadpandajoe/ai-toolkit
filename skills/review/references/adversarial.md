@@ -85,16 +85,18 @@ kind after it, where it is description rather than vocabulary:
 **Fix:** {Specific change to prevent the failure}
 ```
 
-## Scoring
+## Rating
 
-Rate the overall adversarial assessment:
+Rate the overall adversarial assessment (this is the `Adversarial Rating:`
+value `adversarial-orchestration.md`'s Gate block carries — no numeric score,
+just this label):
 
 | Rating | Meaning |
 |--------|---------|
-| **Hardened** (9-10) | No exploitable findings. Edge cases handled. Defensive coding throughout. |
-| **Adequate** (6-8) | Minor gaps but no critical vulnerabilities. Some edge cases unhandled. |
-| **Vulnerable** (3-5) | One or more exploitable issues. Missing validation at boundaries. |
-| **Critical** (1-2) | Security vulnerabilities or data integrity risks that must be fixed before merge. |
+| **Hardened** | No exploitable findings. Edge cases handled. Defensive coding throughout. |
+| **Adequate** | Minor gaps but no critical vulnerabilities. Some edge cases unhandled. |
+| **Vulnerable** | One or more exploitable issues. Missing validation at boundaries. |
+| **Critical** | Security vulnerabilities or data integrity risks that must be fixed before merge. |
 
 ## Rules
 

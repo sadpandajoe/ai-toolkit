@@ -11,8 +11,8 @@ Use after PR review synthesis has produced a recommendation.
 Detail level scales with complexity and findings.
 
 - **Trivial + clean**: return an approve recommendation; post/approve directly only with `--auto` or explicit user authorization.
-- **Moderate + clean**: approve with compact summary in draft/confirmation mode; post directly only with `--auto`.
-- **Standard + clean**: pause with a one-line confirmation before approving unless `--auto` was passed.
+- **Standard + clean**: approve with compact summary in draft/confirmation mode; post directly only with `--auto`.
+- **Complex + clean**: pause with a one-line confirmation before approving unless `--auto` was passed.
 - **Any findings**: post only user-confirmed findings with adjusted severities.
 - **`--draft`**: show review in conversation only. Do not post.
 - **`--auto`**: skip confirmations and post/approve directly.
@@ -53,16 +53,6 @@ PR #<number>: <title> — <Approve / Request Changes / Comment>
 | Reviewer | Why |
 |----------|-----|
 | Code quality | Always |
-
-### Scores
-| Component | Score |
-|-----------|-------|
-| Root Cause | X/10 |
-| Solution | X/10 |
-| Tests | X/10 |
-| Code | X/10 |
-| Docs | X/10 |
-| Overall | X/10 |
 
 ### Issues Found
 - <N> major, <N> minor, <N> nitpick
