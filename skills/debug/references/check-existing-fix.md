@@ -53,7 +53,7 @@ Always return the normalized summary block below. The calling workflow branches 
 ## Existing Fix Status
 
 Status: FIXED_UPSTREAM / FIX_PENDING_PR / UNFIXED / SKIPPED
-Confidence: X/10
+Confidence: HIGH / MEDIUM / LOW
 
 Upstream Evidence:
 - <commit / PR / not found>

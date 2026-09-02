@@ -62,6 +62,7 @@ from .routing import (
     set_classification,
 )
 from .usage import collect_usage, default_projects_root, premium_selectors
+from .workflow_usage import UNATTRIBUTED, collect_workflow_usage
 from .workflows import load_workflows
 
 
@@ -716,6 +717,8 @@ def _usage(arguments: argparse.Namespace) -> int:
     if arguments.period != "all":
         days = {"7d": 7, "30d": 30}[arguments.period]
         since = datetime.now(timezone.utc) - timedelta(days=days)
+    if arguments.by_workflow:
+        return _usage_by_workflow(projects_root, selectors, since, arguments.json)
     report = collect_usage(projects_root, selectors, since=since)
     payload: dict[str, object] = {"command": "usage", **report.as_dict()}
     if arguments.json:
@@ -745,6 +748,56 @@ def _usage(arguments: argparse.Namespace) -> int:
         f"TOTAL: {report.total_tokens} tokens, {report.premium_tokens} premium "
         f"({total_share:.1f}%), ${report.cost:.2f}"
     )
+    return 0
+
+
+def _usage_by_workflow(
+    projects_root: Path,
+    selectors: tuple[str, ...],
+    since: datetime | None,
+    as_json: bool,
+) -> int:
+    report = collect_workflow_usage(projects_root, selectors, since=since)
+    if as_json:
+        payload: dict[str, object] = {
+            "command": "usage",
+            "by": "workflow",
+            **report.as_dict(),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    print(
+        f"{'WORKFLOW':<24} {'RUNS':>5} {'SESS':>5} {'TOKENS':>12} {'PREMIUM':>12} "
+        f"{'PREM%':>7} {'COST':>9} {'PEAK CTX':>9} {'SUMM':>5} {'RETRY':>5} "
+        f"{'YIELD':>6}"
+    )
+    for row in report.workflows:
+        share = (
+            100.0 * row.premium_tokens / row.total_tokens if row.total_tokens else 0.0
+        )
+        yield_text = "-" if row.reviewer_yield is None else f"{row.reviewer_yield:.2f}"
+        name = row.workflow if len(row.workflow) <= 24 else row.workflow[:21] + "..."
+        print(
+            f"{name:<24} {row.invocations:>5} {row.sessions:>5} {row.total_tokens:>12} "
+            f"{row.premium_tokens:>12} {share:>6.1f}% {row.cost:>9.2f} "
+            f"{row.peak_context_tokens:>9} {row.summaries:>5} {row.retries:>5} "
+            f"{yield_text:>6}"
+        )
+    total_share = (
+        100.0 * report.premium_tokens / report.total_tokens
+        if report.total_tokens
+        else 0.0
+    )
+    print(
+        f"TOTAL: {report.total_tokens} tokens, {report.premium_tokens} premium "
+        f"({total_share:.1f}%), ${report.cost:.2f} across "
+        f"{len(report.workflows)} workflow rows"
+    )
+    if any(row.workflow == UNATTRIBUTED for row in report.workflows):
+        print(
+            f"{UNATTRIBUTED}: lines written before a session's first Skill "
+            "invocation, or without a timestamp."
+        )
     return 0
 
 
@@ -990,6 +1043,15 @@ def parser() -> argparse.ArgumentParser:
     usage.add_argument(
         "--projects-root",
         help="Claude Code projects directory (default: ~/.claude/projects)",
+    )
+    usage.add_argument(
+        "--by-workflow",
+        action="store_true",
+        help=(
+            "attribute tokens to the skill active at each line (from the "
+            "transcript's Skill tool_use blocks) and join .ai-toolkit/"
+            "metrics.jsonl workflow-summary events per cwd"
+        ),
     )
     usage.add_argument(
         "--json", action="store_true", help="emit machine-readable output"

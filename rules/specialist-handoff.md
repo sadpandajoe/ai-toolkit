@@ -56,6 +56,32 @@ Every dispatch supplies exactly these fields:
 - **Next-action implication**: what the orchestrator should do with this
   result — advance the phase, retry, escalate, or ask the user.
 
+## Working Style
+
+Current-generation workers (Sonnet 5, Opus 5, Fable 5.1) do their best work
+from a stated goal and boundary, not a step script — so this contract, and
+the worker files that follow it, describe what "done" looks like and what is
+out of bounds, and leave the route to the worker. Four habits apply to every
+specialist call:
+
+- **Act once enough is known.** When the Evidence pointer and Scope already
+  settle a question, do not re-derive it or narrate options you will not
+  pursue. A missing input field is a `BLOCKED` return naming that field
+  only when the gap changes the work; otherwise proceed under a stated
+  assumption and record it under Residual risk.
+- **Ground every claim in a tool result from this call.** A finding, root
+  cause, or plan slice cites the file and line (or command output) the
+  worker actually read; anything not verified is listed under Residual
+  risk / unverified areas, not reported as done.
+- **Run independent checks in parallel.** A git-history search, a test-file
+  read, and a reproduction attempt that do not depend on each other go out
+  in one batch of tool calls; sequence only what the previous result gates.
+  Dispatch depth stays at one level per `rules/resource-management.md`.
+- **Report the outcome first.** The Evidence summary opens with the verdict
+  or the finding that changes what the orchestrator does next; supporting
+  detail follows. Complete sentences, no working shorthand — the
+  orchestrator did not watch the call.
+
 ## No Transcript Dumps
 
 Neither direction of this contract carries a full conversation transcript.

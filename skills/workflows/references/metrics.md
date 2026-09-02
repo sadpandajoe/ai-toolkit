@@ -54,7 +54,7 @@ filtered events, compute:
 
 **Workflow frequency**: how often each workflow is used
 
-**Token usage**: total and premium tokens per run, from `workflow-summary`'s `total_tokens`/`premium_tokens`. When a run has no `workflow-summary` token fields but does have `model` events carrying `input_tokens`/`output_tokens`/`cache_tokens`, sum those instead (`premium` = calls whose `role`/`model` resolve to `opus` or a Codex `sol` model per `interfaces/model-routing.json`). Report the premium share (`premium_tokens / total_tokens`) alongside the totals — §14's rollout hypothesis is a *reduction* in that share over time, not just the raw count.
+**Token usage**: total and premium tokens per run, from `workflow-summary`'s `total_tokens`/`premium_tokens`. When a run has no `workflow-summary` token fields but does have `model` events carrying `input_tokens`/`output_tokens`/`cache_tokens`, sum those instead (`premium` = calls whose `role`/`model` resolve to an `opus` or `fable` family model or a Codex `sol` model per `interfaces/model-routing.json`). Report the premium share (`premium_tokens / total_tokens`) alongside the totals — §14's rollout hypothesis is a *reduction* in that share over time, not just the raw count.
 
 **Retry count**: average and total `workflow-summary.retries` per workflow — a per-run cross-check against the per-gate RETRY/ESCALATE counts in Gate Reliability below; the two should roughly agree, and a persistent gap means one of the two recording paths is under-instrumented for that workflow.
 
@@ -63,6 +63,17 @@ filtered events, compute:
 Not every workflow emits the mid-run event types yet — treat their absence
 for a given `command` as "not instrumented," not as zero retries/
 reclassifications.
+
+**Transcript-side per-workflow accounting**: `bin/aitk usage --by-workflow
+[--period 7d|30d|all] [--json]` attributes every priced Claude Code
+transcript line to the skill that was active when it was written (from the
+transcript's structured `Skill` `tool_use` blocks, subagents included) and
+joins this file's `workflow-summary` events per `command`. Use it for the
+Token Usage table below when `workflow-summary` token fields are sparse —
+it measures the actual spend the harness recorded, including peak context
+size per workflow, rather than what the workflow self-reported. Its
+`(unattributed)` row is spend before any skill was invoked; report it as
+such rather than folding it into a workflow.
 
 ### 4. Emit Summary
 

@@ -218,6 +218,8 @@ The command-line interface is also stable and scriptable:
 | `bin/aitk rollback` | Restore the exact previous lifecycle transaction once |
 | `bin/aitk pgm-preflight --workflow <name>` | Fail closed before optional PGM collection |
 | `bin/aitk check` | Run build drift, doctor, tests, and hook smoke tests |
+| `bin/aitk usage [--period 7d\|30d\|all] [--by-workflow] [--json]` | Summarize Claude Code session tokens, premium share, and cost per session — or per workflow, joined with `.ai-toolkit/metrics.jsonl` summaries |
+| `bin/aitk context-budget` | Report the context budget the current session's guidance consumes |
 
 See [Architecture](docs/ARCHITECTURE.md), [migration guidance](docs/MIGRATION.md),
 [telemetry support](docs/TELEMETRY.md), the [completion audit](docs/COMPLETION_AUDIT.md),

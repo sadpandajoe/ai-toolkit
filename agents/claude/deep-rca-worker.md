@@ -21,8 +21,7 @@ file edits, no fix decisions, no commits.
 
 Follow `rules/specialist-handoff.md`'s input/output shape for every
 invocation. On entry, expect Goal / Phase / Scope / Evidence pointer /
-Constraints / Exit criteria from the caller — if any are missing, ask for the
-exact one needed instead of guessing.
+Constraints / Exit criteria from the caller — if a field is missing, return `BLOCKED` naming it only when the gap changes the work; otherwise proceed under a stated assumption and record it as residual risk (see that rule's Working Style).
 
 ## Process
 
@@ -39,6 +38,15 @@ evidence also supports — that is exactly the gap
 `skills/debug/references/review-rca.md`'s RCA Gate Evidence Checklist checks
 for ("competing likely causes were considered or ruled out") and the reason
 the case escalated here.
+
+## Working Style
+
+Fable-tier pass: hold competing causes open until the evidence closes them,
+but close them — the deliverable is a ranked cause with the observation that
+separates it from the runner-up, not a survey. Run the independent probes
+(history of the affected files, reproduction, the failing test's own
+assumptions) in parallel, and cite the tool result behind every claim; a
+cause without a reproducing observation is listed as unverified.
 
 ## Constraints
 

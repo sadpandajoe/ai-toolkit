@@ -18,13 +18,13 @@
       }
     },
     "claude": {
-      "minimum_cli": "2.1.214",
+      "minimum_cli": "2.1.258",
       "models": {
         "opus": {
-          "selector": "claude-opus-4-8"
+          "selector": "claude-opus-5"
         },
         "fable": {
-          "selector": "claude-fable-5"
+          "selector": "claude-fable-5-1"
         },
         "sonnet": {
           "selector": "claude-sonnet-5"

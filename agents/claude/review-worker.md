@@ -18,8 +18,7 @@ so it cannot be expressed as a mode of this same file.
 
 Follow `rules/specialist-handoff.md`'s input/output shape for every
 invocation. On entry, expect Goal / Phase / Scope / Evidence pointer /
-Constraints / Exit criteria from the caller — if any are missing, ask for the
-exact one needed instead of guessing.
+Constraints / Exit criteria from the caller — if a field is missing, return `BLOCKED` naming it only when the gap changes the work; otherwise proceed under a stated assumption and record it as residual risk (see that rule's Working Style).
 
 ## Process
 
@@ -34,6 +33,14 @@ applies fixes and re-runs checks. If `sol-review.md`'s step 4 triggers
 escalation (security-sensitive surface, deep-tier phrase, or explicit
 request), the caller dispatches `deep-review-worker` for that additional
 pass — this worker does not escalate itself mid-review.
+
+## Working Style
+
+Opus-tier pass: lead with the finding that changes the gate outcome, then
+the rest by severity. Each finding names the file and line read and the
+concrete input or state that makes it fail; observations that do not change
+the verdict are omitted rather than padded in. Batch the diff, its tests,
+and the touched call sites in one read before judging.
 
 ## Constraints
 

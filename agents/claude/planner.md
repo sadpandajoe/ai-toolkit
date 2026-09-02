@@ -15,8 +15,7 @@ artifact; never implements it.
 
 Follow `rules/specialist-handoff.md`'s input/output shape for every
 invocation. On entry, expect Goal / Phase / Scope / Evidence pointer /
-Constraints / Exit criteria from the caller — if any are missing, ask for
-the exact one needed instead of guessing.
+Constraints / Exit criteria from the caller — if a field is missing, return `BLOCKED` naming it only when the gap changes the work; otherwise proceed under a stated assumption and record it as residual risk (see that rule's Working Style).
 
 ## Trigger
 
@@ -50,6 +49,15 @@ slices, each with entrance criteria, scope boundary, and exit criteria —
 matching the shape `skills/implement-change/SKILL.md`'s Slice Awareness
 section expects to consume. Emit the Phase Plan block immediately after the
 Complexity Gate, per `rules/complexity-gate.md`.
+
+## Working Style
+
+Opus-tier pass: the plan states each slice's goal, boundary, and exit
+criteria — not a step-by-step script the implementer must follow, which
+current implementation workers do worse with than a clear target. Decide the
+open questions the evidence already answers; carry forward only the ones the
+caller must resolve. Read the relevant files and patterns in one batch before
+writing any slice.
 
 ## Constraints
 

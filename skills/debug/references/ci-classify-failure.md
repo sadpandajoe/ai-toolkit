@@ -45,10 +45,10 @@ Identify the failing step, match it to a known pattern when possible, and produc
 6. **Auth-failure discriminator**: a **401** on a step that normally authenticates fine is a transient token blip — re-run before diagnosing. A **403** with a stable identity is a real permissions problem. Do not ship a permissions fix for a 401, and do not classify either as ours without checking whether the step touches our diff at all.
 7. If no pattern matches, read the referenced files and recent commits before classifying it as novel.
 
-Use numeric confidence with these defaults:
-- `8-10` = `HIGH`
-- `5-7` = `MEDIUM`
-- `1-4` = `LOW`
+Grade confidence with one of three words — no numeric score:
+- `HIGH` — the error matches a known pattern and the diff touches the failing area, or the failure reproduces locally.
+- `MEDIUM` — a pattern matches but the link to our diff is inferred, not shown.
+- `LOW` — novel failure, or the evidence is a single unreproduced log line.
 
 ## Output Format
 
@@ -59,7 +59,7 @@ For each failure, end with this block:
 
 **Error**: [key error message]
 **Pattern**: [matched pattern name, or "Novel"]
-**Confidence**: X/10 (`HIGH` / `MEDIUM` / `LOW`)
+**Confidence**: `HIGH` / `MEDIUM` / `LOW`
 **Root Cause**: [explanation]
 **Proposed Fix**: [specific fix with commands/code changes]
 **Verification**: [how to verify the fix locally]

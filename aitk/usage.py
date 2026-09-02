@@ -17,12 +17,18 @@ carry their own top-level `cwd`/`sessionId` fields (verified against real
 data), so they group into the same session key as their parent and are not
 silently dropped.
 
-Premium classification is only as current as `interfaces/model-routing.json`
-and `aitk.pricing.PRICING`: a model that has shipped but isn't yet listed
-there (e.g. a newer opus point release, or a fable selector without pricing
-data) will report as non-premium and/or cost $0.00 rather than erroring.
-That's a manifest-currency problem for the caller to notice, not something
-this module can infer.
+Premium classification is family-based: any `claude-opus-*` or
+`claude-fable-*` model, and any Codex `*-sol` model, counts as premium
+regardless of point release (see `premium_selectors`). That keeps historical
+sessions on an older opus/fable selector premium after the manifest moves to
+a newer one. Cost, by contrast, is only as current as `aitk.pricing.PRICING`:
+a model that has shipped but isn't priced there costs $0.00 rather than
+erroring -- a pricing-currency problem for the caller to notice.
+
+Per-workflow attribution (which skill a session's tokens were spent under)
+lives in `aitk.workflow_usage`, which keys on the structured `Skill`
+`tool_use` blocks Claude Code writes into the transcript rather than on any
+content heuristic.
 
 This module is read-only and does not import `aitk.cli` or any workflow/
 metrics-emit machinery; it is a standalone data source for callers (e.g. the
@@ -34,6 +40,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import re
 from pathlib import Path
 
 from .pricing import compute_cost, parse_record_time
@@ -79,21 +86,38 @@ class UsageReport:
 
 
 def premium_selectors(root: Path) -> tuple[str, ...]:
-    """Return the model selectors that count as "premium" spend.
+    """Return the model-selector prefixes that count as "premium" spend.
 
-    Read dynamically from `interfaces/model-routing.json` -- the Claude
-    `opus` role selector and the Codex `sol` role selector -- rather than
-    hardcoded, so this stays in sync with that file instead of silently
-    drifting from it.
+    Derived from `interfaces/model-routing.json` -- the Claude `opus` and
+    `fable` roles and the Codex `sol` role -- rather than hardcoded, so this
+    stays in sync with that file. Each Claude selector is reduced to its
+    family prefix (the selector with its version dropped) so that every point
+    release of a premium family classifies the same way; the Codex selector
+    is kept whole, and `_is_premium` additionally treats any `*-sol` model
+    as premium for the same reason.
     """
     payload = load_model_routing(root)
     providers = payload["providers"]
-    opus = providers["claude"]["models"]["opus"]["selector"]
+    claude_models = providers["claude"]["models"]
+    families = []
+    for role in ("opus", "fable"):
+        selector = claude_models[role]["selector"]
+        families.append(_family_prefix(selector))
     sol = providers["codex"]["models"]["sol"]["selector"]
-    return (opus, sol)
+    return (*families, sol)
+
+
+def _family_prefix(selector: str) -> str:
+    match = _CLAUDE_FAMILY.match(selector)
+    return match.group(1) if match else selector
+
+
+_CLAUDE_FAMILY = re.compile(r"^(claude-[a-z]+)(?:-|$)")
 
 
 def _is_premium(model: str, selectors: tuple[str, ...]) -> bool:
+    if model.endswith("-sol"):
+        return True
     return any(
         model == selector or model.startswith(selector) for selector in selectors
     )

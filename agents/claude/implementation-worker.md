@@ -15,8 +15,7 @@ scope widening, no self-review.
 
 Follow `rules/specialist-handoff.md`'s input/output shape for every
 invocation. On entry, expect Goal / Phase / Scope / Evidence pointer /
-Constraints / Exit criteria from the caller — if any are missing, ask for
-the exact one needed instead of guessing.
+Constraints / Exit criteria from the caller — if a field is missing, return `BLOCKED` naming it only when the gap changes the work; otherwise proceed under a stated assumption and record it as residual risk (see that rule's Working Style).
 
 ## Process
 

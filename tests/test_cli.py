@@ -404,7 +404,8 @@ def test_usage_reports_a_session_row_from_real_jsonl(tmp_path: Path, capsys):
     assert session["cwd"] == "/Users/joeli/example"
     assert session["session_id"] == "session-1"
     assert session["total_tokens"] == 150
-    # claude-opus-4-8 resolves to the "opus" role, which is premium.
+    # claude-opus-4-8 is in the opus family, which is premium regardless of
+    # which point release the manifest currently pins.
     assert session["premium_tokens"] == 150
     assert payload["total_tokens"] == 150
     assert payload["premium_tokens"] == 150
@@ -414,3 +415,62 @@ def test_usage_prints_a_text_table_and_total_line(tmp_path: Path, capsys):
     exit_code = main(["usage", "--projects-root", str(tmp_path)])
     assert exit_code == 0
     assert "TOTAL:" in capsys.readouterr().out
+
+
+def test_usage_by_workflow_attributes_lines_to_skill_invocations(
+    tmp_path: Path, capsys
+):
+    project_dir = tmp_path / "-Users-joeli-example"
+    project_dir.mkdir()
+    lines = [
+        {
+            "type": "assistant",
+            "cwd": "/Users/joeli/example",
+            "sessionId": "session-1",
+            "timestamp": "2026-08-01T00:00:00Z",
+            "message": {
+                "model": "claude-sonnet-5",
+                "content": [
+                    {"type": "tool_use", "name": "Skill", "input": {"skill": "debug"}}
+                ],
+                "usage": {"input_tokens": 100, "output_tokens": 50},
+            },
+        },
+        {
+            "type": "assistant",
+            "cwd": "/Users/joeli/example",
+            "sessionId": "session-1",
+            "timestamp": "2026-08-01T00:01:00Z",
+            "message": {
+                "model": "claude-fable-5-1",
+                "content": [{"type": "text", "text": "done"}],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        },
+    ]
+    (project_dir / "session-1.jsonl").write_text(
+        "\n".join(json.dumps(line) for line in lines) + "\n"
+    )
+    exit_code = main(
+        ["usage", "--projects-root", str(project_dir.parent), "--by-workflow", "--json"]
+    )
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "usage"
+    assert payload["by"] == "workflow"
+    (row,) = payload["workflows"]
+    assert row["workflow"] == "debug"
+    assert row["invocations"] == 1
+    assert row["total_tokens"] == 165
+    # Only the fable line is premium; fable is a premium family.
+    assert row["premium_tokens"] == 15
+    assert row["peak_context_tokens"] == 100
+
+    exit_code = main(
+        ["usage", "--projects-root", str(project_dir.parent), "--by-workflow"]
+    )
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "WORKFLOW" in out
+    assert "debug" in out
+    assert "TOTAL:" in out

@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **Claude 5-family routing.** `interfaces/model-routing.json` now pins
+  `opus` to Claude Opus 5 and `fable` to Claude Fable 5.1 (Sonnet stays on
+  Sonnet 5) and raises Claude's `minimum_cli` to 2.1.258.
+  `aitk/pricing.py` gains list prices for Fable 5.1 (cache reads at 0.025x),
+  Fable 5, and Opus 5. Premium-token classification in `aitk/usage.py` is
+  now by model *family* (`claude-opus-*`, `claude-fable-*`, any `*-sol`
+  Codex model) rather than by exact selector, so sessions recorded on an
+  older point release stay premium after a manifest bump, and Fable spend —
+  previously invisible to the premium share — is counted.
+- **Per-workflow token accounting (§14).** New `bin/aitk usage
+  --by-workflow` (`aitk/workflow_usage.py`) attributes every priced
+  transcript line to the skill whose structured `Skill` `tool_use` block
+  most recently preceded it in the same session (subagent transcripts
+  included), and reports per-workflow invocations, total/premium tokens,
+  cost, peak prompt size, and the `workflow-summary` events joined from each
+  project's `.ai-toolkit/metrics.jsonl` (runs, retries, reclassifications,
+  mean reviewer yield). Closes the audit gap that the spec's per-workflow
+  cost hypotheses were unmeasurable.
+- **No numeric scores in debug references.** `check-existing-fix.md` and
+  `ci-classify-failure.md` now grade confidence as `HIGH`/`MEDIUM`/`LOW`
+  with stated criteria, replacing the last `X/10` fields left after wave F5.
+- **Worker prompts tuned for Fable 5.1 / Opus 5.** The `fable`- and
+  `opus`-pinned workers (`deep-review-worker`, `deep-rca-worker`, `planner`,
+  `review-worker`) and `rules/model-assignment.md` follow the current model
+  guidance: state goal and constraints rather than step scripts, act once
+  enough is known, audit progress claims against tool results, and delegate
+  independent sub-checks in parallel.
+
 - **Review ensemble mechanism retired (wave F3).** Deleted
   `skills/review/references/ensemble.md`, the `bin/aitk review-ensemble`
   subcommand, and the roster-resolution/per-lens-floor mechanism behind them

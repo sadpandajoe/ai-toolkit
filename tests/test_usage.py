@@ -8,9 +8,10 @@ import unittest
 from aitk.usage import SessionUsage, UsageReport, collect_usage, premium_selectors
 
 ROOT = Path(__file__).resolve().parents[1]
-OPUS_SELECTOR = "claude-opus-4-8"
+OPUS_FAMILY = "claude-opus"
+FABLE_FAMILY = "claude-fable"
 SOL_SELECTOR = "gpt-5.6-sol"
-SELECTORS = (OPUS_SELECTOR, SOL_SELECTOR)
+SELECTORS = (OPUS_FAMILY, FABLE_FAMILY, SOL_SELECTOR)
 
 
 def _line(**fields: object) -> str:
@@ -243,12 +244,13 @@ class CollectUsageTests(unittest.TestCase):
 
 
 class PremiumSelectorsTests(unittest.TestCase):
-    def test_resolves_opus_and_sol_selectors_from_the_live_manifest(self) -> None:
-        # Pins the manifest-drift guard: if interfaces/model-routing.json's
-        # opus/sol selectors change, this test forces a look rather than a
-        # silent reclassification of premium spend.
+    def test_resolves_premium_families_from_the_live_manifest(self) -> None:
+        # Pins the manifest-drift guard: the opus and fable roles reduce to
+        # their family prefixes (so a point-release bump in
+        # interfaces/model-routing.json does not reclassify historical
+        # sessions), and the codex sol selector is carried whole.
         self.assertEqual(
-            (OPUS_SELECTOR, SOL_SELECTOR), premium_selectors(ROOT)
+            (OPUS_FAMILY, FABLE_FAMILY, SOL_SELECTOR), premium_selectors(ROOT)
         )
 
 

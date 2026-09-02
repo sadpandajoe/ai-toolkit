@@ -84,6 +84,15 @@ Rules:
   cheaper family, or silently use a generic worker.
 - The manifest pins the current selectors. When a new model becomes preferred,
   update its one catalog entry and tests; skills and route names stay stable.
+  A selector bump also means re-reading the worker prompts on that route
+  against the new model's guidance — current-generation workers (Sonnet 5,
+  Opus 5, Fable 5.1) lose quality under step-by-step scaffolding written for
+  older models, so `rules/specialist-handoff.md`'s Working Style (goal and
+  boundary over steps; act once enough is known; ground claims in tool
+  results; parallel independent checks) is the prompt shape every route
+  targets. Premium-spend accounting (`aitk usage`) classifies by model
+  family for the same reason: a point-release bump must not reclassify
+  history.
 - Legacy `tier: Light|Standard|Heavy` frontmatter is non-authoritative workload
   metadata for reference selection only. It never selects a model or effort;
   every actual dispatch uses the stable route named at its inventoried marker.

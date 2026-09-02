@@ -11,8 +11,10 @@ from datetime import datetime, timedelta
 
 from aitk.pricing import compute_cost, get_pricing
 
-# Per-model global API-equivalent pricing ($/MTok). Keep unknown models
-# unpriced. Sources verified 2026-07-15:
+# Per-model global API-equivalent pricing ($/MTok) lives in aitk/pricing.py.
+# Keep unknown models unpriced. Sources verified 2026-09-01 (Claude 5 family:
+# Fable 5.1 / Fable 5 / Opus 5, from the bundled claude-api skill's
+# shared/models.md) and 2026-07-15 (Opus 4.8, Sonnet 5):
 # https://www.anthropic.com/claude/opus
 # https://www.anthropic.com/news/claude-sonnet-5
 # Anthropic List Prices 2026-05-27 (Sonnet 4.6 and Haiku 4.5).

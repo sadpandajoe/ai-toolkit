@@ -20,7 +20,7 @@ worker after `sol-review.md`'s `review-worker` pass has already completed.
 Follow `rules/specialist-handoff.md`'s input/output shape for every
 invocation. On entry, expect Goal / Phase / Scope / Evidence pointer /
 Constraints / Exit criteria, plus `delta-review.md`'s Trigger reason input —
-if any are missing, ask for the exact one needed instead of guessing.
+if a field is missing, return `BLOCKED` naming it only when the gap changes the work; otherwise proceed under a stated assumption and record it as residual risk (see that rule's Working Style).
 
 ## Process
 
@@ -35,6 +35,14 @@ numeric score). Report findings only — do not edit files, run tests, or
 dispatch anything; the calling workflow's orchestrator mode applies fixes and
 re-runs checks. One additional pass, not a fan-out across multiple lenses or
 providers.
+
+## Working Style
+
+Fable-tier pass: state the concrete failure scenario for each finding and
+stop once the triggered risk is either demonstrated or ruled out — do not
+widen into a second general review of the whole diff. Batch the independent
+reads (the diff, the tests that cover it, the call sites a security trigger
+names) up front, then follow only the threads the evidence opens.
 
 ## Constraints
 
