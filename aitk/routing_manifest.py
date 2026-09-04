@@ -552,16 +552,35 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         if not _valid_boundary_contracts(root, boundary):
             problems.append(f"invalid dispatch boundary contracts: {identifier}")
             continue
-        # `workers` resolves every route this boundary offers to a
-        # `(worker_id, effort)` identity -- one entry per route, not per
-        # ladder, since a boundary can offer a subset of its route's ladder.
-        # The worker row itself must agree with the map: filed under the same
+        # `routes_value` is non-empty and every member is a declared route by
+        # this point, so `routes_value[0]` always keys `ROUTE_LADDERS`. The
+        # reachable set is the ladder *suffix* starting at `routes_value[0]`,
+        # not the full ladder: escalation only climbs (`review` ->
+        # `deep-review`), never descends, so a boundary already anchored at
+        # the top rung (`deep-review`-only lanes like `review.delta-review`)
+        # reaches only itself, while one anchored at the base rung reaches
+        # every rung above it.
+        ladder = ROUTE_LADDERS.get(routes_value[0])
+        reachable: tuple[str, ...] = ()
+        if ladder is not None:
+            reachable = ladder[ladder.index(routes_value[0]) :]
+        if ladder is None or not set(routes_value) <= set(reachable):
+            problems.append(f"dispatch boundary routes span more than one ladder: {identifier}")
+            reachable = ()
+        # `workers` resolves every ladder-reachable route to a
+        # `(worker_id, effort)` identity -- baseline dispatch (`routes`) is
+        # what this boundary offers today; escalation (`reachable`) is
+        # whatever the ladder can climb to from there, and both must resolve
+        # to a worker so a mid-loop escalation is never left without one. The
+        # worker row itself must agree with the map: filed under the same
         # route it is mapped from, and grading the same artefact the boundary
         # declares.
         workers_value = boundary.get("workers")
-        if not isinstance(workers_value, dict) or set(workers_value) != set(routes_value):
+        if not isinstance(workers_value, dict) or (
+            reachable and set(workers_value) != set(reachable)
+        ):
             problems.append(f"invalid dispatch boundary workers map: {identifier}")
-        else:
+        elif reachable:
             for route_name, worker_id in workers_value.items():
                 worker_row = native_workers.get(worker_id) if isinstance(worker_id, str) else None
                 if (
@@ -625,11 +644,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         pinned = BOUNDARY_INVARIANTS.get(identifier)
         if pinned is None or not set(routes_value) <= set(pinned):
             problems.append(f"dispatch boundary route allowlist mismatch: {identifier}")
-        # `routes_value` is non-empty and every member is a declared route by
-        # this point, so `routes_value[0]` always keys `ROUTE_LADDERS`.
-        ladder = ROUTE_LADDERS.get(routes_value[0])
-        if ladder is None or not set(routes_value) <= set(ladder):
-            problems.append(f"dispatch boundary routes span more than one ladder: {identifier}")
         seen_ids.add(identifier)
     seen_exemptions: set[tuple[str, str]] = set()
     for exemption in exemptions_value:

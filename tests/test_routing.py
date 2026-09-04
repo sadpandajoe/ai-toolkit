@@ -10,6 +10,8 @@ import copy
 import json
 from pathlib import Path
 
+import pytest
+
 from aitk.routing_manifest import _validate_payload, validate_model_routing
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -270,6 +272,46 @@ def test_manifest_rejects_a_workers_map_missing_a_route():
     )
 
 
+def test_workers_map_covers_the_full_ladder_even_when_routes_is_baseline_only():
+    # `fix-bug.review` only ever *dispatches* at baseline (`routes: ["review"]`)
+    # -- that stays true, since `routes` is what the boundary offers today.
+    # But its ladder can escalate to `deep-review`, and the workers map must
+    # already resolve that rung so an in-flight escalation is never left
+    # without a worker to hand off to.
+    payload = _payload()
+    boundary = _route_boundary(payload, "fix-bug.review")
+    assert boundary["routes"] == ["review"]
+    assert boundary["workers"] == {
+        "review": "review-worker",
+        "deep-review": "deep-review-worker",
+    }
+
+
+def test_manifest_rejects_a_baseline_only_boundary_missing_its_escalation_worker():
+    # Reproduces the pre-fix shape: `routes: ["review"]` with a `workers` map
+    # that only covers `review`, leaving the ladder's `deep-review` rung with
+    # no worker to resolve to. This must fail even though `workers` matches
+    # `routes` exactly -- `routes` is baseline dispatch, not the full ladder.
+    payload = copy.deepcopy(_payload())
+    boundary = _route_boundary(payload, "fix-bug.review")
+    del boundary["workers"]["deep-review"]
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any(
+        "invalid dispatch boundary workers map: fix-bug.review" in p for p in problems
+    )
+
+
+def test_manifest_does_not_require_a_review_entry_on_a_deep_review_only_boundary():
+    # Escalation only climbs the ladder, never descends: a boundary anchored
+    # at the top rung (`routes: ["deep-review"]`) never dispatches at
+    # baseline `review`, so its workers map correctly has no `review` entry.
+    payload = _payload()
+    boundary = _route_boundary(payload, "review.delta-review")
+    assert boundary["routes"] == ["deep-review"]
+    assert boundary["workers"] == {"deep-review": "deep-review-worker"}
+    assert _validate_payload(REPO_ROOT, payload) == []
+
+
 def test_manifest_rejects_a_workers_map_naming_an_unknown_worker_id():
     payload = copy.deepcopy(_payload())
     boundary = _route_boundary(payload, "fix-bug.implement")
@@ -351,19 +393,26 @@ def test_every_manifest_boundary_id_is_pinned_in_boundary_invariants():
     assert missing == []
 
 
-def test_gate_block_pattern_matches_a_well_formed_gate_block():
-    from aitk.routing_policy import GATE_BLOCK_PATTERN
+def test_plan_verdict_pattern_matches_each_of_the_three_verdicts():
+    from aitk.routing_policy import PLAN_VERDICT_PATTERN
 
-    assert GATE_BLOCK_PATTERN.search("## Gate\nState: PASS\nReason: looks good\n")
-    assert GATE_BLOCK_PATTERN.search("## Gate\nState: RETRY\n")
+    assert PLAN_VERDICT_PATTERN.search("APPROVE")
+    assert PLAN_VERDICT_PATTERN.search("CHANGES REQUIRED\nsome prose after\n")
+    assert PLAN_VERDICT_PATTERN.search("## Test Plan Review\nVerdict: REPLAN\n")
+    assert PLAN_VERDICT_PATTERN.search("**REPLAN**\n")
+    assert PLAN_VERDICT_PATTERN.search("**Verdict:** APPROVE\n")
+    assert PLAN_VERDICT_PATTERN.search(
+        "REPLAN -- the invalidated assumption is that the API is idempotent\n"
+    )
 
 
-def test_gate_block_pattern_rejects_missing_block_or_unknown_state():
-    from aitk.routing_policy import GATE_BLOCK_PATTERN
+def test_plan_verdict_pattern_rejects_missing_or_unknown_verdict():
+    from aitk.routing_policy import PLAN_VERDICT_PATTERN
 
-    assert not GATE_BLOCK_PATTERN.search("Looks fine, ship it.")
-    assert not GATE_BLOCK_PATTERN.search("## Gate\nState: MAYBE\n")
-    assert not GATE_BLOCK_PATTERN.search("Score: 8/10\n")
+    assert not PLAN_VERDICT_PATTERN.search("Looks fine, ship it.")
+    assert not PLAN_VERDICT_PATTERN.search("## Gate\nState: PASS\n")
+    assert not PLAN_VERDICT_PATTERN.search("no CHANGES REQUIRED here")
+    assert not PLAN_VERDICT_PATTERN.search("Score: 8/10\n")
 
 
 def _resolved_route(**overrides: object):
@@ -387,19 +436,19 @@ def _resolved_route(**overrides: object):
     return ResolvedRoute(**fields)
 
 
-def test_domain_problem_accepts_a_plan_result_carrying_a_gate_block():
+def test_domain_problem_accepts_a_plan_result_carrying_a_bare_verdict():
     from aitk.routing_transport import _domain_problem
 
     route = _resolved_route()
     result = {
         "status": "completed",
-        "summary": "## Gate\nState: PASS\nReason: plan is sound\n",
+        "summary": "APPROVE",
         "findings": [],
     }
     assert _domain_problem(route, result) is None
 
 
-def test_domain_problem_rejects_a_plan_result_missing_a_gate_block():
+def test_domain_problem_rejects_a_plan_result_missing_a_verdict():
     from aitk.routing_transport import _domain_problem
 
     route = _resolved_route()
@@ -410,4 +459,263 @@ def test_domain_problem_rejects_a_plan_result_missing_a_gate_block():
     }
     problem = _domain_problem(route, result)
     assert problem is not None
-    assert "## Gate" in problem
+    assert "APPROVE/CHANGES REQUIRED/REPLAN" in problem
+
+
+def test_domain_problem_rejects_a_plan_result_still_carrying_a_gate_block():
+    from aitk.routing_transport import _domain_problem
+
+    route = _resolved_route()
+    result = {
+        "status": "completed",
+        "summary": "## Gate\nState: PASS\nReason: plan is sound\n",
+        "findings": [],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+
+
+def test_domain_problem_rejects_a_plan_result_with_two_contradictory_verdicts():
+    from aitk.routing_transport import _domain_problem
+
+    route = _resolved_route()
+    result = {
+        "status": "completed",
+        "summary": "APPROVE\nREPLAN -- actually the premise is invalid\n",
+        "findings": [],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+    assert "contradictory" in problem
+
+
+def test_domain_problem_rejects_a_plan_result_pairing_a_verdict_with_a_gate_block():
+    from aitk.routing_transport import _domain_problem
+
+    route = _resolved_route()
+    result = {
+        "status": "completed",
+        "summary": "APPROVE\n## Gate\nState: BLOCKED\n",
+        "findings": [],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+
+
+def _real_code_route(route_name: str, boundary: str):
+    # Resolve the *actual* manifest boundary rather than a synthetic
+    # ResolvedRoute -- `_resolved_route()`'s default fixture names
+    # `review.sol-review` as its `boundary` but overrides `lens_domain` to
+    # `plan`, which is not what that boundary's real manifest entry
+    # declares (`code`), so it never exercised the code-severity vocabulary
+    # (`CODE_SEVERITIES`/`DOMAIN_FINDING_PATTERNS["code"]`) at all. These
+    # tests resolve `review.sol-review`/`review.delta-review` for real,
+    # through the same resolver a live dispatch uses, so `lens_domain` here
+    # is provably what the manifest pins rather than an unrelated override.
+    from aitk.routing_resolver import resolve_route
+
+    route = resolve_route(REPO_ROOT, route_name, "codex", boundary=boundary)
+    assert route.lens_domain == "code"
+    return route
+
+
+def test_domain_problem_accepts_valid_code_severity_tags_on_the_real_sol_review_boundary():
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_code_route("review", "review.sol-review")
+    result = {
+        "status": "completed",
+        "summary": "one major, one minor, one nitpick",
+        "findings": [
+            "[major] unchecked return value drops a write error",
+            "[minor] duplicated null check",
+            "[nitpick] inconsistent naming",
+        ],
+    }
+    assert _domain_problem(route, result) is None
+
+
+def test_domain_problem_rejects_untagged_findings_on_the_real_sol_review_boundary():
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_code_route("review", "review.sol-review")
+    result = {
+        "status": "completed",
+        "summary": "looks fine",
+        "findings": ["This drops a write error on failure."],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+    assert "review.sol-review" in problem
+    assert "[major]/[minor]/[nitpick]" in problem
+
+
+def test_domain_problem_rejects_plan_style_tags_on_the_real_sol_review_boundary():
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_code_route("review", "review.sol-review")
+    result = {
+        "status": "completed",
+        "summary": "looks fine",
+        # A plan-domain tag, not a code-domain one -- the code lane's
+        # vocabulary is `[major]`/`[minor]`/`[nitpick]`, never `[High]`.
+        "findings": ["[High] this drops a write error on failure"],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+    assert "review.sol-review" in problem
+
+
+def test_domain_problem_accepts_valid_code_severity_tags_on_the_real_delta_review_boundary():
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_code_route("deep-review", "review.delta-review")
+    result = {
+        "status": "completed",
+        "summary": "confirmed one finding on re-review",
+        "findings": ["[major] confirmed: unchecked return value drops a write error"],
+    }
+    assert _domain_problem(route, result) is None
+
+
+def test_domain_problem_rejects_untagged_findings_on_the_real_delta_review_boundary():
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_code_route("deep-review", "review.delta-review")
+    result = {
+        "status": "completed",
+        "summary": "confirmed",
+        "findings": ["Confirmed: this drops a write error on failure."],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+    assert "review.delta-review" in problem
+
+
+def test_domain_problem_rejects_plan_style_tags_on_the_real_delta_review_boundary():
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_code_route("deep-review", "review.delta-review")
+    result = {
+        "status": "completed",
+        "summary": "confirmed",
+        # A plan-domain tag, not a code-domain one -- delta-review is the
+        # code ladder's escalation rung and shares sol-review's vocabulary
+        # (`[major]`/`[minor]`/`[nitpick]`), never `[High]`/`[Medium]`/`[Low]`.
+        "findings": ["[High] confirmed: this drops a write error on failure"],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+    assert "review.delta-review" in problem
+
+
+def _real_plan_route(route_name: str, boundary: str):
+    # Resolve the actual manifest boundaries the review finding named --
+    # `workflows.review-plan-fresh` and `workflows.review-plan-selected` --
+    # rather than the synthetic `_resolved_route()` fixture, so a regression
+    # in the manifest's own `lens_domain`/routes wiring for these two
+    # boundaries would be caught here too.
+    from aitk.routing_resolver import resolve_route
+
+    route = resolve_route(REPO_ROOT, route_name, "claude", boundary=boundary)
+    assert route.lens_domain == "plan"
+    return route
+
+
+@pytest.mark.parametrize(
+    "boundary", ["workflows.review-plan-fresh", "workflows.review-plan-selected"]
+)
+@pytest.mark.parametrize("route_name", ["review", "deep-review"])
+@pytest.mark.parametrize("verdict", ["APPROVE", "CHANGES REQUIRED", "REPLAN"])
+def test_domain_problem_accepts_all_three_verdicts_on_the_real_plan_review_boundaries(
+    boundary, route_name, verdict
+):
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_plan_route(route_name, boundary)
+    result = {"status": "completed", "summary": verdict, "findings": []}
+    assert _domain_problem(route, result) is None
+
+
+@pytest.mark.parametrize(
+    "boundary", ["workflows.review-plan-fresh", "workflows.review-plan-selected"]
+)
+@pytest.mark.parametrize("route_name", ["review", "deep-review"])
+@pytest.mark.parametrize("verdict", ["APPROVE", "CHANGES REQUIRED", "REPLAN"])
+def test_full_worker_envelope_with_each_verdict_clears_every_check_run_model_applies(
+    boundary, route_name, verdict
+):
+    # `run_model` (aitk/routing_transport.py) validates a worker's result
+    # through `_valid_worker`, then `_domain_problem`, then `_summary_problem`
+    # -- in that order -- before ever looking at `lens_domain`-specific
+    # vocabulary. A test that calls `_domain_problem` alone would pass even if
+    # `_valid_worker`'s generic envelope shape check or a `summary_form`
+    # requirement rejected the exact payload a real plan-review worker sends.
+    # Run the same three checks, in the same order, against a complete
+    # envelope to prove the finding's original repro
+    # (`{"status": "completed", "summary": "APPROVE", "findings": []}`) is
+    # actually accepted end to end, not just by one of the three checks.
+    from aitk.routing_transport import _domain_problem, _summary_problem, _valid_worker
+
+    route = _real_plan_route(route_name, boundary)
+    result = {
+        "status": "completed",
+        "summary": verdict,
+        "findings": [],
+        "verification": [],
+    }
+    assert _valid_worker(result)
+    assert _domain_problem(route, result) is None
+    assert _summary_problem(route, result) is None
+
+
+@pytest.mark.parametrize(
+    "boundary", ["workflows.review-plan-fresh", "workflows.review-plan-selected"]
+)
+def test_domain_problem_rejects_a_gate_block_summary_on_the_real_plan_review_boundaries(
+    boundary,
+):
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_plan_route("review", boundary)
+    result = {
+        "status": "completed",
+        "summary": "## Gate\nState: PASS\nReason: looks good\n",
+        "findings": [],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+    assert boundary in problem
+
+
+@pytest.mark.parametrize(
+    "boundary", ["workflows.review-plan-fresh", "workflows.review-plan-selected"]
+)
+def test_domain_problem_rejects_contradictory_verdicts_on_the_real_plan_review_boundaries(
+    boundary,
+):
+    from aitk.routing_transport import _domain_problem
+
+    route = _real_plan_route("review", boundary)
+    result = {
+        "status": "completed",
+        "summary": "APPROVE\nREPLAN -- the invalidated assumption is X\n",
+        "findings": [],
+    }
+    problem = _domain_problem(route, result)
+    assert problem is not None
+    assert boundary in problem
+
+
+def test_worker_prompt_for_a_real_plan_boundary_states_the_verdict_vocabulary_not_a_gate_block():
+    from aitk.routing_transport import worker_prompt
+
+    route = _real_plan_route("review", "workflows.review-plan-fresh")
+    prompt = worker_prompt(route, "review the plan", ())
+    assert "APPROVE" in prompt
+    assert "CHANGES REQUIRED" in prompt
+    assert "REPLAN" in prompt
+    # The prompt explicitly tells the worker never to render a `## Gate`
+    # block -- it is allowed to *name* that heading as the thing to avoid,
+    # just not to instruct the worker to produce one.
+    assert "summary must contain a `## Gate` heading" not in prompt

@@ -90,29 +90,78 @@ the implementation-feasibility lens in [`agents/codex/plan-validator.md`](../../
 [backend.md](../../review/references/backend.md), or
 [review-testplan.md](../../testing/references/review-testplan.md).
 Use `review` for bounded implementation/test lanes; architecture and
-security-sensitive lanes resolve to `deep-review`, which the manifest enforces as
-a route floor rather than leaving to the dispatcher's reading of this sentence.
+security-sensitive lanes resolve to `deep-review`. This split is caller
+policy this step enforces, not something the manifest or resolver knows
+about — the per-lens fan-out mechanism that would have carried a lens into
+routing was retired, so `workflows.review-plan-selected` accepts either
+route for any lens; nothing stops a miscoded dispatch step from sending the
+architecture lens through `review` instead, which is why this sentence, not
+a build-time check, is the actual floor.
 Each reviewer:
 - Reads only PROJECT.md plus the active plan content needed for its lens
 - Receives the exact inventoried reviewer contract closure inline from the route runner
-- Produces a `rules/gates.md` gate block (`State`/`Reason`, plus strengths,
-  issues, suggestions) — this is a **plan** fan-out, so lenses shared with
-  code review use their plan-mode output. Each reviewer's own `State` is
-  `PASS` or `RETRY` only — a fresh reviewer pass has no memory of prior
-  rounds, so it cannot itself compute a repeat count or return `ESCALATE`.
+- Returns its verdict and findings as the Evidence summary field of the
+  `rules/specialist-handoff.md` output contract, per the native worker
+  contracts (`agents/claude/plan-review-worker.md` /
+  `deep-plan-review-worker.md`) or the Codex contract
+  (`agents/codex/plan-validator.md`) — `APPROVE`, `CHANGES REQUIRED`, or
+  `REPLAN`, never a `rules/gates.md` block directly and never a numeric
+  score. A fresh reviewer pass has no memory of prior rounds, so it cannot
+  itself compute a repeat count or pick `ESCALATE`/`RETRY`; this step owns
+  translating each verdict into this workflow's own gate state.
 
-After collecting gate blocks, track a `plan-review` round count (one counter
-for the round, not per-lens) and apply `aitk.gates.decide_failure`:
-- If every reviewer's `State` is `PASS` → proceed to step 4
-- If any reviewer is `RETRY` and this is the first unresolved round →
-  `decide_failure` returns `RETRY`: revise `PLAN.md` based on their feedback,
-  or PROJECT.md only when the plan is embedded there, then re-run fresh
-  reviewers for material revisions. Reuse the same reviewer only to clarify
-  their own finding in the same pass.
+### Worker verdict → gate mapping
+
+This workflow — not the worker — owns the translation below, since the
+worker contract only renders a verdict (`agents/codex/plan-validator.md`:
+"this contract renders the verdict, the calling workflow owns the gate
+mapping"):
+
+| Verdict | Gate state | Why |
+|---|---|---|
+| `APPROVE` | `PASS` | Lens found nothing blocking. |
+| `CHANGES REQUIRED` | `RETRY` (`kind: reasoning`) | Concrete, fixable issues in the artifact as written — revise `PLAN.md` and re-run the same lens. |
+| `REPLAN` | `RETRY` (`kind: reasoning`) on the first unresolved round, `USER_DECISION` immediately (uncounted) if the invalidated assumption is itself a trade-off/scope call | The artifact's premise is wrong, not just its details — a disproven assumption, an infeasible slice baked into the shape of the plan. A wrong premise warrants reassessment, not an automatic declaration that the escalation ladder is exhausted (`rules/gates.md`'s `BLOCKED` definition reserves that state for exactly that exhaustion). `USER_DECISION` is the one exit that skips the ladder entirely, and only for a genuine user-owned trade-off — not a default alternative to `BLOCKED`. |
+
+`REPLAN`'s `RETRY` differs from `CHANGES REQUIRED`'s in what the revision
+attempt does: `CHANGES REQUIRED` patches `PLAN.md` in place and re-runs the
+same lens. `REPLAN`'s fix attempt reworks the invalidated premise or
+assumption itself — re-examine the plan's scope/approach in light of what the
+reviewer disproved (this may itself change the Moderate/Standard scope call
+from step 2) before revising `PLAN.md`. Because a premise change is material
+to every lens's assessment, not just the one that caught it, re-run fresh
+reviewer subagents for the full selected lens menu per the Command Contract's
+"fresh reviewer subagents for each review pass after material plan
+revisions" — not only the lens that returned `REPLAN`. Patching surface
+details without addressing the invalidated premise is not a valid `RETRY`
+attempt for a `REPLAN`.
+
+After translating every reviewer's verdict, track a `plan-review` round count
+(one counter for the round, not per-lens) and apply
+`aitk.gates.decide_failure` to the translated states. `REPLAN` and
+`CHANGES REQUIRED` share this same counter — both are `reasoning`-kind
+failures of the same checkpoint, so two consecutive rounds of either (in any
+combination) escalate together, not as separate ladders:
+- If any reviewer's `REPLAN` translates to `USER_DECISION` (a real
+  trade-off/scope call — workers never return `USER_DECISION` as a verdict
+  themselves, only this workflow's translation reaches that state) → stop
+  this round and surface it to the user regardless of the other reviewers'
+  verdicts. This is not a failure and does not advance the round count.
+- If every reviewer's translated state is `PASS` → proceed to step 4
+- If any reviewer is `RETRY` (from `CHANGES REQUIRED` or a first-unresolved-
+  round `REPLAN`) → `decide_failure` returns `RETRY`: for `CHANGES REQUIRED`,
+  revise `PLAN.md` based on their feedback and re-run the same lens; for
+  `REPLAN`, rework the invalidated premise per the note above, then revise
+  `PLAN.md` (or PROJECT.md only when the plan is embedded there) and re-run
+  fresh reviewers for the full selected lens menu, since a premise change is
+  material to every lens, not just the one that caught it. Reuse the same
+  reviewer only to clarify their own finding in the same pass.
 - If any reviewer is still not `PASS` on a second consecutive round →
   `decide_failure` returns `ESCALATE`: escalate one cost dimension per
   `rules/gates.md`'s autonomous ladder (`rules/model-assignment.md`), then
-  make one more revise-and-rereview attempt at the new tier
+  make one more revise-and-rereview attempt at the new tier — the same
+  premise-rework attempt described above if the still-unresolved reviewer's
+  verdict is `REPLAN`
 - If that attempt still leaves a reviewer not `PASS` and the ladder is
   exhausted → `BLOCKED` (unresolved, no ambiguity to ask about) or
   `USER_DECISION` (a real trade-off or scope question) — stop and surface it

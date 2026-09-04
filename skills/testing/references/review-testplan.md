@@ -15,9 +15,9 @@ different output. The route runner names which in its `lens_domain` header: `pla
 means the written plan, `code` means the diff. Read that field and use the matching
 Output block below; the code-review grading contract arrives from the code fan-out
 boundary itself, which is what knows its own domain. Neither vocabulary is a
-default — guessing produced a lane that returned a plan-review gate block into a
-code review that merges severity tags, where it is either dropped or silently
-reweighted.
+default — guessing produced a lane that mixed plan-severity tags into a code
+review that merges its own severity tags, where they are either dropped or
+silently reweighted.
 
 If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
 
@@ -46,11 +46,6 @@ When `lens_domain=plan` (reviewing the written plan):
 
 ```markdown
 ## Test Plan Review
-
-## Gate
-State: PASS / RETRY
-Reason: [one line]
-
 ### Strengths
 - [What the plan does well for testing]
 ### Issues
@@ -61,13 +56,14 @@ Reason: [one line]
 - [What the plan should address from a testing perspective]
 ```
 
-`State` is this pass's own verdict — `PASS` when the testing strategy is
-adequate, `RETRY` when it needs revision. This lens has no memory of prior
-rounds, so it cannot compute a repeat count or emit `ESCALATE` itself: the
+This body carries no verdict of its own — `agents/codex/plan-validator.md`'s
+contract (inlined alongside this file at dispatch time) is what renders the
+lens's `APPROVE`/`CHANGES REQUIRED`/`REPLAN` verdict, never a `rules/gates.md`
+`## Gate` block or a numeric score. This lens has no memory of prior rounds,
+so it cannot compute a repeat count or pick `ESCALATE`/`RETRY` itself: the
 caller (`skills/workflows/references/review-plan.md`'s Review Iterations
-step) tracks how many consecutive `RETRY`s this lens has returned and, per
-`rules/gates.md`'s repeat-failure counting rule, turns a second consecutive
-one into `ESCALATE`.
+step) translates the verdict into this workflow's own gate state and tracks
+the repeat count across rounds.
 
 When `lens_domain=code` (reviewing a diff): no score, and findings carry the
 canonical severity tags from `rules/code-review.md` so they merge and dedupe

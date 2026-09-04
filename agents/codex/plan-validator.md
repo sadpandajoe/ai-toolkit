@@ -68,10 +68,24 @@ Render a verdict per lens, not a numeric score:
   a return to `decompose-work.md` for a `phase-plan`-mode one) rather than
   patching in place.
 
-`APPROVE` maps to the calling gate's `PASS`; `CHANGES REQUIRED` maps to
-`RETRY`; `REPLAN` maps to `RECLASSIFY` or `ESCALATE` per `rules/gates.md` —
-this contract renders the verdict, the calling workflow owns the gate
-mapping and `aitk gate-state set` call.
+This contract renders the verdict only; the calling workflow owns the gate
+mapping and `aitk gate-state set` call. `skills/workflows/references/
+review-plan.md`'s "Worker verdict → gate mapping" table is that workflow's
+mapping: `APPROVE` → `PASS`; `CHANGES REQUIRED` → `RETRY`; `REPLAN` → `RETRY`
+on its first occurrence (the revision attempt reworks the invalidated
+premise, not just surface detail, since this standalone workflow has no
+`decompose-work.md`/`plan-phase.md` step of its own to return to), `ESCALATE`
+on a second consecutive reasoning failure of either kind, and `BLOCKED` only
+once that ladder is exhausted — a wrong premise warrants reassessment, not an
+automatic declaration of exhaustion. `USER_DECISION` is the one exception:
+when the invalidated assumption is itself a genuine user-owned trade-off or
+scope call, the caller maps to it immediately and uncounted, skipping the
+ladder entirely rather than waiting for it to exhaust.
+A different caller may map `REPLAN` differently — `create-feature` step 4,
+which does have a decomposition/phase-plan step to return to, can instead
+route it back there directly — but every caller owns and documents its own
+mapping; none of the three verdicts has a single fixed gate state across
+callers.
 
 ## Constraints
 

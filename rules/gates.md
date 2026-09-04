@@ -16,10 +16,16 @@ six states rather than reimplementing gate logic.
 `rules/review-gate.md`, `rules/stop-rules.md`, and `rules/scoring.md` are
 deleted (Wave F): every former consumer — the plan-domain reviewers
 (`skills/review/references/{architecture,frontend,backend}.md`,
+`skills/testing/references/review-testplan.md`,
 `agents/codex/plan-validator.md`'s implementation-feasibility lens),
 `skills/planning`'s plan-iteration and finalize helpers, and
-`skills/testing`'s test-review helpers — now emits this contract's `## Gate`
-block directly.
+`skills/testing`'s test-review helpers — now renders its own domain verdict
+at its own checkpoint (a plan-domain lens's `APPROVE`/`CHANGES REQUIRED`/
+`REPLAN`, `agents/codex/plan-validator.md`; `finalize.md`'s `Go`/`No-Go`)
+rather than this contract's vocabulary directly. A plan-domain lens itself
+never emits a `## Gate` block; the calling workflow (e.g.
+`skills/workflows/references/review-plan.md`) is what translates that
+domain verdict into this contract's states and emits the block.
 
 ## Canonical Vocabulary
 

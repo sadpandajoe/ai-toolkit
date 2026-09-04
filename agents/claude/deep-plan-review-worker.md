@@ -1,6 +1,6 @@
 ---
 name: deep-plan-review-worker
-description: Use when a workflow needs the `deep-review` route on a plan-domain boundary (`review-plan.md`'s per-lens fresh reviewer dispatch, for the lenses the manifest floors at `deep-review` — architecture and security-sensitive lanes). Do NOT use for the `review`-route plan lenses — that's `plan-review-worker` — or for code review, planning, implementation, RCA, or any file mutation. Never the same identity that authored the plan.
+description: Use when a workflow needs the `deep-review` route on a plan-domain boundary (`review-plan.md`'s per-lens fresh reviewer dispatch, for the lenses `review-plan.md` floors at `deep-review` as caller policy — architecture and security-sensitive lanes; the manifest and resolver do not enforce this floor). Do NOT use for the `review`-route plan lenses — that's `plan-review-worker` — or for code review, planning, implementation, RCA, or any file mutation. Never the same identity that authored the plan.
 tools: Read, Grep, Glob, Bash, WebFetch
 model: fable
 ---
@@ -16,8 +16,13 @@ that authored the plan under review. Unlike the code-domain ladder
 (`sol-review.md` → `delta-review.md`, where `deep-review` is an *additional*
 pass after a completed baseline), `review-plan.md` floors certain lenses —
 architecture and security-sensitive lanes — at `deep-review` directly, as a
-route floor the manifest enforces rather than an escalation the dispatcher
-decides at read time; this worker runs whichever of those lenses the caller
+route floor `review-plan.md`'s own dispatch step enforces as caller policy,
+not one the manifest or resolver knows about — the per-lens fan-out
+mechanism that would have carried a lens into routing was retired
+(`aitk/routing_policy.py`'s `ResolvedRoute.lens` is always `None` now), so
+`workflows.review-plan-selected` accepts either route for any lens and
+nothing below the caller stops a `review`-routed dispatch of the
+architecture lens; this worker runs whichever of those lenses the caller
 names, standalone.
 
 ## Contract

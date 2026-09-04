@@ -14,8 +14,6 @@ import json
 from pathlib import Path
 import re
 
-from aitk.gates import GATE_STATES
-
 
 PROVIDERS = {"codex", "claude"}
 
@@ -124,18 +122,56 @@ DOMAIN_FINDING_PATTERNS = {
 }
 
 
-# The six-state gate block `rules/gates.md` defines (state vocabulary owned by
-# `aitk.gates.GATE_STATES`), anchored so a `## Gate` heading must be followed by
-# a `State:` line naming one of the six states. A heading marker and
-# surrounding emphasis around `State:` are formatting, not content, for the
-# same reason `_severity_pattern` allows them around a severity tag.
-GATE_BLOCK_PATTERN = re.compile(
-    r"^[ \t]*#{1,6}[ \t]+Gate[ \t]*$"
-    r"(?:\r?\n[ \t]*$)*"
-    r"\r?\n[ \t]*[*_]{0,2}State:[*_]{0,2}[ \t]*"
-    r"(?:" + "|".join(sorted(GATE_STATES)) + r")[ \t]*$",
-    re.MULTILINE,
+# The three-state verdict a plan-domain lens renders (`agents/codex/
+# plan-validator.md`, `agents/claude/{plan-review-worker,
+# deep-plan-review-worker}.md`): `APPROVE` / `CHANGES REQUIRED` / `REPLAN`.
+# A plan lens never emits `rules/gates.md`'s `## Gate` block itself -- that
+# contract is explicit that "this contract renders the verdict only; the
+# calling workflow owns the gate mapping" -- so the transport checks for this
+# vocabulary, not a gate block, on a plan-domain summary. `rules/
+# specialist-handoff.md`'s Output Contract does not fix a literal field label
+# for this -- the Evidence summary is free prose that "opens with the
+# verdict" -- so the pattern must match a bare `APPROVE` line (the minimal
+# valid case a fresh reviewer with no findings returns), an optionally
+# emphasised `**Verdict:** REPLAN` label, and a verdict followed by trailing
+# prose on the same line (`REPLAN -- the invalidated assumption is X`, the
+# natural shape of a `REPLAN`/`CHANGES REQUIRED` Evidence summary that also
+# states blocking issues or the invalidated assumption per that contract's
+# Output section) -- not just a line containing nothing else, and with the
+# same leading-marker/emphasis leniency `_severity_pattern` allows.
+PLAN_VERDICTS = ("APPROVE", "CHANGES REQUIRED", "REPLAN")
+
+
+_PLAN_VERDICT_LINE = (
+    r"^[ \t]*(?:[-*+][ \t]+|#{1,6}[ \t]+)?"
+    r"(?:[*_]{0,2}Verdict:[*_]{0,2}[ \t]*)?"
+    r"[*_]{0,2}(%s)[*_]{0,2}(?=[ \t:—-]|$)"
 )
+
+
+PLAN_VERDICT_PATTERN = re.compile(
+    _PLAN_VERDICT_LINE % ("?:" + "|".join(PLAN_VERDICTS)), re.MULTILINE
+)
+
+
+# Same anchoring as `PLAN_VERDICT_PATTERN`, but with the verdict word captured
+# rather than merely detected -- `_domain_problem` uses this to collect every
+# verdict a summary opens a line with, not just whether one exists. A summary
+# that renders `APPROVE` on one line and `REPLAN` on another satisfies
+# `PLAN_VERDICT_PATTERN.search()` (at least one verdict is present) but is
+# self-contradictory: the contract renders exactly one verdict per lens.
+PLAN_VERDICT_CAPTURE_PATTERN = re.compile(
+    _PLAN_VERDICT_LINE % "|".join(PLAN_VERDICTS), re.MULTILINE
+)
+
+
+# `rules/gates.md`'s Block Format: `## Gate` opens the block a *calling
+# workflow* renders after translating a verdict -- "this contract renders the
+# verdict only; the calling workflow owns the gate mapping" (`agents/codex/
+# plan-validator.md`). A plan lens that renders this heading itself (even
+# alongside a valid verdict line, e.g. `APPROVE\n## Gate\nState: BLOCKED`) has
+# stepped past its own contract and pre-empted the caller's gate decision.
+PLAN_GATE_BLOCK_PATTERN = re.compile(r"^[ \t]*#{1,6}[ \t]*Gate\b", re.MULTILINE)
 
 
 # The named summary shapes a boundary may require of its worker. A domain fixes
@@ -289,8 +325,10 @@ class ResolvedRoute:
     # Which artefact this dispatch grades: `code` for shipped code, `plan` for a
     # written plan, `None` for a lane that grades neither (e.g. implementation).
     # A code lane and a plan lane want different output vocabularies -- severity
-    # tags for code, `rules/gates.md`'s block for plan -- so the mode travels
-    # here and `_domain_problem` keys its result check on it.
+    # tags for code, the `APPROVE`/`CHANGES REQUIRED`/`REPLAN` verdict vocabulary
+    # for plan (never `rules/gates.md`'s block -- the calling workflow renders
+    # that) -- so the mode travels here and `_domain_problem` keys its result
+    # check on it.
     lens_domain: str | None = None
     # Which named summary grammar (`SUMMARY_FORMS`) this lane's result is checked
     # against, or `None` for the lanes whose summary is free prose.
@@ -380,8 +418,10 @@ def _lens_domain(boundary: dict[str, object]) -> str | None:
 
     Reference docs shared by both domains (architecture review, test review)
     read it to pick their output vocabulary: `code` means the severity tags in
-    `rules/code-review.md`, `plan` means `rules/gates.md`'s block. A lane that
-    grades neither (implementation, operations) leaves this `None`.
+    `rules/code-review.md`, `plan` means the `APPROVE`/`CHANGES REQUIRED`/
+    `REPLAN` verdict vocabulary (never `rules/gates.md`'s block, which only the
+    calling workflow renders). A lane that grades neither (implementation,
+    operations) leaves this `None`.
     """
     domain = boundary.get("lens_domain")
     return domain if isinstance(domain, str) and domain in LENS_DOMAINS else None

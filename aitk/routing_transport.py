@@ -23,8 +23,11 @@ from aitk.routing_policy import (
     DOMAIN_FINDING_PATTERNS,
     DOMAIN_SEVERITIES,
     FAILED_EXIT,
-    GATE_BLOCK_PATTERN,
     ModelRouteError,
+    PLAN_GATE_BLOCK_PATTERN,
+    PLAN_VERDICTS,
+    PLAN_VERDICT_CAPTURE_PATTERN,
+    PLAN_VERDICT_PATTERN,
     PREFLIGHT_TIMEOUT,
     PROMPT_LIMIT,
     ResolvedRoute,
@@ -98,18 +101,22 @@ def worker_prompt(
     restrictions = json.dumps(route.restrictions, separators=(",", ":"))
     # The vocabulary the result is checked against, stated to the worker that has
     # to produce it. `_domain_problem` and `_summary_problem` reject a finding
-    # that does not open with its domain's tag, a plan summary with no `## Gate`
-    # block, and a summary missing its declared form -- and a rule enforced
-    # without being stated is a trap rather than a contract.
+    # that does not open with its domain's tag, a plan summary with no
+    # APPROVE/CHANGES REQUIRED/REPLAN verdict, and a summary missing its
+    # declared form -- and a rule enforced without being stated is a trap
+    # rather than a contract.
     grading = "-"
     if route.lens_domain is not None:
         tags = "|".join(DOMAIN_SEVERITIES[route.lens_domain])
         grading = f"every finding must begin with one of {tags}"
         if route.lens_domain == "plan":
+            verdicts = "|".join(PLAN_VERDICTS)
             grading += (
-                "; summary must contain a `## Gate` heading followed by a "
-                "`State:` line naming one of the six gate states in "
-                "rules/gates.md"
+                f"; summary must open with the lens verdict ({verdicts}), per "
+                "rules/specialist-handoff.md's Evidence summary field, then "
+                "explain it -- never a `## Gate` block or a numeric score, "
+                "since the calling workflow, not this lens, owns the gate "
+                "mapping"
             )
     if route.summary_form is not None:
         lines = "; ".join(label for label, _ in SUMMARY_FORMS[route.summary_form])
@@ -165,21 +172,32 @@ def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | No
 
     `_valid_worker` only proves the envelope is well-formed: every string passes.
     But the domain decides how the caller *consumes* the result -- code findings
-    dedupe and escalate by `[major]`/`[minor]`/`[nitpick]`, plan findings gate
-    on `rules/gates.md`'s six-state `## Gate` block -- so an untagged or
-    ungated result is silently dropped by the aggregator rather than rejected
-    here. Enforcing the vocabulary at the boundary is what makes `lens_domain`
-    more than prompt prose.
+    dedupe and escalate by `[major]`/`[minor]`/`[nitpick]`, plan findings carry
+    an `APPROVE`/`CHANGES REQUIRED`/`REPLAN` verdict that the calling workflow
+    (never the lens itself) translates into a `rules/gates.md` state -- so an
+    untagged or verdict-less result is silently dropped by the aggregator
+    rather than rejected here. Enforcing the vocabulary at the boundary is what
+    makes `lens_domain` more than prompt prose.
 
-    The tag must open the finding and the gate block must be well-formed. Both
-    were substring searches, which the aggregator's own parse is not: a plan
+    The tag must open the finding, and the verdict must open its line (trailing
+    prose explaining the verdict, per `rules/specialist-handoff.md`'s Evidence
+    summary field, is fine -- a verdict buried mid-line is not). Both were
+    substring searches, which the aggregator's own parse is not: a plan
     finding that named `[major]` somewhere in its prose satisfied a
-    code-domain check, and a summary that mentioned any state name in passing
-    satisfied the plan gate check.
+    code-domain check, and a summary that mentioned a verdict word in passing
+    prose (e.g. "no changes required here") satisfied the plan verdict check.
 
     Only `completed` results are graded. A `blocked` or `failed` worker is
     reporting why it could not review, and demanding severity tags on that
     explanation would turn a legible failure into an unparseable one.
+
+    A plan-domain summary is also checked for two ways it can carry a verdict
+    that exists yet is not usable: naming more than one distinct verdict
+    (`APPROVE` on one line, `REPLAN` on another -- `PLAN_VERDICT_PATTERN.
+    search()` alone is satisfied by the first match and never notices the
+    second, contradictory one), or rendering `rules/gates.md`'s `## Gate`
+    block itself, which is the calling workflow's translation to make, not
+    the lens's.
     """
     if route.lens_domain is None or result.get("status") != "completed":
         return None
@@ -192,13 +210,26 @@ def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | No
             f"{len(untagged)} finding(s) that do not open with a "
             f"{'/'.join(tags)} tag; the first is: {str(untagged[0])[:120]}"
         )
-    if route.lens_domain == "plan" and not GATE_BLOCK_PATTERN.search(
-        str(result["summary"])
-    ):
-        return (
-            f"plan-domain boundary {route.boundary} returned no `## Gate` block "
-            "with a valid State: line in its summary; plan review gates on that block"
-        )
+    if route.lens_domain == "plan":
+        summary = str(result["summary"])
+        if not PLAN_VERDICT_PATTERN.search(summary):
+            verdicts = "/".join(PLAN_VERDICTS)
+            return (
+                f"plan-domain boundary {route.boundary} returned no {verdicts} "
+                "verdict in its summary; the calling workflow gates on that verdict"
+            )
+        distinct = set(PLAN_VERDICT_CAPTURE_PATTERN.findall(summary))
+        if len(distinct) > 1:
+            return (
+                f"plan-domain boundary {route.boundary} returned contradictory "
+                f"verdicts in its summary ({'/'.join(sorted(distinct))}); a lens "
+                "renders exactly one verdict"
+            )
+        if PLAN_GATE_BLOCK_PATTERN.search(summary):
+            return (
+                f"plan-domain boundary {route.boundary} rendered a `## Gate` "
+                "block itself; the calling workflow owns the gate mapping"
+            )
     return None
 
 
