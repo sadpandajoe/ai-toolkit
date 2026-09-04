@@ -154,7 +154,8 @@ BOUNDARY_INVARIANTS = {
     "planning.plan-phase": ("planning",),
     "planning.pm-brief-review": ("review", "deep-review"),
     "planning.technical-plan-review": ("review", "deep-review"),
-    "qa.fresh-validation": ("review", "operations"),
+    "qa.fresh-validation-judgment": ("review", "deep-review"),
+    "qa.fresh-validation-evidence": ("operations",),
     "refactor.invariants": ("rca", "deep-rca"),
     "refactor.implement": ("implementation",),
     "refactor.review": ("review",),
@@ -190,6 +191,27 @@ BOUNDARY_INVARIANTS = {
     "workflows.review-plan-fresh": ("review", "deep-review"),
     "workflows.review-plan-selected": ("review", "deep-review"),
     "workflows.review-pr-fresh": ("review", "deep-review"),
+}
+
+
+# Each ladder is the escalation chain a boundary's routes must stay within: a
+# `review` lane may also offer `deep-review` (the same lane run deeper), but
+# never `rca` or `operations` -- those are different failure-recovery chains
+# entirely. `BOUNDARY_INVARIANTS` already pins each boundary's exact allowed
+# subset, but it is a per-boundary allowlist, not a shape constraint, so nothing
+# else stops a *new* invariant entry from mixing two chains (`("review",
+# "operations")`, the shape `qa.fresh-validation` had before it was split into
+# `qa.fresh-validation-judgment`/`-evidence`). This is the shape check that
+# catches that class of mistake independent of what any one boundary happens to
+# be pinned to.
+ROUTE_LADDERS: dict[str, tuple[str, ...]] = {
+    "review": ("review", "deep-review"),
+    "deep-review": ("review", "deep-review"),
+    "rca": ("rca", "deep-rca"),
+    "deep-rca": ("rca", "deep-rca"),
+    "implementation": ("implementation",),
+    "operations": ("operations",),
+    "planning": ("planning",),
 }
 
 
@@ -236,11 +258,24 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
     provider_models: dict[str, dict[str, str]] = {}
     expected_families = {"codex": {"sol"}, "claude": {"opus", "fable", "sonnet"}}
     selectors: set[str] = set()
+    claude_native_workers_raw: object = None
     for provider in sorted(PROVIDERS):
         value = providers.get(provider) if isinstance(providers, dict) else None
-        if not isinstance(value, dict) or set(value) != {"minimum_cli", "models"}:
+        # `native_workers` is a claude-only extension: it names the templates
+        # `routed_subagent`'s native dispatch resolves `(worker_id, effort)`
+        # against, and only claude has native worker files under
+        # `agents/claude/` today.
+        catalog_keys = {"minimum_cli", "models"}
+        allowed_keys = catalog_keys | {"native_workers"} if provider == "claude" else catalog_keys
+        if (
+            not isinstance(value, dict)
+            or not catalog_keys <= set(value)
+            or not set(value) <= allowed_keys
+        ):
             problems.append(f"{provider}: invalid model catalog")
             continue
+        if provider == "claude":
+            claude_native_workers_raw = value.get("native_workers")
         if not isinstance(value.get("minimum_cli"), str) or not re.fullmatch(
             r"[0-9]+\.[0-9]+\.[0-9]+", str(value.get("minimum_cli"))
         ):
@@ -426,6 +461,36 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         problems.append("model route vocabulary or invariant mapping mismatch")
 
     declared_routes = seen_routes
+
+    # `native_workers` names every `(worker_id, effort)` a boundary's `workers`
+    # map can resolve to -- one row per Claude-native worker file. Validated
+    # here, after `declared_routes` exists, since a row's `route` must name a
+    # real route.
+    native_workers: dict[str, dict[str, object]] = {}
+    if not isinstance(claude_native_workers_raw, dict) or not claude_native_workers_raw:
+        problems.append("claude: invalid native_workers table")
+    else:
+        for worker_id, row in claude_native_workers_raw.items():
+            if (
+                not isinstance(worker_id, str)
+                or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", worker_id) is None
+                or not isinstance(row, dict)
+                or set(row) != {"template", "route", "lens_domain"}
+            ):
+                problems.append(f"claude: invalid native worker entry: {worker_id}")
+                continue
+            template = row.get("template")
+            route = row.get("route")
+            lens_domain = row.get("lens_domain")
+            if (
+                _safe_path(root, template) is None
+                or route not in declared_routes
+                or (lens_domain is not None and lens_domain not in LENS_DOMAINS)
+            ):
+                problems.append(f"claude: invalid native worker entry: {worker_id}")
+                continue
+            native_workers[worker_id] = row
+
     boundaries = payload.get("dispatch_boundaries")
     if not isinstance(boundaries, list):
         problems.append("dispatch_boundaries must be a list")
@@ -436,10 +501,11 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         exemptions_value = []
     seen_ids: set[str] = set()
     seed_only_reported: set[str] = set()
+    lens_domain_required_reported: set[str] = set()
     for boundary in boundaries:
         if (
             not isinstance(boundary, dict)
-            or not {"id", "path", "count", "routes"} <= set(boundary)
+            or not {"id", "path", "count", "routes", "workers"} <= set(boundary)
             or not set(boundary)
             <= {
                 "id",
@@ -450,6 +516,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                 "lens_domain",
                 "contracts",
                 "summary_form",
+                "workers",
             }
             or type(boundary.get("unscored", False)) is not bool
             # A present `lens_domain` must name a known domain so a shared lens
@@ -485,6 +552,26 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         if not _valid_boundary_contracts(root, boundary):
             problems.append(f"invalid dispatch boundary contracts: {identifier}")
             continue
+        # `workers` resolves every route this boundary offers to a
+        # `(worker_id, effort)` identity -- one entry per route, not per
+        # ladder, since a boundary can offer a subset of its route's ladder.
+        # The worker row itself must agree with the map: filed under the same
+        # route it is mapped from, and grading the same artefact the boundary
+        # declares.
+        workers_value = boundary.get("workers")
+        if not isinstance(workers_value, dict) or set(workers_value) != set(routes_value):
+            problems.append(f"invalid dispatch boundary workers map: {identifier}")
+        else:
+            for route_name, worker_id in workers_value.items():
+                worker_row = native_workers.get(worker_id) if isinstance(worker_id, str) else None
+                if (
+                    worker_row is None
+                    or worker_row.get("route") != route_name
+                    or worker_row.get("lens_domain") != _lens_domain(boundary)
+                ):
+                    problems.append(
+                        f"dispatch boundary worker mismatch: {identifier}/{route_name}"
+                    )
         for route_name in routes_value:
             route_item = _route_map(payload).get(route_name, {})
             responsibility = str(route_item.get("responsibility"))
@@ -493,6 +580,15 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             # for `_domain_problem` to check its output against.
             if _lens_domain(boundary) is not None and responsibility != "review":
                 problems.append(f"graded lens boundary is not a review lane: {identifier}")
+            # The inverse: a review lane with no `lens_domain` has no output
+            # vocabulary declared for it to be graded against.
+            if (
+                responsibility == "review"
+                and _lens_domain(boundary) is None
+                and identifier not in lens_domain_required_reported
+            ):
+                lens_domain_required_reported.add(identifier)
+                problems.append(f"review boundary missing lens_domain: {identifier}")
             try:
                 required_contracts = _required_contract_paths(
                     root,
@@ -529,6 +625,11 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         pinned = BOUNDARY_INVARIANTS.get(identifier)
         if pinned is None or not set(routes_value) <= set(pinned):
             problems.append(f"dispatch boundary route allowlist mismatch: {identifier}")
+        # `routes_value` is non-empty and every member is a declared route by
+        # this point, so `routes_value[0]` always keys `ROUTE_LADDERS`.
+        ladder = ROUTE_LADDERS.get(routes_value[0])
+        if ladder is None or not set(routes_value) <= set(ladder):
+            problems.append(f"dispatch boundary routes span more than one ladder: {identifier}")
         seen_ids.add(identifier)
     seen_exemptions: set[tuple[str, str]] = set()
     for exemption in exemptions_value:

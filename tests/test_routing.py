@@ -160,12 +160,15 @@ def test_sol_review_boundary_is_a_single_menu_less_reviewer_dispatch():
     # independent pass -- it must not carry a lens menu (that would make it
     # a fan-out lane again) and must route only through the review tier, not
     # deep-review, which stays the triggered-risk escalation's job.
+    # `lens_domain` is a separate concern from the retired `lenses` fan-out
+    # key: it tags which artefact this lane grades (code, here) and is now
+    # required on every review-routed boundary, this one included.
     payload = _payload()
     boundary = _route_boundary(payload, "review.sol-review")
     assert boundary["path"] == "skills/review/references/sol-review.md"
     assert boundary["routes"] == ["review"]
     assert boundary["contracts"] == ["agents/codex/reviewer.md"]
-    assert "lens_domain" not in boundary
+    assert boundary["lens_domain"] == "code"
     assert "lenses" not in boundary
 
 
@@ -174,6 +177,9 @@ def test_delta_review_boundary_is_a_deep_review_escalation_not_a_second_baseline
     # it must route through deep-review only (never "review", which stays
     # sol-review's baseline lane) and must carry no lens menu, since it is one
     # additional pass, not a return to the ensemble's fan-out roster.
+    # `lens_domain` is a separate concern from the retired `lenses` fan-out
+    # key: it tags which artefact this lane grades (code, here) and is now
+    # required on every review-routed boundary, this one included.
     payload = _payload()
     boundary = _route_boundary(payload, "review.delta-review")
     assert boundary["path"] == "skills/review/references/delta-review.md"
@@ -182,7 +188,7 @@ def test_delta_review_boundary_is_a_deep_review_escalation_not_a_second_baseline
         "agents/codex/reviewer.md",
         "skills/review/references/adversarial.md",
     ]
-    assert "lens_domain" not in boundary
+    assert boundary["lens_domain"] == "code"
     assert "lenses" not in boundary
 
 
@@ -220,6 +226,129 @@ def test_manifest_rejects_a_boundary_with_a_lenses_key():
     boundary["lenses"] = ["architecture"]
     problems = _validate_payload(REPO_ROOT, payload)
     assert any("invalid dispatch boundary" in p for p in problems)
+
+
+def test_workers_map_resolves_expected_native_worker_ids():
+    payload = _payload()
+    assert _route_boundary(payload, "fix-bug.implement")["workers"] == {
+        "implementation": "implementation-worker"
+    }
+    assert _route_boundary(payload, "fix-bug.test-authoring")["workers"] == {
+        "implementation": "test-worker"
+    }
+    assert _route_boundary(payload, "qa.fresh-validation-judgment")["workers"] == {
+        "review": "review-worker",
+        "deep-review": "deep-review-worker",
+    }
+    assert _route_boundary(payload, "qa.fresh-validation-evidence")["workers"] == {
+        "operations": "operations-worker"
+    }
+    assert _route_boundary(payload, "workflows.review-plan-selected")["workers"] == {
+        "review": "plan-review-worker",
+        "deep-review": "deep-plan-review-worker",
+    }
+
+
+def test_manifest_rejects_a_boundary_missing_workers():
+    # `workers` is required on every boundary now -- an entry with the old,
+    # pre-J1 key set is no longer a valid shape.
+    payload = copy.deepcopy(_payload())
+    boundary = payload["dispatch_boundaries"][0]
+    del boundary["workers"]
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any("invalid dispatch boundary entry" in p for p in problems)
+
+
+def test_manifest_rejects_a_workers_map_missing_a_route():
+    payload = copy.deepcopy(_payload())
+    boundary = _route_boundary(payload, "qa.fresh-validation-judgment")
+    del boundary["workers"]["deep-review"]
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any(
+        "invalid dispatch boundary workers map: qa.fresh-validation-judgment" in p
+        for p in problems
+    )
+
+
+def test_manifest_rejects_a_workers_map_naming_an_unknown_worker_id():
+    payload = copy.deepcopy(_payload())
+    boundary = _route_boundary(payload, "fix-bug.implement")
+    boundary["workers"]["implementation"] = "nonexistent-worker"
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any(
+        "dispatch boundary worker mismatch: fix-bug.implement/implementation" in p
+        for p in problems
+    )
+
+
+def test_manifest_rejects_a_worker_row_filed_under_the_wrong_route():
+    # debug-worker's native_workers row names route "rca" -- filing it under
+    # the "deep-rca" key must fail even though both are valid routes for this
+    # boundary.
+    payload = copy.deepcopy(_payload())
+    boundary = _route_boundary(payload, "fix-bug.investigate")
+    boundary["workers"] = {"rca": "deep-rca-worker", "deep-rca": "debug-worker"}
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any(
+        "dispatch boundary worker mismatch: fix-bug.investigate" in p for p in problems
+    )
+
+
+def test_manifest_rejects_a_plan_boundary_naming_a_code_worker():
+    payload = copy.deepcopy(_payload())
+    boundary = _route_boundary(payload, "workflows.review-plan-selected")
+    boundary["workers"]["review"] = "review-worker"
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any(
+        "dispatch boundary worker mismatch: workflows.review-plan-selected/review" in p
+        for p in problems
+    )
+
+
+def test_manifest_rejects_a_review_boundary_with_no_lens_domain():
+    payload = copy.deepcopy(_payload())
+    boundary = _route_boundary(payload, "review.sol-review")
+    del boundary["lens_domain"]
+    problems = _validate_payload(REPO_ROOT, payload)
+    assert any(
+        "review boundary missing lens_domain: review.sol-review" in p for p in problems
+    )
+
+
+def test_manifest_rejects_boundary_routes_spanning_two_ladders():
+    # `BOUNDARY_INVARIANTS` pins each boundary's route ceiling, but it is an
+    # allowlist, not a shape constraint -- nothing else stops a new invariant
+    # entry from mixing two escalation chains (the shape `qa.fresh-validation`
+    # had before it was split). Patch the table with exactly that shape to
+    # prove the ladder check catches it independent of any real boundary.
+    import aitk.routing_manifest as routing_manifest
+
+    payload = copy.deepcopy(_payload())
+    boundary = _route_boundary(payload, "qa.fresh-validation-evidence")
+    boundary["routes"] = ["operations", "review"]
+    boundary["workers"] = {"operations": "operations-worker", "review": "review-worker"}
+    original = dict(routing_manifest.BOUNDARY_INVARIANTS)
+    routing_manifest.BOUNDARY_INVARIANTS["qa.fresh-validation-evidence"] = (
+        "operations",
+        "review",
+    )
+    try:
+        problems = _validate_payload(REPO_ROOT, payload)
+    finally:
+        routing_manifest.BOUNDARY_INVARIANTS.clear()
+        routing_manifest.BOUNDARY_INVARIANTS.update(original)
+    assert any(
+        "dispatch boundary routes span more than one ladder: qa.fresh-validation-evidence" in p
+        for p in problems
+    )
+
+
+def test_every_manifest_boundary_id_is_pinned_in_boundary_invariants():
+    from aitk.routing_manifest import BOUNDARY_INVARIANTS
+
+    payload = _payload()
+    missing = [b["id"] for b in _boundaries(payload) if b["id"] not in BOUNDARY_INVARIANTS]
+    assert missing == []
 
 
 def test_gate_block_pattern_matches_a_well_formed_gate_block():
