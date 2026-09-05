@@ -25,12 +25,11 @@ create-tests --function <name>       # First meaningful tests for a specific fun
 ## Command Contract
 
 - Only the main thread writes PROJECT.md. Subagents return compact handoffs.
-- For STANDARD or expensive runs (large untested surface, multi-subsystem scope, repeated `review-code` rounds), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then checkpoint + context_reset before the next expensive phase.
+- For STANDARD or expensive runs (large untested surface, multi-subsystem scope), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then hand the next expensive phase to a fresh worker.
 - Required PROJECT.md updates on STANDARD/expensive runs:
   - After step 2 (initial tests written): `## Tests Created` (files added, behaviors covered, test layer chosen).
-  - After step 3 (verify + review): `## Test Review Status` (verification strength, review rounds, Review Gate status).
-- These writes are **hard gates before any checkpoint + context_reset** on STANDARD/expensive runs.
-- For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` after classification.
+  - After step 3 (verify + review): `## Test Review Status` (verification result, review gate status).
+- These writes are **hard gates before any checkpoint** on STANDARD/expensive runs.
 
 ## Steps
 
@@ -88,9 +87,9 @@ create-tests --function <name>       # First meaningful tests for a specific fun
 - Favor the smallest set of high-signal tests over broad test quantity
 - `review-code` is an internal phase here, not the expected next top-level user step
 - Stop before committing unless the user explicitly requested commit/push behavior.
-- Every run writes at least a one-line `## Tests Created` entry to PROJECT.md before the chat summary so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) after `create-tests` does not lose the record. TRIVIAL/MODERATE runs satisfy this with a single end-of-run entry; STANDARD/expensive runs follow the hard-gate cadence in the Command Contract.
+- Every run writes at least a one-line `## Tests Created` entry to PROJECT.md before the chat summary so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) after `create-tests` does not lose the record. TRIVIAL/STANDARD runs satisfy this with a single end-of-run entry; COMPLEX or expensive runs follow the hard-gate cadence in the Command Contract.
 
-  Minimum entry shape for TRIVIAL/MODERATE:
+  Minimum entry shape for TRIVIAL/STANDARD:
 
   ```markdown
   ## Tests Created

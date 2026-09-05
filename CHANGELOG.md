@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.3.0 — 2026-09-05
+
+- Replaced the control plane: the parent session runs the cheap workhorse
+  (Sonnet on Claude, Sol on Codex), classifies complexity (TRIVIAL / STANDARD /
+  COMPLEX), size (S / M / L / XL), and execution shape, and drives goal
+  workflows through `PASS / RETRY / ESCALATE / RECLASSIFY / USER_DECISION /
+  BLOCKED` gates with a one-retry budget (`rules/gates.md`).
+- Added the `PROJECT.md` v2 routing snapshot and `aitk project-state`
+  (`init`, `show`, `set`, `gate`, `advance`, `phases`, `phase`) so resume and
+  escalation read durable data; legacy `MODERATE` reads as `STANDARD`.
+- Rewrote model routing: Sonnet implements, a new read-only `planning` route
+  (Opus) plans only COMPLEX work, `review`/`rca` are independent specialists
+  preferring the other provider, Fable stays a read-only deep advisor. Catalog
+  moved to the Claude 5 family (Opus 5, Sonnet 5, Fable 5.1) and GPT-5.6 Sol.
+- Added the native worker roster (`agents/claude/*.md`, `agents/codex/*.toml`,
+  installed to `~/.claude/agents` and `$CODEX_HOME/agents`) and the
+  provider-neutral specialist contracts in `agents/specialists/` that the route
+  runner inlines for cross-provider review, RCA, and plan validation.
+- Simplified review to one independent review, validate-before-fix, one delta
+  pass, and at most two conditional deep lenses; retired review ensembles,
+  verifier diversity, the resolved-state audit, and `aitk review-ensemble`.
+- Replaced the 8/10 multi-reviewer plan loop and cold read with one
+  independent validator returning `APPROVE / CHANGES_REQUIRED / REPLAN`, plus
+  size-aware decomposition and just-in-time phase planning.
+- Added the shared `verification-loop` skill, the RCA evidence gate with an
+  independent RCA specialist, the observation queue in `reflection`, richer
+  metrics fields, and an `evals/` corpus with a deterministic runner.
+- Retired `action-gate`, `rules/review-gate.md`, `rules/stop-rules.md`,
+  `rules/scoring.md`, and the manual context-clear dependency; fresh workers
+  are the phase boundary and auto-compaction protects the parent.
+
 ## 0.2.0 — 2026-07-21
 
 - Added canonical, fail-closed model and effort routes for Codex and Claude

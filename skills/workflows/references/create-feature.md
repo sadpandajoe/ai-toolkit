@@ -1,8 +1,7 @@
 # End-to-End Feature Workflow
 
-
-> **When**: You have a feature request or planned non-bug work and want the repo-standard workflow to scope, review, implement, and validate it.
-> **Produces**: Feature brief when needed, implementation plan, reviewed plan, local changes, Review Gate, QA results when relevant, and a handoff before final PR action.
+> **When**: A feature request or planned non-bug work ("add X", "support Y").
+> **Produces**: Classified and persisted routing state, a plan sized to the work, verified implementation, one independent review, QA when relevant, and a handoff before the final PR action.
 
 ## Effect Boundary
 
@@ -13,166 +12,97 @@ Effect: `git_mutation`.
 Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
 phase graph, authorization gates, and effect keys are the `create-feature`
 entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
-durable transition and effect record.
+durable transition and effect record, and `bin/aitk project-state` for the
+routing snapshot and gates.
 
 ## Usage
 
 ```bash
 create-feature "add bulk edit for dashboard filters"
-create-feature sc-12345
-create-feature apache/superset#28456
-create-feature https://github.com/owner/repo/issues/123
-create-feature https://app.shortcut.com/.../story/123
-create-feature sc-12345 --watch   # once a PR exists and the final push lands, chain into watch-pr
+create-feature sc-12345 | apache/superset#28456 | <github or shortcut url>
+create-feature <request> --watch    # chain into watch-pr after the final push
 ```
 
-## Command Contract
+## Goal Loop
 
-This canonical workflow reference owns the visible gates and sequence. Each
-step loads only the domain skill needed when that phase starts.
+The parent (Sonnet or Sol) runs this loop inline. Each step reads the routing
+snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
 
-- Emit a Complexity Gate before planning or implementation.
-- Fetch ticket context before classification or implementation when the input is a ticket or issue.
-- For STANDARD work, write `PLAN.md` and update PROJECT.md before review iterations.
-- Do not implement STANDARD work until the `PLAN.md Written` block is emitted.
-- Run `verify` or equivalent pre-flight checks before `review-code`, and record the result in the Review Gate. Run `review-code` after each meaningful implementation slice or wave.
-- For TRIVIAL work, use the Review Gate exception only for zero-logic diffs or true micro-fixes. If a TRIVIAL change needs logic review beyond those exceptions, reclassify as MODERATE and run `review-code`.
-- Stop before final commit/PR for MODERATE or STANDARD work unless the user already authorized that boundary.
-- With `--watch`, after a PR exists and the final push lands, chain into `watch-pr` on that PR — the flag is the explicit pre-authorization for the watch's standing commit+push grant. Without the flag, end with a one-line `watch-pr` suggestion when an open PR exists; never enter the watch unflagged.
-- Only the main thread writes PROJECT.md or `PLAN.md`. Subagents return handoffs; the orchestrator updates durable state.
-- For STANDARD work, follow `rules/context-management.md`: checkpoint + context_reset after `PLAN.md` is written, after plan review/action gate accepts, after each implementation slice or wave, and after code review fixes when validation/PR work remains.
-- For STANDARD work, emit the Phase Plan block from `rules/complexity-gate.md` immediately after the Complexity Gate.
-- **`## Slice N Complete` PROJECT.md write is a hard gate** before every per-slice checkpoint + context_reset on the STANDARD path. No clear without the entry.
-- **`## Feature Complete` PROJECT.md write is a hard gate** before the chat summary on every path. TRIVIAL/MODERATE single-shot runs need this so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) after `create-feature` does not lose the result. STANDARD runs that ended with a per-slice entry must still emit the rollup before the summary. See the end-of-workflow section below.
+1. **Intake.** Normalize input (`rules/input-detection.md`), fetch ticket
+   context, and inspect the codebase enough to classify without guessing.
+2. **Classify** complexity, size, and shape (`rules/complexity-gate.md`) and
+   persist it: `bin/aitk project-state init --workflow create-feature ...`.
+   Emit the Complexity Gate block. Existing-pattern features are STANDARD.
+3. **Scope** only when it is ambiguous: load `pm/references/create-feature-brief.md`
+   for a loose request, multiple product surfaces, or unclear acceptance
+   criteria. Otherwise the ticket is the brief.
+4. **Plan** to the shape:
+   - TRIVIAL: no plan; implement.
+   - STANDARD, SINGLE_PHASE or BATCHED: compact inline plan
+     (`planning/references/plan-implementation.md`) as `PROJECT.md` action
+     items; no validation round.
+   - COMPLEX, SINGLE_PHASE: planner in `phase-plan` mode, then
+     `planning/references/validate-plan.md`.
+   - MULTI_PHASE: `planning/references/decompose-work.md`, validate the
+     decomposition, then per phase: reclassify the phase,
+     `planning/references/plan-phase.md`, validate only if the phase is
+     COMPLEX.
+   <!-- aitk-model-route:workflows.create-feature-planning -->
+   For COMPLEX plans, launch one fresh planner worker on `planning`
+   (the toolkit's planner agent, or the routed `planning` specialist) with the
+   brief, the routing snapshot line, accepted invariants, and the mode. The
+   parent writes the returned plan to `PLAN.md`; the planner never edits files.
+5. **Implement** the next unit.
+   <!-- aitk-model-route:workflows.create-feature-implementation -->
+   Launch one fresh implementer worker on `implementation` (the toolkit's
+   implementer agent) for a substantial unit, with the accepted slice, scope,
+   exit criteria, and acceptance command; it returns the compact handoff and
+   never commits. TRIVIAL and small STANDARD units are implemented inline.
+   Parallel workers only for disjoint BATCHED waves or independent slices.
+6. **Verify** with `skills/verification-loop/SKILL.md` on the unit. `RETRY`
+   stays with the current owner; `ESCALATE` after two attempts reclassifies or
+   returns to planning with a compact adjudication package.
+7. **Review** through `review-code` (`review/references/local-review.md`):
+   one independent review, validate findings, fix, delta pass if substantive.
+   Run it after each verified unit for MULTI_PHASE and BATCHED work, once for
+   SINGLE_PHASE.
+8. **Validate behavior** with `qa/references/validate-feature.md` when
+   user-visible behavior changed and the app runs; otherwise record why not.
+9. **Checkpoint the phase.** Update `PROJECT.md` (phase done, learned
+   constraints, invariant changes, evidence pointer), mark the phase `done`
+   in the snapshot, and loop to step 4 for the next phase. Fresh workers are
+   the context boundary; no manual clear is needed.
+10. **Finish.** Write the `## Feature Complete` entry, emit the summary from
+    `reporting/templates/create-feature-summary.md`, record `metrics-emit`.
+    Stop before commit and PR unless authorized; with `--watch`, chain into
+    `watch-pr` after the final push lands.
 
-## Planning Phase Boundary
+## User Intervention Points
 
-The planning phase is a workflow boundary. For STANDARD work, automatically start it after the Complexity Gate. Use the provider adapter's planning/read-only capability when available; otherwise announce the planning phase and self-enforce the same boundary.
+Only an unresolved product, UX, or compatibility trade-off; a fact only the user
+holds; a `BLOCKED` environment; or the publish authorization boundary. Ordinary
+plan-validation findings and review findings are handled in the loop.
 
-During the planning phase, read, search, fetch ticket context, inspect code, and draft the approach. Do not make implementation edits of any kind, change tests, run implementation workers, or start review iterations. If the provider's planning/read-only capability cannot write files, leave it after drafting, then write `PLAN.md` as the planning-phase output. End the phase by updating PROJECT.md with the active-plan pointer and emitting `PLAN.md Written`:
+## Hard Gates
 
-```markdown
-## PLAN.md Written
-Plan: PLAN.md
-Project state: PROJECT.md updated
-Next: [first implementation slice or user decision]
-```
-
-TRIVIAL and MODERATE work skip the formal planning phase. For MODERATE work, load a targeted planning reference only when a specific ambiguity needs it; if durable plan review or slice orchestration becomes necessary, reclassify as STANDARD.
-
-## Feature Complexity Signals
-
-Use these workflow-specific signals with `rules/complexity-gate.md`:
-
-| Signal | Trivial | Moderate | Standard |
-|--------|---------|----------|----------|
-| Files touched | 1-2 | 2-4, clear single subsystem | 3+ across subsystems, unclear scope, or cross-cutting ownership |
-| Design decisions | None | Known pattern | Real trade-offs |
-| New APIs or migrations | No | Minor extension | Yes or cross-system |
-| Behavioral risk | Mechanical/cosmetic | Contained functional change | Cross-cutting functional change |
-
-MODERATE is the default for real but contained feature work. Use STANDARD when the feature needs durable planning, plan-review iteration, multiple review/fix waves, or slice/workstream orchestration.
-
-There is no `COMPLEX` classification. Larger efforts stay STANDARD with explicit modifiers such as workstreams, migration, security-sensitive, or unclear scope.
-
-## TRIVIAL Happy Path
-
-1. Normalize the request, fetch ticket context if present, and emit the Complexity Gate.
-2. Implement inline.
-3. Run the smallest meaningful verification.
-4. Emit a Review Gate `skipped` block for a zero-logic diff, or `micro-fix` only when the micro-fix rule passes. Reclassify as MODERATE if the change needs logic review beyond those exceptions.
-5. Summarize; commit/push only with STRONG verification per the [verification strength labels](verify.md) and prior authorization.
-
-## STANDARD Happy Path
-
-1. Normalize the request and fetch ticket context if present.
-2. Emit the Complexity Gate with the feature signals above.
-3. Load PM scoping only if scope, milestones, acceptance criteria, or rollout are non-trivial.
-4. Load technical planning, produce slices, write `PLAN.md`, update PROJECT.md, and emit `PLAN.md Written`.
-5. Checkpoint, request `context_reset`, then resume from `PLAN.md` and PROJECT.md before plan review.
-<!-- aitk-model-route:workflows.create-feature-plan-review -->
-6. Launch fresh reviewer subagents through the plan-review loop ([../../planning/references/iterate-review.md](../../planning/references/iterate-review.md)) on `review` or `deep-review` as specified by that loop; they return findings and scores, and the main thread updates the plan until material findings are resolved and the Action Gate says proceed.
-<!-- aitk-model-route:workflows.create-feature-implementation -->
-7. Dispatch one bounded implementation subagent on `implementation` only when isolation or parallelism clearly helps; first checkpoint and request `context_reset`, otherwise implement the slice or wave inline. Any subagent returns `Implementation Handoff` blocks only.
-8. Main thread updates `PLAN.md`/PROJECT.md, runs fan-in if needed, then runs `verify` or equivalent pre-flight checks. **Hard gate before the next checkpoint + context_reset**: append a `## Slice N Complete` block to PROJECT.md (slice name, files changed, tests added/updated, acceptance result, next slice or "ready for review"). Do not invoke checkpoint + context_reset until this block is written:
-
-   ```markdown
-   ## Slice N Complete
-   Slice: [name]
-   Files changed: [list]
-   Tests: [added/updated/none]
-   Acceptance: [passed/failed/not runnable — reason]
-   Next: [next slice name OR "ready for review-code"]
-   ```
-
-9. Checkpoint and request `context_reset` before `review-code` when implementation context is non-trivial, then invoke `review-code` from the changed-file list, plan pointer, and pre-flight result.
-10. After code review fixes are done, checkpoint + context_reset before feature validation or PR work if the review loop was non-trivial.
-11. Run feature validation when user-visible behavior changed.
-12. Load the summary template and stop before final commit/PR unless authorized.
-
-## MODERATE Happy Path
-
-1. Normalize the request, fetch ticket context if present, and emit the Complexity Gate.
-2. Resolve enough scope inline to avoid guessing; write compact PROJECT.md action items if the work may span turns.
-3. Load PM or technical planning references only if a specific ambiguity needs them.
-<!-- aitk-model-route:workflows.create-feature-moderate-implementation -->
-4. Implement inline by default, or hand off to one bounded implementation subagent on `implementation` if isolation clearly helps. Non-isolated implementation handoffs never include commits.
-5. Run `verify` or equivalent pre-flight checks, then one fresh review pass through `review-code`.
-6. Validate user-visible behavior if applicable, then summarize.
-
-## Step Routing And Handoffs
-
-Use the happy paths and path rules as the primary flow. Use this table as a phase lookup when entering a step; do not preload every linked route.
-
-| Step | Owner | Route | Load / hand off when |
-|------|-------|-------|----------------------|
-| Normalize input | Main thread | `rules/input-detection.md` | Load immediately. Fetch ticket context before classification or implementation. |
-| Complexity Gate | Main thread | `rules/complexity-gate.md` | Load immediately. Choose TRIVIAL, MODERATE, or STANDARD path. |
-| PM scoping | Main thread by default; PM subagent on `review` only for broad scope | [skills/pm/references/create-feature-brief.md](../../pm/references/create-feature-brief.md), [plan-milestones.md](../../pm/references/plan-milestones.md) | Load only when scope, milestones, acceptance criteria, or rollout are non-trivial. Broad means multiple product surfaces, rollout or permissions decisions, or unclear acceptance criteria. Handoff: product constraints and acceptance criteria. |
-| Technical plan | Main thread by default; planning subagent only for broad STANDARD design | [skills/planning/references/plan-implementation.md](../../planning/references/plan-implementation.md) | Load on STANDARD path, or MODERATE path with design uncertainty. Output must include slices, dependencies, entrance/exit criteria, and acceptance checks. |
-| PLAN.md gate | Main thread | PROJECT.md + `PLAN.md` | STANDARD path only. Write the plan and emit `PLAN.md Written` before implementation. |
-| Plan review | Fresh reviewer subagents on `review`/`deep-review` via planning loop | [skills/planning/references/iterate-review.md](../../planning/references/iterate-review.md), [finalize.md](../../planning/references/finalize.md), [`action-gate`](../../action-gate/SKILL.md) | Load after `PLAN.md` is written. Use fresh reviewers for each review pass after material plan revisions; reuse a reviewer only for clarifying that reviewer's own finding in the same pass. Continue after material findings are resolved and the Action Gate says proceed; otherwise stop on blocker or user decision. |
-| Implementation | Main thread for trivial/tightly-coupled work; `implementation` route for bounded slices | [skills/implement-change/SKILL.md](../../implement-change/SKILL.md) | Start after inline design/action items for MODERATE, or after `PLAN.md Written` for STANDARD. Implement inline by default; assign one bounded slice only when isolation or parallelism helps. The handoff includes only slice name, scope/files, entrance criteria, exit criteria, acceptance checks, relevant plan excerpt, branch/base, and whether `isolated_worktree` is active. Non-isolated workers must not commit. Return `Implementation Handoff`. |
-| Workstream fan-in | Main thread | [skills/workstreams/references/sync.md](../../workstreams/references/sync.md) | Load after parallel slice handoffs complete. Use isolated worktrees only when slices can commit independently with disjoint ownership; each handoff includes branch/commit identity. Merge/sync only when all slice handoffs pass their exit criteria. Subagents do not update PROJECT.md directly. |
-| Review | `review-code` subagents on `review`/`deep-review` | [skills/review/references/local-review.md](../../review/references/local-review.md) | Run after `verify` or equivalent pre-flight checks for each meaningful implementation slice or wave. Branch on the Review Gate status before starting another wave. |
-| Feature validation | Main thread/tool layer executes Playwright; `review` supplies judgment and `operations` may summarize already-collected evidence | [skills/qa/references/validate-feature.md](../../qa/references/validate-feature.md) | Load when user-visible behavior changed and app is runnable. Return pass/fail/blockers and evidence paths. |
-| Summary | Main thread | [skills/reporting/templates/create-feature-summary.md](../../reporting/templates/create-feature-summary.md), [`metrics-emit`](../../metrics-emit/SKILL.md) when available for the workflow | Load at workflow end or stop point. State verification strength, review status, feature-validation result, and why validation was skipped if the app was not runnable. |
-
-## Path Rules
-
-- **Trivial**: skip the formal planning phase and subagents; implement and test inline. Zero-logic diffs emit Review Gate `skipped`; true micro-fixes emit `micro-fix` only when the micro-fix rule passes. If logic review is needed beyond those exceptions, reclassify as MODERATE. Commit/push only with STRONG verification per the [verification strength labels](verify.md) and clean review; stop before PR creation.
-<!-- aitk-model-route:workflows.create-feature-moderate-handoff -->
-- **Moderate**: design inline, write PROJECT.md action items when useful, implement inline by default, then run `verify` or equivalent pre-flight checks and one fresh `review-code` pass after implementation. Run plan review only if inline design uncovered real design uncertainty. Hand off to one bounded implementation subagent on `implementation` only when isolation or parallelism clearly helps; non-isolated implementation handoffs never include commits.
-- **Standard**: use the planning phase for exploration/design only; write `PLAN.md`; run plan review and action gate; then implement in slices.
-
-For 3+ independent slices, treat the work as STANDARD with workstreams and keep the main thread as a thin orchestrator. `PLAN.md` owns the slice table, dependencies, entrance/exit criteria, and acceptance checks. PROJECT.md records only the active slice/wave and next action. Load `rules/orchestration.md` only when deciding subagent batch size, workstream fan-in, or reasoning effort.
-
-## End-of-Workflow PROJECT.md Update (Hard Gate)
-
-Before emitting the chat summary, append a `## Feature Complete` entry to PROJECT.md so the durable record survives `context_reset` or `archive-project-file`. Required on every path — TRIVIAL/MODERATE single-shot runs included.
-
-Minimum entry shape:
+- Emit the Complexity Gate before planning or implementing; persist it.
+- No implementation of a COMPLEX unit before its plan validates `APPROVE`.
+- Verification `PASS` before review; review gate `PASS` before the next unit.
+- `PROJECT.md` phase entry before every phase transition; `## Feature Complete`
+  before the chat summary.
+- Commit or push only with STRONG verification, a `PASS` review gate, and prior
+  authorization.
 
 ```markdown
 ## Feature Complete
-Feature: [one-line description or ticket]
-Slices delivered: [count, or "single-shot"]
-Files changed: [summary or count]
-Tests added/updated: [list or count]
-Verification: [strength label]
-Review Gate: [status]
-Feature validation: [pass / fail / skipped — reason] (if applicable)
-Residual risk: [one-liner, or "none"]
-PR: [URL or "no PR yet"]
+Feature: <one line or ticket>
+Complexity/Size/Shape: <from snapshot>
+Phases delivered: <count or single-shot>
+Files changed: <summary>
+Tests: <added/updated>
+Verification: <PASS evidence>
+Review: <lane, accepted/raised findings>
+Behavior validation: <pass | fail | skipped — reason>
+Residual risk: <one line or none>
+PR: <URL or "no PR yet">
 ```
-
-For STANDARD runs that already wrote per-slice `## Slice N Complete` entries, this rollup summarizes the run; it does not replace those entries.
-
-Emit before the chat summary:
-
-```markdown
-## PROJECT.md Updated — Feature Complete
-Entry recorded
-```
-
-Do not emit the chat summary until the `## PROJECT.md Updated — Feature Complete` confirmation block has been emitted.

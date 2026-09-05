@@ -5,11 +5,12 @@ The deterministic checkpoint API owns the machine block in
 following human-readable phase below it:
 
 ```markdown
-- Phase: input / complexity-gate / plan-mode / plan-md-write / review-iterations / action-gate / implement-and-review / summarize
+- Phase: intake / classify / scope / plan / validate / implement / verify / review / validate-behavior / summarize
+- Snapshot: <complexity>/<size>/<shape>, phase <n> of <total> (from `bin/aitk project-state show`)
 ```
 
 No additional workflow fields beyond the phase enum are required.
 
-When `Active plan: PLAN.md` is set, resuming sessions can read PROJECT.md alone for orientation — only load PLAN.md if the next phase requires it (review iterations or implementation slice).
+When `Active plan: PLAN.md` is set, resuming sessions can read PROJECT.md alone for orientation — only load PLAN.md if the next phase requires it (plan validation or an implementation unit).
 
 Put where-we-left-off details and durable learnings in the Development Log.

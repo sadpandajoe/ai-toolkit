@@ -105,7 +105,7 @@ After emitting the summary, include `metrics-emit` context using the [metrics em
 The capstone is also a natural context boundary — the project is closed, durable state is archived, and the next thing the user does will be a fresh project or unrelated work. Suggest a clean slate:
 
 ```
-Project closed. Run checkpoint + context_reset to start the next session fresh.
+Project closed. Start the next task in a fresh session when convenient.
 ```
 
 Do not auto-clear. The user may want to stay in-session to push the PR, deploy, or pick up the suggested final action from step 7.

@@ -24,11 +24,21 @@ from .doctor import run_doctor
 from .installer import install, resolve_paths, rollback, uninstall
 from .model_routing import (
     ModelRouteError,
-    resolve_ensemble,
     resolve_route,
     run_model,
 )
 from .pgm import preflight as pgm_preflight
+from .project_state import (
+    ProjectStateError,
+    advance_phase,
+    initialize as initialize_project_state,
+    record_gate,
+    set_fields,
+    set_phases,
+    show as show_project_state,
+    state_file,
+    update_phase,
+)
 from .workflows import load_workflows
 
 
@@ -238,53 +248,6 @@ def _model_route(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _review_ensemble(arguments: argparse.Namespace) -> int:
-    root = _root(arguments.root)
-    try:
-        ensemble = resolve_ensemble(
-            root,
-            arguments.ensemble,
-            arguments.provider,
-            arguments.available,
-            engage_cross_provider=arguments.cross_provider,
-        )
-    except ModelRouteError as error:
-        if arguments.json:
-            print(
-                json.dumps(
-                    {
-                        "command": "review-ensemble",
-                        "error": {"code": error.code, "message": str(error)},
-                    },
-                    sort_keys=True,
-                )
-            )
-        else:
-            print(f"{error.code}: {error}", file=sys.stderr)
-        return 2
-    payload = {"command": "review-ensemble", **ensemble.as_dict()}
-    if arguments.json:
-        print(json.dumps(payload, sort_keys=True))
-    else:
-        print(f"ensemble: {ensemble.name}")
-        print(f"origin: {ensemble.origin_provider}")
-        print(f"cross-provider: {ensemble.cross_provider_policy}")
-        for lane in ensemble.lens + ensemble.cross:
-            print(
-                f"{lane.role}: {lane.provider}/{lane.route} "
-                f"{lane.family} {lane.effort}"
-            )
-        print(
-            f"verification: {ensemble.verification_lanes} lane(s), "
-            f"{ensemble.verifier_diversity}-diverse"
-        )
-        print(f"coverage: {ensemble.coverage} (floor {ensemble.coverage_floor})")
-        print(f"status: {ensemble.status}")
-        if ensemble.disclosure:
-            print(ensemble.disclosure)
-    return 0 if ensemble.status != "blocked" else 4
-
-
 def _model_run(arguments: argparse.Namespace) -> int:
     root = _root(arguments.root)
     try:
@@ -402,6 +365,66 @@ def _checkpoint(arguments: argparse.Namespace) -> int:
             f"({disposition})"
         )
         print(f"  checkpoint: {result.file}")
+    return 0
+
+
+def _project_state(arguments: argparse.Namespace) -> int:
+    path = state_file(arguments.file)
+    try:
+        action = arguments.state_action
+        if action == "init":
+            result = initialize_project_state(
+                path,
+                arguments.workflow,
+                arguments.complexity,
+                arguments.size,
+                arguments.phaseability,
+                confidence=arguments.confidence,
+                modifiers=arguments.modifier or [],
+                phaseability_reason=arguments.reason or "",
+                phase=arguments.phase,
+                replace=arguments.replace,
+            )
+        elif action == "show":
+            result = show_project_state(path)
+        elif action == "set":
+            result = set_fields(
+                path,
+                complexity=arguments.complexity,
+                size=arguments.size,
+                phaseability=arguments.phaseability,
+                phaseability_reason=arguments.reason,
+                classification_confidence=arguments.confidence,
+                modifiers=arguments.modifier if arguments.modifier else None,
+            )
+        elif action == "gate":
+            result = record_gate(
+                path,
+                arguments.gate,
+                arguments.status,
+                arguments.unit,
+                same_failure=arguments.same_failure,
+            )
+        elif action == "advance":
+            result = advance_phase(path, arguments.to)
+        elif action == "phases":
+            result = set_phases(path, json.loads(arguments.phases_json))
+        else:
+            result = update_phase(path, arguments.name, arguments.status)
+    except (ProjectStateError, OSError, json.JSONDecodeError) as error:
+        print(f"aitk project-state: {error}", file=sys.stderr)
+        return 1
+    if arguments.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True))
+    else:
+        snapshot = result.snapshot
+        print(
+            f"{snapshot['workflow']}: complexity={snapshot['complexity']} "
+            f"size={snapshot['size']} shape={snapshot['execution_shape']} "
+            f"phase={snapshot['current_phase']} gate={snapshot['current_gate']}="
+            f"{snapshot['gate_status']} attempts={json.dumps(snapshot['attempts'], sort_keys=True)}"
+        )
+        print(f"  state: {result.file}")
     return 0
 
 
@@ -553,31 +576,6 @@ def parser() -> argparse.ArgumentParser:
     model_route.add_argument("--json", action="store_true")
     model_route.set_defaults(handler=_model_route)
 
-    review_ensemble = subparsers.add_parser(
-        "review-ensemble",
-        help="resolve a review tier to its exact provider/model roster",
-    )
-    review_ensemble.add_argument("ensemble")
-    review_ensemble.add_argument(
-        "--provider",
-        required=True,
-        choices=("codex", "claude"),
-        help="provider the review is orchestrated from",
-    )
-    review_ensemble.add_argument(
-        "--available",
-        nargs="+",
-        choices=("codex", "claude"),
-        help="provider CLIs actually reachable; defaults to all",
-    )
-    review_ensemble.add_argument(
-        "--cross-provider",
-        action="store_true",
-        help="engage the cross lanes of an optional tier; required tiers always engage them",
-    )
-    review_ensemble.add_argument("--json", action="store_true")
-    review_ensemble.set_defaults(handler=_review_ensemble)
-
     model_run = subparsers.add_parser(
         "model-run", help="run one fail-closed worker with pinned model and effort"
     )
@@ -622,6 +620,59 @@ def parser() -> argparse.ArgumentParser:
         if action == "apply":
             checkpoint_action.add_argument("--result-digest", required=True)
         checkpoint_action.set_defaults(handler=_checkpoint)
+
+    project_state = subparsers.add_parser(
+        "project-state", help="read or update the PROJECT.md v2 routing snapshot"
+    )
+    state_actions = project_state.add_subparsers(dest="state_action", required=True)
+    for action in ("init", "show", "set", "gate", "advance", "phases", "phase"):
+        state_action = state_actions.add_parser(
+            action, help=f"{action} the routing snapshot"
+        )
+        state_action.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md)")
+        state_action.add_argument("--json", action="store_true")
+        if action == "init":
+            state_action.add_argument("--workflow", required=True)
+            state_action.add_argument("--complexity", required=True)
+            state_action.add_argument("--size", required=True, choices=("S", "M", "L", "XL"))
+            state_action.add_argument(
+                "--phaseability",
+                default="unassessed",
+                choices=("none", "repetitive", "phased", "unassessed"),
+            )
+            state_action.add_argument("--confidence", default="HIGH", choices=("HIGH", "MEDIUM", "LOW"))
+            state_action.add_argument("--modifier", action="append")
+            state_action.add_argument("--reason", help="phaseability reason")
+            state_action.add_argument("--phase", default="intake")
+            state_action.add_argument("--replace", action="store_true")
+        if action == "set":
+            state_action.add_argument("--complexity")
+            state_action.add_argument("--size", choices=("S", "M", "L", "XL"))
+            state_action.add_argument(
+                "--phaseability", choices=("none", "repetitive", "phased", "unassessed")
+            )
+            state_action.add_argument("--confidence", choices=("HIGH", "MEDIUM", "LOW"))
+            state_action.add_argument("--modifier", action="append")
+            state_action.add_argument("--reason")
+        if action == "gate":
+            state_action.add_argument("--gate", required=True)
+            state_action.add_argument(
+                "--status",
+                required=True,
+                choices=("PASS", "RETRY", "ESCALATE", "RECLASSIFY", "USER_DECISION", "BLOCKED"),
+            )
+            state_action.add_argument("--unit", help="reasoning unit charged for a failure")
+            state_action.add_argument("--same-failure", action="store_true")
+        if action == "advance":
+            state_action.add_argument("--to", required=True)
+        if action == "phases":
+            state_action.add_argument("--phases-json", required=True)
+        if action == "phase":
+            state_action.add_argument("--name", required=True)
+            state_action.add_argument(
+                "--status", required=True, choices=("pending", "active", "done", "blocked")
+            )
+        state_action.set_defaults(handler=_project_state)
 
     pgm = subparsers.add_parser(
         "pgm-preflight", help="validate optional PGM configuration before collection"

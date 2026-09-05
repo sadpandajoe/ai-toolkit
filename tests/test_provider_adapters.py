@@ -76,7 +76,6 @@ class ProviderAdapterTests(unittest.TestCase):
 
     def test_internal_codex_skills_disable_implicit_routing(self) -> None:
         internal = (
-            "action-gate",
             "debug",
             "feedback",
             "implement-change",
@@ -94,6 +93,7 @@ class ProviderAdapterTests(unittest.TestCase):
             "shortcut",
             "superset-local",
             "testing",
+            "verification-loop",
             "workstreams",
         )
         for name in internal:
@@ -153,6 +153,7 @@ class ProviderAdapterTests(unittest.TestCase):
             plugin = Path(temporary) / "plugin"
             for relative in (
                 ".codex-plugin",
+                "agents",
                 "aitk",
                 "bin",
                 "config",
@@ -173,7 +174,7 @@ class ProviderAdapterTests(unittest.TestCase):
                     "--provider",
                     "codex",
                     "--boundary",
-                    "review.code-quality-final",
+                    "review.independent",
                     "--json",
                 ],
                 cwd=Path(temporary),
@@ -217,19 +218,7 @@ class ProviderAdapterTests(unittest.TestCase):
 
             self.assertEqual(resolved[source_root.name], resolved[plugin.name])
             expected_review_plan = {
-                (
-                    "plan-review",
-                    "skills/plan-review/references/architecture.md",
-                ),
-                ("plan-review", "skills/plan-review/references/backend.md"),
-                ("plan-review", "skills/plan-review/references/frontend.md"),
-                (
-                    "plan-review",
-                    "skills/plan-review/references/implementation.md",
-                ),
-                ("planning", "skills/planning/references/finalize.md"),
-                ("pm", "skills/pm/references/review-feature-brief.md"),
-                ("testing", "skills/testing/references/review-testplan.md"),
+                ("planning", "skills/planning/references/validate-plan.md"),
             }
             self.assertEqual(
                 expected_review_plan,

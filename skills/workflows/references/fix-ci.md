@@ -1,8 +1,7 @@
 # Fix CI Failures
 
-
-> **When**: A CI build has failed and you want the repo-standard workflow to diagnose it, apply safe fixes, verify locally, and stop before commit when risk remains.
-> **Produces**: Failure classification, PROJECT.md update, safe fixes where appropriate, validation results, Review Gate status, and a recommended commit action.
+> **When**: A CI build failed and you want it diagnosed, fixed where safe, verified, and pushed under the default authorization.
+> **Produces**: Evidence-based classification, `PROJECT.md` triage and completion entries, scoped fixes, verification, a review gate, and a commit action or a clear hold.
 
 ## Effect Boundary
 
@@ -16,127 +15,47 @@ phase graph, authorization gates, and effect keys are the `fix-ci` entry in
 transition and effect record.
 
 ## Usage
+
 ```
-fix-ci <run-url>          # Fix a specific CI run
-fix-ci <pr-number>        # Fix latest CI run for a PR
-fix-ci <log-file>         # Fix from a local CI log file
-fix-ci <zip-file>         # Fix from a local CI artifact bundle
-fix-ci                    # Fix latest failed CI run for current branch
+fix-ci <run-url> | <pr-number> | <log-file> | <zip-file> | (none: latest failed run on this branch)
 ```
 
-## Command Contract
+## Goal Loop
 
-- Read actual failing log output before classifying. Enumerate the **full** check rollup first — external CI never appears in `gh run list`, and a check's status string is not diagnostic. See `rules/ci-evidence.md`.
-- Keep raw logs out of chat when they are large; use log paths and compact excerpts.
-- For 3+ failed jobs, artifact bundles, or large logs, create local `CI_FIX.md` via [skills/debug/templates/ci-fix-manifest.md](../../debug/templates/ci-fix-manifest.md).
-- Group failures by root cause before fixing.
-- Keep fixes scoped to the failing surface.
-- Run local verification before review, and emit a Review Gate block whenever repo-tracked files changed.
-- Update PROJECT.md at standard-path boundaries. Two updates are **hard gates with confirmation blocks** on every path: initial-triage entry before path branching (step 3 tail), Completed entry before the chat summary (step 9 head).
-- The main thread owns `CI_FIX.md` and PROJECT.md. Subagents return compact handoffs; they do not update durable state directly.
-- When verification is STRONG and the fix is approved, create a new commit on the current feature branch and push it as part of the fix flow. Pause for amend, rebase, or force-push, and when the push target is ambiguous (not the current feature branch, or tracks an unexpected remote). PARTIAL/WEAK verification and standard-path holds stay non-committing — present the diagnosis and stop.
-- For STANDARD or expensive CI work, checkpoint + context_reset after `CI_FIX.md` or PROJECT.md captures classification/grouping, after Action Gate/RCA decisions, after local verification, and after `review-code` when commit recommendation work remains.
+1. **Gather logs** with `debug/references/ci-gather-logs.md`. Enumerate the
+   full check rollup first; external CI never appears in `gh run list`
+   (`rules/ci-evidence.md`). Stop after the first auth failure on external CI
+   and ask for a log excerpt. Large logs go to the toolkit's debugger agent,
+   not the parent.
+2. **Classify and group** with `debug/references/ci-classify-failure.md` and
+   `debug/references/ci-fix-orchestration.md`. Write the initial triage to
+   `PROJECT.md` before branching (hard gate): failing run, failures,
+   ours/pre-existing split, hypothesis each. All pre-existing → exit with
+   evidence, no fix cycle.
+3. **Classify complexity** per the CI matrix in `ci-fix-orchestration.md` and
+   persist with `bin/aitk project-state init --workflow fix-ci ...`.
+4. **Diagnose.** The parent diagnoses known patterns. The independent RCA
+   specialist (`debug/references/review-rca.md`) enters only for CI-only
+   failures that do not reproduce locally, flakiness or races, or a failure
+   that survived one fix attempt.
+5. **Fix** the selected path only, scoped to the failing surface. Use
+   `CI_FIX.md` (`debug/templates/ci-fix-manifest.md`) for three or more failed
+   jobs or artifact bundles.
+6. **Verify** with `skills/verification-loop/SKILL.md` using the verification
+   strength tiers in `debug/references/ci-verify-fix.md`. When the failing
+   check cannot run locally, CI is the downstream verifier: `PASS (downstream:
+   CI)` is legitimate; a push after a locally failed check is not.
+7. **Review** changed repo-tracked files through `review-code`; the review
+   exception in `rules/gates.md` covers zero-logic and micro fixes.
+8. **Commit action.** STRONG verification, review gate `PASS`, and the current
+   feature branch on the expected remote → create a new commit and push.
+   Amend, rebase, force-push, an ambiguous target, PARTIAL or WEAK
+   verification, or a COMPLEX hold → present the diagnosis and stop. Detect a
+   cherry-pick flow before recommending an amend target.
+9. **Finish.** Append the `Completed` entry to `PROJECT.md` (hard gate),
+   summarize with the shapes in `ci-fix-orchestration.md`, record
+   `metrics-emit` with complexity, gate outcomes, retries, and worker usage.
 
-## Happy Paths
+## Intervention points
 
-- **Trivial**: gather logs, classify/group, apply the safe fix inline, verify locally, emit Review Gate `skipped`/`micro-fix` only when the Review Gate exception applies, update PROJECT.md when useful, summarize.
-- **Moderate**: gather logs, classify/group, plan inline, apply inline by default, verify locally, run `review-code`, update PROJECT.md, summarize.
-- **Standard**: create/update `CI_FIX.md` when useful, checkpoint + context_reset, validate RCA when needed, run Action Gate, checkpoint + context_reset, apply only if the gate allows it, verify locally, review, then present commit recommendation.
-
-## Steps
-
-### 1. Normalize Input
-
-Accept a GitHub Actions run URL, PR number, local log file, local zip artifact bundle, or no argument. With no argument, resolve the latest failed run for the current branch.
-
-### 2. Gather Logs
-
-Follow [skills/debug/references/ci-gather-logs.md](../../debug/references/ci-gather-logs.md).
-
-Stop if no actual log output or artifact source can be resolved.
-For Jenkins or authenticated external CI, stop after the first auth failure and ask for a log excerpt/artifact instead of reasoning from the dashboard.
-
-### 3. Classify + Group Failures
-
-Use [skills/debug/references/ci-classify-failure.md](../../debug/references/ci-classify-failure.md) for log classification.
-
-Then load [skills/debug/references/ci-fix-orchestration.md](../../debug/references/ci-fix-orchestration.md) for grouping, ours/pre-existing classification, complexity routing, and commit recommendation strategy. Do not load the full orchestration reference before real logs exist.
-
-If all failures are pre-existing or not caused by this branch, exit early with evidence and no fix/review cycle.
-
-**Initial-triage PROJECT.md update (hard gate, all paths)**: Before branching to a path — including the not-our-failure exit — write the classification to PROJECT.md (failing run/source, classified failures, ours/pre-existing split, hypothesis per failure). Then emit:
-
-```markdown
-## PROJECT.md Updated — Initial Triage
-Failures recorded: [count]
-Path likely: [trivial/moderate/standard/not-our-failure]
-```
-
-This gate exists because a "this is mechanical, I already know what to do" mental frame forms at this exact moment and silently swallows every later PROJECT.md update. Writing the triage entry first breaks the frame. Do not proceed without emitting the block.
-
-### 4. Complexity Gate
-
-Emit the Complexity Gate block per `rules/complexity-gate.md`.
-
-Route using the CI-specific matrix in [skills/debug/references/ci-fix-orchestration.md](../../debug/references/ci-fix-orchestration.md):
-- **Trivial**: apply, verify, Review Gate skip/micro-fix only when allowed, update PROJECT.md when useful, summarize.
-- **Moderate**: plan inline, apply, verify locally, then `review-code`, update PROJECT.md, summarize.
-- **Standard**: update PROJECT.md, validate RCA when needed, run Action Gate, then apply only if the gate allows it.
-
-### 5. Apply Safe Fixes
-
-Apply only the fix path selected by the grouped classification. Keep
-standard-path planning in the main thread; route ambiguous causal synthesis to
-`rca`/`deep-rca`. Any bounded fix worker uses `implementation`, and the
-orchestrator applies the final patch.
-
-### 6. Verify Locally
-
-Follow [skills/debug/references/ci-verify-fix.md](../../debug/references/ci-verify-fix.md) and record verification strength as `STRONG`, `PARTIAL`, or `WEAK`.
-
-### 7. Review Changed Files
-
-If repo-tracked files changed, invoke `review-code` on the changed files as an internal loop after local verification.
-
-For zero-logic diffs, apply the skip rule from `rules/review-gate.md`. For true micro-fixes, apply the micro-fix rule only when relevant checks/tests pass. If any logic changed beyond micro-fix scope, do not skip `review-code`.
-
-### 8. Commit Recommendation
-
-Use the commit recommendation strategy in [skills/debug/references/ci-fix-orchestration.md](../../debug/references/ci-fix-orchestration.md).
-
-Do not commit standard-path or PARTIAL/WEAK fixes automatically. For STRONG-verified trivial/moderate fixes with a clean Review Gate, create a new commit on the current feature branch and push it. Pause for amend, rebase, or force-push, and when the push target is ambiguous. For PARTIAL/WEAK or standard-path holds, present the diagnosis, verification gap, and recommended next action without committing.
-
-### 9. Summary + Metrics
-
-**PROJECT.md Completed Entry first (hard gate, all paths)**: Before emitting the chat summary, append a `Completed` entry to PROJECT.md (date, one-line scope, commit SHA(s) if any, verification strength) and remove any now-resolved "Not done" / "Pending" bullets that this run closed out. Chat summary and PROJECT.md Completed entry serve **different audiences** — chat is in-session, PROJECT.md is the cross-session handoff that `start` reloads. Letting the chat summary stand in for the PROJECT.md entry is the single most common way this discipline is silently dropped.
-
-Do not emit the chat summary template below until this confirmation block is emitted:
-
-```markdown
-## PROJECT.md Updated — Completed Entry
-Entry appended: [one-line scope]
-Resolved bullets removed: [count, or "none"]
-```
-
-Then use the summary shapes in [skills/debug/references/ci-fix-orchestration.md](../../debug/references/ci-fix-orchestration.md).
-
-Record metrics with:
-- `command`: `fix-ci`
-- `complexity`: `trivial` / `moderate` / `standard`
-- `status`: Review Gate status
-- `rounds`: total review iteration rounds
-- `gate_decisions`: complexity, action gate, review, verification strength
-- `worker_usage`: subagent/worker invocation counts when applicable
-
-## PROJECT.md Update Discipline
-
-Two updates are **hard gates** with confirmation blocks (every path):
-- Initial triage — emitted at the end of step 3, before path branching
-- Completed entry — emitted at the start of step 9, before the chat summary
-
-On the **standard path**, also update PROJECT.md compactly at these mid-flow points (no confirmation block required, but expected):
-- after RCA validation when it runs
-- after the Action Gate
-- after local verification and `review-code`
-
-Keep updates compact. If `CI_FIX.md` exists, PROJECT.md should point to it rather than duplicating its table. The chat summary at step 9 does **not** substitute for the PROJECT.md Completed entry — they serve different audiences (in-session vs. cross-session).
+External dependency or environment block, or a scope or product choice.

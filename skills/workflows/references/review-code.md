@@ -1,8 +1,7 @@
-# Adaptive Team Code Review
+# Independent Code Review
 
-
-> **When**: You have local changes and want a quality pass with the right reviewers for the change type.
-> **Produces**: Team-reviewed findings, fixes, test coverage assessment, verification, a durable PROJECT.md review record, and a Review Gate block.
+> **When**: You have local changes and want them reviewed and, by default, fixed ("review this branch and fix anything important"). "Review this; don't change anything" sets review-only.
+> **Produces**: One independent review, validated findings, applied fixes with verification, an optional delta pass, a `PROJECT.md` review record, and a review gate.
 
 ## Effect Boundary
 
@@ -20,51 +19,34 @@ transition and effect record.
 ```bash
 review-code                  # branch-wide: committed + uncommitted vs base
 review-code src/api/         # filter to path
-review-code --files a.ts b.ts
-review-code --committed      # committed only (base..HEAD)
-review-code --uncommitted    # uncommitted only (working tree + staged)
+review-code --committed | --uncommitted
+review-code --review-only    # findings and record, no fixes
 ```
 
-## Routing
+## Procedure
 
-Use [skills/review/references/local-review.md](../../review/references/local-review.md) as the workflow reference.
+Follow [skills/review/references/local-review.md](../../review/references/local-review.md)
+end to end: gather and record the base, classify with
+[classify-diff.md](../../review/references/classify-diff.md) and
+`qa/references/assess-impact.md`, preflight, one independent review on the other
+provider, conditional deep lenses on flagged risk, validate every finding before
+fixing, fix accepted findings, verify with `skills/verification-loop/SKILL.md`,
+run one delta review only after substantive remediation, emit the review gate,
+and write the Review Record to `PROJECT.md`.
 
-That reference dispatches:
+## Contract
 
-- [skills/review/references/classify-diff.md](../../review/references/classify-diff.md)
-- [skills/review/references/code-quality.md](../../review/references/code-quality.md)
-- QA impact assessment
-- Testing reviewers when tests or test gaps are in scope
-- Plan-review lenses for architecture/frontend/backend concerns
-
-## Orchestration Model
-
-<!-- aitk-model-route:workflows.review-code-orchestration -->
-The main thread is the orchestrator. It gathers changed files, runs the Complexity Gate, runs repo-appropriate pre-flight verification, dispatches reviewer subagents on `review`/`deep-review` plus an independent second-opinion capability concurrently when available, deduplicates findings across all lanes, writes actionable review state to PROJECT.md, applies accepted fixes ("accepted" = confirmed by review synthesis/triage, not a per-fix user pause — only disputed or user-decision findings surface to the user), re-verifies, and emits the Review Gate.
-
-All review judgment comes from fresh-context reviewer lanes. The main thread synthesizes and fixes; it does not replace the reviewers. It dedupes and sorts on the `rules/severity.md` scale and closes the loop under `rules/review-gate.md`; the lens contracts themselves belong to the lane boundaries in [../../review/references/local-review.md](../../review/references/local-review.md), not to this orchestrator.
-
-<!-- aitk-model-route:workflows.review-code-fresh -->
-Use fresh reviewer subagents for each review pass after material code changes. Use `review` for bounded lanes and `deep-review` for architecture, security, adversarial, and high-risk integrated lanes. Reuse a reviewer only to clarify that reviewer's own finding in the same pass. Lane selection and the lens set come from [../../review/references/local-review.md](../../review/references/local-review.md).
-
-For STANDARD or expensive reviews, checkpoint + context_reset before reviewer dispatch once pre-flight verification and diff scope are recorded, and again after review findings or fixes when QA/PR/final reporting remains. Resume from changed-file list, pre-flight result, PROJECT.md review record, and Review Gate state rather than from implementation chatter.
-
-## Gates
-
-- Stop when no changes are found.
-- Formatting-only and micro-fix diffs may skip reviewer dispatch only after the `rules/review-gate.md` preconditions, including applicable pre-flight checks, are satisfied.
-- CORE impact calibrates severity. TRIVIAL + CORE escalates to the full review team. MODERATE + CORE stays on triggered lanes with stricter severity unless security, data-loss, unclear ownership, or cross-cutting behavior escalates it to STANDARD handling.
-- Run `verify` or equivalent repo-appropriate pre-flight checks before reviewer dispatch, then re-run targeted checks after fixes. Record the final result in the Review Gate.
-- Suggest `review-code-adversarial` when security-sensitive files or inputs are touched.
-
-## Summary Contract
-
-Before fixing or clearing context, write/update PROJECT.md with the compact review record defined in `review/references/local-review.md`. End with the Review Gate and the compact summary defined there.
-
-Internal callers such as `create-feature`, `fix-bug`, `fix-ci`, `create-tests`, and `update-tests` own the next-step section after the Review Gate.
-
-## Notes
-
-- This command is used standalone and as an internal review phase.
-- The selected team should be visible in the summary so bad selections can be corrected with `reflect`.
-- **Request an independent second opinion.** Every run asks the provider adapter for its independent-review capability concurrently with the primary reviewer lanes. It degrades gracefully: when unavailable, record `Independent review: skipped (unavailable)` and continue. The whole-loop skip for formatting-only/micro-fix diffs skips this lane too.
+- Review judgment comes only from fresh lanes; the parent validates, fixes, and
+  verifies. It never reviews its own work inline.
+- The review gate is a reasoning unit under `rules/gates.md`: one full review
+  plus one delta pass. A finding class surviving the delta pass is `ESCALATE`
+  (a deep lens or a user decision), never a third round.
+- Zero-logic and micro-fix diffs may take the review exception; anything with
+  logic gets the independent lane, even at TRIVIAL.
+- Remediation is on by default when the user asked to review and fix; a
+  review-only request records findings and the gate without editing.
+- Suggest `review-code-adversarial` when the classifier flags security
+  sensitivity and the user did not already ask for it.
+- Internal callers (`create-feature`, `fix-bug`, `fix-ci`, `create-tests`,
+  `update-tests`) own the next step after the gate; standalone runs end with
+  the Review-Code Complete summary in the orchestration reference.

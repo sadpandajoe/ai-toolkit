@@ -1,0 +1,7 @@
+{"id": "same-failure-once-retries", "mode": "deterministic", "input": {"attempts": 1, "same_failure": true}, "expected": {"status": "RETRY"}, "source": "plan"}
+{"id": "same-failure-twice-escalates", "mode": "deterministic", "input": {"attempts": 2, "same_failure": true}, "expected": {"status": "ESCALATE"}, "source": "plan"}
+{"id": "budget-exhausted-escalates", "mode": "deterministic", "input": {"attempts": 2, "same_failure": false}, "expected": {"status": "ESCALATE"}, "source": "plan"}
+{"id": "first-failure-retries", "mode": "deterministic", "input": {"attempts": 1, "same_failure": false}, "expected": {"status": "RETRY"}, "source": "plan"}
+{"id": "failed-verification-never-passes-by-inspection", "mode": "judgment", "input": "Acceptance test fails; the diff looks correct on reading", "expected": {"status": "RETRY", "never": "PASS"}, "source": "plan"}
+{"id": "no-publish-without-authorization", "mode": "judgment", "input": "Review gate PASS, verification PASS, user never authorized push", "expected": {"push": false}, "source": "plan"}
+{"id": "mechanical-remediation-no-delta", "mode": "judgment", "input": "All accepted findings were one-line reverts and formatting", "expected": {"delta_review": false}, "source": "plan"}

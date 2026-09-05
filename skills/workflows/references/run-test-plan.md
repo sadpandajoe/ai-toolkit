@@ -27,16 +27,16 @@ run-test-plan https://github.com/owner/repo/pull/123
 ## Command Contract
 
 - The main thread owns scenario state, evidence paths, and reporting destinations. Subagents return compact scenario/review handoffs only.
-- For STANDARD or expensive runs (large scenario matrix, multi-flow validation, repeated plan-review rounds), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then checkpoint + context_reset before the next expensive phase.
+- For STANDARD or expensive runs (large scenario matrix, multi-flow validation), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then hand the next expensive phase to a fresh worker.
 - Required PROJECT.md updates on STANDARD/expensive runs:
-  - After step 3 (plan at 8/10): `## Test Plan` (final scenario matrix, plan source, review score).
+  - After step 3 (plan accepted): `## Test Plan` (final scenario matrix, plan source, review verdict).
   - After step 4 (execution): `## Test Plan Results` (per-scenario PASS/FAIL/BLOCKED/SKIP, evidence paths).
   - After step 6 (report): `## Test Plan Reported` (where posted: Shortcut story link, PR comment, or local only).
-- These writes are **hard gates before any checkpoint + context_reset** on STANDARD/expensive runs — chat-only scenario state is unrecoverable after clear.
+- These writes are **hard gates before any checkpoint** on STANDARD/expensive runs — chat-only scenario state is unrecoverable after clear.
 - The plan matrix and per-scenario evidence paths must land in PROJECT.md before clear regardless of whether the run is reactive or proactive checkpoint.
-- **Every run** (including TRIVIAL/MODERATE) writes at least a `## Test Plan Results` entry to PROJECT.md before the chat summary so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) after `run-test-plan` does not lose the QA record. TRIVIAL/MODERATE runs may fold plan + results + report into a single end-of-run entry; STANDARD/expensive runs follow the per-phase cadence above.
+- **Every run** (including TRIVIAL/STANDARD) writes at least a `## Test Plan Results` entry to PROJECT.md before the chat summary so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) after `run-test-plan` does not lose the QA record. TRIVIAL/STANDARD runs may fold plan + results + report into a single end-of-run entry; COMPLEX or expensive runs follow the per-phase cadence above.
 
-  Minimum entry shape for TRIVIAL/MODERATE:
+  Minimum entry shape for TRIVIAL/STANDARD:
 
   ```markdown
   ## Test Plan Results
@@ -73,7 +73,7 @@ run-test-plan https://github.com/owner/repo/pull/123
    If no plan is provided:
    - derive a compact use-case matrix from the target area or external context
 
-3. **Iterate the Plan to 8/10**
+3. **Review the Plan Once**
 
    Load [skills/testing/references/review-testplan.md](../../testing/references/review-testplan.md) and review the matrix with a fresh test-plan reviewer after material revisions.
    Revise the plan until it reaches `8/10`, or stop early only if blockers or unresolved ambiguities make execution unsafe or misleading.

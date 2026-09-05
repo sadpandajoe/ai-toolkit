@@ -94,6 +94,7 @@ def _structural_seeds(
         # adding a code-review boundary under another owner means checking that
         # its span or Required Context still names the grading contracts.
         "review": review_umbrella if owner.as_posix() == review_umbrella else owner.as_posix(),
+        "planning": "skills/planning/SKILL.md",
         "rca": "skills/debug/SKILL.md",
         "operations": owner.as_posix(),
     }.get(responsibility)
@@ -101,16 +102,10 @@ def _structural_seeds(
         raise ModelRouteError(f"unknown contract responsibility: {responsibility}")
     values = (
         "rules/model-assignment.md",
-        # Every lane on the review route stops the same way, whatever it grades.
-        # This used to ride in on the review umbrella's Required Context, which
-        # is why the umbrella had to be injected everywhere; seeding it here is
-        # what let the umbrella narrow to the lanes that actually own it. The
-        # seed stays scoped to the review route: stop-rules is a review/fix-loop
-        # contract that directs the worker to emit a Review Gate and cites
-        # severity and review-gate, none of which reach an implementation, RCA,
-        # or operations closure -- shipping it there would hand those workers
-        # instructions pointing at documents they do not have.
-        *(("rules/stop-rules.md",) if responsibility == "review" else ()),
+        # Every worker returns the same compact handoff and never carries the
+        # parent transcript; the handoff contract is small enough to ride along
+        # with every route.
+        "rules/specialist-handoff.md",
         owner.as_posix(),
         route_contract,
         path.as_posix(),

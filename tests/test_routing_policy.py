@@ -27,6 +27,9 @@ class RoutingPolicyTests(RoutingTestCase):
     def test_route_matrix_enforces_family_effort_and_permissions(self) -> None:
         cases = {
             ("implementation", "codex"): ("sol", "high", "workspace-write"),
+            ("implementation", "claude"): ("sonnet", "high", "acceptEdits"),
+            ("planning", "claude"): ("opus", "high", "plan"),
+            ("planning", "codex"): ("sol", "high", "read-only"),
             ("review", "claude"): ("opus", "high", "plan"),
             ("deep-review", "claude"): ("fable", "xhigh", "plan"),
             ("rca", "claude"): ("opus", "high", "plan"),
@@ -41,13 +44,34 @@ class RoutingPolicyTests(RoutingTestCase):
                 )
                 self.assertEqual(expected, (route.family, route.effort, control))
 
-    def test_fable_is_never_an_automatic_implementation_route(self) -> None:
+    def test_sonnet_implements_and_opus_only_plans(self) -> None:
         with self.assertRaisesRegex(ModelRouteError, "unknown or nonspawnable"):
             resolve_route(ROOT, "frontier-implementation", "claude")
         implementation = resolve_route(ROOT, "implementation", "claude")
         self.assertEqual(
-            ("opus", "high"), (implementation.family, implementation.effort)
+            ("sonnet", "high"), (implementation.family, implementation.effort)
         )
+        planning = resolve_route(ROOT, "planning", "claude")
+        self.assertEqual("opus", planning.family)
+        self.assertEqual(
+            ["Write", "Edit", "NotebookEdit"], planning.controls["disallowed_tools"]
+        )
+        # Fable stays a read-only deep advisor on every automatic route.
+        for name in ("deep-review", "deep-rca"):
+            route = resolve_route(ROOT, name, "claude")
+            self.assertEqual(("fable", "xhigh", "plan"), (route.family, route.effort, route.controls["permission_mode"]))
+
+    def test_manifest_names_the_orchestrator_family(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.fixture(temporary)
+            path = root / "interfaces/model-routing.json"
+            payload = json.loads(path.read_text())
+            payload["policy"]["orchestrator"] = {"codex": "sol", "claude": "opus"}
+            path.write_text(json.dumps(payload))
+            problems = validate_model_routing(root)
+            self.assertTrue(
+                any("orchestrator families" in item for item in problems), problems
+            )
 
     def test_responsibility_restrictions_cannot_be_weakened(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -65,12 +89,14 @@ class RoutingPolicyTests(RoutingTestCase):
                 problems,
             )
 
-    def test_generic_provider_worker_cannot_bypass_routing(self) -> None:
+    def test_generic_provider_worker_cannot_bypass_independent_review(self) -> None:
+        # Same-provider workers may be native subagents, but independent review
+        # and every routed specialist must cross the pinned transport.
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
             path = root / "interfaces/providers.json"
             payload = json.loads(path.read_text())
-            payload["providers"]["codex"]["bindings"]["fresh_subagent"] = {
+            payload["providers"]["codex"]["bindings"]["independent_review"] = {
                 "mode": "native",
                 "document": "config/providers/codex.md",
                 "fallback": None,
@@ -79,6 +105,22 @@ class RoutingPolicyTests(RoutingTestCase):
             problems = validate_model_routing(root)
             self.assertTrue(
                 any("must use source_linked_model_run" in item for item in problems),
+                problems,
+            )
+            payload["providers"]["codex"]["bindings"]["independent_review"] = {
+                "mode": "fallback",
+                "document": "config/providers/codex.md",
+                "fallback": "source_linked_model_run",
+            }
+            payload["providers"]["codex"]["bindings"]["fresh_subagent"] = {
+                "mode": "fallback",
+                "document": "config/providers/codex.md",
+                "fallback": "manual_fresh_session",
+            }
+            path.write_text(json.dumps(payload))
+            problems = validate_model_routing(root)
+            self.assertTrue(
+                any("native or source_linked_model_run" in item for item in problems),
                 problems,
             )
 
@@ -90,6 +132,17 @@ class RoutingPolicyTests(RoutingTestCase):
             problems = validate_model_routing(root)
             self.assertTrue(
                 any("volatile model selector" in item for item in problems), problems
+            )
+            # The agent roster is authored content too: an agent file that pins a
+            # dated selector would drift the moment the catalog is promoted.
+            (root / "rules/leaked-selector.md").unlink()
+            claude_selector = MODEL_CATALOG["claude"]["models"]["opus"]["selector"]
+            (root / "agents/claude/aitk-planner.md").write_text(
+                f"---\nname: aitk-planner\ndescription: x\nmodel: {claude_selector}\n---\n"
+            )
+            problems = validate_model_routing(root)
+            self.assertTrue(
+                any("agents/claude/aitk-planner.md" in item for item in problems), problems
             )
 
     def test_future_selector_in_yaml_is_rejected(self) -> None:

@@ -32,4 +32,4 @@ Output is TSV (`status`, short sha, PR number, subject), oldest first. Statuses:
 - **`pr: -` rows** are direct pushes or squashes that lost their `(#N)` suffix. They have no PR-number evidence on either side, so eyeball them manually; the script can only report them as MISSING.
 - **PRESENT-BY-PR with divergent content is possible** (a prior backport was adapted). If a row matters, spot-check with `git show` — presence means "this PR was represented", not "the diffs are identical".
 
-For batch runs, record the audit table (or its MISSING subset) in `CHERRY_PICK.md` under the pre-flight section so the candidate universe survives checkpoint + context_reset.
+For batch runs, record the audit table (or its MISSING subset) in `CHERRY_PICK.md` under the pre-flight section so the candidate universe survives a checkpoint and a fresh session.

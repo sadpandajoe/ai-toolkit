@@ -1,322 +1,133 @@
----
-tier: Heavy
----
+# Local Review Orchestration
 
-# Local Code Review Orchestration
-
-Use for `review-code` on local uncommitted, staged, committed, or path-filtered changes.
-
-## Required Context
-
-Read before grading: `rules/code-review.md` and `rules/severity.md`. Every lane
-that dispatches from this file produces or triages severity-tagged code-review
-findings, and the calibration in `rules/code-review.md` applies to every review
-path — single-reviewer, adversarial, and multi-reviewer synthesis. The review
-umbrella deliberately no longer supplies these (it is also carried by plan, PM,
-and QA routes), so the lanes with no reviewer lens in their closure — the
-independent second opinion and the independent-review capability — would
-otherwise map an adapter's findings onto the toolkit scale with no calibration
-contract at all.
+Use for `review-code` on local uncommitted, staged, committed, or path-filtered
+changes. The parent orchestrates; all review judgment comes from fresh lanes.
 
 ## Gather Changed Files
 
-Default scope is **branch-wide**: combine `<base>..HEAD` (committed) with `git diff --name-only` and `git diff --cached --name-only` (uncommitted). This avoids the common re-invocation where a user reviews a branch and the first pass only sees uncommitted work.
-
-- `--committed`: only `<base>..HEAD`.
-- `--uncommitted`: only working tree and staged changes (legacy behavior).
-- Path args or `--files`: filter to requested files.
-- Read full content for changed files plus the relevant diff.
+Default scope is branch-wide: `<base>..HEAD` plus the working tree and index.
+`--committed` and `--uncommitted` narrow it; path arguments filter it. Read the
+full contents of changed files, not only hunks.
 
 <!-- aitk-model-route-exempt:pre-dispatch-condition -->
-Before dispatching reviewers, print a one-line scope summary so the user can intervene early:
+Before dispatching any reviewer, print one line so the user can intervene:
+`Scope: <N> committed + <M> uncommitted files (<base>..HEAD = <sha>..HEAD)`.
+Stop if the scope is empty.
 
-```
-Scope: <N> committed + <M> uncommitted files (<base>..HEAD = <short-sha>..HEAD)
-```
+**Record the base.** Resolve `<base>` once on round one and write it into the
+Review Record. Every later round, including the delta pass, measures scope from
+that recorded base, never from the last fix.
 
-Stop if no changes are found in the resolved scope.
+## Classify
 
-**Record the base.** Resolve `<base>` once, on round 1, and write it into the
-Review Record as the **review base**. Every later round — re-verification, the
-fix-queue final pass, the resolved-state audit — resolves its scope from that
-recorded base, never from what changed since the last fix. Rounds that re-derive
-scope from their own delta review only the fixes: a defect introduced in round 1
-and committed there stops being "in the diff" from round 2 onward, so no
-subsequent round can find it however many rounds run. The recorded base is what
-keeps every round branch-wide.
+Run [classify-diff.md](classify-diff.md) and `qa/references/assess-impact.md`.
+Record the complexity, impact, and risk flags in the Review Record. TRIVIAL
+zero-logic or micro-fix diffs may take the review exception in `rules/gates.md`;
+everything else gets the independent review below, even at TRIVIAL.
 
-## Complexity Gate
+## Preflight
 
-Classify scope with `rules/complexity-gate.md` and this review-specific routing:
+Run the repo's build, lint, typecheck, and the tests covering changed files
+when quick enough. If preflight fails, fix it or record the blocker before any
+review lane runs; the reviewer receives the preflight result.
 
-| Signal | Trivial | Moderate | Standard |
-|--------|---------|----------|----------|
-| Files changed | 1-2 | 2-4 in one subsystem | 5+ or unclear ownership |
-| Lines changed | < 50 | 50-200 | 200+ |
-| Logic changes | None or cosmetic | Contained functional change | Cross-cutting behavior |
-| Reviewer lanes | Code quality only | Triggered lanes only | Full triggered team |
-| Ensemble ([ensemble.md](ensemble.md)) | `trivial` | `moderate` | `standard` (`deep` in deep review mode) |
+## Independent Review
 
-At TRIVIAL the single code-quality lens **is** the independent review — one
-fresh reviewer, not zero and not two. The separate second-opinion capability
-lane starts at MODERATE, where it is requested concurrently with the triggered
-lanes whenever it is available. Deep review mode pins the tier to at least
-STANDARD, so it never lands in the TRIVIAL column.
+<!-- aitk-model-route:review.independent -->
+Launch one fresh reviewer worker on `review`, on the other provider when
+reachable; use `deep-review` only when the classifier's deep-tier escalation
+fired. The prompt carries the diff and full changed files, the recorded base,
+the preflight result, the classifier's flags and impact, and acceptance
+criteria from `PROJECT.md` when relevant. It never carries the implementer's
+transcript or any earlier findings. The worker receives its contract inline from
+the route runner. If no cross-provider lane is reachable, run the toolkit's
+same-provider reviewer agent instead and record `Independent review:
+same-provider` in the Review Record; never skip the lane and never review
+inline.
 
-Formatting-only diffs and micro-fixes may skip the review loop under `rules/review-gate.md`.
+## Deep Lenses (conditional)
 
-## Classify + Impact
+<!-- aitk-model-route:review.deep-lenses -->
+When the classifier flagged risk, launch at most two additional fresh worker
+lanes on `deep-review`, one per flagged lens, concurrently with the independent
+review: [adversarial.md](adversarial.md) for security-sensitive diffs or a
+red-team ask, [deep-quality.md](deep-quality.md) for refactor-shaped or
+deep-quality asks, and
+[../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
+for architecture changes. Each lane is resolved with `--lens <repo-relative
+lens path>` so one worker receives exactly one lens. No flags means no deep
+lanes. A code-judo ask runs at its own boundary
+([code-judo.md](code-judo.md)) and returns proposals, not findings.
 
-Run these in parallel when possible:
+## Validate, Then Fix
 
-- [classify-diff.md](classify-diff.md): choose reviewer domains.
-- [../../qa/references/assess-impact.md](../../qa/references/assess-impact.md): classify functional impact as CORE, STANDARD, or PERIPHERAL.
+Collect findings from every lane and dedupe by file, line, and class. For each
+`[major]` and `[minor]`, check the claim against the current repo and diff
+before changing anything: accepted, or rejected with a one-line evidence-based
+reason. Write the Review Record to `PROJECT.md` before fixing. Then apply
+accepted fixes (parent inline, or the implementer worker for a large queue),
+add the locking tests the findings named, and run the verification loop
+(`skills/verification-loop/SKILL.md`) on the fixed files.
 
-Escalate CORE impact:
+Disputed findings and genuine trade-offs surface as `USER_DECISION`; everything
+else is decided here.
 
-- TRIVIAL + CORE: run code-quality plus **only the reviewer lens that matches why the change is CORE** (e.g., security/auth → adversarial; data-loss/migration → backend; hooks/safety → code-quality alone is sufficient). Escalate to the full team only when multiple CORE lenses apply or the safety-relevant lens is ambiguous. The point of CORE is calibration, not fan-out.
-- MODERATE + CORE: run triggered reviewer lanes and escalate any security-sensitive or data-loss risk to Standard handling.
-- STANDARD + CORE: run full team and suggest adversarial review for security-sensitive areas.
-- CORE test gaps use stricter severity calibration.
+## Delta Review
 
-## Pre-Flight Verification
+<!-- aitk-model-route:review.delta -->
+Launch one fresh delta reviewer worker on `review` (`deep-review` if the original
+ran deep) after substantive remediation: new branches, helpers, fixtures, guard
+clauses, or any `[major]` fix. The prompt marks it a delta review and
+carries the accepted findings, the fix diff, and the recorded base; the worker
+grades fixed / not fixed / fixed-but-introduced and reviews new code paths only.
+Skip the delta pass when every fix was a deletion, one-line revert, formatting,
+or comment. A finding class surviving the delta pass is `ESCALATE` under
+`rules/gates.md`, not a third round.
 
-Run the repo's relevant checks before reviewer dispatch:
+## Gate and Record
 
-- Build/typecheck/lint when applicable.
-- Tests covering changed files or changed behavior when they are quick enough for the review scope.
-- A clear skipped reason when the app or suite is not runnable locally.
+Emit the gate block from `rules/gates.md` as `## Gate: review` with
+`Independent review: <provider/family | same-provider>`, `Deep lenses: <names
+or none>`, `Findings: <accepted>/<raised> accepted`, and `Delta: <clean |
+reopened N | not required>` on the Evidence line. Record it with
+`bin/aitk project-state gate --gate review --status <...>`.
 
-<!-- aitk-model-route-exempt:pre-launch-condition -->
-If pre-flight fails, fix the failure or report it as a blocker before launching reviewer lanes. Reviewer context should include the pre-flight result.
-
-## Dispatch Reviewers
-
-Routine bounded lanes use `review`. Architecture, security, adversarial, and
-high-risk final lanes use `deep-review`. Resolve and launch the route through
-`<toolkit-root>/bin/aitk model-route --boundary <marker-id>` and matching
-`model-run`; an unrouteable lane is
-unavailable and must not silently fall back to a generic worker.
-
-Lens fan-out boundaries take **one dispatch per lens**, each resolved with
-`--lens <repo-relative lens path>`. That flag is required there and the boundary
-fails closed without it: one worker must receive one reviewer contract, never the
-whole menu the marker names. A lens the marker does not name is rejected, so
-resolve each triggered lens separately rather than batching them into one call.
-
-**STANDARD tier (or ≥3 triggered lanes): dispatch via [workflow-review.md](workflow-review.md)** — lens fan-out, dedup, and adversarial verification run off-thread; the main thread ingests only confirmed findings, then resumes at the Review Record step below. TRIVIAL/MODERATE continue with direct spawns:
-
-<!-- aitk-model-route:review.local-primary-lanes -->
-The main thread is an orchestrator. Dispatch fresh-context reviewer subagents on `review`/`deep-review` with:
-
-- Diff and full changed-file contents.
-- Acceptance criteria from PROJECT.md if relevant.
-- Complexity and impact assessment.
-- Pre-flight verification result.
-- The selected reviewer reference.
-
-Use triggered references from `classify-diff.md`, including:
-
-- [code-quality.md](code-quality.md)
-- [deep-quality.md](deep-quality.md) — strict structural findings on `deep-review`; the default lane filling that mandatory route
-- [adversarial.md](adversarial.md) — red-team findings on `deep-review`; fires on security sensitivity or an explicit ask
-- [../../testing/references/review-tests.md](../../testing/references/review-tests.md)
-- [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md)
-- [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
-- [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md)
-- [../../plan-review/references/backend.md](../../plan-review/references/backend.md)
-
-`classify-diff` reports a **Deep-tier escalation** field for this fan-out: on
-**YES**, route every triggered lens through `deep-review` instead of its default
-route. Escalation is *sufficient* to add the Code-judo lane below but not
-necessary — that lane also fires on a `^refactor` title or an explicit ask with
-escalation **NO**, so dispatch it on `Code-judo lane: YES` and never gate it on
-the escalation field.
-
-<!-- aitk-model-route:review.local-independent-second-opinion -->
-On MODERATE and above, launch the **Independent Second Opinion** capability (see below) concurrently with these reviewer spawns — it is an independent reviewer, not a post-pass.
-
-<!-- aitk-model-route:review.local-cross-provider-cold -->
-On STANDARD and above — and at MODERATE only when the user or workflow asked to cross providers, passing `--cross-provider` — also dispatch the ensemble's cross-provider cold reviewer concurrently, resolved with `bin/aitk review-ensemble <tier> --provider <origin> --available <reachable>`: run `bin/aitk model-run --provider <cross-provider>` on the ensemble's cross lane route with scope and diff only — never the origin lanes' findings. It is a separate stage and does not consume the lens lane budget. If the cross provider is unreachable, apply the ensemble's degraded action (`continue`/`disclose` proceed with the disclosure sentence; `deep` and `security` block pending explicit user override) and never substitute another model for it.
-
-Collect findings from all primary lanes, the cross-provider lane, and the independent lane; dedupe while **merging** each finding's `provider/family` provenance; sort by the `rules/severity.md` scale; and write the Review Record to PROJECT.md before fixing `[major]` and `[minor]` issues or checkpointing. Verify each `[major]`/`[minor]` with a lane from a different family than the one that raised it (a different provider in deep review mode), per [ensemble.md](ensemble.md).
-
-### Code-Judo Lane (Dispatched at Its Own Boundary)
-
-<!-- aitk-model-route-exempt:judo-dispatched-at-own-boundary -->
-This section dispatches no reviewer agents of its own: the code-judo pass runs at the `review.code-judo` boundary, which pins the `deep-review` route and derives its own contract closure. When `classify-diff` reports **Code-judo lane: YES**, run that generative pass separately from the findings fan-out per [code-judo.md](code-judo.md), and put its proposals in the Restructuring Proposals section, never the findings table.
-
-A `^refactor`-titled change or an explicit Code-judo ask sets `Code-judo lane: YES` with `Deep-tier escalation: NO` — run the judo pass anyway while the findings lenses stay on their default routes. The only documented exception is multi-PR batch review, which passes `Batch mode: Code-judo suppressed` in its dispatch payload ([pr-batch.md](pr-batch.md)); local review is never dispatched that way, so the rule above is unconditional here.
-
-## Re-Verify + Iterate
-
-After applying reviewer fixes, re-run relevant checks:
-
-- Build/typecheck/lint.
-- Tests covering changed files or changed behavior.
-- Targeted verification for fixed findings.
-
-If checks fail, fix and re-run classification/review as needed. Re-run scope is
-`<recorded base>..HEAD` plus the working tree — the same span round 1 used, not
-the fix commits. Re-classify against that span too: a fix can trigger a lens the
-original diff did not, and narrowing the span hides which lenses now apply.
-
-### Final Pass After Fix Queue
-
-When the fix queue introduced new code paths (not just deletions, one-line reverts, or check-driven fixes), spawn **one additional fresh-eyes review pass on the integrated diff** before emitting the Review Gate. Frame the prompt explicitly as "final pass on the integrated state, not a re-read of the original diff."
-
-Trigger signals (any one is enough):
-- ≥2 fix-queue items added new branches, helpers, fixtures, or guard clauses.
-- A major fix introduced a producer/consumer pair where one side was tested but not both.
-- A fix added a marker file, sentinel, or other artifact that needs symmetric cleanup elsewhere in the codebase.
-- A bug-fix during validation duplicated an existing helper into a second location without a sync mechanism.
-
-Skip the final pass only when **all** fix-queue items were: pure deletions, one-line reverts, formatting, or comment-only.
-
-<!-- aitk-model-route:review.local-final-pass -->
-Use fresh reviewer subagents on `deep-review` for the final pass — never the ones who reviewed the original diff. Its scope is `base..HEAD` of the integrated branch, not the fix-queue commits in isolation. If the final pass surfaces majors, treat them as a new review round and iterate.
-
-The pass runs the findings lenses the integrated diff still triggers, so it fans out over the same menu as the primary lanes — at minimum [code-quality.md](code-quality.md), plus [deep-quality.md](deep-quality.md) when the fix queue changed structure, and any of [adversarial.md](adversarial.md), [../../testing/references/review-tests.md](../../testing/references/review-tests.md), [../../testing/references/review-testplan.md](../../testing/references/review-testplan.md), [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md), [../../plan-review/references/frontend.md](../../plan-review/references/frontend.md), or [../../plan-review/references/backend.md](../../plan-review/references/backend.md) that the integrated diff still triggers. Naming the full menu here is what lets those lanes dispatch at all: a lens this span omits cannot be selected, however clearly the classifier triggered it.
-
-### Resolved-State Audit
-
-Runs once per review, after the fix queue is drained and before the Review Gate,
-on STANDARD tier or whenever any round recorded a `[major]`. Unlike the final
-pass, it is not a lens: it audits the *bookkeeping*, and it is the only lane that
-reads the Review Record rather than the diff alone.
-
-<!-- aitk-model-route:review.local-resolved-audit -->
-Dispatch one fresh worker on `deep-review` with the Review Record, the recorded
-review base, and the full `<recorded base>..HEAD` diff. It answers three
-questions and nothing else:
-
-1. **Is each finding marked `fixed` actually fixed?** Cite the resolving hunk for
-   each. A finding whose status says `fixed` with no hunk that changes the cited
-   behavior is reopened.
-2. **Does any finding's defect class recur elsewhere in the branch?** For each
-   recorded finding, search the whole span for the same mistake in another file.
-   This is the one place the `[minor]` symmetry cap in `rules/code-review.md` does
-   not apply: a class confirmed present in this branch is evidence, not breadth,
-   so a recurrence keeps the severity of the finding that established it.
-3. **Did a fix create the thing its finding warned about?** A fix that satisfies
-   the letter of a finding while reproducing its shape elsewhere is the failure
-   this lane exists to catch.
-
-Its closure is deliberately wider than a lens lane's: it carries the grading and
-severity rules plus the classifier, because deciding whether a class recurs means
-re-asking which lenses the branch triggers. Reopened findings become a new review
-round with the same recorded base.
-
-## Independent Second Opinion (capability-based)
-
-MODERATE and above request an independent review in addition to the primary reviewer lanes. The lane degrades gracefully and never blocks the review. TRIVIAL does not run it — its one code-quality lens already satisfies the never-review-your-own-work rule, and a second lane on a one-line diff buys nothing.
-
-<!-- aitk-model-route:review.local-independent-capability -->
-Launch the runtime's configured `independent-review` capability on `review` concurrently with reviewer dispatch. Provider adapters own discovery, authentication, and invocation; this shared skill owns only the stable input and output contract.
-
-**This lane's scope does not follow the primary filter.** Pass `branch` with the
-recorded review base whenever a base exists, on every invocation — including
-`--uncommitted`, `--committed`, and path-filtered runs — and add the working tree
-when it is dirty. Pass `working-tree` only when there is no base to resolve
-(detached HEAD, no upstream, a repository with one commit).
-
-Narrowing this lane to match the primary scope is what makes it a second pass
-rather than a second opinion. Its value is seeing what the primary lanes were not
-pointed at: a path filter or `--uncommitted` expresses which files the *user* is
-iterating on, and a reviewer confined to those files cannot report that the
-problem is in the file they excluded. Path args still filter the primary lanes;
-they never filter this one. Say so in the Review Record when the two scopes
-differ, so a finding outside the primary scope is not mistaken for noise.
-
-The adapter returns normalized findings with `severity`, `file`, `line`, `evidence`, and `recommendation`. If the capability is unavailable or errors, record `Independent review: skipped (unavailable)` in the Review Gate and continue with the primary lanes.
-
-Map independent findings into the toolkit severity scale (`rules/severity.md`), then dedupe against the primary lanes:
-
-- Must fix / critical → `[major]`
-- Should fix / improvement → `[minor]`
-- Style/preference → `[nitpick]`
-
-Fix new `[major]` issues and verify again. Surface **independent-only** findings (those no primary lane flagged) explicitly in the Review Record so cross-reviewer divergence stays visible.
-
-The whole-loop skip for formatting-only and micro-fix diffs (per `rules/review-gate.md`) skips this lane too — there is no diff worth a second opinion.
-
-## Review Gate
-
-Emit after all review lanes finish:
-
-```markdown
-## Review Gate
-Rounds: [N]
-Base: [short-sha — every round measured against this]
-Pre-flight: [pass/fail/skipped]
-Independent review: [clean/findings (N) /skipped (unavailable) /skipped (trivial tier) /skipped (micro-fix)]
-Resolved-state audit: [clean/reopened (N) /not required]
-Ensemble: [trivial/moderate/standard/deep/security]
-Model coverage: [provider-diverse/family-diverse/single-family] — lanes: [provider/family list]
-Verification: [model-diverse/reduced (reason)]
-Status: [clean/blocked/user decision/skipped/micro-fix]
-```
-
-`Model coverage:` is the resolver's level verbatim. Whenever the resolver
-returns a disclosure sentence, append it on the next line — it fires when
-coverage is below the floor, when a requested lane was dropped even though the
-floor still holds, and when the roster cannot supply a diverse verifier. Never write a coverage level the run did not achieve, and
-never count the orchestrating session's own model as a lane — the toolkit pins
-the model it requests but cannot attest the provider's internal serving-model
-identity.
-
-## PROJECT.md Review Record
-
-Write or update this compact record before fixing findings or clearing context. Keep only actionable state; do not paste full reviewer transcripts.
+Review Record in `PROJECT.md` (compact, actionable only):
 
 ```markdown
 ## Current Code Review
-
-**Base:** <short-sha — the review base, resolved on round 1 and reused by every later round>
-**Scope:** <changed files or path filter>
-**Independent scope:** <branch (base..HEAD) — note it here when it is wider than Scope>
-**Pre-flight:** <pass/fail/skipped — command or reason>
-**Ensemble / coverage:** <ensemble> / <coverage level> <resolver disclosure, when it returns one>
-**Review Gate:** <pending/clean/blocked/user decision/skipped/micro-fix>
-**Resolved-state audit:** <pending/clean/reopened (N)/not required>
+**Base:** <sha — resolved on round 1, reused by every round>
+**Scope:** <files or filter>
+**Preflight:** <pass/fail/skipped — command or reason>
+**Independent review:** <provider/family | same-provider>
+**Deep lenses:** <names, or none> — <flags that triggered them>
+**Gate:** <PASS | RETRY | ESCALATE | USER_DECISION | BLOCKED>
 
 ### Findings
-| ID | Severity | File | Finding | Locking assertion | Raised by | Verified by | Status |
-|----|----------|------|---------|-------------------|-----------|-------------|--------|
-| R1 | major/minor/nitpick | path:line | concise issue | the assertion that fails today and passes once fixed, or `n/a` | provider/family | provider/family or unverified | open/fixed/deferred/user-decision |
+| ID | Severity | File | Finding | Locking assertion | Verdict | Status |
+|----|----------|------|---------|-------------------|---------|--------|
+| R1 | major | path:line | concise issue | assertion, or n/a | accepted / rejected: <reason> | open / fixed / user-decision |
 
 ### Restructuring Proposals
-<!-- Only when a code-judo pass ran (`Code-judo lane: YES` — deep review mode is one way in, a `^refactor` title or explicit ask is another). These are unscored, behavior-preserving proposals, not severity findings — never fold them into the Fix Queue automatically. Omit the section entirely when no judo pass ran or it found no move. -->
-- P1 — <one-line restructuring> — deletes <what>, reframing <how>; behavior-preservation risk: <the one weak point>.
+<!-- only when a code-judo pass ran; never auto-applied -->
 
 ### Fix Queue
-- [ ] R1 — <specific next action>
+- [ ] R1 — <next action>
 
 ### Resume Notes
-- Next: <fix R1 / re-run verification / emit Review Gate / continue caller workflow>
+- Next: <fix R1 / delta review / emit gate / continue caller>
 ```
 
-If there are no actionable findings, write `Findings: none` and the clean Review Gate status so checkpoint + context_reset can resume without reconstructing review context from chat.
+`Findings: none` with a `PASS` gate is a complete record. Reviewer yield
+(accepted/raised) feeds the metrics event and the observation queue.
 
-## Summary
-
-Use the standalone summary only when `review-code` is user-invoked directly. Internal callers own their next-step section.
+## Summary (standalone runs only)
 
 ```markdown
 ## Review-Code Complete
-Rounds: [N] | Pre-flight: [pass/fail/skipped] | Status: [clean/blocked]
-Model coverage: [level] — [provider/family lanes] [+ resolver disclosure, when it returns one]
-
-### Team Selected
-| Reviewer | Route | Provider/Family | Why |
-|----------|-------|-----------------|-----|
-
+Gate: <status> | Independent review: <lane> | Deep lenses: <names or none>
+Findings: <accepted>/<raised> accepted, <fixed> fixed
 ### Fixed
-- [...]
-
-### Test Coverage
-- [...]
-
+### Rejected (with reason)
 ### Remaining
-- [...]
 ```

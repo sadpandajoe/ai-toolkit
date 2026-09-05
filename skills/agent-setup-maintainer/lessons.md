@@ -15,12 +15,12 @@ Good workflow shape:
 - Step routing names the owner, route, and load/handoff condition.
 - Skills and references load only at phase entry.
 - Subagents return compact handoffs; the main thread writes durable state (`PROJECT.md`, `PLAN.md`, manifests).
-- TRIVIAL paths stay inline; if reviewer subagents are needed, reclassify as MODERATE.
-- MODERATE paths run inline-first with the `verify` workflow or equivalent preflight before review.
-- STANDARD paths, including workstream-shaped work, use fresh reviewer subagents after material revisions and bounded implementation handoffs.
-- STANDARD paths checkpoint and apply `context_reset` at major phase boundaries after durable artifacts are current; files are the memory, chat is disposable.
+- TRIVIAL paths stay inline; anything with logic still gets the one independent review.
+- STANDARD paths run inline-first with the verification loop before review; plans are compact and unvalidated.
+- COMPLEX paths use the planner and validator specialists, bounded implementer handoffs, and the same single independent review.
+- Fresh workers are the context boundary; the parent never depends on a manual clear. Files are the memory, chat is disposable.
 - Implementation stays inline by default; delegate only when isolation, fresh context, or real parallelism helps.
-- Review Gate skip/micro-fix exceptions are explicit and never replace review for meaningful logic changes.
+- Review exceptions (zero-logic, micro-fix) are explicit in `rules/gates.md` and never replace review for meaningful logic changes.
 
 Avoid:
 

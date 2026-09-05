@@ -45,7 +45,7 @@ The loop contract — iteration shape, dispatch table, authorization boundary, e
 - **Standing authorization**: invoking `watch-pr` authorizes new commits + fast-forward pushes to the PR branch and replies/resolution within the comment scope, for the duration of the watch. It does not authorize amend, rebase, force-push, merge, approve/request-changes, or pushing any other branch. The invocation is the commit confirmation; the `## Watch Started` block makes the grant explicit.
 - **Comment scope**: bot threads get full auto handling (fix, rebut with evidence, reply, resolve). Human comments are auto-fixed only when the ask is unambiguous and local; replies to humans stay factual ("Done in `<sha>`"). Everything judgment-shaped is escalated, never guessed.
 - **State lives in WATCH.md**, created from [skills/pr-watch/templates/watch-manifest.md](../../pr-watch/templates/watch-manifest.md). PROJECT.md points to it; chat is never the state store. Resolve symlinks before writing (`readlink -f`).
-- Every fix dispatch inherits its engine's own gates (classification, verification strength, Review Gate, PII scrub). The watch adds no shortcuts around them.
+- Every fix dispatch inherits its engine's own gates (classification, verification strength, review gate, PII scrub). The watch adds no shortcuts around them.
 - **Context control is subagent isolation, not self-clearing** — the loop cannot run a user-only context-clear action. The parent/tool layer polls CI/comments; an `operations` worker may reduce only the supplied evidence to a binary delta report. Fix dispatches use `implementation` and return compact handoffs. Classification and diagnosis remain on the main thread or use `rca`/`deep-rca`. Check JSON, run-watch output, diffs, CI logs, and review rounds therefore stay out of the orchestrator thread, and an idle iteration costs only a heartbeat. If the main thread still hits the reactive thresholds (~70% context, cost), it checkpoints and asks the user to clear and resume — one manual step, then the start workflow auto-resumes from WATCH.md. For zero-touch resets, use the selected provider recurrence binding only when its execution environment can reach the repository; otherwise use its declared local/manual fallback.
 
 ## Steps
@@ -86,9 +86,9 @@ Streak: [n]/[target] | Fixes: [n] | Reruns: [n] | Comments handled: [n] | Escala
 ```
 
 <!-- aitk-model-route-exempt:describes-prior-dispatch-payloads -->
-5. **Context check**: if a reactive threshold fired (~70% context or cost), run `checkpoint` — it names `watch-pr <pr>` as the top-level workflow and WATCH.md as the manifest (extension: [`skills/reporting/templates/watch-pr-checkpoint.md`](../../reporting/templates/watch-pr-checkpoint.md)) — then stop with `Checkpoint saved. Run context_reset, then start to resume the watch.` Otherwise continue to the next iteration; dispatch payloads stayed in their workers, so the orchestrator thread grows slowly.
+5. **Context check**: if a reactive threshold fired (~70% context or cost), run `checkpoint` — it names `watch-pr <pr>` as the top-level workflow and WATCH.md as the manifest (extension: [`skills/reporting/templates/watch-pr-checkpoint.md`](../../reporting/templates/watch-pr-checkpoint.md)) — then stop with `Checkpoint saved. Start a fresh session and run start to resume the watch.` Otherwise continue to the next iteration; dispatch payloads stayed in their workers, so the orchestrator thread grows slowly.
 
-If the session must end mid-watch (checkpoint + context_reset, user interrupt), WATCH.md keeps `Status: watching` and the PROJECT.md checkpoint names the resume target.
+If the session must end mid-watch (checkpoint, user interrupt), WATCH.md keeps `Status: watching` and the PROJECT.md checkpoint names the resume target.
 
 ### 3. Terminal
 

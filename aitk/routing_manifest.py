@@ -16,17 +16,10 @@ import re
 from aitk.routing_policy import (
     CLAUDE_SELECTOR,
     CODEX_SELECTOR,
-    COVERAGE_LEVELS,
-    CROSS_PROVIDER_POLICIES,
-    DEGRADED_ACTIONS,
     DISALLOWED_TOOLS,
     DISPATCH_PATTERN,
-    ENSEMBLE_NAMES,
     EXEMPT_MARKER,
-    LANE_ORIGINS,
     LENS_DOMAINS,
-    MAX_LENS_LANES,
-    VERIFIER_DIVERSITY,
     LENS_DOMAIN_FLOORS,
     LENS_ROUTE_FLOORS,
     ModelRouteError,
@@ -333,55 +326,6 @@ def _seed_only_problems(
     return []
 
 
-ENSEMBLE_INVARIANTS = {
-    "trivial": (1, ("review",), "forbidden", (), 0, "none", "single-family", "continue"),
-    "moderate": (
-        4,
-        ("review", "deep-review"),
-        "optional",
-        (("cross", "review"),),
-        1,
-        "family",
-        "family-diverse",
-        "continue",
-    ),
-    "standard": (
-        6,
-        ("review", "deep-review"),
-        "required",
-        (("cross", "review"),),
-        1,
-        "family",
-        "provider-diverse",
-        "disclose",
-    ),
-    "deep": (
-        6,
-        ("deep-review",),
-        "required",
-        (("cross", "deep-review"),),
-        1,
-        "provider",
-        "provider-diverse",
-        "block",
-    ),
-    # Two verification lanes, not three: Codex ships a single model family, so
-    # a Claude-raised finding can draw at most two provider-diverse verifiers.
-    # Contracting for a third would guarantee a permanent shortfall and invite a
-    # "verified 3/3" claim the catalog cannot back. The panel itself is still
-    # three lanes (origin deep, cross deep, origin third vote) — that is the
-    # roster, not the verifier count.
-    "security": (
-        2,
-        ("deep-review",),
-        "required",
-        (("cross", "deep-review"), ("origin", "review")),
-        2,
-        "provider",
-        "provider-diverse",
-        "block",
-    ),
-}
 # Every dispatch boundary's route allowlist ceiling is pinned here. Structural
 # validation alone would let an edit widen an allowlist (adding `review` to
 # `review.code-judo`, say) and still pass, silently defeating the fail-closed
@@ -395,172 +339,28 @@ BOUNDARY_INVARIANTS = {
     "cherry-pick.validate-scope-leak": ("review", "deep-review"),
     "cherry-pick.validate-scope-leak-rerun": ("review", "deep-review"),
     "debug.ci-triage": ("rca", "deep-rca"),
+    "debug.rca-specialist": ("rca", "deep-rca"),
     "feedback.comment-fix-groups": ("implementation",),
     "pgm.status-collection": ("operations",),
-    "planning.loop-ownership": ("review", "deep-review"),
-    "planning.loop-summary": ("review", "deep-review"),
-    "planning.pm-brief-review": ("review", "deep-review"),
-    "planning.technical-plan-review": ("review", "deep-review"),
+    "planning.validate": ("review", "deep-review"),
     "qa.fresh-validation": ("review", "operations"),
-    "review.adversarial-cross-provider-panel": ("deep-review",),
     "review.code-judo": ("deep-review",),
-    "review.code-quality-final": ("review", "deep-review"),
-    "review.local-cross-provider-cold": ("review", "deep-review"),
-    "review.local-final-pass": ("deep-review",),
-    "review.local-independent-capability": ("review",),
-    "review.local-resolved-audit": ("deep-review",),
-    "review.local-independent-second-opinion": ("review",),
-    "review.local-primary-lanes": ("review", "deep-review"),
+    "review.deep-lenses": ("deep-review",),
+    "review.delta": ("review", "deep-review"),
+    "review.independent": ("review", "deep-review"),
     "review.pr-batch": ("review", "deep-review"),
-    "review.pr-cross-provider-cold": ("review", "deep-review"),
-    "review.pr-lenses": ("review", "deep-review"),
-    "review.pr-moderate": ("review", "deep-review"),
-    "review.pr-standard": ("review", "deep-review"),
-    "review.pr-trivial": ("review",),
+    "review.pr-deep-lenses": ("deep-review",),
+    "review.pr-independent": ("review", "deep-review"),
     "testing.test-authoring": ("implementation",),
     "workflows.adversarial-primary": ("deep-review",),
     "workflows.adversarial-second-opinion": ("deep-review",),
     "workflows.create-feature-implementation": ("implementation",),
-    "workflows.create-feature-moderate-handoff": ("implementation",),
-    "workflows.create-feature-moderate-implementation": ("implementation",),
-    "workflows.create-feature-plan-review": ("review", "deep-review"),
+    "workflows.create-feature-planning": ("planning",),
     "workflows.feedback-fix-wave": ("implementation",),
     "workflows.fix-bug-implementation": ("implementation",),
-    "workflows.review-code-fresh": ("review", "deep-review"),
-    "workflows.review-code-orchestration": ("review", "deep-review"),
-    "workflows.review-plan-fresh": ("review", "deep-review"),
-    "workflows.review-plan-selected": ("review", "deep-review"),
-    "workflows.review-pr-fresh": ("review", "deep-review"),
     "workflows.watch-pr-fix": ("implementation",),
     "workflows.watch-pr-poll": ("operations",),
 }
-
-
-def _validate_ensembles(value: object, declared_routes: set[str]) -> list[str]:
-    """Validate the review ensemble roster block against fixed invariants.
-
-    Ensembles compose existing routes; they never introduce a new route name.
-    The invariant table makes a silent weakening (dropping a required
-    cross-provider lane, lowering verifier diversity) a validation failure
-    rather than a quiet coverage reduction.
-    """
-
-    if not isinstance(value, list):
-        return ["review ensembles must be a list"]
-    problems: list[str] = []
-    seen: set[str] = set()
-    actual: dict[str, tuple[object, ...]] = {}
-    for entry in value:
-        if not isinstance(entry, dict) or set(entry) != {
-            "name",
-            "lens_lanes",
-            "lens_routes",
-            "cross_provider",
-            "cross_lanes",
-            "verification",
-            "coverage_floor",
-            "on_degraded",
-        }:
-            problems.append("invalid review ensemble entry")
-            continue
-        name = entry.get("name")
-        if not isinstance(name, str) or name not in ENSEMBLE_NAMES or name in seen:
-            problems.append(f"invalid or duplicate review ensemble: {name}")
-            continue
-        seen.add(name)
-        lens_lanes = entry.get("lens_lanes")
-        if (
-            type(lens_lanes) is not int
-            or lens_lanes < 1
-            or lens_lanes > MAX_LENS_LANES
-        ):
-            problems.append(f"{name}: lens lane budget must be 1..{MAX_LENS_LANES}")
-            continue
-        lens_routes = entry.get("lens_routes")
-        if (
-            not isinstance(lens_routes, list)
-            or not lens_routes
-            or any(route not in declared_routes for route in lens_routes)
-            or len(set(lens_routes)) != len(lens_routes)
-        ):
-            problems.append(f"{name}: invalid lens routes")
-            continue
-        cross_provider = entry.get("cross_provider")
-        if cross_provider not in CROSS_PROVIDER_POLICIES:
-            problems.append(f"{name}: invalid cross-provider policy")
-            continue
-        cross_lanes = entry.get("cross_lanes")
-        if not isinstance(cross_lanes, list):
-            problems.append(f"{name}: cross lanes must be a list")
-            continue
-        if cross_provider == "forbidden" and cross_lanes:
-            problems.append(f"{name}: forbidden cross-provider policy declares lanes")
-            continue
-        if cross_provider != "forbidden" and not any(
-            isinstance(lane, dict) and lane.get("provider") == "cross"
-            for lane in cross_lanes
-        ):
-            problems.append(f"{name}: cross-provider policy declares no cross lane")
-            continue
-        lane_tuples: list[tuple[str, str]] = []
-        for lane in cross_lanes:
-            if (
-                not isinstance(lane, dict)
-                or set(lane) != {"provider", "route"}
-                or lane.get("provider") not in LANE_ORIGINS
-                or lane.get("route") not in declared_routes
-            ):
-                problems.append(f"{name}: invalid cross lane entry")
-                break
-            lane_tuples.append((str(lane["provider"]), str(lane["route"])))
-        else:
-            verification = entry.get("verification")
-            if (
-                not isinstance(verification, dict)
-                or set(verification) != {"lanes", "diversity"}
-                or type(verification.get("lanes")) is not int
-                or verification.get("lanes") < 0
-                or verification.get("diversity") not in VERIFIER_DIVERSITY
-                or (verification.get("lanes") == 0)
-                != (verification.get("diversity") == "none")
-            ):
-                problems.append(f"{name}: invalid verification contract")
-                continue
-            if entry.get("coverage_floor") not in COVERAGE_LEVELS:
-                problems.append(f"{name}: invalid coverage floor")
-                continue
-            # Lens routes are mandatory, not a menu: at least one lens lane runs
-            # on every listed route, which is what makes the resolved coverage
-            # level true of the run rather than of the palette.
-            if lens_lanes < len(lens_routes):
-                problems.append(
-                    f"{name}: lens lane budget cannot cover every lens route"
-                )
-                continue
-            if entry.get("on_degraded") not in DEGRADED_ACTIONS:
-                problems.append(f"{name}: invalid degraded-coverage action")
-                continue
-            if (
-                entry.get("coverage_floor") == "provider-diverse"
-                and cross_provider != "required"
-            ):
-                problems.append(
-                    f"{name}: provider-diverse floor requires a required cross lane"
-                )
-                continue
-            actual[name] = (
-                lens_lanes,
-                tuple(lens_routes),
-                cross_provider,
-                tuple(lane_tuples),
-                verification["lanes"],
-                verification["diversity"],
-                entry["coverage_floor"],
-                entry["on_degraded"],
-            )
-    if seen != ENSEMBLE_NAMES or actual != ENSEMBLE_INVARIANTS:
-        problems.append("review ensemble vocabulary or invariant mapping mismatch")
-    return problems
 
 
 def _validate_payload(root: Path, payload: object) -> list[str]:
@@ -577,7 +377,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "dispatch_exemptions",
             "lens_routes",
             "lens_floors",
-            "ensembles",
         }
         or type(payload.get("version")) is not int
         or payload.get("version") != 1
@@ -589,6 +388,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         "efforts",
         "automatic_max",
         "fallback",
+        "orchestrator",
     }:
         problems.append("invalid model routing policy")
         efforts: object = None
@@ -601,6 +401,12 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ):
             problems.append(
                 "model routing policy must use high/xhigh with no max or fallback"
+            )
+        # The parent session is the orchestrator. It runs the cheap workhorse
+        # family, and the manifest records which so docs and evals can check it.
+        if policy.get("orchestrator") != {"codex": "sol", "claude": "sonnet"}:
+            problems.append(
+                "model routing policy must name sol/sonnet as the orchestrator families"
             )
     providers = payload.get("providers")
     if not isinstance(providers, dict) or set(providers) != PROVIDERS:
@@ -724,15 +530,29 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             tuple(claude.get("disallowed_tools", [])),
         )
     expected = {
+        # Sonnet implements. Development judgment that used to require Opus
+        # now lives in planning, review, and RCA specialists; the implementer
+        # receives an accepted artifact and a bounded scope.
         "implementation": (
             "standard",
             "implementation",
             False,
             "sol",
             "workspace-write",
-            "opus",
+            "sonnet",
             "acceptEdits",
             (),
+        ),
+        # Opus plans only COMPLEX work, read-only; the parent writes PLAN.md.
+        "planning": (
+            "standard",
+            "planning",
+            False,
+            "sol",
+            "read-only",
+            "opus",
+            "plan",
+            ("Write", "Edit", "NotebookEdit"),
         ),
         "review": (
             "standard",
@@ -789,7 +609,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         problems.append("model route vocabulary or invariant mapping mismatch")
 
     declared_routes = seen_routes
-    problems.extend(_validate_ensembles(payload.get("ensembles"), declared_routes))
     boundaries = payload.get("dispatch_boundaries")
     if not isinstance(boundaries, list):
         problems.append("dispatch_boundaries must be a list")
@@ -997,7 +816,12 @@ def validate_route_bindings(root: Path) -> list[str]:
         bindings = (
             provider_value.get("bindings") if isinstance(provider_value, dict) else None
         )
-        for capability in ("fresh_subagent", "independent_review", "routed_subagent"):
+        # Same-provider workers are native subagents (the toolkit's installed
+        # agent roster), so `fresh_subagent` may be native. Independent review
+        # and every routed specialist still cross the source-linked transport:
+        # that is the boundary that pins model, effort, sandbox, and contract
+        # closure, and a generic worker must not be able to stand in for it.
+        for capability in ("independent_review", "routed_subagent"):
             binding = bindings.get(capability) if isinstance(bindings, dict) else None
             if not isinstance(binding, dict) or (
                 binding.get("mode"),
@@ -1006,6 +830,14 @@ def validate_route_bindings(root: Path) -> list[str]:
                 problems.append(
                     f"{provider}/{capability}: must use source_linked_model_run"
                 )
+        binding = bindings.get("fresh_subagent") if isinstance(bindings, dict) else None
+        if not isinstance(binding, dict) or binding.get("mode") not in {"native", "fallback"} or (
+            binding.get("mode") == "fallback"
+            and binding.get("fallback") != "source_linked_model_run"
+        ):
+            problems.append(
+                f"{provider}/fresh_subagent: must be native or source_linked_model_run"
+            )
     return problems
 
 
@@ -1018,6 +850,7 @@ def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[
     ]
     authored_roots = (
         ".codex-plugin",
+        "agents",
         "aitk",
         "bin",
         "config",

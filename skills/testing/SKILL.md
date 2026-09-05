@@ -8,34 +8,39 @@ description: "Use for creating, updating, or reviewing automated tests and test-
 ## Before Starting
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-Read and apply `rules/testing.md` for test strategy and execution guardrails.
+Read and apply `rules/testing.md`.
 
-Umbrella for test-harness craft — writing, updating, and critiquing automated tests at the pytest/jest/vitest layer.
+Umbrella for test-harness craft: writing, updating, and critiquing automated
+tests. The parent or the toolkit's tester agent owns normal test work; a
+specialist enters only for the hard question "does this test prove the right
+thing?".
 
 ## Distinction vs QA
 
-- **QA** = WHAT to test — scenarios, user-impact triage, fix validation, bug filing (`qa/` skill)
-- **Testing** = HOW to test — writing test files, updating suites, reviewing test quality and test plans (this skill)
-
-A QA scenario list feeds testing; testing implements the suite that protects those scenarios.
+QA is what to test (scenarios, triage, validation, bug filing); testing is how
+(test files, suites, test quality).
 
 ## Phases
 
 | Phase | When | Reference |
-|-------|------|-----------|
-| Create tests | First meaningful automated tests for an area without a suite | [references/create-tests.md](references/create-tests.md) |
-| Update tests | Improve an existing suite — add, replace, remove | [references/update-tests.md](references/update-tests.md) |
-| Review tests | Evaluate test quality, regression signal, production failure scenarios | [references/review-tests.md](references/review-tests.md) |
-| Review test plan | Evaluate a plan's testing strategy — coverage approach, test layers, edge cases | [references/review-testplan.md](references/review-testplan.md) |
+|---|---|---|
+| Create tests | First meaningful tests for an area without a suite | [references/create-tests.md](references/create-tests.md) |
+| Update tests | Improve an existing suite | [references/update-tests.md](references/update-tests.md) |
+| Review tests | Evaluate test quality and regression signal | [references/review-tests.md](references/review-tests.md) |
+| Review test plan | Evaluate a plan's testing strategy | [references/review-testplan.md](references/review-testplan.md) |
 
-## Invocation Patterns
+## Invocation
 
 <!-- aitk-model-route:testing.test-authoring -->
-- `create-tests` / `update-tests` — orchestrator spawns an `implementation` subagent with handoff back for `review-code`
-- `review-tests` — reviewer subagent dispatched by `review-code` when tests exist in the diff
-- `review-testplan` — reviewer subagent dispatched by `planning/references/iterate-review.md` when reviewing a plan's test strategy
+Launch one fresh tester worker on `implementation` (the toolkit's tester agent)
+for a substantial suite in `create-tests` / `update-tests`; the parent
+implements small test changes inline and hands either result to `review-code`.
+- `review-tests` and `review-testplan` are checklists the independent reviewer
+  and plan validator apply; they are mutually exclusive per diff (tests present
+  versus absent).
 
 ## Notes
 
-- `review-tests` vs `review-testplan` are mutually exclusive per `classify-diff` rules: if test files exist in the diff, use review-tests; otherwise review-testplan.
-- `create-tests` and `update-tests` follow TDD when feasible — write failing test first, then implement.
+Tests prove the signal: a new test must be shown to fail when the behavior
+breaks. Test-first when feasible; when blocked, write the test and record the
+gap.

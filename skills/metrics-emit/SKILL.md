@@ -9,52 +9,39 @@ description: Use to append one structured metrics event after an end-to-end work
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 
-Append a single structured event to `.ai-toolkit/metrics.jsonl` at the end of any workflow's summary step. This is provider-neutral observability infrastructure.
+Append one JSON line to `.ai-toolkit/metrics.jsonl` at the end of a workflow's
+summary step. Provider-neutral, advisory, never blocking.
 
-## Required Context
+## Fields
 
-The calling workflow provides these values in its prompt:
+From the routing snapshot and the run:
 
-- `command` — the canonical workflow identifier (legacy JSON key retained for compatibility; e.g., `create-feature`, `fix-bug`)
-- `complexity` — `trivial`, `moderate`, or `standard`
-- `status` — the final outcome: `clean`, `blocked`, `user-decision`, `skipped`, `micro-fix`, or workflow-specific
-- `rounds` — number of review iterations (0 if no review loop)
-- `gate_decisions` — object with gate outcomes (e.g., `{complexity: "standard", action: "proceed", review: "clean"}`)
-- `worker_usage` — object counting subagent/worker usage by runtime-specific effort or model when available
+- `command`: the workflow name (legacy key retained)
+- `complexity`: `trivial`, `standard`, or `complex`; `size`: `S`..`XL`;
+  `shape`: `single_phase`, `batched`, or `multi_phase`; `phases`: count
+- `status`: terminal gate status or workflow-specific outcome
+- `gates`: `{ "<gate>": {"status": ..., "attempts": n} }` per gate
+- `retries`, `escalations`, `reclassifications`: counts
+- `review`: `{ "lane": "codex/sol | claude/opus | same-provider", "raised": n,
+  "accepted": n, "delta_reopened": n, "deep_lenses": [...] }`
+- `workers`: `{ "<agent or route>": count }` and `premium_calls` (planning,
+  deep-review, deep-rca, rca)
+- `observations`: count of observation lines written this run
 
-All fields are best-effort. If a value is unknown or not applicable, omit it rather than guessing.
+Omit unknown values rather than guessing.
 
 ## Steps
 
-1. Construct the JSONL event:
-
-```json
-{
-  "timestamp": "<ISO 8601>",
-  "command": "<command-name>",
-  "complexity": "<trivial|moderate|standard>",
-  "status": "<outcome>",
-  "rounds": <number>,
-  "gate_decisions": {},
-  "worker_usage": {}
-}
-```
-
-2. Append the event as a single line to `.ai-toolkit/metrics.jsonl` (create the file if it does not exist).
-
-3. If the append fails for any reason (file permissions, disk space, path issue), log the failure in conversation but do **not** block or fail the calling workflow. Metrics are advisory — never gate workflow progress on them.
-
-## Output
+1. Build the event with `timestamp` (ISO 8601) and the fields above.
+2. Append one strict-JSON line; create the file if needed.
+3. On any failure, note it in conversation and continue; metrics never gate
+   progress.
 
 ```markdown
 ## Metrics Recorded
-Event: <workflow-name>
-Status: <outcome>
-File: .ai-toolkit/metrics.jsonl
+Event: <workflow> | Status: <outcome> | File: .ai-toolkit/metrics.jsonl
 ```
 
-## Notes
-- One line per event, strict JSON — no trailing commas, no multi-line formatting
-- The `.ai-toolkit/` directory is user-local and ignored by git
-- End-to-end workflows should reference this skill context at the very end of their summary step, after all gates have resolved
-- The `metrics` workflow reads this file and produces aggregate summaries
+The `metrics` workflow aggregates these into pass rates, retries and
+escalations, reclassification rate, reviewer yield, and premium-model share by
+phase.

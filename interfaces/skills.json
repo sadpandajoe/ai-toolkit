@@ -1,7 +1,6 @@
 {
   "version": 1,
   "skills": [
-    {"name": "action-gate", "path": "skills/action-gate", "classification": "internal_support"},
     {"name": "agent-setup-maintainer", "path": "skills/agent-setup-maintainer", "classification": "public_direct"},
     {"name": "archive-project-file", "path": "skills/archive-project-file", "classification": "public_direct"},
     {"name": "cherry-pick", "path": "skills/cherry-pick", "classification": "public_direct"},
@@ -23,6 +22,7 @@
     {"name": "shortcut", "path": "skills/shortcut", "classification": "internal_support"},
     {"name": "superset-local", "path": "skills/superset-local", "classification": "internal_support"},
     {"name": "testing", "path": "skills/testing", "classification": "internal_support"},
+    {"name": "verification-loop", "path": "skills/verification-loop", "classification": "internal_support"},
     {"name": "workflows", "path": "skills/workflows", "classification": "public_router"},
     {"name": "workstreams", "path": "skills/workstreams", "classification": "internal_support"}
   ]

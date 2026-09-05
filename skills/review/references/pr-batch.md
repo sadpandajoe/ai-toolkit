@@ -8,14 +8,12 @@ Use when `review-pr` receives multiple PR numbers or `--all-open`.
 
 ## Required Context
 
-- [pr-review.md](pr-review.md) — the per-PR review procedure the worker applies
-- [classify-diff.md](classify-diff.md) — the per-PR worker selects its own lens
-  set from its own payload, so it needs the classifier in its own contract
-  closure rather than inheriting a team choice. Selecting is not orchestrating:
-  the worker then *applies* those lenses itself (see *Dispatch* below)
+- [classify-diff.md](classify-diff.md) — the per-PR worker reads its own
+  payload's domains and risk flags so it knows which risks to cover explicitly.
 
-These are declared here rather than left to the dispatch prose below. A link in
-running prose is navigation; this section is the contract the route runner inlines.
+The reviewer contract itself is declared on the `review.pr-batch` boundary in
+`interfaces/model-routing.json`; this section carries only what the document as
+a whole needs.
 
 ## What Is Not In The Worker's Closure
 
@@ -28,10 +26,9 @@ this document with ambient loading, so the links under *Post* below reach it
 normally, and `workflows.review-pr-fresh` — the lane that actually posts —
 declares it in its own boundary `contracts`.
 
-The lens procedures the worker applies are declared on the `review.pr-batch`
-boundary in `interfaces/model-routing.json` rather than in *Required Context*,
-because they are this lane's contract and not the document's: the main thread
-reading this file has no use for six reviewer lenses.
+The independent reviewer contract the worker applies is declared on the
+`review.pr-batch` boundary in `interfaces/model-routing.json` rather than in
+*Required Context*, because it is this lane's contract and not the document's.
 
 ## Batch Contract
 
@@ -79,88 +76,18 @@ For each PR, dispatch a read-only subagent on `review`/`deep-review` with:
 - flags (draft/summary by default; pass `--auto` only when the user explicitly requested auto-posting)
 - the literal line `Batch mode: Code-judo suppressed` — a per-PR review sees only
   its own payload plus its inlined contract closure, so this suppression must
-  travel in the payload; without it the default `Code-judo lane: YES` rule applies
+  travel in the payload; without it a `^refactor` title would fire the judo lane
 - the compact return contract below
 
 The worker returns findings and a recommendation. It does not post them.
 
 **The worker is a single reviewer, not a nested orchestrator.** A review route
-has no subagent capability — `plan` permission mode on Claude, a network-less
-`read-only` sandbox on Codex — so where [pr-review.md](pr-review.md) says
-*launch* the triggered lenses in parallel, that instruction belongs to a main
-thread. A batch worker instead **applies** each triggered lens procedure itself,
-sequentially, in its own single context, and returns one merged result. This is
-the whole reason the classifier is in its closure: it selects the lens set the
-worker then works through, not a fan-out it dispatches. A dispatch that tells
-the worker to fan out describes a lane no provider can run.
-
-**The applied set is the batch set, not the full menu.** The worker applies only
-the lenses inlined in its own closure — code quality, deep quality, test review,
-test-plan review, frontend, and backend. The two lenses that carry a
-`deep-review` route floor, **adversarial** and **architecture**, are excluded
-here for the same reason Code-judo is: batch runs on `review` as often as not,
-and a floored lens applied on the cheap route is the floor defeated rather than
-honoured. The exclusion is enforced, not merely written down: a lane with no lens
-menu never passes `--lens`, so the resolver's per-lens floor cannot see it, and
-the manifest check instead rejects any menu-less boundary that inlines a floored
-lens on a route below that lens's floor. Restricting the lane to `deep-review`
-would not lift the exclusion either — the closure is the same 16 contracts on
-both routes, so a costlier batch would still be a batch without those two lenses.
-
-`classify-diff` still reports both truthfully, so **a worker that sees either
-triggered names it in the `Deferred lenses:` line** rather than skipping it or
-improvising the pass from the classifier's one-line description. That line is
-the escalation signal: the main thread routes those PRs to a single-PR deep
-review ([review-pr](../../workflows/references/review-pr.md)), where the fan-out
-dispatches the lens on the route its own contract requires. Without the line, an
-excluded-but-triggered lens is indistinguishable from a lens that never
-triggered — the same failure `suppressed (batch)` exists to prevent for
-Code-judo.
-
-Return contract — a routed worker returns the **generic worker envelope**
-(`status`, `summary`, `findings`, `verification`) and nothing else. There is no
-per-boundary result shape: the route runner validates every result against that
-schema with `additionalProperties: false`, so a boundary that declares its own
-Markdown hand-back describes a dispatch that always fails. The batch fields
-travel inside the envelope:
-
-- `status` — `completed`, or `blocked`/`failed` when the payload was unusable
-- `summary` — three labelled lines:
-
-  ```
-  PR: #<N> <title>
-  Recommendation: approve | request-changes | comment
-  Residual risk: <one line, or none>
-  Deferred lenses: <names, or none>
-  ```
-
-  `Deferred lenses` names the lenses `classify-diff` triggered for this PR that
-  are not in the worker's closure — adversarial, architecture, or both — and
-  `none` when it triggered neither. A worker never writes `none` for a lens it
-  simply chose not to apply.
-
-- `findings` — canonical `[major]`/`[minor]`/`[nitpick]` findings, highest
-  severity first. The top finding is the first entry; the counts are the array.
-- `verification` — the checks the worker actually ran (pre-verdict gate, test
-  evidence), one per entry.
-
-All four of those `summary` lines and the severity tag on every finding are
-**checked by the route runner**, not just requested here. The boundary declares
-`lens_domain: "code"` and `summary_form: "pr-batch"`, so a `completed` result
-whose findings do not *open* with a canonical tag, or whose summary is missing
-the PR line, the recommendation, the residual-risk line, or the deferred-lens
-line, fails the dispatch.
-Before this was checked, the batch lane declared no domain at all: a worker could
-return a paragraph with no PR number and no recommendation, pass the generic
-envelope schema, and leave the main thread rendering a comment out of nothing.
-A worker that genuinely cannot review returns `blocked`/`failed` instead — those
-statuses are not held to the grammar, because an explanation of why a review was
-impossible has no recommendation to give.
-
-The worker returns no comment body. The main thread renders the comment from
-`summary` and `findings` per [pr-posting.md](pr-posting.md), which is in the main
-thread's context and not the worker's — a worker-authored body would be the one
-artifact of the review that the posting contract never saw.
+has no subagent capability, so the worker applies the independent reviewer
+contract itself, in one context, covering the risks its payload's classifier
+flags name. Deep lenses (adversarial, architecture) carry a `deep-review` route
+floor and do not run inside a batch worker; when a PR's classification flags
+them, the worker reports `Deferred lenses:` and the main thread escalates that
+PR to a single-PR review instead.
 
 ## Post
 
@@ -213,7 +140,7 @@ PRs: [#101, #102, #103]
 Next wave: [PR numbers OR "aggregate"]
 ```
 
-For batches of 4+ PRs, checkpoint + context_reset after each wave block is written. The main thread resumes by reading the wave entries in PROJECT.md, not by replaying per-PR diffs. Without this write, the per-PR posting state and residual risks are lost.
+For batches of 4+ PRs, checkpoint after each wave block is written; a fresh session or worker resumes from it. The main thread resumes by reading the wave entries in PROJECT.md, not by replaying per-PR diffs. Without this write, the per-PR posting state and residual risks are lost.
 
 ## Aggregate
 

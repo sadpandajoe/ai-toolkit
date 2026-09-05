@@ -5,7 +5,8 @@ The deterministic checkpoint API owns the machine block in
 human-readable fields below it:
 
 ```markdown
-- Phase: input / complexity-gate / existing-fix-check / plan-mode / plan-md-write / implement-and-review / qa-validate / summarize
+- Phase: intake / classify / existing-fix / investigate / rca-gate / plan / implement / verify / review / qa / summarize
+- Snapshot: <complexity>/<size>/<shape> (from `bin/aitk project-state show`)
 - Existing-fix status: FIXED_UPSTREAM | FIX_PENDING_PR | UNFIXED | SKIPPED | pending
 ```
 

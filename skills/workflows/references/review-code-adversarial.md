@@ -1,8 +1,7 @@
 # Adversarial Red-Team Review
 
-
 > **When**: You want to stress-test changes for security holes, edge cases, race conditions, and failure modes.
-> **Produces**: Merged adversarial findings, fixes, verification, and an adversarial Review Gate block.
+> **Produces**: Adversarial findings with concrete scenarios, fixes or evidence-based rejections, verification, and a review gate.
 
 ## Effect Boundary
 
@@ -18,56 +17,40 @@ checkpoint` for every durable transition and effect record.
 ## Usage
 
 ```bash
-review-code-adversarial
-review-code-adversarial --committed
-review-code-adversarial src/api/
+review-code-adversarial [--committed] [<path>]
 ```
 
-## Step Routing
+## Procedure
 
-Load [skills/review/references/adversarial-orchestration.md](../../review/references/adversarial-orchestration.md) when the review starts. It coordinates changed-file discovery, reviewer launch, finding merge, fixverify, and re-review.
-
-Within that flow:
-
-<!-- aitk-model-route:workflows.adversarial-primary -->
-- Use [skills/review/references/adversarial.md](../../review/references/adversarial.md) for the primary adversarial reviewer on `deep-review`.
-<!-- aitk-model-route:workflows.adversarial-second-opinion -->
-- Use an optional second-opinion adversarial reviewer on `deep-review` only when available, running the same [skills/review/references/adversarial.md](../../review/references/adversarial.md) lens as the primary.
-- Use `review-code` style Review Gate semantics for final status.
+1. Discover changed files as in
+   [skills/review/references/local-review.md](../../review/references/local-review.md)
+   (recorded base, full file contents, preflight).
+2. Run the primary adversarial lane.
+   <!-- aitk-model-route:workflows.adversarial-primary -->
+   Launch one fresh adversarial reviewer worker on `deep-review` using
+   [skills/review/references/adversarial.md](../../review/references/adversarial.md),
+   preferring the other provider, with scope, diff, and full files only.
+3. Add the second vote only for security-sensitive diffs or an explicit ask.
+   <!-- aitk-model-route:workflows.adversarial-second-opinion -->
+   Launch one more fresh adversarial reviewer worker on `deep-review` with the
+   same [adversarial.md](../../review/references/adversarial.md) lens on the
+   provider the primary did not use; it receives scope and diff only, never the
+   primary's findings. Skip it when only one provider is reachable and say so.
+4. Merge findings: both lanes agree → high confidence, keep severity; one lane
+   only → validate against the code before promoting past `[minor]`. Drop
+   findings whose `file:line` is outside the diff. Sort: vulnerability, race,
+   data integrity, missing validation, edge case.
+5. Fix, reject with evidence, or surface as `USER_DECISION` for every concrete
+   finding; verify with `skills/verification-loop/SKILL.md`; one delta pass on
+   the fixed files through the adversarial lens when fixes were substantive.
+6. Emit `## Gate: review` with `Adversarial rating: Hardened | Adequate |
+   Vulnerable | Critical`, `Reviewers: <lanes as provider/family>`, and the
+   accepted/raised tally. Write `## Adversarial Findings` and
+   `## Adversarial Fix Round N` to `PROJECT.md` before any fixes and after each
+   round.
 
 ## Gates
 
 - Every finding needs a concrete failure scenario.
-- Do not claim second-opinion coverage unless both lanes ran.
-- Run `verify` or equivalent pre-flight checks before final Review Gate when fixes are applied.
-- Fix, reject with evidence, or surface each finding as a user decision.
-- Emit the adversarial Review Gate before the final summary.
-
-## PROJECT.md Discipline
-
-Adversarial review is expensive by definition (dual-lane reasoning, often security-sensitive). For STANDARD runs, follow `rules/context-management.md`:
-
-- After finding merge (before fixes): append `## Adversarial Findings` to PROJECT.md (per-finding scenario, severity, both-lane attribution, fix/reject/discuss verdict).
-- After each fix wave: append `## Adversarial Fix Round N` (findings fixed, files changed, verification result, residual risk).
-- After re-review: update the adversarial Review Gate status in PROJECT.md.
-
-These writes are **hard gates before any checkpoint + context_reset** — the per-finding scenarios are exactly the thing that's expensive to reconstruct and must not be lost to chat-only state.
-
-## Summary Contract
-
-End with:
-
-```markdown
-## Review-Code-Adversarial Complete
-Rating: [Hardened/Adequate/Vulnerable/Critical] | Rounds: [N] | Status: [clean/blocked]
-Reviewers: [primary + second opinion | primary only]
-
-### Findings
-- [...]
-
-### Fixed
-- [...]
-
-### Accepted Risks
-- [...]
-```
+- Never claim two-lane coverage when one lane ran.
+- Rounds follow `rules/gates.md`: one full pass, one delta, then escalate.
