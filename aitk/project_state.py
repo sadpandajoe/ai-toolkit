@@ -260,6 +260,12 @@ def validate_snapshot(payload: object) -> dict[str, object]:
         )
     if not isinstance(result["phaseability_reason"], str):
         raise ProjectStateError("phaseability_reason must be a string")
+    # L leans MULTI_PHASE. Declaring that a broad surface has no independently
+    # verifiable unit is a claim, and the claim is the recorded reason.
+    if result["size"] in {"L", "XL"} and result["phaseability"] == "none" and not result["phaseability_reason"].strip():
+        raise ProjectStateError(
+            f"size {result['size']} with phaseability none requires a phaseability reason"
+        )
     modifiers = result["modifiers"]
     if not isinstance(modifiers, list) or any(
         not isinstance(item, str) or TOKEN.fullmatch(item) is None for item in modifiers

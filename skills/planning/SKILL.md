@@ -31,10 +31,18 @@ time, more effort, then a different model, `xhigh` last.
 
 ## Phase-Size Guard
 
-If the next phase cannot be planned, implemented, and verified coherently as one
-unit, split it once more before implementation. Never let a later phase plan
-silently rewrite accepted global architecture; a changed invariant is
-`RECLASSIFY` and an explicit update to the decomposition artifact.
+Split a phase once more before implementation when any of these hold:
+
+- its plan names more than 10 files, or its projected diff exceeds 500 changed
+  lines (generated files and lockfiles excluded);
+- it is a horizontal layer (all models, then all APIs, then all UI) rather
+  than a vertical slice;
+- it would leave the system broken if deployed alone;
+- a reviewer could not read it in one sitting.
+
+Never let a later phase plan silently rewrite accepted global architecture; a
+changed invariant is `RECLASSIFY` and an explicit update to the decomposition
+artifact.
 
 ## Ownership
 

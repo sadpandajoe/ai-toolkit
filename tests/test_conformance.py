@@ -500,6 +500,53 @@ class ConformanceTests(unittest.TestCase):
         self.assertIn("Never a third quiet attempt", loop)
         self.assertIn("rules/gates.md", loop)
 
+    def test_single_provider_verifier_changes_family_or_caps_the_finding(self) -> None:
+        """A verifier on the family that raised the finding is not a verifier."""
+        local = (ROOT / "skills/review/references/local-review.md").read_text()
+        section = re.search(r"^## Validate, Then Fix$.*?(?=^## )", local, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(section)
+        body = section.group(0)
+        self.assertIn("single-provider machine", body)
+        self.assertIn("run the verifier on `deep-review`", body)
+        self.assertIn("Verifier: unavailable — single family", body)
+        binding = (ROOT / "config/providers/claude.md").read_text()
+        self.assertIn("verifier runs on `deep-review` (Fable)", binding)
+        self.assertIn("Verifier: unavailable", binding)
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        verifier = next(b for b in payload["dispatch_boundaries"] if b["id"] == "review.verify-major")
+        self.assertIn("deep-review", verifier["routes"], "the verifier has no other-family route to fall to")
+        routes = {r["name"]: r for r in payload["routes"]}
+        self.assertNotEqual(
+            routes["review"]["providers"]["claude"]["model"],
+            routes["deep-review"]["providers"]["claude"]["model"],
+            "review and deep-review resolve to the same Claude family; the fallback changes nothing",
+        )
+
+    def test_phased_work_ends_with_an_integrated_review_and_a_roadmap_check(self) -> None:
+        feature = (ROOT / "skills/workflows/references/create-feature.md").read_text()
+        bug = (ROOT / "skills/workflows/references/fix-bug.md").read_text()
+        for text, name in ((feature, "create-feature"), (bug, "fix-bug")):
+            with self.subTest(workflow=name):
+                self.assertIn("## Gate: review (integrated)", text)
+                self.assertIn("branch base", text)
+                self.assertIn("Integrated review:", text)
+        self.assertIn("roadmap check", feature)
+        self.assertIn("--gate phase-exit --status RECLASSIFY", feature)
+        handoff = (ROOT / "skills/reporting/templates/phase-handoff.md").read_text()
+        self.assertIn("Roadmap check:", handoff)
+        self.assertIn("Delivered as:", handoff)
+        local = (ROOT / "skills/review/references/local-review.md").read_text()
+        self.assertIn("**Branch base:**", local)
+        self.assertIn("phase base", local)
+        self.assertIn("never re-reads phases one and two", local)
+        decompose = (ROOT / "skills/planning/references/decompose-work.md").read_text()
+        self.assertIn("Delivery order", decompose)
+        self.assertIn("single PR", decompose)
+        guard = (ROOT / "skills/planning/SKILL.md").read_text()
+        self.assertIn("more than 10 files", guard)
+        self.assertIn("horizontal layer", guard)
+        self.assertIn("one sitting", guard)
+
     def test_retired_v1_vocabulary_does_not_return(self) -> None:
         retired = re.compile(
             r"\bMODERATE\b|rules/(?:review-gate|stop-rules|scoring)\.md|review-ensemble|"

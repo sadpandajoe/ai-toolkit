@@ -23,6 +23,21 @@ fix-bug sc-12345 | apache/superset#28456 | <github or shortcut url>
 fix-bug <report> --watch    # chain into watch-pr after the fix push lands
 ```
 
+## Bug Complexity Signals
+
+Workflow-specific signals for `rules/complexity-gate.md`; any hard signal there
+still forces COMPLEX.
+
+| Signal | TRIVIAL | STANDARD | COMPLEX |
+|--------|---------|----------|---------|
+| Root cause | Obvious from the error or diff | Confirmed by focused investigation | Unknown, or competing causes still live |
+| Files touched | 1-2 | 2-4, one subsystem | 3+ across systems, or unclear ownership |
+| Regression risk | Mechanical, local | Contained functional fix | Cross-cutting workflow, data, auth, or migration risk |
+| Repro and validation | Cheap targeted check | Targeted test or local repro | Needs RCA validation, an app flow, or broad scenario validation |
+
+STANDARD is the default for a real but contained fix. COMPLEX means the RCA
+specialist grades the root cause and the fix plan is validated before code.
+
 ## Goal Loop
 
 1. **Intake.** Normalize input, fetch ticket context, restate the symptom in
@@ -63,6 +78,12 @@ fix-bug <report> --watch    # chain into watch-pr after the fix push lands
    independent review, validate findings, fix, delta pass if substantive.
 10. **Validate** user-visible behavior with `qa/references/validate-fix.md`
     when the app runs; otherwise record why not.
+    For BATCHED or MULTI_PHASE fixes, per-unit reviews in step 9 use the phase
+    base, and after the last unit's `## Phase Complete` run one **integrated
+    review**: a `review-code` pass over the full recorded branch base to HEAD
+    plus end-to-end validation against the decomposition's exit goals and
+    invariants, with its own `## Gate: review (integrated)` block and Review
+    Record entry. It is a hard gate before `## Bug Fix Complete`.
 11. **Finish.** Write `## Bug Fix Complete`, emit
     `reporting/templates/fix-bug-summary.md`, record `metrics-emit`. Default
     action when verification is `PASS` at `STRONG` strength (the regression
@@ -87,7 +108,8 @@ environment only the user holds, or a safety or effect boundary.
 - No commit without an added or updated regression test unless the gap is
   explicitly accepted by the user; no auto-push below `STRONG` verification.
 - BATCHED or MULTI_PHASE fixes write the `## Phase Complete` block from
-  `reporting/templates/phase-handoff.md` before the next unit.
+  `reporting/templates/phase-handoff.md` before the next unit, and pass the
+  integrated review gate before `## Bug Fix Complete`.
 - `PROJECT.md` entries at every gate; `## Bug Fix Complete` before the chat
   summary.
 
@@ -100,6 +122,7 @@ Files changed: <list>
 Regression test: <added | updated | accepted gap: reason>
 Verification: <PASS evidence>
 Review: <lane, accepted/raised findings>
+Integrated review: <gate, lane | not applicable (SINGLE_PHASE)>
 QA: <pass | fail | skipped — reason>
 Residual risk: <one line or none>
 Commit: <SHA or "no commit">

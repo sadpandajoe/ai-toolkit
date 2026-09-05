@@ -120,6 +120,14 @@ installer) is reviewed as STANDARD.
   reachable or the user overrides with `--allow-degraded`, which is recorded
   as a `USER_DECISION`.
 
+## Continuation
+
+A `PASS` gate is a phase transition, not a stop signal. The workflow continues
+to its next step without asking whether to continue; a passing review, RCA, or
+verification gate never ends the turn. The only pauses are `USER_DECISION`,
+`BLOCKED`, and the hard safety and authorization gates in
+`interfaces/contracts.json`.
+
 ## Two Records, One Truth
 
 The routing snapshot (`bin/aitk project-state gate`) records every gate

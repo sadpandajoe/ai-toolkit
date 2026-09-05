@@ -33,6 +33,12 @@ worker receives its contract inline from the route runner.
 - `CHANGES_REQUIRED` → the same planner makes one informed revision, then
   re-validate once. Editorial items are patched by the parent without a
   re-validation round.
+- `CHANGES_REQUIRED` that reads as shallow analysis rather than a plan defect
+  (findings restate the plan, miss the files it names, or ask what it already
+  answers) → do not revise the plan; re-run the same validator once on
+  `deep-review` at `xhigh`. That is the "more effort when depth is missing"
+  rung of the ladder; record it as `--status ESCALATE --unit <unit>` so the
+  budget follows the owner.
 - `REPLAN` → gate `ESCALATE`: restart the unit on a stronger or different
   route with the validator's evidence, or surface a `USER_DECISION` when the
   disagreement is a product or design choice.

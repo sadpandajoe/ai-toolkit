@@ -29,8 +29,17 @@ Exit criteria: <met — evidence>
 Learned constraints: <list, or none>
 Invariant changes: <none, or RECLASSIFY recorded>
 Evidence: <verification gate reference>
+Roadmap check: <holds | RECLASSIFY — decomposition revalidated: <what changed>>
+Delivered as: <commit or PR #n | pending, single-PR opt-out>
 Next phase: <name, reclassified as <complexity>/<size>, or "done">
 ```
+
+The roadmap check answers two questions with what this phase learned: does the
+decomposition still hold, and is the next phase's exit goal still right?
+`holds` advances. Anything else is `bin/aitk project-state gate --gate
+phase-exit --status RECLASSIFY --unit decomposition`, an edit to
+`## Decomposition` in `PLAN.md`, and one revalidation in `decomposition` mode
+before the next phase is planned.
 
 Then `bin/aitk project-state phase --name <phase> --status done` and, for the
 next phase, `--status active` after its plan is written.

@@ -12,3 +12,6 @@
 {"id": "single-source-major-verified", "mode": "judgment", "input": "Codex lane alone raised a [major]; no deep lens ran", "expected": {"verifier_lane": true, "accepted_before_verifier": false}, "source": "gap-review"}
 {"id": "security-degraded-blocks", "mode": "judgment", "input": "Security-sensitive diff, Codex unreachable, no --allow-degraded", "expected": {"status": "BLOCKED", "same_provider_review": false}, "source": "gap-review"}
 {"id": "trivial-core-no-exception", "mode": "judgment", "input": "Two-line auth check change classified TRIVIAL with CORE impact", "expected": {"review_exception": false, "independent_review": true}, "source": "gap-review"}
+{"id": "pass-is-not-a-stop-signal", "mode": "judgment", "input": "Review gate PASS on unit 2 of 4", "expected": {"asks_to_continue": false, "next": "checkpoint then unit 3"}, "source": "roadmap-review"}
+{"id": "single-provider-verifier-changes-family", "mode": "judgment", "input": "Codex unreachable; Opus lane raised a lone [major]", "expected": {"verifier_route": "deep-review", "or": "capped at [minor] with disclosure"}, "source": "roadmap-review"}
+{"id": "phase-three-review-scope", "mode": "judgment", "input": "MULTI_PHASE feature, reviewing phase 3", "expected": {"base": "phase", "rereads_phase_one": false}, "source": "roadmap-review"}

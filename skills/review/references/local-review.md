@@ -18,6 +18,21 @@ Stop if the scope is empty.
 Review Record. Every later round, including the delta pass, measures scope from
 that recorded base, never from the last fix.
 
+**Two bases.** The caller names which base this review measures. The **branch
+base** (`<merge-base>..HEAD` plus the working tree) is the default for
+standalone runs and the only base for an integrated review. A **phase base**
+(the tree recorded at the previous `## Phase Complete`) is what per-unit
+reviews inside MULTI_PHASE or BATCHED work pass, so a phase-three review reads
+phase three and never re-reads phases one and two. The Review Record carries
+both: `Base` is the span this review measured, `Branch base` is the
+merge-base the integrated review will use.
+
+**The reviewer sees the whole span.** Path arguments and `--uncommitted` narrow
+what the parent grades and fixes, never what the independent lane receives:
+the reviewer always gets the full recorded base to HEAD (branch or phase). When
+the reviewer's span is wider than the user's filter, the Review Record says so
+in `Scope note`.
+
 ## Classify
 
 Run [classify-diff.md](classify-diff.md) and `qa/references/assess-impact.md`.
@@ -100,7 +115,12 @@ the diff, and the full changed files; it returns `Verdict: CONFIRMED | REFUTED |
 UNVERIFIABLE` with a concrete failure scenario. `CONFIRMED` keeps the severity;
 `REFUTED` records the finding as rejected with the verifier's evidence;
 `UNVERIFIABLE` caps it at `[minor]` until the parent settles the fact the
-verifier named.
+verifier named. On a single-provider machine (Codex unreachable) the
+independent lane ran on Opus and the second family was skipped, so a
+`review`-route verifier would be Opus again: run the verifier on `deep-review`
+(Fable) instead, or leave the finding capped at `[minor]` and record
+`Verifier: unavailable — single family` in the Review Record. A verifier on the
+family that raised the finding is not a verifier.
 
 Write the Review Record to `PROJECT.md` before fixing. Then apply
 accepted fixes (parent inline, or the implementer worker for a large queue),
@@ -111,6 +131,12 @@ Disputed findings and genuine trade-offs surface as `USER_DECISION`; everything
 else is decided here.
 
 ## Delta Review
+
+Before the delta pass, re-run [classify-diff.md](classify-diff.md) against the
+recorded span. A fix can add a security-sensitive path, an architecture
+change, or refactor shape the original diff did not have; a flag that fires now
+adds its deep lens to the delta round through the Deep Lenses boundary above,
+and the Review Record notes the reclassification.
 
 <!-- aitk-model-route:review.delta -->
 Launch one fresh delta reviewer worker on `review` (`deep-review` if the original
@@ -134,8 +160,10 @@ Review Record in `PROJECT.md` (compact, actionable only):
 
 ```markdown
 ## Current Code Review
-**Base:** <sha — resolved on round 1, reused by every round>
-**Scope:** <files or filter>
+**Base:** <sha — resolved on round 1, reused by every round; phase base for a per-unit review>
+**Branch base:** <merge-base sha — the integrated review's span; same as Base for standalone runs>
+**Scope:** <files or filter | integrated>
+**Scope note:** <none | reviewer span wider than the filter: <what it covered>>
 **Preflight:** <pass/fail/skipped — command or reason>
 **Independent review:** <provider/family | same-provider>
 **Second family:** <provider/family, or not run — <reason>>

@@ -22,9 +22,12 @@ route in `phase-plan` mode, through the goal workflow's planning boundary.
 
 ## Phase-size guard
 
-If the phase cannot be planned, implemented, and verified coherently as one
-unit, split it once more and record the split in the phase table
-(`bin/aitk project-state phases`). Do not re-plan the whole project.
+Split the phase once more, and record the split in the phase table
+(`bin/aitk project-state phases`), when the plan names more than 10 files or
+projects more than 500 changed lines (generated files and lockfiles excluded),
+when the phase is a horizontal layer instead of a vertical slice, when it would
+leave the system broken if deployed alone, or when a reviewer could not read it
+in one sitting. Do not re-plan the whole project.
 
 ## Output
 

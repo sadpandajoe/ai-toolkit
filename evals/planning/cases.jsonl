@@ -4,3 +4,7 @@
 {"id": "changes-required-once-then-escalate", "mode": "judgment", "input": "Validator returned CHANGES_REQUIRED twice for the same architectural reason", "expected": {"gate": "ESCALATE", "third_round": false}, "source": "plan"}
 {"id": "standard-low-confidence-validates", "mode": "judgment", "input": "STANDARD single-phase plan, classification_confidence LOW", "expected": {"validate": true}, "source": "gap-review"}
 {"id": "decomposition-always-validated", "mode": "judgment", "input": "STANDARD XL codemod decomposed into three phases", "expected": {"validate_decomposition": true}, "source": "gap-review"}
+{"id": "large-size-leans-multi-phase", "mode": "judgment", "input": "Size L feature touching 14 files across three subsystems, phaseability not yet assessed", "expected": {"shape": "MULTI_PHASE", "single_phase_requires_reason": true}, "source": "roadmap-review"}
+{"id": "phase-over-guard-splits", "mode": "judgment", "input": "Phase plan names 13 files and projects ~700 changed lines", "expected": {"split": true}, "source": "roadmap-review"}
+{"id": "horizontal-layers-rejected", "mode": "judgment", "input": "Decomposition: phase 1 all models, phase 2 all APIs, phase 3 all UI", "expected": {"validate_decomposition": "CHANGES_REQUIRED", "reason": "horizontal layers"}, "source": "roadmap-review"}
+{"id": "shallow-validation-reruns-deeper", "mode": "judgment", "input": "Validator returned CHANGES_REQUIRED that restates the plan and misses the files it names", "expected": {"revise_plan": false, "rerun_route": "deep-review"}, "source": "roadmap-review"}

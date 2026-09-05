@@ -46,15 +46,24 @@ previous round and the fix diff.
    alone does not prove and verify it cheaply (title matches change, removed
    surface has no dangling callers, pinned version resolves). State the check.
 7. **Delta review only.** Grade the fix diff against the accepted findings:
-   fixed, not fixed, or fixed-but-introduced. Do not re-review the original
-   diff unless a fix created a new code path; say when it did.
+   fixed, not fixed, or fixed-but-introduced, and cite the hunk that fixes
+   each finding you mark fixed. Then ask the resolved-state question: does any
+   accepted finding's class recur elsewhere in the recorded span? A recurrence
+   is a new finding at the original severity. Do not re-review the original
+   diff otherwise, unless a fix created a new code path; say when it did.
+8. **Bug fixes: same-pattern grep.** When the diff fixes a bug, grep the repo
+   for the pattern the fix replaced and report every match with `file:line`.
+   A recurrence of the fixed class inside this branch keeps the finding's
+   severity and is exempt from the symmetry cap; matches outside the branch go
+   to Remaining as follow-up.
 
 ## Calibration
 
 - One reviewer's single-source finding is worth investigating, rarely worth
   blocking on alone; grade it honestly and give the evidence the parent needs
   to validate it.
-- Symmetry findings ("the same issue exists in sibling X") cap at `[minor]`.
+- Symmetry findings ("the same issue exists in sibling X") cap at `[minor]`,
+  except a defect class the same-pattern grep confirmed inside this branch.
 - Do not demand a specific implementation, restyle, or widen scope.
 - Do not restate the diff or praise it.
 

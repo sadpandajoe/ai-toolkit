@@ -1,7 +1,7 @@
 # End-to-End Feature Workflow
 
 > **When**: A feature request or planned non-bug work ("add X", "support Y").
-> **Produces**: Classified and persisted routing state, a plan sized to the work, verified implementation, one independent review, QA when relevant, and a handoff before the final PR action.
+> **Produces**: Classified and persisted routing state, a plan sized to the work, verified implementation, one independent review per unit and one integrated review for phased work, QA when relevant, and a handoff before the final PR action.
 
 ## Effect Boundary
 
@@ -67,20 +67,42 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
 7. **Review** through `review-code` (`review/references/local-review.md`):
    one independent review, validate findings, fix, delta pass if substantive.
    Run it after each verified unit for MULTI_PHASE and BATCHED work, once for
-   SINGLE_PHASE.
+   SINGLE_PHASE. Per-unit reviews pass the **phase base** (the tree recorded
+   at the previous `## Phase Complete`), so a phase-three review measures only
+   phase three; the branch base is reserved for the integrated review in step
+   10.
 8. **Validate behavior** with `qa/references/validate-feature.md` when
    user-visible behavior changed and the app runs; otherwise record why not.
 9. **Checkpoint the unit.** Hard gate before the next unit or any handoff:
    append the `## Phase Complete: <phase or wave>` block from
    `reporting/templates/phase-handoff.md` to `PROJECT.md` (exit criteria met
    with evidence, learned constraints, invariant changes, evidence pointer,
-   next phase), mark the phase `done` in the snapshot, and loop to step 4 for
-   the next phase. Fresh workers are the context boundary; no manual clear is
-   needed.
-10. **Finish.** Write the `## Feature Complete` entry, emit the summary from
+   roadmap check, next phase) and mark the phase `done` in the snapshot. The
+   **roadmap check** asks two questions: does the decomposition still hold,
+   and is the next phase's exit goal still right given what this phase
+   learned? `holds` advances to step 4 for the next phase. `no` is
+   `bin/aitk project-state gate --gate phase-exit --status RECLASSIFY --unit
+   decomposition`, an update to `## Decomposition` in `PLAN.md`, and one
+   revalidation in `decomposition` mode before the next phase is planned.
+   For MULTI_PHASE work the phase then lands as its own commit or PR in the
+   roadmap's delivery order (`decompose-work.md`), unless `PLAN.md` records
+   the single-PR opt-out. Fresh workers are the context boundary; no manual
+   clear is needed.
+10. **Integrated review** (MULTI_PHASE and BATCHED only; hard gate before
+    `## Feature Complete`). After the last unit's checkpoint, run one more
+    `review-code` pass over the full recorded **branch base** to HEAD, and
+    validate end to end against the decomposition's per-phase exit goals and
+    global invariants (`qa/references/validate-feature.md` on the whole
+    feature when the app runs). It has its own `## Gate: review (integrated)`
+    block and its own Review Record entry, marked `Scope: integrated`; the
+    per-phase records stay as they are. A finding here is fixed in the phase
+    that owns the code, then the integrated delta pass runs once.
+11. **Finish.** Write the `## Feature Complete` entry, emit the summary from
     `reporting/templates/create-feature-summary.md`, record `metrics-emit`.
-    Stop before commit and PR unless authorized; with `--watch`, chain into
-    `watch-pr` after the final push lands.
+    SINGLE_PHASE work stops before commit and PR unless authorized; MULTI_PHASE
+    work has already delivered a PR per phase, so the last step is the final
+    phase's PR (or the single PR when the opt-out was recorded). With
+    `--watch`, chain into `watch-pr` after the final push lands.
 
 ## User Intervention Points
 
@@ -93,8 +115,10 @@ plan-validation findings and review findings are handled in the loop.
 - Emit the Complexity Gate before planning or implementing; persist it.
 - No implementation of a COMPLEX unit before its plan validates `APPROVE`.
 - Verification `PASS` before review; review gate `PASS` before the next unit.
-- `## Phase Complete` in `PROJECT.md` before every phase or wave transition;
-  `## Feature Complete` before the chat summary.
+- `## Phase Complete` in `PROJECT.md`, roadmap check answered, before every
+  phase or wave transition; `## Feature Complete` before the chat summary.
+- MULTI_PHASE and BATCHED work: integrated review gate `PASS` over the branch
+  base, with its own Review Record entry, before `## Feature Complete`.
 - Commit or push only with STRONG verification, a `PASS` review gate, and prior
   authorization.
 
@@ -108,6 +132,7 @@ Tests: <added/updated>
 Verification: <PASS evidence>
 Review: <lane, accepted/raised findings>
 Behavior validation: <pass | fail | skipped — reason>
+Integrated review: <gate, lane, accepted/raised | not applicable (SINGLE_PHASE)>
 Residual risk: <one line or none>
-PR: <URL or "no PR yet">
+Delivery: <PR per phase, in roadmap order: #a, #b, #c | single PR (opt-out: <reason>) | no PR yet>
 ```

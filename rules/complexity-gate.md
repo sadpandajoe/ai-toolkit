@@ -27,16 +27,19 @@ behavior, backwards compatibility, a new architectural pattern.
 |---|---|
 | `S` | One small coherent change |
 | `M` | Several connected edits forming one unit |
-| `L` | Broad surface; a phaseability check is required |
+| `L` | Broad surface; a phaseability check is required, and MULTI_PHASE is the expected answer |
 | `XL` | Workstream-sized; MULTI_PHASE by default |
 
 **Execution shape** is derived, never assumed. S and M are `SINGLE_PHASE` unless
-independent behavioral phases are obvious. L runs the phaseability check:
-independently verifiable units where finishing one changes how the next is
-planned means `MULTI_PHASE`; the same mechanical operation repeated many times
-means `BATCHED`; otherwise `SINGLE_PHASE`. XL is `MULTI_PHASE` unless it is a
-mechanical codemod, which is `BATCHED`. Size never implies complexity: an 80-file
-rename is STANDARD/XL/BATCHED; a one-line permission toggle is COMPLEX/S.
+independent behavioral phases are obvious. L runs the phaseability check and
+leans `MULTI_PHASE`: independently verifiable units where finishing one changes
+how the next is planned means `MULTI_PHASE`; the same mechanical operation
+repeated many times means `BATCHED`; `SINGLE_PHASE` only when the check proves
+the work has no independently verifiable unit, and that proof is the recorded
+phaseability reason (the runtime refuses L or XL with `none` and no reason). XL
+is `MULTI_PHASE` unless it is a mechanical codemod, which is `BATCHED`. Size
+never implies complexity: an 80-file rename is STANDARD/XL/BATCHED; a one-line
+permission toggle is COMPLEX/S.
 
 Each MULTI_PHASE phase is classified on its own; a COMPLEX project usually has
 mostly STANDARD phases.

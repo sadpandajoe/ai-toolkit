@@ -117,6 +117,17 @@ class SnapshotLifecycleTests(unittest.TestCase):
         self.assertEqual("create-feature", replaced.snapshot["workflow"])
         self.assertEqual("MULTI_PHASE", replaced.snapshot["execution_shape"])
 
+    def test_large_single_phase_needs_the_phaseability_proof_recorded(self) -> None:
+        with self.assertRaisesRegex(ProjectStateError, "requires a phaseability reason"):
+            initialize(self.path, "create-feature", "STANDARD", "L", "none")
+        proven = initialize(
+            self.path, "create-feature", "STANDARD", "L", "none",
+            phaseability_reason="one generated client; no unit verifies alone",
+        )
+        self.assertEqual("SINGLE_PHASE", proven.snapshot["execution_shape"])
+        with self.assertRaisesRegex(ProjectStateError, "requires a phaseability reason"):
+            set_fields(self.path, phaseability_reason="")
+
     def test_complexity_only_moves_upward_by_evidence(self) -> None:
         initialize(self.path, "fix-bug", "STANDARD", "M")
         upgraded = set_fields(self.path, complexity="COMPLEX")

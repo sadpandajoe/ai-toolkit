@@ -35,7 +35,11 @@ provider syntax.
   <marker-id>` with the boundary's prompt file; the runner inlines
   `agents/specialists/reviewer.md` and the grading rules. If Codex is
   unreachable, run the `aitk-reviewer` agent with the same contract inline and
-  record `Independent review: same-provider`. Never review inline.
+  record `Independent review: same-provider`. In that single-provider case the
+  second-family lane is skipped and a `review`-route verifier would be Opus
+  again, so the single-finding verifier runs on `deep-review` (Fable) or the
+  finding stays capped at `[minor]` with `Verifier: unavailable — single
+  family` recorded. Never review inline.
 - `routed_subagent`: `<toolkit-root>/bin/aitk model-route <route> --provider
   <codex|claude> --boundary <marker-id>` then `model-run` with the same
   arguments. The runner pins one selector and effort, never supplies a fallback

@@ -5,7 +5,7 @@ The deterministic checkpoint API owns the machine block in
 following human-readable phase below it:
 
 ```markdown
-- Phase: intake / classify / scope / plan / validate / implement / verify / review / validate-behavior / summarize
+- Phase: intake / classify / scope / plan / validate / implement / verify / review / validate-behavior / integrated-review / summarize
 - Snapshot: <complexity>/<size>/<shape>, phase <n> of <total> (from `bin/aitk project-state show`)
 ```
 

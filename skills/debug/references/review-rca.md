@@ -16,11 +16,25 @@ COMPLEX or uncertain ones.
 6. For a bug fix, regression evidence fails before and passes after when
    feasible; otherwise the reason is recorded.
 
+## Confidence calibration
+
+The confidence number means one thing everywhere:
+
+| Confidence | Meaning |
+|---|---|
+| 9-10 | Root cause reproduced locally; the fix is narrow and behavior-preserving |
+| 7-8 | Root cause strongly evidenced but not directly reproduced; the fix is targeted |
+| 5-6 | Root cause plausible but alternatives are still live; fix scope may move |
+| 3-4 | Several plausible root causes; investigation incomplete |
+| 1-2 | Root cause unknown; evidence indirect or contradictory |
+
 ## Parent grading (STANDARD)
 
 Grade the investigation handoff against the checklist. Confidence 8/10 or
 higher with every item evidenced → `PASS`. Below that, one more bounded
-investigation (`RETRY`), then escalate to the specialist.
+investigation (`RETRY`), then escalate to the specialist. A `PASS` at 8 is an
+evidenced story without a reproduction; record that the regression test is the
+reproduction it lacks.
 
 ## Specialist grading (COMPLEX, uncertain, or after a failed attempt)
 

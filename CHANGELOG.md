@@ -25,6 +25,22 @@
   checklists; the plan validator inlines the implementation and test-plan
   checklists; the unused plan lens floor is gone. Batch PR reviews report
   deep-quality among deferred lenses.
+- Phase model: per-unit reviews measure a phase base and the branch base is
+  reserved for a new integrated review that gates `## Feature Complete` and
+  `## Bug Fix Complete` on MULTI_PHASE and BATCHED work; `## Phase Complete`
+  carries a roadmap check whose `no` is `RECLASSIFY` plus one decomposition
+  revalidation; one commit or PR per phase is the default delivery with a
+  recorded single-PR opt-out; the phase-size guard has numbers (10 files, 500
+  lines) and the horizontal-layer and one-sitting checks; size L leans
+  MULTI_PHASE and the runtime refuses L or XL `none` without a reason.
+- Review quality: the reviewer greps for the pattern a bug fix replaced, cites
+  the fixing hunk and asks the resolved-state question in delta mode, always
+  sees the whole recorded span, and the diff is reclassified before the delta
+  pass; RCA confidence has a calibration table; `fix-bug` has its complexity
+  signal table back; a `PASS` gate is never a stop signal; a shallow
+  `CHANGES_REQUIRED` re-runs the validator at `deep-review` instead of
+  revising the plan; on a single-provider machine the finding verifier runs on
+  `deep-review` or the finding stays capped at `[minor]`.
 - Restored `USER_DECISION` heuristics, the stop-on-no-logs rule in `fix-ci`,
   the per-unit `## Phase Complete` hard gate, and TRIVIAL-plus-CORE review
   escalation; `review-plan` and `fix-ci` record snapshot gates.
