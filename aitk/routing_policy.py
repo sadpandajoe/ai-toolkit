@@ -82,12 +82,13 @@ LENS_DOMAINS = ("code", "plan")
 
 
 # The output vocabulary each lens domain grades in (`rules/severity.md`), and the
-# score a plan lane must carry (`rules/scoring.md`). These exist as data because
-# `lens_domain` used to reach only the worker prompt: a code lane could return
-# `[High]` findings and a plan lane could return no score at all, and both passed
-# the generic envelope check. The domain is the contract the aggregator relies on
-# -- code findings dedupe by severity tag, plan findings iterate to 8/10 -- so it
-# is enforced on the result, not just described in the prompt.
+# verdict a plan lane must carry (`Verdict: APPROVE | CHANGES_REQUIRED | REPLAN`).
+# These exist as data because `lens_domain` used to reach only the worker prompt:
+# a code lane could return `[High]` findings and a plan lane could return no
+# verdict at all, and both passed the generic envelope check. The domain is the
+# contract the aggregator relies on -- code findings dedupe by severity tag, plan
+# findings branch on the verdict -- so it is enforced on the result, not just
+# described in the prompt.
 CODE_SEVERITIES = ("[major]", "[minor]", "[nitpick]")
 
 
@@ -216,11 +217,9 @@ LENS_DOMAIN_FLOORS: dict[str, tuple[str, ...]] = {
         "skills/review/references/deep-quality.md",
         "skills/plan-review/references/architecture.md",
     ),
-    "plan": (
-        "skills/plan-review/references/architecture.md",
-        "skills/plan-review/references/implementation.md",
-        "skills/testing/references/review-testplan.md",
-    ),
+    # Plan validation is one worker whose contract inlines the plan checklists
+    # (`agents/specialists/plan-validator.md`); it never fans out over plan
+    # lenses, so the plan domain carries no menu floor.
 }
 
 
@@ -422,7 +421,8 @@ def _lens_domain(boundary: dict[str, object]) -> str | None:
 
     Lenses shared by both domains (architecture review, test review) read it to
     pick their output vocabulary: `code` means the severity tags in
-    `rules/code-review.md`, `plan` means the scores in `rules/scoring.md`.
+    `rules/code-review.md`, `plan` means the verdict vocabulary in
+    `agents/specialists/plan-validator.md`.
 
     This used to be spelled `lens_fanout` and doubled as the fan-out flag. The
     two are not the same property. A lane can grade code without fanning out --

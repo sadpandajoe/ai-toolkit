@@ -25,6 +25,10 @@ review-plan --pm       # include the feature brief in the validator's input
 
 1. **Read the plan.** `PROJECT.md` points to the active plan; read `PLAN.md`,
    or the embedded plan when there is none. Stop when no plan content exists.
+   Ensure a routing snapshot exists: `bin/aitk project-state init --workflow
+   review-plan --complexity <the plan's recorded complexity, COMPLEX when
+   absent> --size <the plan's size>`; it is a no-op when the owning workflow
+   already wrote one.
 2. **Choose the mode.** A decomposition (phases, boundaries, invariants) is
    validated in `decomposition` mode; a slice plan or single phase in
    `phase-plan` mode; a bug-fix plan with an RCA in `fix-plan` mode.
@@ -40,8 +44,8 @@ review-plan --pm       # include the feature brief in the validator's input
    third round of the same validator.
 5. **Record.** Append `## Validation: <unit>` with the verdict and blocking
    findings to `PLAN.md`; record the gate with
-   `bin/aitk project-state gate --gate plan --status <...>`; write
-   `## Plan Validated` to `PROJECT.md`.
+   `bin/aitk project-state gate --gate plan --status <...>` (`--editorial`
+   for a wording-only revision); write `## Plan Validated` to `PROJECT.md`.
 
 ## Summary
 

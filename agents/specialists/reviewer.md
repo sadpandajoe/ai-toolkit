@@ -8,7 +8,12 @@ parent validates every finding against the repo before acting on it.
 
 ## Required Context
 
-Read before grading: `rules/code-review.md`, `rules/severity.md`.
+Read before grading: `rules/code-review.md`, `rules/severity.md`,
+`skills/testing/references/review-tests.md`,
+`skills/plan-review/references/frontend.md`,
+`skills/plan-review/references/backend.md`. Apply the test checklist when the
+diff contains tests and the frontend or backend checklist for the domains the
+classifier reported; the others do not apply.
 
 ## Inputs
 

@@ -18,7 +18,7 @@ shape. Plan only as much as the next verifiable unit needs.
 | COMPLEX, SINGLE_PHASE | `planning` route (Opus) in `phase-plan` mode | [references/plan-phase.md](references/plan-phase.md) |
 | MULTI_PHASE, any complexity | Decompose first, then one phase at a time | [references/decompose-work.md](references/decompose-work.md), then [references/plan-phase.md](references/plan-phase.md) |
 | BATCHED | Parent, inline: one transformation, waves, repeated verification | [references/plan-implementation.md](references/plan-implementation.md) |
-| Any COMPLEX plan or decomposition | Independent validator | [references/validate-plan.md](references/validate-plan.md) |
+| Any decomposition, any COMPLEX plan, or a STANDARD plan at `LOW` classification confidence | Independent validator | [references/validate-plan.md](references/validate-plan.md) |
 | Review finding looks plan-level | Parent | [references/feedback-classify.md](references/feedback-classify.md) |
 
 ## Bounded Reasoning

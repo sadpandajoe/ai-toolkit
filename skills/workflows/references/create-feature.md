@@ -40,11 +40,12 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    - TRIVIAL: no plan; implement.
    - STANDARD, SINGLE_PHASE or BATCHED: compact inline plan
      (`planning/references/plan-implementation.md`) as `PROJECT.md` action
-     items; no validation round.
+     items; no validation round unless the snapshot's classification
+     confidence is `LOW` or the user asked (`validate-plan.md`, When).
    - COMPLEX, SINGLE_PHASE: planner in `phase-plan` mode, then
      `planning/references/validate-plan.md`.
    - MULTI_PHASE: `planning/references/decompose-work.md`, validate the
-     decomposition, then per phase: reclassify the phase,
+     decomposition (always, any complexity), then per phase: reclassify the phase,
      `planning/references/plan-phase.md`, validate only if the phase is
      COMPLEX.
    <!-- aitk-model-route:workflows.create-feature-planning -->
@@ -56,7 +57,8 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    <!-- aitk-model-route:workflows.create-feature-implementation -->
    Launch one fresh implementer worker on `implementation` (the toolkit's
    implementer agent) for a substantial unit, with the accepted slice, scope,
-   exit criteria, and acceptance command; it returns the compact handoff and
+   exit criteria, and acceptance command (the input block in
+   `reporting/templates/phase-handoff.md`); it returns the compact handoff and
    never commits. TRIVIAL and small STANDARD units are implemented inline.
    Parallel workers only for disjoint BATCHED waves or independent slices.
 6. **Verify** with `skills/verification-loop/SKILL.md` on the unit. `RETRY`
@@ -68,10 +70,13 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    SINGLE_PHASE.
 8. **Validate behavior** with `qa/references/validate-feature.md` when
    user-visible behavior changed and the app runs; otherwise record why not.
-9. **Checkpoint the phase.** Update `PROJECT.md` (phase done, learned
-   constraints, invariant changes, evidence pointer), mark the phase `done`
-   in the snapshot, and loop to step 4 for the next phase. Fresh workers are
-   the context boundary; no manual clear is needed.
+9. **Checkpoint the unit.** Hard gate before the next unit or any handoff:
+   append the `## Phase Complete: <phase or wave>` block from
+   `reporting/templates/phase-handoff.md` to `PROJECT.md` (exit criteria met
+   with evidence, learned constraints, invariant changes, evidence pointer,
+   next phase), mark the phase `done` in the snapshot, and loop to step 4 for
+   the next phase. Fresh workers are the context boundary; no manual clear is
+   needed.
 10. **Finish.** Write the `## Feature Complete` entry, emit the summary from
     `reporting/templates/create-feature-summary.md`, record `metrics-emit`.
     Stop before commit and PR unless authorized; with `--watch`, chain into
@@ -88,8 +93,8 @@ plan-validation findings and review findings are handled in the loop.
 - Emit the Complexity Gate before planning or implementing; persist it.
 - No implementation of a COMPLEX unit before its plan validates `APPROVE`.
 - Verification `PASS` before review; review gate `PASS` before the next unit.
-- `PROJECT.md` phase entry before every phase transition; `## Feature Complete`
-  before the chat summary.
+- `## Phase Complete` in `PROJECT.md` before every phase or wave transition;
+  `## Feature Complete` before the chat summary.
 - Commit or push only with STRONG verification, a `PASS` review gate, and prior
   authorization.
 

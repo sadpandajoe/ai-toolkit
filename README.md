@@ -27,6 +27,7 @@ You: "Fix this bug" / "Add X" / "Review this branch and fix anything important"
       Complexity TRIVIAL | STANDARD | COMPLEX   Size S | M | L | XL   Shape SINGLE_PHASE | BATCHED | MULTI_PHASE
   → the goal loop runs bounded capabilities, each returning a compact handoff
   → every gate answers PASS | RETRY | ESCALATE | RECLASSIFY | USER_DECISION | BLOCKED
+    (one retry per owner, a bounded escalation ladder, STRONG verification before any push)
   → specialists (Opus planner, Sol reviewer or RCA) enter only where classification says so
   → PROJECT.md checkpoints each phase; fresh workers are the context boundary
 ```
@@ -52,8 +53,9 @@ changes one catalog entry. Routes never fall back to a weaker model, never
 select `max` automatically, and a rejected request is unavailable rather than
 downgraded. See `rules/model-assignment.md`.
 
-Suggested parent-session settings for Claude Code: `/model sonnet` (or
-`opusplan`), `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`, and a lower
+Suggested parent-session settings for Claude Code: `/model sonnet` (the
+orchestrator policy; `opusplan` would put Opus in the parent for every plan),
+`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`, and a lower
 `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` if the parent grows quickly. No workflow ever
 requires a manual clear.
 

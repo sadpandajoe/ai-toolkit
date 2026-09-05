@@ -61,8 +61,10 @@ subjects when available, and any explicit ask (`--adversarial`, "deep review",
 | Architecture | Architecture change on STANDARD or COMPLEX | plan-review/references/architecture.md |
 
    When three would fire, drop the one whose domain the diff touches least and
-   report it. Test quality, frontend, and backend concerns are covered by the
-   independent reviewer's contract, which reads the domain summary below.
+   report it. Test quality, frontend, and backend checklists
+   (`testing/references/review-tests.md`, `plan-review/references/frontend.md`,
+   `plan-review/references/backend.md`) are inlined in the independent
+   reviewer's contract and applied to the domains this classification reports.
 
 4. **Code-judo lane**: `YES` only on deep-tier escalation, a `^refactor`
    title, or an explicit ask. It runs outside the findings lanes and returns

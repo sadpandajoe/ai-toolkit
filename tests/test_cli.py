@@ -97,13 +97,15 @@ class CliTests(unittest.TestCase):
             "rules/severity.md",
         ):
             self.assertIn(contract, payload["required_contracts"])
-        # The validator is one worker with its own contract; no code-review
-        # umbrella, no code grading rules, no sibling plan lenses.
+        # The validator inlines its plan checklists but never the code-review
+        # umbrella, the code grading rules, or the floored architecture lens.
+        self.assertIn(
+            "skills/plan-review/references/implementation.md", payload["required_contracts"]
+        )
         for leaked in (
             "skills/review/SKILL.md",
             "rules/code-review.md",
             "skills/plan-review/references/architecture.md",
-            "skills/plan-review/references/implementation.md",
         ):
             self.assertNotIn(leaked, payload["required_contracts"])
 

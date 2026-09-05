@@ -350,7 +350,10 @@ class ConformanceTests(unittest.TestCase):
             b["id"] for b in payload["dispatch_boundaries"]
             if b["path"] == "skills/review/references/local-review.md"
         }
-        self.assertEqual({"review.independent", "review.deep-lenses", "review.delta"}, local_ids)
+        self.assertEqual(
+            {"review.independent", "review.deep-lenses", "review.delta", "review.verify-major"},
+            local_ids,
+        )
         pr_ids = {
             b["id"] for b in payload["dispatch_boundaries"]
             if b["path"] == "skills/review/references/pr-review.md"

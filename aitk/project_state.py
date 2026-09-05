@@ -51,6 +51,11 @@ CONFIDENCE = ("HIGH", "MEDIUM", "LOW")
 # Each reasoning unit gets an initial attempt plus one informed retry. The
 # third attempt on the same unit is never a quiet re-run; it is an escalation.
 ATTEMPT_BUDGET = 2
+# An escalation hands the unit to a stronger owner (more effort, a different
+# model, xhigh last) and gives that owner a fresh attempt budget. The ladder is
+# bounded: after this many escalations the runtime answers USER_DECISION, so a
+# unit can never climb indefinitely on automation alone.
+MAX_ESCALATIONS = 3
 TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}")
 SNAPSHOT_KEYS = {
     "schema_version",
@@ -66,8 +71,12 @@ SNAPSHOT_KEYS = {
     "current_gate",
     "gate_status",
     "attempts",
+    "escalations",
     "phases",
 }
+# Snapshots written before the escalation ladder existed lack this key; they
+# read as "no escalations yet" instead of failing validation.
+OPTIONAL_SNAPSHOT_KEYS = {"escalations": dict}
 PHASE_KEYS = {"name", "complexity", "size", "status"}
 PHASE_STATUSES = ("pending", "active", "done", "blocked")
 # Hard complexity signals. Any one of them forces COMPLEX regardless of size,
@@ -225,11 +234,16 @@ def _validate_token(value: object, label: str) -> str:
 
 def validate_snapshot(payload: object) -> dict[str, object]:
     """Validate and normalize a snapshot, migrating legacy complexity names."""
-    if not isinstance(payload, dict) or set(payload) != SNAPSHOT_KEYS:
+    if not isinstance(payload, dict):
+        raise ProjectStateError("project state snapshot keys do not match schema v2")
+    missing = SNAPSHOT_KEYS - set(payload)
+    if set(payload) - SNAPSHOT_KEYS or missing - set(OPTIONAL_SNAPSHOT_KEYS):
         raise ProjectStateError("project state snapshot keys do not match schema v2")
     if payload["schema_version"] != SCHEMA_VERSION:
         raise ProjectStateError("project state snapshot is not schema version 2")
     result: dict[str, object] = dict(payload)
+    for key, factory in OPTIONAL_SNAPSHOT_KEYS.items():
+        result.setdefault(key, factory())
     _validate_token(result["workflow"], "workflow")
     result["complexity"] = normalize_complexity(result["complexity"])
     if result["classification_confidence"] not in CONFIDENCE:
@@ -266,6 +280,15 @@ def validate_snapshot(payload: object) -> dict[str, object]:
         for key, count in attempts.items()
     ):
         raise ProjectStateError("attempts must map units to counts within budget")
+    escalations = result["escalations"]
+    if not isinstance(escalations, dict) or any(
+        TOKEN.fullmatch(str(key)) is None
+        or type(count) is not int
+        or count < 0
+        or count > MAX_ESCALATIONS
+        for key, count in escalations.items()
+    ):
+        raise ProjectStateError("escalations must map units to counts within the ladder")
     phases = result["phases"]
     if not isinstance(phases, list):
         raise ProjectStateError("phases must be a list")
@@ -309,6 +332,14 @@ def _replace_block(content: str, payload: dict[str, object]) -> str:
     located = _locate(content)
     block = _machine_block(payload)
     if located is None:
+        # A project file made from the template already carries the heading;
+        # place the block under it instead of appending a second heading.
+        heading = re.search(r"^## Routing Snapshot[ \t]*$", content, re.MULTILINE)
+        if heading is not None:
+            insert_at = heading.end()
+            comment = re.match(r"\n(?:<!--(?:(?!-->).)*-->\n)?", content[insert_at:], re.DOTALL)
+            insert_at += comment.end() if comment else 0
+            return f"{content[:insert_at]}\n{block}\n{content[insert_at:]}"
         separator = "" if not content or content.endswith("\n\n") else "\n" if content.endswith("\n") else "\n\n"
         return f"{content}{separator}## Routing Snapshot\n\n{block}\n"
     start, end, _ = located
@@ -366,6 +397,7 @@ def initialize(
         "current_gate": "classification",
         "gate_status": "PASS",
         "attempts": {},
+        "escalations": {},
         "phases": [],
     }
     return _write(path, content, before, snapshot)
@@ -387,7 +419,7 @@ def set_fields(path: Path, **changes: object) -> ProjectStateResult:
     for key, value in changes.items():
         if value is None:
             continue
-        if key not in SNAPSHOT_KEYS or key in {"schema_version", "attempts", "phases"}:
+        if key not in SNAPSHOT_KEYS or key in {"schema_version", "attempts", "escalations", "phases"}:
             raise ProjectStateError(f"field cannot be set directly: {key}")
         if key == "complexity":
             proposed = normalize_complexity(value)
@@ -405,13 +437,32 @@ def set_fields(path: Path, **changes: object) -> ProjectStateResult:
     return _write(path, content, before, after)
 
 
-def record_gate(path: Path, gate: str, status: str, unit: str | None = None, *, same_failure: bool = False) -> ProjectStateResult:
-    """Record a gate outcome and, for failures, apply the attempt budget.
+def record_gate(
+    path: Path,
+    gate: str,
+    status: str,
+    unit: str | None = None,
+    *,
+    same_failure: bool = False,
+    editorial: bool = False,
+) -> ProjectStateResult:
+    """Record a gate outcome and apply the attempt budget and escalation ladder.
 
-    A failing outcome (anything but PASS) on a named reasoning unit consumes one
-    attempt for that unit. The recorded status is the *effective* status after
-    the budget: a requested RETRY becomes ESCALATE once the unit is exhausted or
-    the same failure repeats, so the budget is enforced by data, not by prose.
+    Only a reasoning failure the current owner will retry (``RETRY``) charges the
+    unit's attempt budget. ``editorial`` marks a retry that fixes wording, a
+    missing path, or a rollback note; it is recorded but never charged. The
+    recorded status is the *effective* status after the budget: a requested
+    ``RETRY`` becomes ``ESCALATE`` once the unit is exhausted or the same failure
+    repeats.
+
+    ``ESCALATE`` (requested or derived) hands the unit to the next owner on the
+    ladder: the escalation count rises and the attempt count resets, so the RCA
+    ladder (parent retry, specialist REVISE, deep-rca, user decision) is
+    recorded on one unit. Past ``MAX_ESCALATIONS`` the effective status is
+    ``USER_DECISION``. ``RECLASSIFY`` resets the unit's counters (all units when
+    no unit is named) because the problem itself changed. ``PASS`` clears the
+    unit's counters. ``USER_DECISION`` and ``BLOCKED`` are recorded without
+    charging anything: waiting on a person or an environment is not an attempt.
     """
     content, before = _read(path)
     if before is None:
@@ -420,15 +471,32 @@ def record_gate(path: Path, gate: str, status: str, unit: str | None = None, *, 
         raise ProjectStateError(f"gate outcome is not a known status: {status}")
     after = dict(before)
     attempts = dict(before["attempts"])
+    escalations = dict(before["escalations"])
+    key = _validate_token(unit or gate, "unit")
     effective = status
-    if status != "PASS":
-        key = _validate_token(unit or gate, "unit")
+    if status == "PASS":
+        attempts.pop(key, None)
+        escalations.pop(key, None)
+    elif status == "RECLASSIFY":
+        if unit is None:
+            attempts, escalations = {}, {}
+        else:
+            attempts.pop(key, None)
+            escalations.pop(key, None)
+    elif status == "RETRY" and not editorial:
         attempts[key] = int(attempts.get(key, 0)) + 1
-        if status == "RETRY":
-            effective = next_gate_status(attempts[key], same_failure)
+        effective = next_gate_status(attempts[key], same_failure)
+    if effective == "ESCALATE":
+        stage = int(escalations.get(key, 0)) + 1
+        attempts.pop(key, None)
+        if stage > MAX_ESCALATIONS:
+            effective = "USER_DECISION"
+        else:
+            escalations[key] = stage
     after["current_gate"] = _validate_token(gate, "gate")
     after["gate_status"] = effective
     after["attempts"] = attempts
+    after["escalations"] = escalations
     return _write(path, content, before, after)
 
 

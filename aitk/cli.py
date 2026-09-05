@@ -404,6 +404,7 @@ def _project_state(arguments: argparse.Namespace) -> int:
                 arguments.status,
                 arguments.unit,
                 same_failure=arguments.same_failure,
+                editorial=arguments.editorial,
             )
         elif action == "advance":
             result = advance_phase(path, arguments.to)
@@ -422,7 +423,8 @@ def _project_state(arguments: argparse.Namespace) -> int:
             f"{snapshot['workflow']}: complexity={snapshot['complexity']} "
             f"size={snapshot['size']} shape={snapshot['execution_shape']} "
             f"phase={snapshot['current_phase']} gate={snapshot['current_gate']}="
-            f"{snapshot['gate_status']} attempts={json.dumps(snapshot['attempts'], sort_keys=True)}"
+            f"{snapshot['gate_status']} attempts={json.dumps(snapshot['attempts'], sort_keys=True)} "
+            f"escalations={json.dumps(snapshot['escalations'], sort_keys=True)}"
         )
         print(f"  state: {result.file}")
     return 0
@@ -663,6 +665,11 @@ def parser() -> argparse.ArgumentParser:
             )
             state_action.add_argument("--unit", help="reasoning unit charged for a failure")
             state_action.add_argument("--same-failure", action="store_true")
+            state_action.add_argument(
+                "--editorial",
+                action="store_true",
+                help="a wording, path, or rollback-note fix; recorded but never charged to the budget",
+            )
         if action == "advance":
             state_action.add_argument("--to", required=True)
         if action == "phases":

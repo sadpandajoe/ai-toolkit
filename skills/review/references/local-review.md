@@ -23,7 +23,9 @@ that recorded base, never from the last fix.
 Run [classify-diff.md](classify-diff.md) and `qa/references/assess-impact.md`.
 Record the complexity, impact, and risk flags in the Review Record. TRIVIAL
 zero-logic or micro-fix diffs may take the review exception in `rules/gates.md`;
-everything else gets the independent review below, even at TRIVIAL.
+everything else gets the independent review below, even at TRIVIAL. A TRIVIAL
+diff with CORE impact is reviewed as STANDARD: the exception is unavailable and
+missing-test findings shift up one level (`rules/code-review.md`).
 
 ## Preflight
 
@@ -40,10 +42,14 @@ fired. The prompt carries the diff and full changed files, the recorded base,
 the preflight result, the classifier's flags and impact, and acceptance
 criteria from `PROJECT.md` when relevant. It never carries the implementer's
 transcript or any earlier findings. The worker receives its contract inline from
-the route runner. If no cross-provider lane is reachable, run the toolkit's
-same-provider reviewer agent instead and record `Independent review:
-same-provider` in the Review Record; never skip the lane and never review
-inline.
+the route runner. If no cross-provider lane is reachable and the diff is neither
+security-sensitive nor deep-tier, run the toolkit's same-provider reviewer
+agent instead and record `Independent review: same-provider` in the Review
+Record; never skip the lane and never review
+inline. A security-sensitive or deep-tier diff with no cross-provider lane is
+`## Gate: review` `BLOCKED (degraded)` until the other provider is reachable or
+the user passes `--allow-degraded`, recorded as `USER_DECISION`
+(`rules/gates.md`, Independent Judgment).
 
 ## Deep Lenses (conditional)
 
@@ -64,7 +70,20 @@ lanes. A code-judo ask runs at its own boundary
 Collect findings from every lane and dedupe by file, line, and class. For each
 `[major]` and `[minor]`, check the claim against the current repo and diff
 before changing anything: accepted, or rejected with a one-line evidence-based
-reason. Write the Review Record to `PROJECT.md` before fixing. Then apply
+reason.
+
+A `[major]` that only one lane raised is never accepted on the parent's reading
+alone; a finding two lanes raised independently needs no verifier.
+<!-- aitk-model-route:review.verify-major -->
+Launch one fresh verifier worker on `review` (`deep-review` when the review ran
+deep) on the model family that did not raise the finding, with only the finding,
+the diff, and the full changed files; it returns `Verdict: CONFIRMED | REFUTED |
+UNVERIFIABLE` with a concrete failure scenario. `CONFIRMED` keeps the severity;
+`REFUTED` records the finding as rejected with the verifier's evidence;
+`UNVERIFIABLE` caps it at `[minor]` until the parent settles the fact the
+verifier named.
+
+Write the Review Record to `PROJECT.md` before fixing. Then apply
 accepted fixes (parent inline, or the implementer worker for a large queue),
 add the locking tests the findings named, and run the verification loop
 (`skills/verification-loop/SKILL.md`) on the fixed files.
@@ -101,6 +120,7 @@ Review Record in `PROJECT.md` (compact, actionable only):
 **Preflight:** <pass/fail/skipped — command or reason>
 **Independent review:** <provider/family | same-provider>
 **Deep lenses:** <names, or none> — <flags that triggered them>
+**Verified majors:** <R-ids → CONFIRMED / REFUTED / UNVERIFIABLE, or none>
 **Gate:** <PASS | RETRY | ESCALATE | USER_DECISION | BLOCKED>
 
 ### Findings

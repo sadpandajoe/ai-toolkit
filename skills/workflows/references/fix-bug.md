@@ -41,7 +41,9 @@ fix-bug <report> --watch    # chain into watch-pr after the fix push lands
    grades the evidence checklist. COMPLEX, confidence below 8/10, or a prior
    failed attempt: the independent RCA specialist grades it. `PASS` records the
    root cause and regression check in `PROJECT.md`; `REVISE` closes the named
-   gaps once; `ESCALATE` moves to `deep-rca` then `USER_DECISION`.
+   gaps once; `ESCALATE` moves to `deep-rca` then `USER_DECISION`. Every step
+   is one `project-state gate --gate rca --unit rca` record; the runtime climbs
+   the ladder and resets the budget per owner.
 6. **Plan the fix.** STANDARD: the fix approach and regression test as
    `PROJECT.md` action items. COMPLEX: `planning/references/plan-implementation.md`
    as `PLAN.md`, then `planning/references/validate-plan.md` in `fix-plan`
@@ -63,12 +65,14 @@ fix-bug <report> --watch    # chain into watch-pr after the fix push lands
     when the app runs; otherwise record why not.
 11. **Finish.** Write `## Bug Fix Complete`, emit
     `reporting/templates/fix-bug-summary.md`, record `metrics-emit`. Default
-    action when verification is `PASS` with a regression test (or an explicitly
-    accepted gap), the review gate is `PASS`, and the target is the current
-    feature branch on the expected remote: create a new commit and push it.
-    Pause for amend, rebase, force-push, an ambiguous push target, or any
-    COMPLEX-path hold. With `--watch`, chain into `watch-pr` once the push
-    lands on a branch with an open PR.
+    action when verification is `PASS` at `STRONG` strength (the regression
+    test and targeted tests ran locally; `PASS (downstream: CI)` is `PARTIAL`
+    and pauses), a regression test was added or the gap explicitly accepted,
+    the review gate is `PASS`, and the target is the current feature branch on
+    the expected remote: create a new commit and push it. Pause for amend,
+    rebase, force-push, an ambiguous push target, `PARTIAL` or `WEAK`
+    verification, or any COMPLEX-path hold. With `--watch`, chain into
+    `watch-pr` once the push lands on a branch with an open PR.
 
 ## User Intervention Points
 
@@ -81,7 +85,9 @@ environment only the user holds, or a safety or effect boundary.
 - RCA gate `PASS` before any COMPLEX fix plan; a bug fix is never `PASS` at
   verification on inspection alone.
 - No commit without an added or updated regression test unless the gap is
-  explicitly accepted by the user.
+  explicitly accepted by the user; no auto-push below `STRONG` verification.
+- BATCHED or MULTI_PHASE fixes write the `## Phase Complete` block from
+  `reporting/templates/phase-handoff.md` before the next unit.
 - `PROJECT.md` entries at every gate; `## Bug Fix Complete` before the chat
   summary.
 

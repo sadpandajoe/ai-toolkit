@@ -2,6 +2,31 @@
 
 ## 0.3.0 — 2026-09-05
 
+- Gate runtime: only `RETRY` charges the attempt budget; `--editorial` records
+  a wording-only fix without charging; `USER_DECISION` and `BLOCKED` never
+  charge; `ESCALATE` climbs a per-unit ladder (three steps, then
+  `USER_DECISION`) and resets the budget for the next owner; `RECLASSIFY`
+  resets counters. Snapshots gain an `escalations` map; older snapshots read
+  as empty. The `## Routing Snapshot` heading in `PROJECT_TEMPLATE.md` is
+  reused instead of duplicated.
+- Verification strength (`STRONG` / `PARTIAL` / `WEAK`) maps to gate outcomes
+  in `rules/gates.md`; auto-commit and push in `fix-bug`, `fix-ci`, and
+  `watch-pr` require `STRONG`; `--gate-strict` removes the `WEAK` downstream
+  carve-out.
+- Single-source `[major]` findings are verified by a fresh lane on the other
+  model family (`review.verify-major`, `agents/specialists/finding-verifier.md`)
+  before they block; security-sensitive, `--deep`, and adversarial reviews are
+  `BLOCKED (degraded)` without a cross-provider lane unless `--allow-degraded`.
+- Plan validation cases are one list: every decomposition, every COMPLEX plan,
+  and a STANDARD plan at `LOW` classification confidence.
+- The independent reviewer contract inlines the tests, frontend, and backend
+  checklists; the plan validator inlines the implementation and test-plan
+  checklists; the unused plan lens floor is gone. Batch PR reviews report
+  deep-quality among deferred lenses.
+- Restored `USER_DECISION` heuristics, the stop-on-no-logs rule in `fix-ci`,
+  the per-unit `## Phase Complete` hard gate, and TRIVIAL-plus-CORE review
+  escalation; `review-plan` and `fix-ci` record snapshot gates.
+
 - Replaced the control plane: the parent session runs the cheap workhorse
   (Sonnet on Claude, Sol on Codex), classifies complexity (TRIVIAL / STANDARD /
   COMPLEX), size (S / M / L / XL), and execution shape, and drives goal

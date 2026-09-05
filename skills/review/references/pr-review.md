@@ -41,7 +41,11 @@ full changed files, the classifier's flags and impact, and any premise notes.
 Never include earlier review rounds or other reviewers' comments; the lane must
 be cold. The worker receives its contract inline from the route runner. If no
 cross-provider lane is reachable, use the toolkit's same-provider reviewer agent
-and disclose it in the report.
+and disclose it in the report, except under `--deep` or a security-sensitive
+flag: there the review is `BLOCKED (degraded)` until the other provider is
+reachable or the user passes `--allow-degraded`, recorded as `USER_DECISION`
+(`rules/gates.md`, Independent Judgment). Single-source `[major]` findings are
+verified before posting exactly as in `local-review.md`.
 
 ## Deep Lenses (conditional)
 

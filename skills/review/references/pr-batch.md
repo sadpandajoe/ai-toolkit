@@ -84,9 +84,10 @@ The worker returns findings and a recommendation. It does not post them.
 **The worker is a single reviewer, not a nested orchestrator.** A review route
 has no subagent capability, so the worker applies the independent reviewer
 contract itself, in one context, covering the risks its payload's classifier
-flags name. Deep lenses (adversarial, architecture) carry a `deep-review` route
-floor and do not run inside a batch worker; when a PR's classification flags
-them, the worker reports `Deferred lenses:` and the main thread escalates that
+flags name. Deep lenses (adversarial, deep-quality, architecture) carry a
+`deep-review` route floor and do not run inside a batch worker; when a PR's
+classification flags any of them, the worker reports every flagged lens under
+`Deferred lenses:` (deep-quality included) and the main thread escalates that
 PR to a single-PR review instead.
 
 ## Post

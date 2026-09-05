@@ -49,8 +49,12 @@ Classification has two orthogonal axes plus a derived shape:
 
 `aitk project-state` persists the snapshot in a delimited block in
 `PROJECT.md`, records gate outcomes, and enforces the attempt budget: a unit
-gets one attempt and one informed retry, and the runtime turns a third `RETRY`
-into `ESCALATE`.
+gets one attempt and one informed retry per owner, and the runtime turns a
+third `RETRY` into `ESCALATE`. An escalation climbs a bounded per-unit ladder
+(three steps, then `USER_DECISION`) and resets the budget for the next owner;
+editorial retries, `USER_DECISION`, and `BLOCKED` are recorded without being
+charged; `RECLASSIFY` resets the counters. Verification gates carry a strength
+(`STRONG` / `PARTIAL` / `WEAK`), and only `STRONG` authorizes an auto-push.
 
 ## Isolation and Routing
 
@@ -73,7 +77,10 @@ the toolkit's evidence boundary.
 Review is one independent lane by default, validated by the parent before any
 fix, with one delta pass after substantive remediation and at most two
 `deep-review` lenses (adversarial, deep quality, architecture) on classifier
-flags. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
+flags. A `[major]` only one lane raised is confirmed by a fresh verifier on the
+other model family before it blocks, and a security-sensitive, `--deep`, or
+adversarial review is `BLOCKED (degraded)` rather than downgraded when the
+other provider is unreachable. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
 REPLAN`; the RCA gate is an evidence checklist the parent grades for STANDARD
 bugs and a specialist grades for COMPLEX or uncertain ones.
 

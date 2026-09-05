@@ -35,5 +35,8 @@ bin/aitk project-state phase --name <phase> --status active
 ```
 
 COMPLEX phase plans run validation in `phase-plan` mode
-([validate-plan.md](validate-plan.md)). STANDARD phase plans go straight to
-implementation; the verification loop is their gate.
+([validate-plan.md](validate-plan.md)); so does a STANDARD phase plan when the
+snapshot's classification confidence is `LOW`. Other STANDARD phase plans go
+straight to implementation; the verification loop is their gate. Hand the
+phase to its worker with the input block in
+`skills/reporting/templates/phase-handoff.md`.

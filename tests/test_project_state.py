@@ -11,6 +11,7 @@ import unittest
 
 from aitk.project_state import (
     ATTEMPT_BUDGET,
+    MAX_ESCALATIONS,
     BEGIN,
     END,
     ProjectStateError,
@@ -130,24 +131,88 @@ class SnapshotLifecycleTests(unittest.TestCase):
         self.assertEqual({"implementation": 1}, first.snapshot["attempts"])
         second = record_gate(self.path, "verification", "RETRY", "implementation")
         self.assertEqual("ESCALATE", second.snapshot["gate_status"])
-        self.assertEqual({"implementation": 2}, second.snapshot["attempts"])
+        # The exhausted owner hands the unit on: the next owner starts with a
+        # fresh attempt budget and the ladder records the step.
+        self.assertEqual({}, second.snapshot["attempts"])
+        self.assertEqual({"implementation": 1}, second.snapshot["escalations"])
         with self.assertRaisesRegex(ProjectStateError, "cannot advance"):
             advance_phase(self.path, "review")
-        passed = record_gate(self.path, "verification", "PASS")
+        passed = record_gate(self.path, "verification", "PASS", "implementation")
         self.assertEqual("PASS", passed.snapshot["gate_status"])
+        self.assertEqual({}, passed.snapshot["escalations"])
         advanced = advance_phase(self.path, "review")
         self.assertEqual(("review", "PENDING"), (advanced.snapshot["current_phase"], advanced.snapshot["gate_status"]))
 
     def test_same_failure_twice_escalates_even_with_budget_left(self) -> None:
         initialize(self.path, "fix-bug", "STANDARD", "M")
-        record_gate(self.path, "rca", "RETRY", "rca")
-        # Different reason on the second attempt would be ESCALATE anyway at
-        # budget 2; check the same-failure rule on the first repeated attempt
-        # by using a fresh unit with a one-attempt history.
         outcome = record_gate(self.path, "rca", "RETRY", "rca-alt", same_failure=True)
         self.assertEqual("RETRY", outcome.snapshot["gate_status"])
         outcome = record_gate(self.path, "rca", "RETRY", "rca-alt", same_failure=True)
         self.assertEqual("ESCALATE", outcome.snapshot["gate_status"])
+
+    def test_rca_ladder_is_recordable_on_one_unit_and_ends_in_user_decision(self) -> None:
+        """Parent retry, specialist REVISE, deep-rca, then the user: one unit."""
+        initialize(self.path, "fix-bug", "COMPLEX", "M")
+        statuses: list[str] = []
+        for _ in range(MAX_ESCALATIONS):
+            statuses.append(record_gate(self.path, "rca", "RETRY", "rca").snapshot["gate_status"])
+            statuses.append(record_gate(self.path, "rca", "RETRY", "rca").snapshot["gate_status"])
+        self.assertEqual(["RETRY", "ESCALATE"] * MAX_ESCALATIONS, statuses)
+        snapshot = show(self.path).snapshot
+        self.assertEqual({"rca": MAX_ESCALATIONS}, snapshot["escalations"])
+        # A fourth owner does not exist: the ladder hands the decision to the user
+        # instead of rejecting the snapshot.
+        record_gate(self.path, "rca", "RETRY", "rca")
+        final = record_gate(self.path, "rca", "RETRY", "rca")
+        self.assertEqual("USER_DECISION", final.snapshot["gate_status"])
+        self.assertEqual({"rca": MAX_ESCALATIONS}, final.snapshot["escalations"])
+        # An explicit ESCALATE (the specialist answered ESCALATE) climbs the same ladder.
+        initialize(self.path, "fix-bug", "COMPLEX", "M", replace=True)
+        explicit = record_gate(self.path, "rca", "ESCALATE", "rca")
+        self.assertEqual(("ESCALATE", {"rca": 1}), (explicit.snapshot["gate_status"], explicit.snapshot["escalations"]))
+
+    def test_waiting_and_editorial_outcomes_never_charge_the_budget(self) -> None:
+        initialize(self.path, "fix-bug", "STANDARD", "M")
+        for status in ("USER_DECISION", "BLOCKED"):
+            outcome = record_gate(self.path, "plan", status, "plan")
+            self.assertEqual(status, outcome.snapshot["gate_status"])
+            self.assertEqual({}, outcome.snapshot["attempts"])
+        editorial = record_gate(self.path, "plan", "RETRY", "plan", editorial=True)
+        self.assertEqual("RETRY", editorial.snapshot["gate_status"])
+        self.assertEqual({}, editorial.snapshot["attempts"])
+        charged = record_gate(self.path, "plan", "RETRY", "plan")
+        self.assertEqual({"plan": 1}, charged.snapshot["attempts"])
+
+    def test_reclassify_resets_counters_because_the_problem_changed(self) -> None:
+        initialize(self.path, "fix-bug", "STANDARD", "M")
+        record_gate(self.path, "verification", "RETRY", "slice-1")
+        record_gate(self.path, "rca", "RETRY", "rca")
+        record_gate(self.path, "rca", "RETRY", "rca")
+        one = record_gate(self.path, "rca", "RECLASSIFY", "rca")
+        self.assertEqual(("RECLASSIFY", {"slice-1": 1}, {}), (one.snapshot["gate_status"], one.snapshot["attempts"], one.snapshot["escalations"]))
+        everything = record_gate(self.path, "classification", "RECLASSIFY")
+        self.assertEqual(({}, {}), (everything.snapshot["attempts"], everything.snapshot["escalations"]))
+        upgraded = set_fields(self.path, complexity="COMPLEX")
+        self.assertEqual("COMPLEX", upgraded.snapshot["complexity"])
+
+    def test_snapshot_without_escalations_key_reads_as_no_escalations(self) -> None:
+        initialize(self.path, "fix-bug", "STANDARD", "M")
+        content = self.path.read_text()
+        start = content.index(BEGIN) + len(BEGIN)
+        end = content.index(END)
+        payload = json.loads(content[start:end])
+        del payload["escalations"]
+        self.path.write_text(content[:start] + "\n" + json.dumps(payload) + "\n" + content[end:])
+        self.assertEqual({}, show(self.path).snapshot["escalations"])
+
+    def test_template_heading_is_reused_instead_of_duplicated(self) -> None:
+        self.path.write_text("## Overview\nnotes\n\n## Routing Snapshot\n<!-- managed by bin/aitk project-state -->\n\n## Notes\n-\n")
+        initialize(self.path, "fix-bug", "STANDARD", "M")
+        content = self.path.read_text()
+        self.assertEqual(1, content.count("## Routing Snapshot"))
+        self.assertLess(content.index("## Routing Snapshot"), content.index(BEGIN))
+        self.assertLess(content.index(END), content.index("## Notes"))
+        self.assertEqual("STANDARD", show(self.path).snapshot["complexity"])
 
     def test_phases_are_only_recorded_for_multi_phase_work(self) -> None:
         initialize(self.path, "create-feature", "COMPLEX", "XL", "phased")

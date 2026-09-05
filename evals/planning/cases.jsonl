@@ -2,3 +2,5 @@
 {"id": "dashboard-editor-decomposes", "mode": "judgment", "input": "New dashboard editor with independent state, layout, persistence, history", "expected": {"complexity": "COMPLEX", "size": "XL", "shape": "MULTI_PHASE", "planner": "opus-decomposition", "validator": "decomposition"}, "source": "plan"}
 {"id": "undo-redo-phase-jit", "mode": "judgment", "input": "Add undo/redo inside the dashboard editor (phase of a COMPLEX project)", "expected": {"phase_complexity": "COMPLEX", "shape": "SINGLE_PHASE", "replan_whole_project": false}, "source": "plan"}
 {"id": "changes-required-once-then-escalate", "mode": "judgment", "input": "Validator returned CHANGES_REQUIRED twice for the same architectural reason", "expected": {"gate": "ESCALATE", "third_round": false}, "source": "plan"}
+{"id": "standard-low-confidence-validates", "mode": "judgment", "input": "STANDARD single-phase plan, classification_confidence LOW", "expected": {"validate": true}, "source": "gap-review"}
+{"id": "decomposition-always-validated", "mode": "judgment", "input": "STANDARD XL codemod decomposed into three phases", "expected": {"validate_decomposition": true}, "source": "gap-review"}

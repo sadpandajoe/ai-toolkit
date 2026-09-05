@@ -63,6 +63,13 @@ one level.
   one must still be reportable in round two.
 - **Symmetry findings cap at `[minor]`** unless the change plausibly covers or
   worsened the sibling path.
+- **Convergent beats single-source.** Two independent lanes surfacing the same
+  finding unprompted is high confidence; keep its severity. A `[major]` only
+  one lane raised is verified by a fresh lane on the other model family before
+  it blocks (`rules/gates.md`, Independent Judgment); until then it is worth
+  investigating, not worth blocking on.
+- **CORE impact shifts missing-test findings up one level**, and a TRIVIAL diff
+  on a CORE path is reviewed as STANDARD with no review exception.
 - **History audit before "wrong semantics".** Check whether an apparent
   regression is a deliberate reversal the history already justifies.
 - **Do not steer the reviewer.** The prompt supplies diff facts, risk flags, and

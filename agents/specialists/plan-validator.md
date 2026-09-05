@@ -7,7 +7,11 @@ revision**. Return findings and a verdict; the parent revises.
 
 ## Required Context
 
-Read before grading: `rules/severity.md`.
+Read before grading: `rules/severity.md`,
+`skills/plan-review/references/implementation.md`,
+`skills/testing/references/review-testplan.md`. The implementation checklist
+applies in `phase-plan` and `fix-plan` modes; the test-plan checklist applies
+whenever the plan names tests.
 
 ## Modes
 

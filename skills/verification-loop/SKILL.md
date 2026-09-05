@@ -31,8 +31,8 @@ worker and grade the handoff here.
 
 1. **Run the required checks.** Quote commands and results in one line each.
 2. **Grade.**
-   - All pass → `PASS`. Record it: `bin/aitk project-state gate --gate
-     verification --status PASS`.
+   - All required checks ran locally and pass → `PASS` at `STRONG`. Record
+     it: `bin/aitk project-state gate --gate verification --status PASS`.
    - A check fails and the current owner can plausibly fix it → attempt the
      fix, then record `--status RETRY --unit <unit>` (add `--same-failure` when
      the reason repeats). The runtime returns `RETRY` or `ESCALATE`; obey it.
@@ -41,8 +41,14 @@ worker and grade the handoff here.
      RCA specialist (bugs) or the planner (features) with a compact
      adjudication package. Never a third quiet attempt.
    - A check cannot run and no downstream verifier exists → `BLOCKED` with
-     what is missing. With a downstream verifier → `PASS (downstream: CI)` and
-     the no-push-after-failed-verification invariant holds.
+     what is missing. With a downstream verifier → `PASS (downstream: CI)` at
+     `PARTIAL` (related checks ran) or `WEAK` (nothing ran; `fix-ci` and
+     `watch-pr` only, and `BLOCKED` under `--gate-strict`). A downstream pass
+     continues the workflow but never authorizes a commit or push; the
+     no-push-after-failed-verification invariant holds. The strength table is
+     in `rules/gates.md`.
+   - An editorial fix (a path, wording, a rollback note) is recorded with
+     `--editorial` and is not charged.
    - The failure exposes a product or scope choice → `USER_DECISION`.
 3. **Recheck after every fix** with the same required set; a fix that passes
    only its own test is not `PASS`.
@@ -62,5 +68,5 @@ worker and grade the handoff here.
 
 ## Output
 
-The `## Gate: verification` block, followed by a one-line `Reviewer yield` or
-`Fix summary` only when fixes were applied.
+The `## Gate: verification` block with its `Strength` line, followed by a
+one-line `Reviewer yield` or `Fix summary` only when fixes were applied.

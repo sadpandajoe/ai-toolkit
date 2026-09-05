@@ -6,12 +6,14 @@ improved by a third round of the same reviewers.
 
 ## When
 
-- Every COMPLEX decomposition (`decomposition` mode) before the first phase.
+- Every decomposition (`decomposition` mode), any complexity, before the first
+  phase: it fixes the architecture every later phase inherits.
 - Every COMPLEX phase plan or COMPLEX SINGLE_PHASE plan (`phase-plan` mode).
 - Every COMPLEX bug-fix plan (`fix-plan` mode) against its accepted RCA.
-- STANDARD plans skip validation; the verification loop is their gate. Run it
-  anyway when the parent's own confidence is `LOW` or the user asked for a plan
-  review.
+- A STANDARD plan only when the snapshot's `classification_confidence` is
+  `LOW` or the user asked for a plan review; otherwise the verification loop
+  is its gate. `create-feature`, `fix-bug`, `plan-phase.md`, and
+  `planning/SKILL.md` follow this list and add no case of their own.
 
 ## Dispatch
 
@@ -38,6 +40,7 @@ worker receives its contract inline from the route runner.
   the retry budget in `rules/gates.md`. Do not iterate further.
 
 Record the outcome with `bin/aitk project-state gate --gate plan --status
-<PASS|RETRY|ESCALATE|USER_DECISION> --unit <decomposition|phase-name>` and
+<PASS|RETRY|ESCALATE|USER_DECISION> --unit <decomposition|phase-name>`
+(`--editorial` when the revision was wording only, so it is not charged) and
 append the verdict and blocking findings to `PLAN.md` under
 `## Validation: <unit>`. Findings, not scores, are the persistent artifact.

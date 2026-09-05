@@ -10,7 +10,7 @@ restructuring that makes the change dramatically simpler. The two lenses are
 deliberately separate contracts: naming that sibling file here would pull its
 severity-graded findings rules into this lane's inline closure.
 
-Pinned to the `deep-review` route (see the review SKILL Invocation section) —
+Pinned to the `deep-review` route (boundary `review.code-judo` in `interfaces/model-routing.json`) —
 this is deliberately the deepest-reasoning tier because reframing an
 architecture requires holding an alternative design in view. This pass runs iff
 `classify-diff` reports `Code-judo lane: YES`; that file owns the trigger

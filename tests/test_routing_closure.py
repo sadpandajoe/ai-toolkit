@@ -90,14 +90,34 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.independent", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
+                "rules/gates.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
                 "rules/specialist-handoff.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
                 "skills/review/SKILL.md",
                 "skills/review/references/local-review.md",
+                "skills/testing/references/review-tests.md",
             ),
             ("review.delta", None): (
                 "agents/specialists/reviewer.md",
+                "rules/code-review.md",
+                "rules/gates.md",
+                "rules/model-assignment.md",
+                "rules/severity.md",
+                "rules/specialist-handoff.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/local-review.md",
+                "skills/testing/references/review-tests.md",
+            ),
+            # The single-finding verifier carries its own contract and the
+            # grading rules; never the reviewer contract or the domain
+            # checklists, so it cannot widen into a second review.
+            ("review.verify-major", None): (
+                "agents/specialists/finding-verifier.md",
                 "rules/code-review.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
@@ -111,22 +131,29 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.pr-batch", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
+                "rules/gates.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
                 "rules/specialist-handoff.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
                 "skills/review/SKILL.md",
                 "skills/review/references/classify-diff.md",
                 "skills/review/references/pr-batch.md",
+                "skills/testing/references/review-tests.md",
             ),
-            # Plan validation is one worker with the validator contract; no plan
-            # lens files ride along.
+            # Plan validation is one worker with the validator contract plus
+            # the two plan checklists it inlines; the floored architecture lens
+            # never rides along.
             ("planning.validate", None): (
                 "agents/specialists/plan-validator.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
                 "rules/specialist-handoff.md",
+                "skills/plan-review/references/implementation.md",
                 "skills/planning/SKILL.md",
                 "skills/planning/references/validate-plan.md",
+                "skills/testing/references/review-testplan.md",
             ),
             ("debug.rca-specialist", None): (
                 "agents/specialists/rca.md",
@@ -279,6 +306,7 @@ class RoutingClosureTests(RoutingTestCase):
             # Single-lane code review with no fan-out.
             "review.independent",
             "review.delta",
+            "review.verify-major",
             "review.pr-independent",
             "review.pr-batch",
             # Code-review lanes owned by another skill, which therefore do not

@@ -363,6 +363,20 @@
       ]
     },
     {
+      "id": "review.verify-major",
+      "path": "skills/review/references/local-review.md",
+      "count": 1,
+      "routes": [
+        "review",
+        "deep-review"
+      ],
+      "lens_domain": "code",
+      "contracts": [
+        "agents/specialists/finding-verifier.md",
+        "rules/code-review.md"
+      ]
+    },
+    {
       "id": "review.pr-independent",
       "path": "skills/review/references/pr-review.md",
       "count": 1,
@@ -582,11 +596,6 @@
       "skills/review/references/adversarial.md",
       "skills/review/references/deep-quality.md",
       "skills/plan-review/references/architecture.md"
-    ],
-    "plan": [
-      "skills/plan-review/references/architecture.md",
-      "skills/plan-review/references/implementation.md",
-      "skills/testing/references/review-testplan.md"
     ]
   }
 }

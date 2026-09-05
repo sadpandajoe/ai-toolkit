@@ -7,9 +7,10 @@ the safety gates, and replaces what runs underneath them.
 
 ### What changes for you
 
-- Run the parent session on the workhorse family: `/model sonnet` (or
-  `opusplan`) on Claude Code, Sol on Codex. Opus plans only COMPLEX work; Sol or
-  Opus review independently; Fable is a read-only deep advisor.
+- Run the parent session on the workhorse family: `/model sonnet` on Claude
+  Code (not `opusplan`; the planner agent runs Opus, the parent does not), Sol
+  on Codex. Opus plans only COMPLEX work; Sol or Opus review independently;
+  Fable is a read-only deep advisor.
 - Nothing asks you to clear context. Fresh workers are the phase boundary;
   compaction is a safety net; clearing is optional hygiene between tasks.
 - Reviews run once, independently, on the other provider when reachable. The

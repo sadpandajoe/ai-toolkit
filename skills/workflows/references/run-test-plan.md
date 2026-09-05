@@ -76,7 +76,7 @@ run-test-plan https://github.com/owner/repo/pull/123
 3. **Review the Plan Once**
 
    Load [skills/testing/references/review-testplan.md](../../testing/references/review-testplan.md) and review the matrix with a fresh test-plan reviewer after material revisions.
-   Revise the plan until it reaches `8/10`, or stop early only if blockers or unresolved ambiguities make execution unsafe or misleading.
+   Revise once on the reviewer's blocking findings (one informed retry under `rules/gates.md`), then execute; stop early only if blockers or unresolved ambiguities make execution unsafe or misleading.
 
 4. **Execute the Plan**
 

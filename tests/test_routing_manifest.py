@@ -249,10 +249,6 @@ class RoutingManifestTests(RoutingTestCase):
             (lambda p: p.update(lens_floors={}), "lens_floors must not be empty"),
             (lambda p: p.update(lens_floors=None), "lens_floors must be an object"),
             (
-                lambda p: p["lens_floors"].pop("plan"),
-                "lens floor for plan drops pinned lenses",
-            ),
-            (
                 lambda p: p["lens_floors"]["code"].remove(adversarial),
                 "lens floor for code drops pinned lenses",
             ),

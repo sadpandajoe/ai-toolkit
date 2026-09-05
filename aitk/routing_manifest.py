@@ -348,6 +348,7 @@ BOUNDARY_INVARIANTS = {
     "review.deep-lenses": ("deep-review",),
     "review.delta": ("review", "deep-review"),
     "review.independent": ("review", "deep-review"),
+    "review.verify-major": ("review", "deep-review"),
     "review.pr-batch": ("review", "deep-review"),
     "review.pr-deep-lenses": ("deep-review",),
     "review.pr-independent": ("review", "deep-review"),

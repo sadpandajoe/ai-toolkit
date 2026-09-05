@@ -21,7 +21,12 @@ watch-pr                     # Watch the PR for the current branch
 watch-pr <pr-number-or-url>  # Watch a specific PR
 watch-pr <pr> --greens N     # Force a fixed consecutive-green target
 watch-pr <pr> --no-comments  # CI only; leave comments untouched
+watch-pr <pr> --gate-strict  # WEAK verification is BLOCKED even when CI verifies downstream
 ```
+
+Fix dispatches push only on `STRONG` verification (`rules/gates.md`,
+Verification Strength); a `PASS (downstream: CI)` result is recorded and the
+next iteration reads CI as the verifier.
 
 Recurrence layers on top through the current provider binding. Load that binding
 before choosing the mode: a remote/headless recurrence cannot reach VPN-gated
