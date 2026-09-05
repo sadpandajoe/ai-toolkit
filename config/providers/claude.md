@@ -24,7 +24,9 @@ provider syntax.
   Recommended settings: `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`, a lower
   `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` if the parent grows quickly, and the
   `sonnet` model alias for the parent session (not `opusplan`: the planner
-  agent, not the parent, runs Opus).
+  agent, not the parent, runs Opus). Subagents spend the same limit as the
+  parent; the Codex review lane does not, so prefer the toolkit's `review-code`
+  over general multi-agent review commands when quota is tight.
 - `recurrence`: Claude Code's recurring workflow facility with explicit stop
   conditions, subject to the repository reachability gate.
 - `independent_review`: the cross-provider specialist by default. Resolve the

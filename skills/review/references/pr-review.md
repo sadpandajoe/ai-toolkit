@@ -47,6 +47,17 @@ reachable or the user passes `--allow-degraded`, recorded as `USER_DECISION`
 (`rules/gates.md`, Independent Judgment). Single-source `[major]` findings are
 verified before posting exactly as in `local-review.md`.
 
+## Second Family (COMPLEX or CORE impact)
+
+<!-- aitk-model-route:review.pr-second-family -->
+Launch one more fresh reviewer worker on `review` (`deep-review` under `--deep`)
+on the provider the independent lane did not use, with the same cold prompt,
+when the PR classifies COMPLEX or CORE impact. Merge under the convergence rule
+(`rules/code-review.md`); no verifier runs when this lane ran. On a Claude
+parent this is the Opus reviewer agent and spends Claude quota, so STANDARD PRs
+stay at one lane. Skip and disclose when the second provider is unreachable and
+the PR is not security-sensitive.
+
 ## Deep Lenses (conditional)
 
 <!-- aitk-model-route:review.pr-deep-lenses -->

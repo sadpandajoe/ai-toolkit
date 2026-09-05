@@ -352,6 +352,8 @@ BOUNDARY_INVARIANTS = {
     "review.pr-batch": ("review", "deep-review"),
     "review.pr-deep-lenses": ("deep-review",),
     "review.pr-independent": ("review", "deep-review"),
+    "review.pr-second-family": ("review", "deep-review"),
+    "review.second-family": ("review", "deep-review"),
     "testing.test-authoring": ("implementation",),
     "workflows.adversarial-primary": ("deep-review",),
     "workflows.adversarial-second-opinion": ("deep-review",),

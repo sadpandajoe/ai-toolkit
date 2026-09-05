@@ -107,7 +107,8 @@ installer) is reviewed as STANDARD.
 - **Single-source majors are verified before they block.** A `[major]` that
   only one lane raised is worth investigating but never blocks on the parent's
   reading alone. Before it is accepted past `[minor]`, either a second
-  independent lane converged on it, or one fresh verifier on the other model
+  independent lane converged on it (the second-family lane runs by default on
+  COMPLEX and CORE-impact diffs), or one fresh verifier on the other model
   family confirmed it with a concrete failure scenario
   (`review/references/local-review.md`, Validate). A refuted finding is
   recorded as rejected with the verifier's evidence.

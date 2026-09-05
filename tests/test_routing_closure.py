@@ -113,6 +113,21 @@ class RoutingClosureTests(RoutingTestCase):
                 "skills/review/references/local-review.md",
                 "skills/testing/references/review-tests.md",
             ),
+            # The second-family lane is the independent lane's twin: same
+            # contract, same checklists, nothing from the first lane.
+            ("review.second-family", None): (
+                "agents/specialists/reviewer.md",
+                "rules/code-review.md",
+                "rules/gates.md",
+                "rules/model-assignment.md",
+                "rules/severity.md",
+                "rules/specialist-handoff.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/local-review.md",
+                "skills/testing/references/review-tests.md",
+            ),
             # The single-finding verifier carries its own contract and the
             # grading rules; never the reviewer contract or the domain
             # checklists, so it cannot widen into a second review.
@@ -305,9 +320,11 @@ class RoutingClosureTests(RoutingTestCase):
             "review.pr-deep-lenses",
             # Single-lane code review with no fan-out.
             "review.independent",
+            "review.second-family",
             "review.delta",
             "review.verify-major",
             "review.pr-independent",
+            "review.pr-second-family",
             "review.pr-batch",
             # Code-review lanes owned by another skill, which therefore do not
             # receive the review umbrella.

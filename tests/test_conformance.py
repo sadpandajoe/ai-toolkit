@@ -351,15 +351,30 @@ class ConformanceTests(unittest.TestCase):
             if b["path"] == "skills/review/references/local-review.md"
         }
         self.assertEqual(
-            {"review.independent", "review.deep-lenses", "review.delta", "review.verify-major"},
+            {
+                "review.independent",
+                "review.second-family",
+                "review.deep-lenses",
+                "review.delta",
+                "review.verify-major",
+            },
             local_ids,
         )
         pr_ids = {
             b["id"] for b in payload["dispatch_boundaries"]
             if b["path"] == "skills/review/references/pr-review.md"
         }
-        self.assertEqual({"review.pr-independent", "review.pr-deep-lenses"}, pr_ids)
-        for identifier in ("review.independent", "review.delta", "review.pr-independent", "review.pr-batch"):
+        self.assertEqual(
+            {"review.pr-independent", "review.pr-second-family", "review.pr-deep-lenses"}, pr_ids
+        )
+        for identifier in (
+            "review.independent",
+            "review.second-family",
+            "review.delta",
+            "review.pr-independent",
+            "review.pr-second-family",
+            "review.pr-batch",
+        ):
             boundary = next(b for b in payload["dispatch_boundaries"] if b["id"] == identifier)
             with self.subTest(boundary=identifier):
                 self.assertIn("agents/specialists/reviewer.md", boundary["contracts"])

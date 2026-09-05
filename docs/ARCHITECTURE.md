@@ -77,8 +77,9 @@ the toolkit's evidence boundary.
 Review is one independent lane by default, validated by the parent before any
 fix, with one delta pass after substantive remediation and at most two
 `deep-review` lenses (adversarial, deep quality, architecture) on classifier
-flags. A `[major]` only one lane raised is confirmed by a fresh verifier on the
-other model family before it blocks, and a security-sensitive, `--deep`, or
+flags. COMPLEX and CORE-impact diffs add a second cold lane on the other model
+family, merged by convergence; on other diffs a `[major]` only one lane raised
+is confirmed by a fresh verifier on the other model family before it blocks, and a security-sensitive, `--deep`, or
 adversarial review is `BLOCKED (degraded)` rather than downgraded when the
 other provider is unreachable. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
 REPLAN`; the RCA gate is an evidence checklist the parent grades for STANDARD

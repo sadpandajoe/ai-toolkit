@@ -5,7 +5,9 @@
 - **One independent review by default.** A fresh reviewer on the other
   provider (Codex Sol when Claude orchestrates, Claude Opus when Codex does)
   reviews the whole recorded diff once. It never sees the implementer's
-  transcript.
+  transcript. COMPLEX and CORE-impact diffs add one more lane on the other
+  family, concurrently and cold; the two merge by convergence. Breadth is
+  bounded at two families; depth is never added by another round.
 - **Validate before fixing.** The reviewer is a critic, not an authority. The
   orchestrator checks each finding against the current repo and diff, records
   accepted versus rejected with a one-line reason for each rejection, and only

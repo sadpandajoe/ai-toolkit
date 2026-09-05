@@ -13,9 +13,11 @@
   in `rules/gates.md`; auto-commit and push in `fix-bug`, `fix-ci`, and
   `watch-pr` require `STRONG`; `--gate-strict` removes the `WEAK` downstream
   carve-out.
-- Single-source `[major]` findings are verified by a fresh lane on the other
-  model family (`review.verify-major`, `agents/specialists/finding-verifier.md`)
-  before they block; security-sensitive, `--deep`, and adversarial reviews are
+- COMPLEX and CORE-impact reviews run a second cold lane on the other model
+  family (`review.second-family`, `review.pr-second-family`) merged by
+  convergence; elsewhere single-source `[major]` findings are verified by a
+  fresh lane on the other model family (`review.verify-major`,
+  `agents/specialists/finding-verifier.md`) before they block; security-sensitive, `--deep`, and adversarial reviews are
   `BLOCKED (degraded)` without a cross-provider lane unless `--allow-degraded`.
 - Plan validation cases are one list: every decomposition, every COMPLEX plan,
   and a STANDARD plan at `LOW` classification confidence.

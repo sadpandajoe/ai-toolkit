@@ -332,6 +332,20 @@
       ]
     },
     {
+      "id": "review.second-family",
+      "path": "skills/review/references/local-review.md",
+      "count": 1,
+      "routes": [
+        "review",
+        "deep-review"
+      ],
+      "lens_domain": "code",
+      "contracts": [
+        "agents/specialists/reviewer.md",
+        "rules/code-review.md"
+      ]
+    },
+    {
       "id": "review.deep-lenses",
       "path": "skills/review/references/local-review.md",
       "count": 1,
@@ -378,6 +392,20 @@
     },
     {
       "id": "review.pr-independent",
+      "path": "skills/review/references/pr-review.md",
+      "count": 1,
+      "routes": [
+        "review",
+        "deep-review"
+      ],
+      "lens_domain": "code",
+      "contracts": [
+        "agents/specialists/reviewer.md",
+        "rules/code-review.md"
+      ]
+    },
+    {
+      "id": "review.pr-second-family",
       "path": "skills/review/references/pr-review.md",
       "count": 1,
       "routes": [

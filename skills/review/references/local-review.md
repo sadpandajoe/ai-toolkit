@@ -51,6 +51,22 @@ inline. A security-sensitive or deep-tier diff with no cross-provider lane is
 the user passes `--allow-degraded`, recorded as `USER_DECISION`
 (`rules/gates.md`, Independent Judgment).
 
+## Second Family (COMPLEX or CORE impact)
+
+<!-- aitk-model-route:review.second-family -->
+Launch one more fresh reviewer worker on `review` (`deep-review` under a
+deep-tier escalation) on the provider the independent lane did not use, with
+the same prompt and nothing from the first lane, when the classifier reports
+COMPLEX or CORE impact. The two lanes run concurrently and merge under the
+convergence rule in `rules/code-review.md`: raised by both → keep the severity;
+raised by one → capped at `[minor]` until the parent's validation names the
+concrete failure. No verifier lane runs when this lane ran; the second family
+already answered. On a Claude parent this lane is the Opus reviewer agent and
+spends Claude quota, while the Codex lane spends none, which is why STANDARD
+diffs stay at one lane. Skip it and disclose when the second provider is
+unreachable and the diff is not security-sensitive; a security-sensitive diff
+is `BLOCKED (degraded)` as above.
+
 ## Deep Lenses (conditional)
 
 <!-- aitk-model-route:review.deep-lenses -->
@@ -73,7 +89,10 @@ before changing anything: accepted, or rejected with a one-line evidence-based
 reason.
 
 A `[major]` that only one lane raised is never accepted on the parent's reading
-alone; a finding two lanes raised independently needs no verifier.
+alone; a finding two lanes raised independently needs no verifier, and when the
+second-family lane ran, its silence is the second family's answer (cap at
+`[minor]` unless validation names the failure). The verifier below is for
+reviews where a single independent lane ran.
 <!-- aitk-model-route:review.verify-major -->
 Launch one fresh verifier worker on `review` (`deep-review` when the review ran
 deep) on the model family that did not raise the finding, with only the finding,
@@ -119,6 +138,7 @@ Review Record in `PROJECT.md` (compact, actionable only):
 **Scope:** <files or filter>
 **Preflight:** <pass/fail/skipped — command or reason>
 **Independent review:** <provider/family | same-provider>
+**Second family:** <provider/family, or not run — <reason>>
 **Deep lenses:** <names, or none> — <flags that triggered them>
 **Verified majors:** <R-ids → CONFIRMED / REFUTED / UNVERIFIABLE, or none>
 **Gate:** <PASS | RETRY | ESCALATE | USER_DECISION | BLOCKED>
