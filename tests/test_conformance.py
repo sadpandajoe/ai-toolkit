@@ -579,6 +579,37 @@ class ConformanceTests(unittest.TestCase):
         self.assertIn("aitk-model-route:planning.validate-second-family", validate)
         self.assertIn("size XL", validate)
 
+    def test_pre_switch_review_controls(self) -> None:
+        """Clean-verdict guard, rejected majors, reviewer-reported flags, yield thresholds."""
+        local = (ROOT / "skills/review/references/local-review.md").read_text()
+        self.assertIn("clean-verdict guard", local)
+        self.assertIn("above 200 changed\nlines or 5 files", local)
+        self.assertIn("never **rejected** on it either", local)
+        self.assertIn("`CONFIRMED` overrides the parent", local)
+        self.assertIn("**Reviewer-reported flags.**", local)
+        self.assertIn("Missing flag:", local)
+        self.assertIn("Lane demoted:", local)
+        pr = (ROOT / "skills/review/references/pr-review.md").read_text()
+        self.assertIn("clean-verdict guard", pr)
+        reviewer = (ROOT / "agents/specialists/reviewer.md").read_text()
+        self.assertIn("Missing flag:", reviewer)
+        self.assertIn("you do not\nreview under it yourself", reviewer)
+        rule = (ROOT / "rules/code-review.md").read_text()
+        self.assertIn("## Yield Thresholds", rule)
+        table = re.search(r"^## Yield Thresholds$.*?(?=^## |\Z)", rule, re.MULTILINE | re.DOTALL)
+        assert table is not None
+        rows = [cells for cells in _markdown_table_rows(table.group(0)) if cells[0] != "Lane"]
+        self.assertEqual(4, len(rows), "every optional lane needs a threshold and a consequence")
+        for cells in rows:
+            with self.subTest(lane=cells[0]):
+                self.assertTrue(cells[2].strip(), "threshold missing")
+                self.assertTrue(cells[3].strip(), "consequence missing")
+        self.assertIn("never demoted", rule)
+        metrics = (ROOT / "skills/metrics-emit/SKILL.md").read_text()
+        self.assertIn('"lanes"', metrics)
+        gates = (ROOT / "rules/gates.md").read_text()
+        self.assertIn("`CONFIRMED` overrides it", gates)
+
     def test_retired_v1_vocabulary_does_not_return(self) -> None:
         retired = re.compile(
             r"\bMODERATE\b|rules/(?:review-gate|stop-rules|scoring)\.md|review-ensemble|"

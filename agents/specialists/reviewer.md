@@ -77,6 +77,9 @@ the concrete failure or locking assertion, and one line of evidence:
 ```
 
 Summary (one paragraph): verdict (clean or not), the claim you checked, the
-risk flags you covered, and for a delta review the fixed/unfixed tally. In the
-`verification` array list exactly what you read or ran. Never claim coverage you
-did not perform.
+risk flags you covered, and for a delta review the fixed/unfixed tally. When
+the diff shows a risk the classifier's flags do not name, add one line
+`Missing flag: <security-sensitive | architecture | refactor-shaped> —
+<file:line evidence>`; the parent reclassifies and runs the lens, you do not
+review under it yourself. In the `verification` array list exactly what you
+read or ran. Never claim coverage you did not perform.

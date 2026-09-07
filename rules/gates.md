@@ -111,7 +111,11 @@ installer) is reviewed as STANDARD.
   COMPLEX and CORE-impact diffs), or one fresh verifier on the other model
   family confirmed it with a concrete failure scenario
   (`review/references/local-review.md`, Validate). A refuted finding is
-  recorded as rejected with the verifier's evidence.
+  recorded as rejected with the verifier's evidence. The same verifier hears a
+  `[major]` the parent wants to reject: the rejection stands only on `REFUTED`
+  or `UNVERIFIABLE`, and `CONFIRMED` overrides it. A clean verdict on a
+  STANDARD diff above 200 changed lines or 5 files calls the second family
+  after the fact; size makes silence a claim to check.
 - **Degraded lanes block security work.** When the independent or adversarial
   lane cannot run on the other provider, a non-security diff proceeds on the
   same-provider fallback with `Independent review: same-provider` disclosed.

@@ -20,8 +20,9 @@
   two `deep-review` lenses: adversarial, deep quality, or architecture.
 - **Bounded rounds.** A review round is a reasoning unit under `rules/gates.md`:
   the same finding class surviving two rounds is `ESCALATE`, not round three.
-- **Reviewer yield is measured.** Accepted findings per pass decides whether a
-  lane keeps running; the observation queue records low-yield lanes.
+- **Reviewer yield is measured.** Accepted findings per lane per run are
+  recorded, and a lane below its threshold is demoted by the rule in Yield
+  Thresholds below; the observation queue records the demotion.
 
 ## Review Shape by Tier
 
@@ -33,8 +34,28 @@ tier's, and a simpler tier never inherits a deeper one's rounds.
 | TRIVIAL | exception, or one lane when any logic changed | none: fixes are re-verified, not re-reviewed | a fix that adds logic reclassifies to STANDARD |
 | STANDARD | one lane | one, only after a substantive fix | the default for real, contained work |
 | COMPLEX or CORE impact | one lane plus the second family, deep lenses on flags | one | convergence merges the lanes |
+| STANDARD, clean verdict above 200 lines or 5 files | one lane, then the second family after the fact | one | the clean-verdict guard: a clean verdict on that much surface is checked, not trusted |
 | BATCHED | one lane on the first wave; later identical waves are verification-only | one, on the reviewed wave | a wave that deviates from the transformation gets its own lane; the integrated review checks the aggregate |
 | MULTI_PHASE | per phase by that phase's tier, on the phase base | per phase | one integrated review over the branch base before completion |
+
+## Yield Thresholds
+
+Yield is `accepted / raised` per lane per run, recorded in the Review Record
+and in the metrics event's `review.lanes`. Before dispatching an optional lane
+the parent reads that lane's last runs for this repository from
+`.ai-toolkit/metrics.jsonl` and applies the consequence; the independent lane
+is never optional and is never demoted.
+
+| Lane | Window | Threshold | Consequence |
+|---|---|---|---|
+| Deep lens (adversarial, deep-quality, architecture) | last 5 runs of that lens | fewer than 1 accepted in 4 raised, or 0 accepted | Demoted to opt-in: runs only on an explicit ask until `reflect` reviews it; the classifier flag is recorded as `deferred (low yield)` |
+| Second family | last 10 runs | 0 findings accepted that the first lane did not raise, and 0 first-lane majors it refuted | Demoted from CORE to COMPLEX-only; the clean-verdict guard keeps it |
+| Finding verifier | last 10 runs | `CONFIRMED` on fewer than 3 of 10 single-source majors | The raising lane's single-source majors default to `[minor]` and the observation queue gets a `low-yield-lane` line for that lane |
+| Delta review | last 10 runs | 0 `not fixed` and 0 `fixed-but-introduced` | Skip threshold widens: the delta pass runs only after a `[major]` fix |
+
+A demotion is a `Lane demoted` line in the Review Record and a `low-yield-lane`
+observation; `reflect` proposes the durable rule change. A demoted lane is
+restored by `reflect` or an explicit user ask, never silently.
 
 ## Core Principles
 

@@ -76,13 +76,18 @@ inline. A security-sensitive or deep-tier diff with no cross-provider lane is
 the user passes `--allow-degraded`, recorded as `USER_DECISION`
 (`rules/gates.md`, Independent Judgment).
 
-## Second Family (COMPLEX or CORE impact)
+## Second Family (COMPLEX, CORE impact, or a clean verdict on a sizeable diff)
 
 <!-- aitk-model-route:review.second-family -->
 Launch one more fresh reviewer worker on `review` (`deep-review` under a
 deep-tier escalation) on the provider the independent lane did not use, with
 the same prompt and nothing from the first lane, when the classifier reports
-COMPLEX or CORE impact. The two lanes run concurrently and merge under the
+COMPLEX or CORE impact, or when the **clean-verdict guard** fires: the
+independent lane returned zero findings on a STANDARD diff above 200 changed
+lines or 5 files (generated files and lockfiles excluded). A clean verdict on
+that much surface is more often a miss than perfection, so the second family
+runs after the fact rather than concurrently, and the Review Record notes
+`Second family: clean-verdict guard`. The two lanes merge under the
 convergence rule in `rules/code-review.md`: raised by both → keep the severity;
 raised by one → capped at `[minor]` until the parent's validation names the
 concrete failure. No verifier lane runs when this lane ran; the second family
@@ -114,10 +119,14 @@ before changing anything: accepted, or rejected with a one-line evidence-based
 reason.
 
 A `[major]` that only one lane raised is never accepted on the parent's reading
-alone; a finding two lanes raised independently needs no verifier, and when the
-second-family lane ran, its silence is the second family's answer (cap at
-`[minor]` unless validation names the failure). The verifier below is for
-reviews where a single independent lane ran.
+alone, and never **rejected** on it either: a `[major]` the parent intends to
+reject goes to the same verifier, and the rejection stands only on `REFUTED`
+or `UNVERIFIABLE`; `CONFIRMED` overrides the parent and the finding is
+accepted at the verifier's severity. A finding two lanes raised independently
+needs no verifier, and when the second-family lane ran, its silence is the
+second family's answer (cap at `[minor]` unless validation names the
+failure). The verifier below is for reviews where a single independent lane
+ran, in both directions.
 <!-- aitk-model-route:review.verify-major -->
 Launch one fresh verifier worker on `review` (`deep-review` when the review ran
 deep) on the model family that did not raise the finding, with only the finding,
@@ -136,6 +145,15 @@ Write the Review Record to `PROJECT.md` before fixing. Then apply
 accepted fixes (parent inline, or the implementer worker for a large queue),
 add the locking tests the findings named, and run the verification loop
 (`skills/verification-loop/SKILL.md`) on the fixed files.
+
+**Reviewer-reported flags.** When a lane's summary carries `Missing flag:
+<security-sensitive | architecture | refactor-shaped> — <file:line evidence>`,
+the parent re-runs [classify-diff.md](classify-diff.md) with that evidence. A
+flag that fires now adds its lens through the Deep Lenses boundary above (the
+usual cap of two still holds) and the Review Record notes
+`Reclassified: <flag> on reviewer evidence`. A flag the classifier still does
+not confirm is recorded as rejected with the reason; the reviewer's word alone
+does not launch a lens.
 
 Disputed findings and genuine trade-offs surface as `USER_DECISION`; everything
 else is decided here.
@@ -176,7 +194,9 @@ Review Record in `PROJECT.md` (compact, actionable only):
 **Scope note:** <none | reviewer span wider than the filter: <what it covered>>
 **Preflight:** <pass/fail/skipped — command or reason>
 **Independent review:** <provider/family | same-provider>
-**Second family:** <provider/family, or not run — <reason>>
+**Second family:** <provider/family — COMPLEX | CORE | clean-verdict guard, or not run — <reason>>
+**Reclassified:** <none | <flag> on reviewer evidence <file:line>>
+**Lane yields:** <lane: accepted/raised, … | demoted: <lane> (<yield> over <n> runs)>
 **Deep lenses:** <names, or none> — <flags that triggered them>
 **Verified majors:** <R-ids → CONFIRMED / REFUTED / UNVERIFIABLE, or none>
 **Gate:** <PASS | RETRY | ESCALATE | USER_DECISION | BLOCKED>
@@ -197,7 +217,11 @@ Review Record in `PROJECT.md` (compact, actionable only):
 ```
 
 `Findings: none` with a `PASS` gate is a complete record. Reviewer yield
-(accepted/raised) feeds the metrics event and the observation queue.
+(accepted/raised per lane, plus converged for the second family) feeds the
+metrics event's `review.lanes` and the observation queue; the thresholds and
+their consequences are in `rules/code-review.md`, Yield Thresholds, and the
+parent applies them before dispatching an optional lane, recording
+`Lane demoted: <lane> (<accepted>/<raised> over <n> runs)` when one applies.
 
 ## Summary (standalone runs only)
 

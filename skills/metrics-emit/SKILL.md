@@ -23,7 +23,10 @@ From the routing snapshot and the run:
 - `gates`: `{ "<gate>": {"status": ..., "attempts": n} }` per gate
 - `retries`, `escalations`, `reclassifications`: counts
 - `review`: `{ "lane": "codex/sol | claude/opus | same-provider", "raised": n,
-  "accepted": n, "delta_reopened": n, "deep_lenses": [...] }`
+  "accepted": n, "delta_reopened": n, "deep_lenses": [...],
+  "lanes": { "<lane or lens>": {"raised": n, "accepted": n, "converged": n,
+  "confirmed": n, "refuted": n} }, "demoted": [...] }` — `lanes` is what the
+  yield thresholds in `rules/code-review.md` read
 - `workers`: `{ "<agent or route>": count }` and `premium_calls` (planning,
   deep-review, deep-rca, rca)
 - `observations`: count of observation lines written this run

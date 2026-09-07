@@ -33,6 +33,13 @@
   recorded single-PR opt-out; the phase-size guard has numbers (10 files, 500
   lines) and the horizontal-layer and one-sitting checks; size L leans
   MULTI_PHASE and the runtime refuses L or XL `none` without a reason.
+- Pre-switch review controls: a clean verdict on a STANDARD diff above 200
+  lines or 5 files calls the second family after the fact; a `[major]` the
+  parent wants to reject goes to the verifier and `CONFIRMED` overrides the
+  rejection; the reviewer can report a missing classifier flag and the parent
+  reclassifies and runs the lens; yield is recorded per lane and four
+  thresholds with defined consequences demote low-yield lanes
+  (`rules/code-review.md`, Yield Thresholds).
 - Review depth follows the tier (`rules/code-review.md`, Review Shape by Tier):
   TRIVIAL gets one lane and no delta, BATCHED reviews the transformation on the
   first wave and verifies later waves, MULTI_PHASE reviews per phase on the

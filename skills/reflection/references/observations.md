@@ -15,7 +15,7 @@ deliberate step.
 | Same gate fails twice for the same reason | `gate-repeat` | Shows a missing capability or escalation rule |
 | A specialist invalidates an RCA or plan assumption | `specialist-invalidation` | High-value reasoning failure |
 | A manual workaround repeated in the same or another session | `workaround` | Candidate for a reusable skill |
-| A review lane with zero accepted findings, twice | `low-yield-lane` | Candidate for removal |
+| A review lane crossed a yield threshold and was demoted (`rules/code-review.md`, Yield Thresholds) | `low-yield-lane` | Candidate for a durable trigger change or removal; `reflect` restores or retires it |
 
 Do not log routine progress, successful gates, or opinions.
 
