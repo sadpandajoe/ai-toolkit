@@ -343,6 +343,7 @@ BOUNDARY_INVARIANTS = {
     "feedback.comment-fix-groups": ("implementation",),
     "pgm.status-collection": ("operations",),
     "planning.validate": ("review", "deep-review"),
+    "planning.validate-second-family": ("review", "deep-review"),
     "qa.fresh-validation": ("review", "operations"),
     "review.code-judo": ("deep-review",),
     "review.deep-lenses": ("deep-review",),

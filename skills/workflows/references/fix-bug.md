@@ -75,7 +75,10 @@ specialist grades the root cause and the fix plan is validated before code.
    plus targeted tests plus repo checks. Two failed implementation attempts, or
    an RCA that materially changed, reopen the RCA gate (rabbit-hole guardrail).
 9. **Review** through `review-code` (`review/references/local-review.md`): one
-   independent review, validate findings, fix, delta pass if substantive.
+   independent review, validate findings, fix, delta pass if substantive, by
+   the tier table in `rules/code-review.md` (a TRIVIAL fix gets no delta;
+   BATCHED fixes review the transformation on wave one; MULTI_PHASE fixes pass
+   the phase base recorded with `project-state phase --sha`).
 10. **Validate** user-visible behavior with `qa/references/validate-fix.md`
     when the app runs; otherwise record why not.
     For BATCHED or MULTI_PHASE fixes, per-unit reviews in step 9 use the phase

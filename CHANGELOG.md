@@ -33,6 +33,20 @@
   recorded single-PR opt-out; the phase-size guard has numbers (10 files, 500
   lines) and the horizontal-layer and one-sitting checks; size L leans
   MULTI_PHASE and the runtime refuses L or XL `none` without a reason.
+- Review depth follows the tier (`rules/code-review.md`, Review Shape by Tier):
+  TRIVIAL gets one lane and no delta, BATCHED reviews the transformation on the
+  first wave and verifies later waves, MULTI_PHASE reviews per phase on the
+  phase base; create-feature has a feature complexity signal table with an
+  explicit cosmetic row; an XL decomposition is validated by both families
+  (`planning.validate-second-family`).
+- Delivery matches the durable contract: per-phase commits are prepared and
+  pushed only under `publish-explicit` (authorization at intake with
+  `--deliver-per-phase` or at the first phase boundary), each as a
+  `published_pr` record keyed `phase:<name>`; the create-feature and fix-bug
+  phase graphs gain the review → plan / implement edges phased work needs; the
+  phase tree SHA is recorded with `project-state phase --sha` (required for
+  `done`) and is the next phase's review base; `Delivered as` has a
+  `prepared — awaiting publish authorization` value.
 - Review quality: the reviewer greps for the pattern a bug fix replaced, cites
   the fixing hunk and asks the resolved-state question in delta mode, always
   sees the whole recorded span, and the diff is reclassified before the delta

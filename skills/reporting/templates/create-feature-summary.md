@@ -18,7 +18,7 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether acc
 
 ### What to do next
 - [Specific next action — the next phase's PR in roadmap order, deploy step, remaining slices]
-- [MULTI_PHASE: list the PRs per phase in delivery order, or name the single-PR opt-out and its reason]
+- [MULTI_PHASE: list the PRs per phase in delivery order, the prepared commits awaiting publish authorization, or the single-PR opt-out and its reason]
 
 ### Open risks
 - [Anything uncertain or untested — omit section if none]

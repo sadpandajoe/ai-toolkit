@@ -78,6 +78,10 @@ SNAPSHOT_KEYS = {
 # read as "no escalations yet" instead of failing validation.
 OPTIONAL_SNAPSHOT_KEYS = {"escalations": dict}
 PHASE_KEYS = {"name", "complexity", "size", "status"}
+# `tree` is the commit or tree SHA the phase ended on. It is the next phase's
+# review base, so it is recorded as data, never remembered.
+OPTIONAL_PHASE_KEYS = {"tree"}
+TREE_SHA = re.compile(r"[0-9a-fA-F]{7,64}")
 PHASE_STATUSES = ("pending", "active", "done", "blocked")
 # Hard complexity signals. Any one of them forces COMPLEX regardless of size,
 # because the risk lives in the reasoning, not in the diff surface.
@@ -301,7 +305,11 @@ def validate_snapshot(payload: object) -> dict[str, object]:
     names: set[str] = set()
     normalized_phases: list[dict[str, object]] = []
     for phase in phases:
-        if not isinstance(phase, dict) or set(phase) != PHASE_KEYS:
+        if (
+            not isinstance(phase, dict)
+            or not PHASE_KEYS <= set(phase)
+            or set(phase) - PHASE_KEYS - OPTIONAL_PHASE_KEYS
+        ):
             raise ProjectStateError("phase entries must contain name, complexity, size, status")
         name = _validate_token(phase["name"], "phase name")
         if name in names:
@@ -309,14 +317,18 @@ def validate_snapshot(payload: object) -> dict[str, object]:
         names.add(name)
         if phase["size"] not in SIZES or phase["status"] not in PHASE_STATUSES:
             raise ProjectStateError(f"phase {name} has an invalid size or status")
-        normalized_phases.append(
-            {
-                "name": name,
-                "complexity": normalize_complexity(phase["complexity"]),
-                "size": phase["size"],
-                "status": phase["status"],
-            }
-        )
+        entry: dict[str, object] = {
+            "name": name,
+            "complexity": normalize_complexity(phase["complexity"]),
+            "size": phase["size"],
+            "status": phase["status"],
+        }
+        if "tree" in phase:
+            tree = phase["tree"]
+            if not isinstance(tree, str) or TREE_SHA.fullmatch(tree) is None:
+                raise ProjectStateError(f"phase {name} tree must be a 7-64 character hex SHA")
+            entry["tree"] = tree.lower()
+        normalized_phases.append(entry)
     result["phases"] = normalized_phases
     if result["execution_shape"] != "MULTI_PHASE" and normalized_phases:
         raise ProjectStateError("phases are only recorded for MULTI_PHASE work")
@@ -532,7 +544,10 @@ def set_phases(path: Path, phases: list[dict[str, object]]) -> ProjectStateResul
     return _write(path, content, before, after)
 
 
-def update_phase(path: Path, name: str, status: str) -> ProjectStateResult:
+def update_phase(
+    path: Path, name: str, status: str, tree: str | None = None
+) -> ProjectStateResult:
+    """Move one phase; ``tree`` records the SHA it ended on (the next review base)."""
     content, before = _read(path)
     if before is None:
         raise ProjectStateError("no project state snapshot found; run init first")
@@ -541,6 +556,12 @@ def update_phase(path: Path, name: str, status: str) -> ProjectStateResult:
     if match is None:
         raise ProjectStateError(f"unknown phase: {name}")
     match["status"] = status
+    if tree is not None:
+        match["tree"] = tree
+    elif status == "done" and "tree" not in match:
+        raise ProjectStateError(
+            f"phase {name} cannot be marked done without --sha; the tree is the next phase's review base"
+        )
     after = dict(before)
     after["phases"] = phases
     return _write(path, content, before, after)

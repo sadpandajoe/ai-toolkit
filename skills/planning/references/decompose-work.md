@@ -26,9 +26,12 @@ known constraints, and any existing architecture notes in `PROJECT.md`.
 - **Risks**: where learning from an early phase is likely to change later ones.
 - **Per-phase exit goal**: one observable outcome per phase, plus its size and
   provisional complexity. No file lists or step lists for later phases.
-- **Delivery order**: one commit or PR per phase is the default; the roadmap
-  states the order in which they land and what each leaves deployable. A
-  whole-feature PR is an explicit opt-out recorded as
+- **Delivery order**: one prepared commit per phase is the default; the
+  roadmap states the order in which they land and what each leaves deployable.
+  A phase is pushed and opened as its own PR only under the workflow's
+  `publish-explicit` gate (authorization at intake with `--deliver-per-phase`
+  or once at the first phase boundary); until then it is `prepared — awaiting
+  publish authorization`. A whole-feature PR is an explicit opt-out recorded as
   `Delivery: single PR — <reason>` (a migration that cannot ship ahead of its
   consumer, a contract that must flip atomically).
 

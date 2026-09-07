@@ -233,8 +233,15 @@ class SnapshotLifecycleTests(unittest.TestCase):
         ]
         result = set_phases(self.path, phases)
         self.assertEqual(phases, result.snapshot["phases"])
-        done = update_phase(self.path, "layout", "done")
-        self.assertEqual("done", done.snapshot["phases"][0]["status"])
+        # A phase is done only once its tree is recorded: that SHA is the next
+        # phase's review base, so it lives in the snapshot, not in memory.
+        with self.assertRaisesRegex(ProjectStateError, "without --sha"):
+            update_phase(self.path, "layout", "done")
+        done = update_phase(self.path, "layout", "done", tree="ABCDEF1234")
+        self.assertEqual(("done", "abcdef1234"), (done.snapshot["phases"][0]["status"], done.snapshot["phases"][0]["tree"]))
+        with self.assertRaisesRegex(ProjectStateError, "hex SHA"):
+            update_phase(self.path, "persistence", "active", tree="not-a-sha")
+        self.assertNotIn("tree", show(self.path).snapshot["phases"][1])
         initialize(self.path, "fix-bug", "STANDARD", "M", replace=True)
         with self.assertRaisesRegex(ProjectStateError, "MULTI_PHASE"):
             set_phases(self.path, phases)

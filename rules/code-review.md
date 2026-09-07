@@ -23,6 +23,19 @@
 - **Reviewer yield is measured.** Accepted findings per pass decides whether a
   lane keeps running; the observation queue records low-yield lanes.
 
+## Review Shape by Tier
+
+Depth follows the decision surface, never the diff size. The cap is the
+tier's, and a simpler tier never inherits a deeper one's rounds.
+
+| Tier or shape | Lanes | Delta pass | Notes |
+|---|---|---|---|
+| TRIVIAL | exception, or one lane when any logic changed | none: fixes are re-verified, not re-reviewed | a fix that adds logic reclassifies to STANDARD |
+| STANDARD | one lane | one, only after a substantive fix | the default for real, contained work |
+| COMPLEX or CORE impact | one lane plus the second family, deep lenses on flags | one | convergence merges the lanes |
+| BATCHED | one lane on the first wave; later identical waves are verification-only | one, on the reviewed wave | a wave that deviates from the transformation gets its own lane; the integrated review checks the aggregate |
+| MULTI_PHASE | per phase by that phase's tier, on the phase base | per phase | one integrated review over the branch base before completion |
+
 ## Core Principles
 
 - **DRY at three levels**: within the repo, against installed packages, against

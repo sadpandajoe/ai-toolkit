@@ -20,8 +20,26 @@ routing snapshot and gates.
 ```bash
 create-feature "add bulk edit for dashboard filters"
 create-feature sc-12345 | apache/superset#28456 | <github or shortcut url>
-create-feature <request> --watch    # chain into watch-pr after the final push
+create-feature <request> --watch              # chain into watch-pr after the final push
+create-feature <request> --deliver-per-phase  # authorize one push and PR per phase at intake
 ```
+
+## Feature Complexity Signals
+
+Workflow-specific signals for `rules/complexity-gate.md`; any hard signal there
+still forces COMPLEX.
+
+| Signal | TRIVIAL | STANDARD | COMPLEX |
+|--------|---------|----------|---------|
+| Design decision | None; an existing pattern applied | One known pattern, bounded choices | Several plausible designs, or a new pattern |
+| Files touched | 1-3 | 4-8, one subsystem | 9+ across subsystems, or unclear ownership |
+| Behavioral change | Cosmetic: theme, copy, spacing, a button type or variant | Contained new behavior | Cross-cutting behavior or a contract change |
+| Risk | Local, reversible | Contained functional risk | Data, auth, migration, compatibility, or cross-service risk |
+
+Cosmetic changes are TRIVIAL regardless of file count unless the impact is
+CORE; across many files they are STANDARD or TRIVIAL with shape BATCHED, planned
+inline as one transformation and reviewed once on the first wave. STANDARD is
+the default for real, contained work.
 
 ## Goal Loop
 
@@ -66,28 +84,37 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    returns to planning with a compact adjudication package.
 7. **Review** through `review-code` (`review/references/local-review.md`):
    one independent review, validate findings, fix, delta pass if substantive.
-   Run it after each verified unit for MULTI_PHASE and BATCHED work, once for
-   SINGLE_PHASE. Per-unit reviews pass the **phase base** (the tree recorded
-   at the previous `## Phase Complete`), so a phase-three review measures only
-   phase three; the branch base is reserved for the integrated review in step
-   10.
+   Run it after each verified phase for MULTI_PHASE work, once for
+   SINGLE_PHASE. BATCHED work reviews the transformation: a full review of the
+   first wave, verification-only for later identical waves, and its own lane
+   only for a wave that deviates. Per-unit reviews pass the **phase base** (the
+   `tree` SHA the previous phase recorded in the snapshot), so a phase-three
+   review measures only phase three; the branch base is reserved for the
+   integrated review in step 10. Review depth follows the tier table in
+   `rules/code-review.md`; a TRIVIAL unit gets no delta pass.
 8. **Validate behavior** with `qa/references/validate-feature.md` when
    user-visible behavior changed and the app runs; otherwise record why not.
 9. **Checkpoint the unit.** Hard gate before the next unit or any handoff:
    append the `## Phase Complete: <phase or wave>` block from
    `reporting/templates/phase-handoff.md` to `PROJECT.md` (exit criteria met
    with evidence, learned constraints, invariant changes, evidence pointer,
-   roadmap check, next phase) and mark the phase `done` in the snapshot. The
+   roadmap check, `Tree:`, next phase) and mark the phase `done` in the
+   snapshot with `bin/aitk project-state phase --name <phase> --status done
+   --sha <tree>`; that SHA is the next phase's review base. The
    **roadmap check** asks two questions: does the decomposition still hold,
    and is the next phase's exit goal still right given what this phase
    learned? `holds` advances to step 4 for the next phase. `no` is
    `bin/aitk project-state gate --gate phase-exit --status RECLASSIFY --unit
    decomposition`, an update to `## Decomposition` in `PLAN.md`, and one
    revalidation in `decomposition` mode before the next phase is planned.
-   For MULTI_PHASE work the phase then lands as its own commit or PR in the
-   roadmap's delivery order (`decompose-work.md`), unless `PLAN.md` records
-   the single-PR opt-out. Fresh workers are the context boundary; no manual
-   clear is needed.
+   For MULTI_PHASE work the phase is then **prepared** as its own commit in
+   the roadmap's delivery order (`decompose-work.md`). It is pushed and opened
+   as a PR only under the contract's `publish-explicit` gate: authorization
+   granted at intake (`--deliver-per-phase` or the user's explicit words) or
+   once at the first phase boundary, recorded as a `published_pr` effect with
+   operation ID `phase:<name>`. Without it the phase stays
+   `prepared — awaiting publish authorization` and the loop continues. Fresh
+   workers are the context boundary; no manual clear is needed.
 10. **Integrated review** (MULTI_PHASE and BATCHED only; hard gate before
     `## Feature Complete`). After the last unit's checkpoint, run one more
     `review-code` pass over the full recorded **branch base** to HEAD, and
@@ -99,9 +126,12 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
     that owns the code, then the integrated delta pass runs once.
 11. **Finish.** Write the `## Feature Complete` entry, emit the summary from
     `reporting/templates/create-feature-summary.md`, record `metrics-emit`.
-    SINGLE_PHASE work stops before commit and PR unless authorized; MULTI_PHASE
-    work has already delivered a PR per phase, so the last step is the final
-    phase's PR (or the single PR when the opt-out was recorded). With
+    Nothing is pushed or opened without publish authorization, whatever the
+    shape. SINGLE_PHASE work stops before commit and PR unless authorized.
+    MULTI_PHASE work presents its prepared phases in roadmap order: already
+    authorized, the final phase's PR is the last effect; not yet authorized,
+    the prepared commits are listed and pushed only when the user says so (as
+    one PR per phase, or one PR when the opt-out was recorded). With
     `--watch`, chain into `watch-pr` after the final push lands.
 
 ## User Intervention Points
@@ -120,7 +150,9 @@ plan-validation findings and review findings are handled in the loop.
 - MULTI_PHASE and BATCHED work: integrated review gate `PASS` over the branch
   base, with its own Review Record entry, before `## Feature Complete`.
 - Commit or push only with STRONG verification, a `PASS` review gate, and prior
-  authorization.
+  authorization. Each per-phase push is its own `published_pr` record with
+  operation ID `phase:<name>`; the reference and `interfaces/contracts.json`
+  describe the same gate.
 
 ```markdown
 ## Feature Complete
@@ -134,5 +166,5 @@ Review: <lane, accepted/raised findings>
 Behavior validation: <pass | fail | skipped — reason>
 Integrated review: <gate, lane, accepted/raised | not applicable (SINGLE_PHASE)>
 Residual risk: <one line or none>
-Delivery: <PR per phase, in roadmap order: #a, #b, #c | single PR (opt-out: <reason>) | no PR yet>
+Delivery: <PR per phase, in roadmap order: #a, #b, #c | prepared per phase, awaiting publish authorization | single PR (opt-out: <reason>) | no PR yet>
 ```

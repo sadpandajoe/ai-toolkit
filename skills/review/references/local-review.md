@@ -21,11 +21,14 @@ that recorded base, never from the last fix.
 **Two bases.** The caller names which base this review measures. The **branch
 base** (`<merge-base>..HEAD` plus the working tree) is the default for
 standalone runs and the only base for an integrated review. A **phase base**
-(the tree recorded at the previous `## Phase Complete`) is what per-unit
-reviews inside MULTI_PHASE or BATCHED work pass, so a phase-three review reads
-phase three and never re-reads phases one and two. The Review Record carries
-both: `Base` is the span this review measured, `Branch base` is the
-merge-base the integrated review will use.
+(the `tree` SHA the previous phase recorded with `bin/aitk project-state phase
+--status done --sha <sha>`, shown by `project-state show` and as `Tree:` in its
+`## Phase Complete`) is what per-unit reviews inside MULTI_PHASE or BATCHED
+work pass, so a phase-three review reads phase three and
+never re-reads phases one and two. The base is data in the snapshot, never a
+remembered commit. The Review Record carries both: `Base` is the span this
+review measured, `Branch base` is the merge-base the integrated review will
+use.
 
 **The reviewer sees the whole span.** Path arguments and `--uncommitted` narrow
 what the parent grades and fixes, never what the independent lane receives:
@@ -41,6 +44,13 @@ zero-logic or micro-fix diffs may take the review exception in `rules/gates.md`;
 everything else gets the independent review below, even at TRIVIAL. A TRIVIAL
 diff with CORE impact is reviewed as STANDARD: the exception is unavailable and
 missing-test findings shift up one level (`rules/code-review.md`).
+
+**Batched work reviews the transformation, not the waves.** For BATCHED work
+the first wave gets the full independent review; later waves that apply the
+same transformation run the verification loop only and record `Review: wave N
+verification-only (transformation reviewed on wave 1)`. A wave that deviates
+(hand edits, a new file kind, a changed transformation) gets its own lane, and
+the integrated review checks the aggregate once at the end.
 
 ## Preflight
 

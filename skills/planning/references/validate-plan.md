@@ -27,6 +27,18 @@ snapshot line; never earlier validation rounds unless this is the informed
 revision, in which case include the previous findings and what changed. The
 worker receives its contract inline from the route runner.
 
+## Second Family (XL decomposition)
+
+<!-- aitk-model-route:planning.validate-second-family -->
+Launch one more fresh validator worker on `review` on the provider the first
+validator did not use, concurrently and with the same prompt, when the
+decomposition being validated is size XL. A wrong cut there costs every later
+phase, so this is the one plan artifact that earns two families. Merge by
+convergence: a finding both raised is blocking at its severity; a finding one
+raised is validated by the parent against the repo before it blocks; a split
+verdict is `CHANGES_REQUIRED` carrying both sets of findings. Smaller
+decompositions and every phase plan stay at one validator.
+
 ## Consume the verdict
 
 - `APPROVE` → gate `PASS`; record it and proceed to implementation.

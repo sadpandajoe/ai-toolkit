@@ -411,7 +411,7 @@ def _project_state(arguments: argparse.Namespace) -> int:
         elif action == "phases":
             result = set_phases(path, json.loads(arguments.phases_json))
         else:
-            result = update_phase(path, arguments.name, arguments.status)
+            result = update_phase(path, arguments.name, arguments.status, arguments.sha)
     except (ProjectStateError, OSError, json.JSONDecodeError) as error:
         print(f"aitk project-state: {error}", file=sys.stderr)
         return 1
@@ -678,6 +678,10 @@ def parser() -> argparse.ArgumentParser:
             state_action.add_argument("--name", required=True)
             state_action.add_argument(
                 "--status", required=True, choices=("pending", "active", "done", "blocked")
+            )
+            state_action.add_argument(
+                "--sha",
+                help="commit or tree SHA the phase ended on; required with --status done, it is the next phase's review base",
             )
         state_action.set_defaults(handler=_project_state)
 

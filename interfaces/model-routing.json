@@ -297,6 +297,20 @@
       ]
     },
     {
+      "id": "planning.validate-second-family",
+      "path": "skills/planning/references/validate-plan.md",
+      "count": 1,
+      "routes": [
+        "review",
+        "deep-review"
+      ],
+      "lens_domain": "plan",
+      "contracts": [
+        "agents/specialists/plan-validator.md",
+        "rules/severity.md"
+      ]
+    },
+    {
       "id": "debug.rca-specialist",
       "path": "skills/debug/references/review-rca.md",
       "count": 1,

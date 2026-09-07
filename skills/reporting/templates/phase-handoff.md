@@ -30,9 +30,15 @@ Learned constraints: <list, or none>
 Invariant changes: <none, or RECLASSIFY recorded>
 Evidence: <verification gate reference>
 Roadmap check: <holds | RECLASSIFY — decomposition revalidated: <what changed>>
-Delivered as: <commit or PR #n | pending, single-PR opt-out>
+Tree: <sha the phase ended on — the next phase's review base>
+Delivered as: <commit <sha> | PR #n | prepared — awaiting publish authorization | single-PR opt-out>
 Next phase: <name, reclassified as <complexity>/<size>, or "done">
 ```
+
+`Tree` is recorded in the snapshot too: `bin/aitk project-state phase --name
+<phase> --status done --sha <sha>` refuses `done` without it, so the next
+review's base is data rather than memory. `Delivered as` never presumes a push:
+without publish authorization the phase is prepared and the loop continues.
 
 The roadmap check answers two questions with what this phase learned: does the
 decomposition still hold, and is the next phase's exit goal still right?
@@ -41,5 +47,5 @@ phase-exit --status RECLASSIFY --unit decomposition`, an edit to
 `## Decomposition` in `PLAN.md`, and one revalidation in `decomposition` mode
 before the next phase is planned.
 
-Then `bin/aitk project-state phase --name <phase> --status done` and, for the
-next phase, `--status active` after its plan is written.
+Then `bin/aitk project-state phase --name <phase> --status done --sha <sha>`
+and, for the next phase, `--status active` after its plan is written.

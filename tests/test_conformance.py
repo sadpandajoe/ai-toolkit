@@ -547,6 +547,38 @@ class ConformanceTests(unittest.TestCase):
         self.assertIn("horizontal layer", guard)
         self.assertIn("one sitting", guard)
 
+    def test_review_depth_follows_the_tier_and_delivery_follows_the_contract(self) -> None:
+        rule = (ROOT / "rules/code-review.md").read_text()
+        self.assertIn("## Review Shape by Tier", rule)
+        self.assertIn("verification-only", rule)
+        local = (ROOT / "skills/review/references/local-review.md").read_text()
+        self.assertIn("reviews the transformation, not the waves", local)
+        self.assertIn("--status done --sha", local)
+        feature = (ROOT / "skills/workflows/references/create-feature.md").read_text()
+        self.assertIn("## Feature Complexity Signals", feature)
+        self.assertIn("Cosmetic changes are TRIVIAL regardless of file count", feature)
+        # Per-phase delivery is prepared by default and published only under the
+        # contract's publish-explicit gate, one effect record per phase.
+        self.assertIn("`publish-explicit` gate", feature)
+        self.assertIn("operation ID `phase:<name>`", feature)
+        self.assertIn("prepared — awaiting publish authorization", feature)
+        handoff = (ROOT / "skills/reporting/templates/phase-handoff.md").read_text()
+        self.assertIn("Tree:", handoff)
+        self.assertIn("prepared — awaiting publish authorization", handoff)
+        contracts = json.loads((ROOT / "interfaces/contracts.json").read_text())
+        by_name = {c["name"]: c for c in contracts["contracts"]}
+        feature_edges = {(e["from"], e["to"]) for e in by_name["create-feature"]["transitions"]}
+        self.assertIn(("review", "plan"), feature_edges, "no edge back to plan for the next phase")
+        self.assertIn(("review", "implement"), feature_edges, "no edge back to implement for the next wave")
+        bug_edges = {(e["from"], e["to"]) for e in by_name["fix-bug"]["transitions"]}
+        self.assertIn(("review", "implement"), bug_edges)
+        for name in ("create-feature", "fix-bug"):
+            self.assertIn("publish-explicit", by_name[name]["authorization"]["gates"])
+            self.assertIn("published_pr", {k["key"] for k in by_name[name]["idempotency_keys"]})
+        validate = (ROOT / "skills/planning/references/validate-plan.md").read_text()
+        self.assertIn("aitk-model-route:planning.validate-second-family", validate)
+        self.assertIn("size XL", validate)
+
     def test_retired_v1_vocabulary_does_not_return(self) -> None:
         retired = re.compile(
             r"\bMODERATE\b|rules/(?:review-gate|stop-rules|scoring)\.md|review-ensemble|"
