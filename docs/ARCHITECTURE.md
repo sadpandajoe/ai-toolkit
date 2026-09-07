@@ -18,7 +18,8 @@ the control plane in the cheapest capable model.
    `agents/codex/*.toml` are native subagent definitions the installer links
    into the user's provider directories: planner (Opus, read-only),
    implementer, debugger, tester (Sonnet), and a same-provider reviewer
-   fallback. `agents/specialists/*.md` are provider-neutral contracts
+   fallback. Each provider has a workhorse family and a deep family (Sonnet and
+   Opus with Fable; Sol with Astra); deep routes run only on the deep family. `agents/specialists/*.md` are provider-neutral contracts
    (reviewer, RCA, plan validator) the route runner inlines into
    cross-provider specialists.
 4. `interfaces/` makes everything machine-checkable: workflow identity and

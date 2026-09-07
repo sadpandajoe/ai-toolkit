@@ -251,7 +251,7 @@ FAILED_EXIT = 5
 VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?")
 
 
-CODEX_SELECTOR = re.compile(r"gpt-[0-9]+\.[0-9]+(?:\.[0-9]+)?-sol")
+CODEX_SELECTOR = re.compile(r"gpt-[0-9]+(?:\.[0-9]+)*-(?:sol|astra)")
 
 
 CLAUDE_SELECTOR = re.compile(r"claude-(opus|fable|sonnet)-[0-9]+(?:-[0-9]+)*")

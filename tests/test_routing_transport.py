@@ -131,7 +131,7 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             calls.append(argv)
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.144.5\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
             flags = " ".join(
                 (
                     "--ephemeral --strict-config --ignore-user-config --ignore-rules ",
@@ -170,7 +170,9 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(0, code)
         self.assertEqual(2, len(calls))
         argv = payload["argv"]
-        self.assertIn(MODEL_CATALOG["codex"]["models"]["sol"]["selector"], argv)
+        # The deep route on Codex is Astra, never the Sol workhorse.
+        self.assertIn(MODEL_CATALOG["codex"]["models"]["astra"]["selector"], argv)
+        self.assertNotIn(MODEL_CATALOG["codex"]["models"]["sol"]["selector"], argv)
         self.assertIn('model_reasoning_effort="xhigh"', argv)
         self.assertIn("read-only", argv)
         self.assertIn("--ignore-user-config", argv)
@@ -186,7 +188,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_prerelease_at_minimum_version_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
-                argv, 0, "codex-cli 0.144.5-alpha.1\n", ""
+                argv, 0, "codex-cli 0.153.0-alpha.1\n", ""
             )
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
@@ -319,7 +321,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_unreadable_codex_final_message_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.144.5\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -355,7 +357,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_codex_success_path_returns_the_structured_result(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.144.5\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (

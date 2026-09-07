@@ -107,8 +107,10 @@ red-team ask, [deep-quality.md](deep-quality.md) for refactor-shaped or
 deep-quality asks, and
 [../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
 for architecture changes. Each lane is resolved with `--lens <repo-relative
-lens path>` so one worker receives exactly one lens. No flags means no deep
-lanes. A code-judo ask runs at its own boundary
+lens path>` so one worker receives exactly one lens, and on the other provider
+when reachable (Astra from a Claude parent, Fable from a Codex parent); the
+same provider's deep family is the fallback and is disclosed. No flags means no
+deep lanes. A code-judo ask runs at its own boundary
 ([code-judo.md](code-judo.md)) and returns proposals, not findings.
 
 ## Validate, Then Fix

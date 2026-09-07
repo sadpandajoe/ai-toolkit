@@ -469,6 +469,12 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual("plan", routes["planning"]["providers"]["claude"]["permission_mode"])
         self.assertEqual("opus", routes["review"]["providers"]["claude"]["model"])
         self.assertEqual("fable", routes["deep-review"]["providers"]["claude"]["model"])
+        # Both providers have a workhorse and a deep family; the deep routes
+        # never run on the workhorse.
+        for name in ("deep-review", "deep-rca"):
+            self.assertEqual("astra", routes[name]["providers"]["codex"]["model"])
+        for name in ("implementation", "planning", "review", "rca", "operations"):
+            self.assertEqual("sol", routes[name]["providers"]["codex"]["model"])
         self.assertNotIn("ensembles", payload)
         rule = (ROOT / "rules/model-assignment.md").read_text()
         self.assertIn("Opus plans only COMPLEX work", rule)

@@ -40,6 +40,11 @@ provider syntax.
   again, so the single-finding verifier runs on `deep-review` (Fable) or the
   finding stays capped at `[minor]` with `Verifier: unavailable — single
   family` recorded. Never review inline.
+- `deep_lenses`: prefer the other provider like any independent judgment. From
+  a Claude parent a flagged lens runs on Codex Astra through `model-run
+  deep-review --provider codex` and spends no Claude quota; Fable runs the
+  adversarial second vote, the escalation when Astra stayed uncertain, and the
+  single-provider verifier fallback.
 - `routed_subagent`: `<toolkit-root>/bin/aitk model-route <route> --provider
   <codex|claude> --boundary <marker-id>` then `model-run` with the same
   arguments. The runner pins one selector and effort, never supplies a fallback

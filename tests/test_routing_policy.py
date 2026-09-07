@@ -32,8 +32,9 @@ class RoutingPolicyTests(RoutingTestCase):
             ("planning", "codex"): ("sol", "high", "read-only"),
             ("review", "claude"): ("opus", "high", "plan"),
             ("deep-review", "claude"): ("fable", "xhigh", "plan"),
+            ("deep-review", "codex"): ("astra", "xhigh", "read-only"),
             ("rca", "claude"): ("opus", "high", "plan"),
-            ("deep-rca", "codex"): ("sol", "xhigh", "read-only"),
+            ("deep-rca", "codex"): ("astra", "xhigh", "read-only"),
             ("operations", "claude"): ("sonnet", "high", "dontAsk"),
         }
         for (name, provider), expected in cases.items():

@@ -13,9 +13,9 @@ and launches specialists with `<toolkit-root>/bin/aitk model-run`.
 | `implementation` | Sonnet | Sol | high | Substantial edits and tests, from an accepted artifact |
 | `planning` | Opus | Sol | high | COMPLEX architecture decomposition or a COMPLEX phase plan, read-only |
 | `review` | Opus | Sol | high | The one independent code, plan, or PR review |
-| `deep-review` | Fable | Sol | xhigh | Adversarial, architecture, or security lens on flagged risk; exceptional escalation |
+| `deep-review` | Fable | Astra | xhigh | Adversarial, architecture, or security lens on flagged risk; exceptional escalation |
 | `rca` | Opus | Sol | high | Independent RCA validation when the parent's hypothesis is uncertain |
-| `deep-rca` | Fable | Sol | xhigh | Competing causes, intermittent or cross-system failures, after `rca` stayed uncertain |
+| `deep-rca` | Fable | Astra | xhigh | Competing causes, intermittent or cross-system failures, after `rca` stayed uncertain |
 | `operations` | Sonnet | Sol | high | Read-only evidence reduction and deterministic reports |
 
 ## Rules
@@ -24,7 +24,11 @@ and launches specialists with `<toolkit-root>/bin/aitk model-run`.
   parent asks Codex Sol, a Codex parent asks Claude Opus. Same-provider review
   through the toolkit's reviewer agent is the fallback and is disclosed as such.
 - Opus plans only COMPLEX work. Sonnet plans STANDARD work inline.
-- Fable is a read-only deep advisor on the deep routes. It never implements.
+- Fable and Astra are the read-only deep advisors, one per provider, on the
+  deep routes. Neither implements. Deep lenses follow the same other-provider
+  preference as review: a Claude parent runs them on Astra first, and Fable is
+  the second vote, the escalation when Astra stayed uncertain, and the verifier
+  fallback on a single-provider machine.
 - `high` is the automatic baseline; `xhigh` is reserved for deep routes and is
   entered only after the standard route stayed materially uncertain. Never
   select `max` automatically.

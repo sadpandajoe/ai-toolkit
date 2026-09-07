@@ -417,7 +417,9 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         problems.append("model routing providers must contain exactly codex and claude")
         providers = {}
     provider_models: dict[str, dict[str, str]] = {}
-    expected_families = {"codex": {"sol"}, "claude": {"opus", "fable", "sonnet"}}
+    # Sol is the Codex workhorse and Astra its deep tier, mirroring Sonnet/Opus
+    # and Fable on Claude, so both providers have a standard and a deep family.
+    expected_families = {"codex": {"sol", "astra"}, "claude": {"opus", "fable", "sonnet"}}
     selectors: set[str] = set()
     for provider in sorted(PROVIDERS):
         value = providers.get(provider) if isinstance(providers, dict) else None
@@ -572,7 +574,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "deep",
             "review",
             False,
-            "sol",
+            "astra",
             "read-only",
             "fable",
             "plan",
@@ -592,7 +594,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "deep",
             "rca",
             False,
-            "sol",
+            "astra",
             "read-only",
             "fable",
             "plan",

@@ -14,10 +14,13 @@
   },
   "providers": {
     "codex": {
-      "minimum_cli": "0.144.5",
+      "minimum_cli": "0.153.0",
       "models": {
         "sol": {
           "selector": "gpt-5.6-sol"
+        },
+        "astra": {
+          "selector": "gpt-6-astra"
         }
       }
     },
@@ -119,7 +122,7 @@
       "explicit_only": false,
       "providers": {
         "codex": {
-          "model": "sol",
+          "model": "astra",
           "sandbox": "read-only"
         },
         "claude": {
@@ -169,7 +172,7 @@
       "explicit_only": false,
       "providers": {
         "codex": {
-          "model": "sol",
+          "model": "astra",
           "sandbox": "read-only"
         },
         "claude": {

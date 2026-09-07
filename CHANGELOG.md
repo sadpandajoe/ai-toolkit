@@ -33,6 +33,12 @@
   recorded single-PR opt-out; the phase-size guard has numbers (10 files, 500
   lines) and the horizontal-layer and one-sitting checks; size L leans
   MULTI_PHASE and the runtime refuses L or XL `none` without a reason.
+- GPT-6 Astra is the Codex deep tier: `deep-review` and `deep-rca` run on
+  Astra at `xhigh` (Codex CLI 0.153.0 or newer) while Sol keeps the workhorse
+  routes, mirroring Fable over Sonnet and Opus. Deep lenses now follow the
+  other-provider preference, so from a Claude parent they run on Astra and
+  spend no Claude quota; Fable is the second vote, the escalation, and the
+  single-provider verifier fallback.
 - Pre-switch review controls: a clean verdict on a STANDARD diff above 200
   lines or 5 files calls the second family after the fact; a `[major]` the
   parent wants to reject goes to the verifier and `CONFIRMED` overrides the
