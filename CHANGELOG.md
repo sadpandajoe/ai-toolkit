@@ -33,6 +33,10 @@
   recorded single-PR opt-out; the phase-size guard has numbers (10 files, 500
   lines) and the horizontal-layer and one-sitting checks; size L leans
   MULTI_PHASE and the runtime refuses L or XL `none` without a reason.
+- Pricing table covers the Codex families: Astra at its published API rate and
+  Sol at its promotional rate with the standard rate returning after
+  2026-11-21, timestamp-aware like the Sonnet promotion, so `show-cost` no
+  longer reports Codex runs as unpriced.
 - GPT-6 Astra is the Codex deep tier: `deep-review` and `deep-rca` run on
   Astra at `xhigh` (Codex CLI 0.153.0 or newer) while Sol keeps the workhorse
   routes, mirroring Fable over Sonnet and Opus. Deep lenses now follow the
