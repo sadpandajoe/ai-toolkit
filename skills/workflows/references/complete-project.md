@@ -30,7 +30,19 @@ Read `.ai-toolkit/metrics.jsonl` (falling back to legacy `.claude/metrics.jsonl`
 
 If the file is missing or no events match, emit `No metrics recorded for this project` and continue.
 
-### 3. Scan Memories — Surface Promotion Candidates
+### 3. Review the Observation Queue
+
+Skip if `--skip-promote` was passed.
+
+If `.ai-toolkit/observations.jsonl` has unreviewed lines, run the *Review*
+section of [skills/reflection/references/observations.md](../../reflection/references/observations.md)
+(`reflect observations`): `bin/aitk lane-yield` first, then cluster the lines
+and present proposals. Apply only on confirmation and move reviewed lines to
+`.ai-toolkit/observations.reviewed.jsonl`. This is the only point in a project
+where the queue is guaranteed to be read, so do not skip it silently: an empty
+queue is reported as `No unreviewed observations`.
+
+### 4. Scan Memories — Surface Promotion Candidates
 
 Skip if `--skip-promote` was passed.
 
@@ -53,11 +65,11 @@ Wait for user confirmation per candidate. Then follow the matching `reflect` flo
 - **Prune**: delete the memory file and MEMORY.md entry
 - **Keep**: no action
 
-### 4. Archive Completed Phases
+### 5. Archive Completed Phases
 
 Run `archive-project-file` via the [archive skill](../../archive-project-file/SKILL.md) as an internal phase. Hint that this is a full-project archive — all completed phases should move out, not just the most recent one.
 
-### 5. Tear Down Branch-Local Services
+### 6. Tear Down Branch-Local Services
 
 Identify and stop services started for this branch:
 
@@ -75,11 +87,11 @@ Report what was found and stopped:
 
 If nothing is running, skip silently.
 
-### 6. Write Final PROJECT.md Status
+### 7. Write Final PROJECT.md Status
 
 Use the template at [skills/reporting/templates/complete-project-final.md](../../reporting/templates/complete-project-final.md). Replaces the prior status section.
 
-### 7. Suggest Final Action
+### 8. Suggest Final Action
 
 Pick one based on branch state:
 - **Uncommitted changes**: commit, then `create-pr`
@@ -95,7 +107,7 @@ Use the summary template at [skills/reporting/templates/complete-project-summary
 After emitting the summary, include `metrics-emit` context using the [metrics emitter](../../metrics-emit/SKILL.md) with:
 - `command`: `complete-project`
 - `complexity`: `standard`
-- `status`: `clean` (or `blocked` if step 5 left services running, etc.)
+- `status`: `clean` (or `blocked` if step 6 left services running, etc.)
 - `rounds`: 0 (no review loop)
 - `gate_decisions`: include any user decisions made during memory promotion
 - `worker_usage`: subagent/worker invocation counts when applicable
@@ -108,4 +120,4 @@ The capstone is also a natural context boundary — the project is closed, durab
 Project closed. Start the next task in a fresh session when convenient.
 ```
 
-Do not auto-clear. The user may want to stay in-session to push the PR, deploy, or pick up the suggested final action from step 7.
+Do not auto-clear. The user may want to stay in-session to push the PR, deploy, or pick up the suggested final action from step 8.

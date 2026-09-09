@@ -25,8 +25,12 @@ From the routing snapshot and the run:
 - `review`: `{ "lane": "codex/sol | claude/opus | same-provider", "raised": n,
   "accepted": n, "delta_reopened": n, "deep_lenses": [...],
   "lanes": { "<lane or lens>": {"raised": n, "accepted": n, "converged": n,
-  "confirmed": n, "refuted": n} }, "demoted": [...] }` — `lanes` is what the
-  yield thresholds in `rules/code-review.md` read
+  "confirmed": n, "refuted": n, "not_fixed": n, "introduced": n} },
+  "demoted": [...] }` — `lanes` is what `bin/aitk lane-yield` reads to apply
+  the yield thresholds in `rules/code-review.md`; lane names are `independent`,
+  `second-family`, `verify-major`, `delta`, and the deep lens name
+  (`adversarial`, `deep-quality`, `architecture`); `not_fixed` and
+  `introduced` are the delta lane's counts
 - `workers`: `{ "<agent or route>": count }` and `premium_calls` (planning,
   deep-review, deep-rca, rca)
 - `observations`: count of observation lines written this run

@@ -90,8 +90,7 @@ update-tests --function normalize_query
 
 7. **Verify and Review Changed Test Files**
 
-   Run `verify` or equivalent targeted checks first, then run `review-code` on the changed repo-tracked files as an internal loop.
-   Keep iterating until only nitpicks remain or a real blocker/user decision appears.
+   Run `verify` or equivalent targeted checks first, then run `review-code` on the changed repo-tracked files: one independent review, fix the accepted findings, one delta pass over the fix. A finding still open after the delta is `ESCALATE` (or `USER_DECISION` when it needs a product call), not a third round.
 
 8. **Commit Boundary**
 

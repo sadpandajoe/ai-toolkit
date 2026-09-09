@@ -71,7 +71,6 @@ Workflow scaffolding (mostly orchestrator-only; not auto-routed):
 | [verification-loop/](verification-loop/) | Shared verify, fix, recheck loop returning PASS / RETRY / ESCALATE / RECLASSIFY / USER_DECISION / BLOCKED |
 | [reporting/](reporting/) | Final summary + continuation checkpoint shapes |
 | [metrics-emit/](metrics-emit/) | Append structured event to `.ai-toolkit/metrics.jsonl` |
-| [workstreams/](workstreams/) | Fan-in after parallel implementation subagents finish |
 | [archive-project-file/](archive-project-file/) | Move completed PROJECT.md content to PROJECT_ARCHIVE.md |
 | [agent-setup-maintainer/](agent-setup-maintainer/) | Auditing or updating toolkit skills, rules, interfaces, and generated adapters |
 

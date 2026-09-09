@@ -20,7 +20,11 @@ phaseability judgement itself is model work recorded in ``phaseability``.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
+import fcntl
+from functools import wraps
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -72,11 +76,15 @@ SNAPSHOT_KEYS = {
     "gate_status",
     "attempts",
     "escalations",
+    "gates",
     "phases",
 }
-# Snapshots written before the escalation ladder existed lack this key; they
-# read as "no escalations yet" instead of failing validation.
-OPTIONAL_SNAPSHOT_KEYS = {"escalations": dict}
+# Snapshots written before the escalation ladder and the per-gate record
+# existed lack these keys; they read as empty instead of failing validation.
+# ``gates`` is the last recorded status per gate name. The checkpoint runtime
+# reads it before reserving an effect the contract gates on verification or
+# review, which is what makes "two records, one truth" a machine invariant.
+OPTIONAL_SNAPSHOT_KEYS = {"escalations": dict, "gates": dict}
 PHASE_KEYS = {"name", "complexity", "size", "status"}
 # `tree` is the commit or tree SHA the phase ended on. It is the next phase's
 # review base, so it is recorded as data, never remembered.
@@ -187,6 +195,48 @@ def _fsync_dir(path: Path) -> None:
         os.close(descriptor)
 
 
+@contextmanager
+def _snapshot_lock(path: Path):
+    """Serialize snapshot writers on one PROJECT.md, like the checkpoint block.
+
+    Two lanes recording gates at the same moment would otherwise read the same
+    snapshot and the second write would drop the first's outcome.
+    """
+    lock_root = Path(tempfile.gettempdir()) / f"ai-toolkit-project-state-locks-{os.getuid()}"
+    lock_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    metadata = lock_root.lstat()
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid() or lock_root.is_symlink():
+        raise ProjectStateError("project state lock directory is unsafe")
+    os.chmod(lock_root, 0o700)
+    identity = hashlib.sha256(str(path).encode()).hexdigest()
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(lock_root / f"{identity}.lock", flags, 0o600)
+    try:
+        lock_metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(lock_metadata.st_mode)
+            or lock_metadata.st_uid != os.getuid()
+            or lock_metadata.st_nlink != 1
+        ):
+            raise ProjectStateError("project state lock file is unsafe")
+        os.fchmod(descriptor, 0o600)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def _serialized(function):
+    @wraps(function)
+    def wrapped(path: Path, *args, **kwargs):
+        _reject_unsafe_path(path)
+        with _snapshot_lock(path):
+            return function(path, *args, **kwargs)
+
+    return wrapped
+
+
 def _reject_unsafe_path(path: Path) -> None:
     if not path.is_absolute() or Path(os.path.normpath(str(path))) != path:
         raise ProjectStateError("state file path must be absolute and normalized")
@@ -290,6 +340,12 @@ def validate_snapshot(payload: object) -> dict[str, object]:
         for key, count in attempts.items()
     ):
         raise ProjectStateError("attempts must map units to counts within budget")
+    gates = result["gates"]
+    if not isinstance(gates, dict) or any(
+        TOKEN.fullmatch(str(key)) is None or value not in GATE_STATUSES or value == "PENDING"
+        for key, value in gates.items()
+    ):
+        raise ProjectStateError("gates must map gate names to recorded outcomes")
     escalations = result["escalations"]
     if not isinstance(escalations, dict) or any(
         TOKEN.fullmatch(str(key)) is None
@@ -378,6 +434,7 @@ def _write(path: Path, content: str, before: dict[str, object] | None, after: di
     return ProjectStateResult(after, str(path), True)
 
 
+@_serialized
 def initialize(
     path: Path,
     workflow: str,
@@ -391,16 +448,35 @@ def initialize(
     phase: str = "intake",
     replace: bool = False,
 ) -> ProjectStateResult:
-    """Create the snapshot, or return the existing one when the same workflow owns it."""
+    """Create the snapshot, or return the existing one when it already records this classification.
+
+    A repeated init with the same classification is a no-op so a resume cannot
+    erase progress. A repeated init with a *different* classification is refused:
+    silently keeping the old one would let a fresh classification believe it was
+    recorded. Move upward with ``set``, or restart with ``--replace``.
+    """
     content, before = _read(path)
     modifiers = list(modifiers or [])
-    if before is not None and not replace:
-        if before["workflow"] == workflow:
-            return ProjectStateResult(before, str(path), False)
-        raise ProjectStateError(
-            f"project state already belongs to workflow {before['workflow']}; pass --replace to start over"
-        )
     resolved = classify_complexity(complexity, modifiers)
+    if before is not None and not replace:
+        if before["workflow"] != workflow:
+            raise ProjectStateError(
+                f"project state already belongs to workflow {before['workflow']}; pass --replace to start over"
+            )
+        requested = (resolved, size, phaseability, sorted(modifiers))
+        recorded = (
+            before["complexity"],
+            before["size"],
+            before["phaseability"],
+            sorted(before["modifiers"]),
+        )
+        if requested != recorded:
+            raise ProjectStateError(
+                "project state already records "
+                f"{before['complexity']}/{before['size']}/{before['phaseability']} for {workflow}; "
+                "use `set` to move the classification upward or --replace to restart it"
+            )
+        return ProjectStateResult(before, str(path), False)
     snapshot: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "workflow": workflow,
@@ -416,6 +492,7 @@ def initialize(
         "gate_status": "PASS",
         "attempts": {},
         "escalations": {},
+        "gates": {"classification": "PASS"},
         "phases": [],
     }
     return _write(path, content, before, snapshot)
@@ -428,6 +505,7 @@ def show(path: Path) -> ProjectStateResult:
     return ProjectStateResult(before, str(path), False)
 
 
+@_serialized
 def set_fields(path: Path, **changes: object) -> ProjectStateResult:
     """Apply field changes. Complexity may only move upward except via RECLASSIFY intent."""
     content, before = _read(path)
@@ -437,7 +515,7 @@ def set_fields(path: Path, **changes: object) -> ProjectStateResult:
     for key, value in changes.items():
         if value is None:
             continue
-        if key not in SNAPSHOT_KEYS or key in {"schema_version", "attempts", "escalations", "phases"}:
+        if key not in SNAPSHOT_KEYS or key in {"schema_version", "attempts", "escalations", "gates", "phases"}:
             raise ProjectStateError(f"field cannot be set directly: {key}")
         if key == "complexity":
             proposed = normalize_complexity(value)
@@ -455,6 +533,7 @@ def set_fields(path: Path, **changes: object) -> ProjectStateResult:
     return _write(path, content, before, after)
 
 
+@_serialized
 def record_gate(
     path: Path,
     gate: str,
@@ -481,6 +560,14 @@ def record_gate(
     no unit is named) because the problem itself changed. ``PASS`` clears the
     unit's counters. ``USER_DECISION`` and ``BLOCKED`` are recorded without
     charging anything: waiting on a person or an environment is not an attempt.
+
+    ``same_failure`` matters across owners: a reason that already exhausted one
+    owner and shows up again on the next owner's first attempt is escalated at
+    once instead of earning that owner a retry. Within one owner the budget of
+    two already escalates the second attempt.
+
+    Every outcome is also written to ``gates[gate]``, the per-gate record the
+    checkpoint runtime reads before reserving a gated effect.
     """
     content, before = _read(path)
     if before is None:
@@ -504,6 +591,8 @@ def record_gate(
     elif status == "RETRY" and not editorial:
         attempts[key] = int(attempts.get(key, 0)) + 1
         effective = next_gate_status(attempts[key], same_failure)
+        if same_failure and attempts[key] == 1 and int(escalations.get(key, 0)) > 0:
+            effective = "ESCALATE"
     if effective == "ESCALATE":
         stage = int(escalations.get(key, 0)) + 1
         attempts.pop(key, None)
@@ -515,17 +604,26 @@ def record_gate(
     after["gate_status"] = effective
     after["attempts"] = attempts
     after["escalations"] = escalations
+    gates = dict(before["gates"])
+    gates[after["current_gate"]] = effective
+    after["gates"] = gates
     return _write(path, content, before, after)
 
 
+@_serialized
 def advance_phase(path: Path, phase: str) -> ProjectStateResult:
-    """Move to the next phase; only legal when the current gate passed."""
+    """Move to the next phase; only legal when the current gate passed.
+
+    ``PENDING`` is not a pass: a phase whose gate was never recorded cannot be
+    left behind, so every phase records at least one gate outcome.
+    """
     content, before = _read(path)
     if before is None:
         raise ProjectStateError("no project state snapshot found; run init first")
-    if before["gate_status"] not in {"PASS", "PENDING"}:
+    if before["gate_status"] != "PASS":
         raise ProjectStateError(
-            f"cannot advance while gate {before['current_gate']} is {before['gate_status']}"
+            f"cannot advance while gate {before['current_gate']} is {before['gate_status']}; "
+            "record a PASS for the current gate first"
         )
     after = dict(before)
     after["current_phase"] = _validate_token(phase, "phase")
@@ -534,6 +632,7 @@ def advance_phase(path: Path, phase: str) -> ProjectStateResult:
     return _write(path, content, before, after)
 
 
+@_serialized
 def set_phases(path: Path, phases: list[dict[str, object]]) -> ProjectStateResult:
     """Replace the MULTI_PHASE decomposition table."""
     content, before = _read(path)
@@ -544,6 +643,7 @@ def set_phases(path: Path, phases: list[dict[str, object]]) -> ProjectStateResul
     return _write(path, content, before, after)
 
 
+@_serialized
 def update_phase(
     path: Path, name: str, status: str, tree: str | None = None
 ) -> ProjectStateResult:

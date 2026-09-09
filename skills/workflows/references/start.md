@@ -111,6 +111,7 @@ It restores workflow state from PROJECT.md (routing snapshot plus checkpoint) ra
    - Cherry-picking → `$cherry-pick`
    - Ready to open a PR → `create-pr`
    - Capturing a pattern or reviewing memories → `reflect`
+   - `.ai-toolkit/observations.jsonl` holds 10 or more unreviewed lines → `reflect observations`
    - Completed phases cluttering PROJECT.md → [`archive-project-file`](../../archive-project-file/SKILL.md)
    - Want to see all available workflows → `custom-skills-info`
 

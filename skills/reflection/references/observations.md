@@ -30,15 +30,23 @@ Keep `detail` to one sentence and free of PII.
 
 ## Review (`reflect observations`)
 
-1. Read the queue; group lines by `kind` and by the skill or rule they
+Nothing else reads this queue. `complete-project` runs this review before it
+scans memories, `start` suggests it at 10 or more unreviewed lines, and the
+Stop hook `hooks/observation-reminder.sh` prints the same reminder; the review
+itself is always a deliberate, confirmed step.
+
+1. Run `bin/aitk lane-yield` and read its demotions alongside the queue: it
+   applies the yield table in `rules/code-review.md` to `review.lanes` in
+   `.ai-toolkit/metrics.jsonl`, so a lane proposal carries its numbers.
+2. Read the queue; group lines by `kind` and by the skill or rule they
    implicate.
-2. For each cluster of two or more, propose one change: a rule wording fix, a
+3. For each cluster of two or more, propose one change: a rule wording fix, a
    skill checklist addition, a classifier signal, or a lane removal. Cite the
    lines.
-3. Write an eval candidate for each proposal under `evals/<family>/` as a
+4. Write an eval candidate for each proposal under `evals/<family>/` as a
    JSONL case (`input`, `expected`, `source: observation`), so the regression
    becomes detectable.
-4. Present proposals; apply only on confirmation
+5. Present proposals; apply only on confirmation
    (`references/rule-promotion.md`). Move reviewed lines to
    `.ai-toolkit/observations.reviewed.jsonl`.
 

@@ -59,6 +59,7 @@ class ProviderAdapterTests(unittest.TestCase):
             "pre-push-validate.sh",
             "check-resources.sh",
             "check-plan-drift.sh",
+            "observation-reminder.sh",
             "agent-setup-edit-reminder.sh",
         }
         codex = (ROOT / "hooks/hooks.json").read_text()
@@ -94,7 +95,6 @@ class ProviderAdapterTests(unittest.TestCase):
             "superset-local",
             "testing",
             "verification-loop",
-            "workstreams",
         )
         for name in internal:
             metadata = (ROOT / f"skills/{name}/agents/openai.yaml").read_text()
@@ -231,6 +231,10 @@ class ProviderAdapterTests(unittest.TestCase):
                         "skills/archive-project-file/SKILL.md",
                     ),
                     ("metrics-emit", "skills/metrics-emit/SKILL.md"),
+                    (
+                        "reflection",
+                        "skills/reflection/references/observations.md",
+                    ),
                     ("reporting", "skills/reporting/SKILL.md"),
                     (
                         "reporting",

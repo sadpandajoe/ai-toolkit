@@ -23,8 +23,9 @@ network, and no comment to render. Declaring a main-thread-only contract there
 inlined it into every batch worker's prompt: wasted context, and a standing
 invitation to a worker that reads it as an instruction. The main thread reads
 this document with ambient loading, so the links under *Post* below reach it
-normally, and `workflows.review-pr-fresh` — the lane that actually posts —
-declares it in its own boundary `contracts`.
+normally, and the single-PR posting path ([pr-posting.md](pr-posting.md),
+reached from the `review.pr-independent` boundary in `review-pr`) carries the
+posting contract for the lane that actually posts.
 
 The independent reviewer contract the worker applies is declared on the
 `review.pr-batch` boundary in `interfaces/model-routing.json` rather than in
@@ -112,7 +113,8 @@ out across a batch. When a specific PR warrants a Code-judo pass, run a single-P
 deep review ([review-pr](../../workflows/references/review-pr.md)) instead.
 
 This is the **one** documented exception to the umbrella rule "dispatch judo on
-`Code-judo lane: YES`" (see the review SKILL's *Code-judo* section). It holds only
+`Code-judo lane: YES`" (the `review.code-judo` boundary in
+`interfaces/model-routing.json` and [code-judo.md](code-judo.md)). It holds only
 because the dispatch above passes `Batch mode: Code-judo suppressed` explicitly —
 the exception belongs to the caller, not to the lane classifier, which still
 reports the field truthfully.
@@ -126,7 +128,7 @@ review never produces proposals to report.
 
 Concurrency: run up to 3-5 PR reviews in parallel. Lower concurrency if PRs are unusually large, share code ownership, or the repo is resource constrained.
 
-## Per-Wave PROJECT.md Persistence (Hard Gate Before Clear)
+## Per-Wave PROJECT.md Persistence (Hard Gate Before Handoff)
 
 After each wave of ≤3 PRs completes, before launching the next wave, append a `## Review-PR Batch Wave N` block to PROJECT.md:
 

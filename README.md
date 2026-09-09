@@ -110,7 +110,7 @@ ai-toolkit/
 ├── agents/
 │   ├── claude/             # Native Claude subagents (aitk-planner, aitk-implementer, aitk-debugger, aitk-tester, aitk-reviewer)
 │   ├── codex/              # Native Codex custom agents (TOML)
-│   └── specialists/        # Provider-neutral contracts: reviewer.md, rca.md, plan-validator.md
+│   └── specialists/        # Provider-neutral contracts: reviewer.md, rca.md, plan-validator.md, finding-verifier.md
 ├── interfaces/
 │   ├── workflows.json      # Stable core workflow manifest
 │   ├── contracts.json      # Safety, state, resume, and verification contracts
@@ -147,7 +147,6 @@ ai-toolkit/
 │   ├── debug/              # Investigation, RCA gate, CI diagnosis
 │   ├── testing/ qa/ pm/ plan-review/ feedback/ pr-watch/ reflection/
 │   ├── implement-change/   # Bounded implementation worker contract
-│   ├── workstreams/        # Fan-in after parallel slices
 │   ├── reporting/ metrics-emit/ archive-project-file/
 │   ├── preflight/ cherry-pick/ agent-setup-maintainer/
 │   └── shortcut/ superset-local/ preset-rbac-setup/   # Domain integrations
@@ -183,7 +182,8 @@ CLI:
 | `bin/aitk list [--with-pgm] [--details]` | List workflows and contracts |
 | `bin/aitk route "<request>"` | Deterministically suggest a workflow |
 | `bin/aitk project-state init\|show\|set\|gate\|advance\|phases\|phase` | Read and update the `PROJECT.md` routing snapshot and gate budget |
-| `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Durable phases and idempotent effects |
+| `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Durable phases and idempotent effects; `reserve` refuses a `verification`- or `review`-gated effect unless the snapshot shows that gate `PASS` |
+| `bin/aitk lane-yield [--metrics PATH] [--json]` | Apply the review-lane yield thresholds to `.ai-toolkit/metrics.jsonl` and list demotions |
 | `bin/aitk model-route <route> --provider <p> --boundary <id> [--lens <path>]` | Resolve a pinned specialist dispatch |
 | `bin/aitk model-run <route> --provider <p> --boundary <id> --prompt-file <f>` | Run one fail-closed specialist |
 | `bin/aitk build [--check] [--with-pgm]` | Generate path-resolved guidance |

@@ -26,11 +26,26 @@ from aitk.checkpoint import (
     validate_transition,
 )
 from aitk.conformance import contract_digest, contracts_by_name
+from aitk.project_state import initialize as initialize_snapshot, record_gate
 from aitk.workflows import load_workflows
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DIGEST_A = "sha256:" + "a" * 64
+SNAPSHOT_GATES = ("verification", "review")
+
+
+def pass_gates(path: Path, workflow: str, *gates: str) -> None:
+    """Record the snapshot gates a reservation is allowed to rely on.
+
+    Two records, one truth: ``reserve`` refuses an effect the contract gates on
+    ``verification`` or ``review`` unless the routing snapshot in the same file
+    shows that gate ``PASS``, so a test that reserves such an effect records the
+    gates the way a workflow would.
+    """
+    initialize_snapshot(path, workflow, "STANDARD", "M")
+    for gate in gates or SNAPSHOT_GATES:
+        record_gate(path, gate, "PASS")
 
 
 def machine_payload(path: Path) -> dict[str, object]:
@@ -153,6 +168,7 @@ class CheckpointTests(unittest.TestCase):
     def test_init_replacement_refuses_pending_effects(self) -> None:
         path = self.directory / "PROJECT.md"
         initialize(ROOT, "create-feature", path)
+        pass_gates(path, "create-feature")
         reserve(ROOT, "create-feature", path, "commit_sha", "commit-pending")
 
         with self.assertRaisesRegex(CheckpointError, "pending effects"):
@@ -240,6 +256,7 @@ class CheckpointTests(unittest.TestCase):
     def test_reserve_apply_and_identical_replay_are_idempotent(self) -> None:
         path = self.directory / "PROJECT.md"
         initialize(ROOT, "create-feature", path)
+        pass_gates(path, "create-feature")
         reserved = reserve(ROOT, "create-feature", path, "commit_sha", "commit-123")
         self.assertEqual(1, reserved.generation)
         repeated_reserve = reserve(
@@ -274,6 +291,7 @@ class CheckpointTests(unittest.TestCase):
             with self.subTest(workflow=workflow):
                 path = self.directory / f"{workflow}.md"
                 initialize(ROOT, workflow, path)
+                pass_gates(path, workflow)
                 first = reserve(ROOT, workflow, path, "provider_operation", "round-1")
                 first = apply(
                     ROOT,
@@ -299,6 +317,7 @@ class CheckpointTests(unittest.TestCase):
     ) -> None:
         path = self.directory / "feedback.md"
         initialize(ROOT, "address-feedback", path)
+        pass_gates(path, "address-feedback")
         observed: dict[str, str] = {}
         calls: list[str] = []
 
@@ -352,6 +371,7 @@ class CheckpointTests(unittest.TestCase):
     def test_concurrent_reservations_are_serialized_without_lost_updates(self) -> None:
         path = self.directory / "PROJECT.md"
         initialize(ROOT, "create-feature", path)
+        pass_gates(path, "create-feature")
         base = [
             str(ROOT / "bin/aitk"),
             "checkpoint",
@@ -406,6 +426,7 @@ class CheckpointTests(unittest.TestCase):
                 path = self.directory / f"{crash}.md"
                 sink = Sink()
                 initialize(ROOT, "create-feature", path)
+                pass_gates(path, "create-feature")
                 if crash != "before-reserve":
                     reserve(ROOT, "create-feature", path, "commit_sha", "commit-crash")
                 if crash in {"after-effect", "after-apply"}:
@@ -467,6 +488,48 @@ class CheckpointTests(unittest.TestCase):
             ("apply-observed", DIGEST_A),
             reconcile_pending(provider, effect, lambda _: DIGEST_A),
         )
+
+    def test_gated_effects_require_the_snapshot_gates_to_pass(self) -> None:
+        """Two records, one truth is enforced, not narrated."""
+        path = self.directory / "PROJECT.md"
+        initialize(ROOT, "create-feature", path)
+        with self.assertRaisesRegex(CheckpointError, "no snapshot exists"):
+            reserve(ROOT, "create-feature", path, "commit_sha", "commit-1")
+        initialize_snapshot(path, "create-feature", "STANDARD", "M")
+        with self.assertRaisesRegex(CheckpointError, "verification=unrecorded, review=unrecorded"):
+            reserve(ROOT, "create-feature", path, "commit_sha", "commit-1")
+        record_gate(path, "verification", "PASS")
+        record_gate(path, "review", "RETRY", "slice-1")
+        with self.assertRaisesRegex(CheckpointError, r"review=RETRY"):
+            reserve(ROOT, "create-feature", path, "commit_sha", "commit-1")
+        self.assertEqual(0, len(validate(ROOT, "create-feature", path).effects))
+        record_gate(path, "review", "PASS", "slice-1")
+        reserved = reserve(ROOT, "create-feature", path, "commit_sha", "commit-1")
+        self.assertEqual("pending", reserved.effects[0]["status"])
+        # The snapshot and the checkpoint share one file and neither write
+        # disturbs the other block.
+        self.assertEqual(1, path.read_text().count(BEGIN))
+        self.assertIn("aitk-project-state", path.read_text())
+        # Every durable effect is gated on verification or review, so there is
+        # no reservation the snapshot check does not cover.
+        for contract in self.contracts.values():
+            if contract["resumable"] and contract["idempotency_keys"]:
+                self.assertTrue(
+                    set(SNAPSHOT_GATES) & set(contract["authorization"]["gates"]),
+                    contract["name"],
+                )
+        # A workflow gated on one of the two needs only that one.
+        single = self.directory / "watch.md"
+        initialize(ROOT, "watch-pr", single)
+        pass_gates(single, "watch-pr", "verification")
+        self.assertEqual(1, len(reserve(ROOT, "watch-pr", single, "provider_operation", "poll-1").effects))
+        # An unreadable snapshot fails closed rather than reading as "no gates".
+        broken = self.directory / "broken.md"
+        initialize(ROOT, "create-feature", broken)
+        pass_gates(broken, "create-feature")
+        broken.write_text(broken.read_text().replace('"gates":', '"gates":"x",'))
+        with self.assertRaisesRegex(CheckpointError, "routing snapshot is unreadable"):
+            reserve(ROOT, "create-feature", broken, "commit_sha", "commit-1")
 
     def test_malformed_stale_and_noncanonical_blocks_are_rejected(self) -> None:
         contract = self.contracts["create-feature"]

@@ -578,6 +578,24 @@ class ConformanceTests(unittest.TestCase):
         self.assertIn(("review", "implement"), feature_edges, "no edge back to implement for the next wave")
         bug_edges = {(e["from"], e["to"]) for e in by_name["fix-bug"]["transitions"]}
         self.assertIn(("review", "implement"), bug_edges)
+        # Verification can refute the diagnosis or the plan, not just the fix,
+        # so the graph carries those edges; the review workflows carry the delta
+        # pass after a fix; fix-ci can end after diagnosis when every failure is
+        # pre-existing and can re-diagnose when the fix did not hold.
+        self.assertIn(("verify", "diagnose"), bug_edges)
+        self.assertIn(("verify", "plan"), feature_edges)
+        for name in ("review-code", "review-code-adversarial"):
+            edges = {(e["from"], e["to"]) for e in by_name[name]["transitions"]}
+            self.assertIn(("verify", "review"), edges, name)
+        ci_edges = {(e["from"], e["to"]) for e in by_name["fix-ci"]["transitions"]}
+        self.assertIn(("verify", "diagnose"), ci_edges)
+        self.assertIn(("diagnose", "$terminal"), ci_edges)
+        # One compact line per contract keeps the file diffable at the contract level.
+        contract_lines = [
+            line for line in (ROOT / "interfaces/contracts.json").read_text().splitlines()
+            if line.startswith("    {")
+        ]
+        self.assertEqual(len(contracts["contracts"]), len(contract_lines))
         for name in ("create-feature", "fix-bug"):
             self.assertIn("publish-explicit", by_name[name]["authorization"]["gates"])
             self.assertIn("published_pr", {k["key"] for k in by_name[name]["idempotency_keys"]})

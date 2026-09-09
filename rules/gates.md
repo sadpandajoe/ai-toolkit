@@ -141,9 +141,12 @@ durable workflows and lists `verification` and `review` as preconditions for
 effects. They never disagree by construction: a workflow records the outcome
 in the snapshot first, and an effect that `interfaces/contracts.json` gates on
 `verification` or `review` may be reserved only while the snapshot shows that
-gate `PASS`. A workflow without a snapshot has no gate history, so every
-workflow that records a gate runs `project-state init` first, including
-standalone `review-plan` and `fix-ci`.
+gate `PASS`. `bin/aitk checkpoint reserve` enforces this: it reads the
+snapshot's per-gate record (`gates`) from the same `PROJECT.md` and refuses
+the reservation, with the gate and its recorded status named, when either
+required gate is not `PASS` or no snapshot exists. A workflow without a
+snapshot has no gate history, so every workflow that records a gate runs
+`project-state init` first, including standalone `review-plan` and `fix-ci`.
 
 ## Block Shape
 

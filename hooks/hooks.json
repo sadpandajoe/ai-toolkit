@@ -44,6 +44,11 @@
             "type": "command",
             "command": "bash \"$PLUGIN_ROOT/hooks/check-plan-drift.sh\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash \"$PLUGIN_ROOT/hooks/observation-reminder.sh\"",
+            "timeout": 10
           }
         ]
       }

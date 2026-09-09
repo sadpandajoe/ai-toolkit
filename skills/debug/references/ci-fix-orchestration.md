@@ -84,7 +84,7 @@ For STRONG-verified TRIVIAL/STANDARD fixes with a `PASS` review gate, the defaul
 | Lint/style only, cherry-pick flow | Recommend amending into the breaking cherry-pick commit; ask before rebase/force-push |
 | Lint/style only, single parent commit clear | Recommend amend; ask before force-push |
 | Lint/style only, multiple parent commits | Recommend `style:` commit; ask before commit/push |
-| Trivial code fix + STRONG verification | Recommend a new commit; ask before commit/push |
+| TRIVIAL/STANDARD code fix + STRONG verification + `PASS` review | Create a new commit on the current feature branch and push it (the default flow above); amend, rebase, and force-push still need explicit authorization |
 | COMPLEX path or PARTIAL/WEAK verification | Stop before commit — present diagnosis and recommended next step |
 
 Detecting cherry-pick flow: check `git log --grep="cherry picked from commit"` on recent branch commits. If cherry-picked commits are present, trace which one last touched the lint-failing files (`git log -- <file>` filtered to cherry-picked SHAs). That is the commit to amend into, not necessarily the latest.

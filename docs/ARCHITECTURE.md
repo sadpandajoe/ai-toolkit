@@ -20,8 +20,8 @@ the control plane in the cheapest capable model.
    implementer, debugger, tester (Sonnet), and a same-provider reviewer
    fallback. Each provider has a workhorse family and a deep family (Sonnet and
    Opus with Fable; Sol with Astra); deep routes run only on the deep family. `agents/specialists/*.md` are provider-neutral contracts
-   (reviewer, RCA, plan validator) the route runner inlines into
-   cross-provider specialists.
+   (reviewer, RCA, plan validator, finding verifier) the route runner inlines
+   into cross-provider specialists.
 4. `interfaces/` makes everything machine-checkable: workflow identity and
    triggers, v2 durable contracts, skill classification, provider capability
    bindings, model routing (catalog, routes, dispatch boundaries, lens floors),
@@ -50,8 +50,9 @@ Classification has two orthogonal axes plus a derived shape:
 
 `aitk project-state` persists the snapshot in a delimited block in
 `PROJECT.md`, records gate outcomes, and enforces the attempt budget: a unit
-gets one attempt and one informed retry per owner, and the runtime turns a
-third `RETRY` into `ESCALATE`. An escalation climbs a bounded per-unit ladder
+gets one attempt and one informed retry per owner, and the runtime turns the
+second `RETRY` into `ESCALATE` (or the first, when it repeats a failure that
+already exhausted a previous owner). An escalation climbs a bounded per-unit ladder
 (three steps, then `USER_DECISION`) and resets the budget for the next owner;
 editorial retries, `USER_DECISION`, and `BLOCKED` are recorded without being
 charged; `RECLASSIFY` resets the counters. Verification gates carry a strength

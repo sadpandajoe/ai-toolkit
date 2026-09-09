@@ -106,9 +106,14 @@ class SnapshotLifecycleTests(unittest.TestCase):
 
     def test_repeat_init_is_a_noop_and_other_workflow_refuses(self) -> None:
         initialize(self.path, "fix-bug", "STANDARD", "S")
-        again = initialize(self.path, "fix-bug", "COMPLEX", "XL", "phased")
+        again = initialize(self.path, "fix-bug", "STANDARD", "S")
         self.assertFalse(again.changed)
         self.assertEqual("STANDARD", again.snapshot["complexity"])
+        # A different classification is not silently ignored: the caller would
+        # believe COMPLEX/XL was recorded while the snapshot still says STANDARD/S.
+        with self.assertRaisesRegex(ProjectStateError, "already records STANDARD/S/unassessed.*`set`.*--replace"):
+            initialize(self.path, "fix-bug", "COMPLEX", "XL", "phased")
+        self.assertEqual(("STANDARD", "S"), (show(self.path).snapshot["complexity"], show(self.path).snapshot["size"]))
         with self.assertRaisesRegex(ProjectStateError, "--replace"):
             initialize(self.path, "create-feature", "STANDARD", "S")
         replaced = initialize(
@@ -153,6 +158,14 @@ class SnapshotLifecycleTests(unittest.TestCase):
         self.assertEqual({}, passed.snapshot["escalations"])
         advanced = advance_phase(self.path, "review")
         self.assertEqual(("review", "PENDING"), (advanced.snapshot["current_phase"], advanced.snapshot["gate_status"]))
+        # PENDING is not a pass: a phase whose gate was never recorded cannot be left.
+        with self.assertRaisesRegex(ProjectStateError, "is PENDING; record a PASS"):
+            advance_phase(self.path, "done")
+        # Every outcome lands in the per-gate record the checkpoint runtime reads.
+        self.assertEqual(
+            {"classification": "PASS", "verification": "PASS"},
+            show(self.path).snapshot["gates"],
+        )
 
     def test_same_failure_twice_escalates_even_with_budget_left(self) -> None:
         initialize(self.path, "fix-bug", "STANDARD", "M")
@@ -160,6 +173,22 @@ class SnapshotLifecycleTests(unittest.TestCase):
         self.assertEqual("RETRY", outcome.snapshot["gate_status"])
         outcome = record_gate(self.path, "rca", "RETRY", "rca-alt", same_failure=True)
         self.assertEqual("ESCALATE", outcome.snapshot["gate_status"])
+
+    def test_same_failure_after_an_escalation_skips_the_new_owners_retry(self) -> None:
+        """--same-failure has teeth across owners: the next owner does not get a
+        free retry on a reason that already exhausted the previous one."""
+        initialize(self.path, "fix-bug", "STANDARD", "M")
+        record_gate(self.path, "verification", "RETRY", "fix")
+        handed_on = record_gate(self.path, "verification", "RETRY", "fix")
+        self.assertEqual(("ESCALATE", {"fix": 1}), (handed_on.snapshot["gate_status"], handed_on.snapshot["escalations"]))
+        fresh_reason = record_gate(self.path, "verification", "RETRY", "fix")
+        self.assertEqual(("RETRY", {"fix": 1}), (fresh_reason.snapshot["gate_status"], fresh_reason.snapshot["attempts"]))
+        initialize(self.path, "fix-bug", "STANDARD", "M", replace=True)
+        record_gate(self.path, "verification", "RETRY", "fix")
+        record_gate(self.path, "verification", "RETRY", "fix")
+        repeated = record_gate(self.path, "verification", "RETRY", "fix", same_failure=True)
+        self.assertEqual(("ESCALATE", {}, {"fix": 2}), (repeated.snapshot["gate_status"], repeated.snapshot["attempts"], repeated.snapshot["escalations"]))
+        self.assertEqual("ESCALATE", repeated.snapshot["gates"]["verification"])
 
     def test_rca_ladder_is_recordable_on_one_unit_and_ends_in_user_decision(self) -> None:
         """Parent retry, specialist REVISE, deep-rca, then the user: one unit."""
@@ -205,6 +234,16 @@ class SnapshotLifecycleTests(unittest.TestCase):
         self.assertEqual(({}, {}), (everything.snapshot["attempts"], everything.snapshot["escalations"]))
         upgraded = set_fields(self.path, complexity="COMPLEX")
         self.assertEqual("COMPLEX", upgraded.snapshot["complexity"])
+
+    def test_snapshot_without_gates_key_reads_as_unrecorded(self) -> None:
+        initialize(self.path, "fix-bug", "STANDARD", "M")
+        content = self.path.read_text()
+        body = content.split(BEGIN + "\n", 1)[1].split("\n" + END, 1)[0]
+        payload = json.loads(body)
+        del payload["gates"]
+        self.path.write_text(content.replace(body, json.dumps(payload, indent=2, sort_keys=True)))
+        self.assertEqual({}, show(self.path).snapshot["gates"])
+        self.assertEqual({"review": "PASS"}, record_gate(self.path, "review", "PASS").snapshot["gates"])
 
     def test_snapshot_without_escalations_key_reads_as_no_escalations(self) -> None:
         initialize(self.path, "fix-bug", "STANDARD", "M")

@@ -14,7 +14,7 @@ reasoning tier.
 |---|---|---|
 | `TRIVIAL` | Mechanical, obvious pattern, no design decision | Parent inline; smallest meaningful verification; review exception may apply |
 | `STANDARD` | Real, contained engineering with a known pattern and bounded risk | Parent (or implementer worker) implements and tests; one independent review |
-| `COMPLEX` | Meaningful architecture or RCA choice, broad risk, or several plausible paths | Feature: Opus plan, Sol validates, Sonnet implements. Bug: Sol RCA, Sonnet fixes. Then independent review |
+| `COMPLEX` | Meaningful architecture or RCA choice, broad risk, or several plausible paths | Feature: deep-family plan, other-provider validation, workhorse implements. Bug: specialist RCA on the other provider, workhorse fixes. Then independent review plus the second-family lane |
 
 STANDARD is the default for real work. Hard COMPLEX signals, any one of which
 forces COMPLEX regardless of size: schema or migrations, auth/security/

@@ -16,6 +16,7 @@ import tempfile
 from typing import Callable
 
 from .conformance import contract_digest, contracts_by_name
+from .project_state import ProjectStateError, parse_project_state
 from .workflows import load_workflows
 
 
@@ -446,6 +447,37 @@ def advance(
     return _write_transition(path, content, before, after, contract)
 
 
+SNAPSHOT_GATES = ("verification", "review")
+
+
+def _require_snapshot_gates(contract: dict[str, object], content: str, key: str) -> None:
+    """Two records, one truth: an effect gated on verification or review is
+    reserved only while the routing snapshot in the same artifact shows that
+    gate PASS. Without this check the rule in ``rules/gates.md`` is prose."""
+    authorization = contract.get("authorization")
+    gates = authorization.get("gates", []) if isinstance(authorization, dict) else []
+    required = [gate for gate in SNAPSHOT_GATES if gate in gates]
+    if not required:
+        return
+    try:
+        snapshot = parse_project_state(content)
+    except ProjectStateError as error:
+        raise CheckpointError(f"routing snapshot is unreadable: {error}") from error
+    if snapshot is None:
+        raise CheckpointError(
+            f"effect {key} requires gates {', '.join(required)} PASS in the routing "
+            "snapshot, and no snapshot exists; run `aitk project-state init` and "
+            "record the gates first"
+        )
+    recorded = snapshot["gates"]
+    missing = [gate for gate in required if recorded.get(gate) != "PASS"]
+    if missing:
+        detail = ", ".join(f"{gate}={recorded.get(gate, 'unrecorded')}" for gate in missing)
+        raise CheckpointError(
+            f"effect {key} requires gates {', '.join(required)} PASS in the routing snapshot ({detail})"
+        )
+
+
 @_serialized_checkpoint
 def reserve(
     root: Path,
@@ -461,6 +493,7 @@ def reserve(
         raise CheckpointError(f"effect key is not declared by the contract: {key}")
     if TOKEN.fullmatch(operation_id) is None:
         raise CheckpointError("operation ID is not a portable token")
+    _require_snapshot_gates(contract, content, key)
     effects = [dict(item) for item in before["effects"]]
     current = next(
         (

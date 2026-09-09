@@ -11,7 +11,8 @@ provider syntax.
   in `~/.claude/agents/`: `aitk-planner` (Opus, plan-only), `aitk-implementer`
   (Sonnet, edits and runs tests), `aitk-debugger` (Sonnet, evidence-first
   investigation), `aitk-tester` (Sonnet, test authoring), `aitk-reviewer`
-  (Opus, read-only same-provider reviewer fallback). The spawn prompt carries
+  (Opus, read-only cold reviewer: the second-family lane on COMPLEX and CORE
+  reviews, and the same-provider fallback when Codex is unreachable). The spawn prompt carries
   the full contract per `rules/specialist-handoff.md`; the agent returns a
   compact handoff. Skills whose body is a whole one-shot task may run as forked
   leaf skills (`context: fork`).

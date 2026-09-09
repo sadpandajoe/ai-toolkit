@@ -22,6 +22,7 @@ from .checkpoint import (
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
 from .doctor import run_doctor
 from .installer import install, resolve_paths, rollback, uninstall
+from .lane_yield import default_metrics_file, evaluate as evaluate_lane_yield, load_events
 from .model_routing import (
     ModelRouteError,
     resolve_route,
@@ -449,6 +450,34 @@ def _pgm_preflight(arguments: argparse.Namespace) -> int:
     return result.exit_code
 
 
+def _lane_yield(arguments: argparse.Namespace) -> int:
+    metrics = Path(arguments.metrics).resolve() if arguments.metrics else default_metrics_file()
+    events = load_events(metrics)
+    demotions = evaluate_lane_yield(events)
+    if arguments.json:
+        print(
+            json.dumps(
+                {
+                    "metrics": str(metrics),
+                    "events": len(events),
+                    "demotions": [item.as_dict() for item in demotions],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    print(f"metrics: {metrics} ({len(events)} events)")
+    if not demotions:
+        print("no lane below its yield threshold")
+        return 0
+    for item in demotions:
+        observed = ", ".join(f"{key}={value}" for key, value in item.observed.items())
+        print(f"{item.lane}: demoted over last {item.runs} runs ({observed})")
+        print(f"  -> {item.consequence}")
+    return 0
+
+
 def _check(arguments: argparse.Namespace) -> int:
     root = _root(arguments.root)
     differences = compare_build(root)
@@ -684,6 +713,14 @@ def parser() -> argparse.ArgumentParser:
                 help="commit or tree SHA the phase ended on; required with --status done, it is the next phase's review base",
             )
         state_action.set_defaults(handler=_project_state)
+
+    lane_yield = subparsers.add_parser(
+        "lane-yield",
+        help="apply the review-lane yield thresholds to .ai-toolkit/metrics.jsonl",
+    )
+    lane_yield.add_argument("--metrics", help="metrics file (default: ./.ai-toolkit/metrics.jsonl)")
+    lane_yield.add_argument("--json", action="store_true")
+    lane_yield.set_defaults(handler=_lane_yield)
 
     pgm = subparsers.add_parser(
         "pgm-preflight", help="validate optional PGM configuration before collection"

@@ -54,7 +54,7 @@ git push --force-with-lease
 
 Force-push only after explicit user authorization, only on the current feature branch, and only with `--force-with-lease`. Never force-push main/master or a protected branch.
 
-## Persist Fix Wave to PROJECT.md (Hard Gate Before Clear)
+## Persist Fix Wave to PROJECT.md (Hard Gate Before Handoff)
 
 After each fix wave, before any checkpoint, the orchestrator must append a `## Feedback Round N` entry to PROJECT.md:
 
@@ -69,7 +69,7 @@ Residual risk: [...]
 Next: [next wave / posting / done]
 ```
 
-This block is what `start` reads to resume mid-feedback-round after a clear. Without it, the comment-id → fix-state mapping is lost.
+This block is what `start` reads to resume mid-feedback-round in a fresh session or worker. Without it, the comment-id → fix-state mapping is lost.
 
 ## Stop Conditions
 

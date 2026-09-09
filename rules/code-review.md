@@ -42,9 +42,9 @@ tier's, and a simpler tier never inherits a deeper one's rounds.
 
 Yield is `accepted / raised` per lane per run, recorded in the Review Record
 and in the metrics event's `review.lanes`. Before dispatching an optional lane
-the parent reads that lane's last runs for this repository from
-`.ai-toolkit/metrics.jsonl` and applies the consequence; the independent lane
-is never optional and is never demoted.
+the parent runs `bin/aitk lane-yield` (it reads this repository's
+`.ai-toolkit/metrics.jsonl` and applies the table below) and honors the
+consequence it prints. The independent lane is never optional and never demoted.
 
 | Lane | Window | Threshold | Consequence |
 |---|---|---|---|

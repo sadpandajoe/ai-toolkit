@@ -104,6 +104,33 @@
 - Retired `action-gate`, `rules/review-gate.md`, `rules/stop-rules.md`,
   `rules/scoring.md`, and the manual context-clear dependency; fresh workers
   are the phase boundary and auto-compaction protects the parent.
+- Two records, one truth is enforced: the snapshot keeps a per-gate record
+  (`gates`) and `aitk checkpoint reserve` refuses an effect the contract gates
+  on `verification` or `review` unless that gate is `PASS` in the snapshot of
+  the same `PROJECT.md`; no snapshot or an unreadable one fails closed.
+  Snapshot writes are serialized by a lock; `advance` requires a recorded
+  `PASS` (`PENDING` no longer advances); re-running `init` with a different
+  classification is refused instead of silently keeping the old one;
+  `--same-failure` escalates at once when the reason already exhausted a
+  previous owner.
+- Phase graphs carry the edges the prose already used: verification can
+  reopen the diagnosis (`fix-bug`, `fix-ci`) or the plan (`create-feature`),
+  the review workflows loop from `verify` back to `review` for the delta pass,
+  and `fix-ci` can end after diagnosis when every failure is pre-existing.
+  `interfaces/contracts.json` is back to one compact line per contract.
+- Learning loop closed: `reflect observations` is routed and runs inside
+  `complete-project` before the memory scan; `start` and a new Stop hook
+  (`hooks/observation-reminder.sh`) suggest it at 10 unreviewed lines; the new
+  `aitk lane-yield` command applies the review-lane yield thresholds to
+  `.ai-toolkit/metrics.jsonl` and prints demotions; `review.lanes` gains the
+  delta lane's `not_fixed` and `introduced` counts.
+- `verify` reports the same strength tiers as `rules/gates.md` (what ran, not
+  file coverage; a failure is never a strength). `aitk-reviewer` is documented
+  as both the second-family lane and the same-provider fallback and discloses
+  which role it ran in. Feedback, PR posting, reporting templates, CI fix
+  table, test workflows, batch review, and watch-pr use the v2 vocabulary
+  (tiers, gate statuses, lanes, handoff instead of context clears).
+- Retired the unused `workstreams` skill.
 
 ## 0.2.0 — 2026-07-21
 
