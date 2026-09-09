@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -78,7 +79,9 @@ class LaneYieldTests(unittest.TestCase):
             metrics = cwd / ".ai-toolkit" / "metrics.jsonl"
             metrics.parent.mkdir()
             metrics.write_text("".join(json.dumps(event(architecture={"raised": 2, "accepted": 0})) + "\n" for _ in range(LENS_WINDOW)))
-            base = [str(ROOT / "bin/aitk"), "lane-yield"]
+            # Run the module through this interpreter: a pinned PATH would pick the
+            # system python3 on macOS, which bin/aitk rightly refuses.
+            base = [sys.executable, "-m", "aitk.cli", "--root", str(ROOT), "lane-yield"]
             env = {"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"}
             as_json = subprocess.run(base + ["--json"], cwd=cwd, text=True, capture_output=True, check=False, env=env)
             self.assertEqual(0, as_json.returncode, as_json.stderr)
