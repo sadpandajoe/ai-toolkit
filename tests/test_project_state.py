@@ -156,16 +156,22 @@ class SnapshotLifecycleTests(unittest.TestCase):
         passed = record_gate(self.path, "verification", "PASS", "implementation")
         self.assertEqual("PASS", passed.snapshot["gate_status"])
         self.assertEqual({}, passed.snapshot["escalations"])
+        # Every outcome lands in the per-gate record the checkpoint runtime
+        # reads, scoped to the phase and tracking the unit.
+        self.assertEqual(
+            {
+                "classification": {"status": "PASS", "phase": "intake", "units": {}},
+                "verification": {"status": "PASS", "phase": "intake", "units": {"implementation": "PASS"}},
+            },
+            passed.snapshot["gates"],
+        )
         advanced = advance_phase(self.path, "review")
         self.assertEqual(("review", "PENDING"), (advanced.snapshot["current_phase"], advanced.snapshot["gate_status"]))
+        # Advancing clears the phase-scoped gates: the next phase earns its own.
+        self.assertEqual({"classification"}, set(advanced.snapshot["gates"]))
         # PENDING is not a pass: a phase whose gate was never recorded cannot be left.
         with self.assertRaisesRegex(ProjectStateError, "is PENDING; record a PASS"):
             advance_phase(self.path, "done")
-        # Every outcome lands in the per-gate record the checkpoint runtime reads.
-        self.assertEqual(
-            {"classification": "PASS", "verification": "PASS"},
-            show(self.path).snapshot["gates"],
-        )
 
     def test_same_failure_twice_escalates_even_with_budget_left(self) -> None:
         initialize(self.path, "fix-bug", "STANDARD", "M")
@@ -188,7 +194,8 @@ class SnapshotLifecycleTests(unittest.TestCase):
         record_gate(self.path, "verification", "RETRY", "fix")
         repeated = record_gate(self.path, "verification", "RETRY", "fix", same_failure=True)
         self.assertEqual(("ESCALATE", {}, {"fix": 2}), (repeated.snapshot["gate_status"], repeated.snapshot["attempts"], repeated.snapshot["escalations"]))
-        self.assertEqual("ESCALATE", repeated.snapshot["gates"]["verification"])
+        self.assertEqual("ESCALATE", repeated.snapshot["gates"]["verification"]["status"])
+        self.assertEqual({"fix": "ESCALATE"}, repeated.snapshot["gates"]["verification"]["units"])
 
     def test_rca_ladder_is_recordable_on_one_unit_and_ends_in_user_decision(self) -> None:
         """Parent retry, specialist REVISE, deep-rca, then the user: one unit."""
@@ -243,7 +250,38 @@ class SnapshotLifecycleTests(unittest.TestCase):
         del payload["gates"]
         self.path.write_text(content.replace(body, json.dumps(payload, indent=2, sort_keys=True)))
         self.assertEqual({}, show(self.path).snapshot["gates"])
-        self.assertEqual({"review": "PASS"}, record_gate(self.path, "review", "PASS").snapshot["gates"])
+        self.assertEqual(
+            {"review": {"status": "PASS", "phase": "intake", "units": {}}},
+            record_gate(self.path, "review", "PASS").snapshot["gates"],
+        )
+
+    def test_gate_record_aggregates_units_and_a_gate_wide_pass_clears_them(self) -> None:
+        initialize(self.path, "create-feature", "COMPLEX", "L", "phased", phase="implement")
+        record_gate(self.path, "review", "RETRY", "slice-2")
+        one = record_gate(self.path, "review", "PASS", "slice-1")
+        # The latest outcome is PASS but slice two is still open, so the
+        # aggregate is not.
+        self.assertEqual(
+            {"status": "RETRY", "phase": "implement", "units": {"slice-2": "RETRY", "slice-1": "PASS"}},
+            one.snapshot["gates"]["review"],
+        )
+        two = record_gate(self.path, "review", "PASS", "slice-2")
+        self.assertEqual("PASS", two.snapshot["gates"]["review"]["status"])
+        record_gate(self.path, "verification", "RETRY", "slice-1")
+        whole = record_gate(self.path, "verification", "PASS")
+        self.assertEqual(
+            {"status": "PASS", "phase": "implement", "units": {}},
+            whole.snapshot["gates"]["verification"],
+        )
+        # A stale record from another phase is replaced, not merged.
+        payload = whole.snapshot["gates"]
+        self.assertEqual("implement", payload["review"]["phase"])
+        advance_phase(self.path, "verify")
+        fresh = record_gate(self.path, "review", "PASS", "integrated")
+        self.assertEqual(
+            {"status": "PASS", "phase": "verify", "units": {"integrated": "PASS"}},
+            fresh.snapshot["gates"]["review"],
+        )
 
     def test_snapshot_without_escalations_key_reads_as_no_escalations(self) -> None:
         initialize(self.path, "fix-bug", "STANDARD", "M")

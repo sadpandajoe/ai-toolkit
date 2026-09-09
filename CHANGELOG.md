@@ -105,10 +105,14 @@
   `rules/scoring.md`, and the manual context-clear dependency; fresh workers
   are the phase boundary and auto-compaction protects the parent.
 - Two records, one truth is enforced: the snapshot keeps a per-gate record
-  (`gates`) and `aitk checkpoint reserve` refuses an effect the contract gates
-  on `verification` or `review` unless that gate is `PASS` in the snapshot of
-  the same `PROJECT.md`; no snapshot or an unreadable one fails closed.
-  Snapshot writes are serialized by a lock; `advance` requires a recorded
+  (`gates`, one `{status, phase, units}` entry per gate) and `aitk checkpoint
+  reserve` refuses an effect the contract gates on `verification` or `review`
+  unless that gate is `PASS` in the snapshot of the same `PROJECT.md`, recorded
+  in the current phase, with no reasoning unit left open; `advance` clears the
+  phase-scoped gates; no snapshot or an unreadable one fails closed. Both
+  runtimes take one lock per artifact path (`aitk/artifact_lock.py`), so a
+  gate record and a reservation never overwrite each other and the gate check
+  is atomic with the reservation. `advance` requires a recorded
   `PASS` (`PENDING` no longer advances); re-running `init` with a different
   classification is refused instead of silently keeping the old one;
   `--same-failure` escalates at once when the reason already exhausted a

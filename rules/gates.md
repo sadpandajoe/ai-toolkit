@@ -144,9 +144,15 @@ in the snapshot first, and an effect that `interfaces/contracts.json` gates on
 gate `PASS`. `bin/aitk checkpoint reserve` enforces this: it reads the
 snapshot's per-gate record (`gates`) from the same `PROJECT.md` and refuses
 the reservation, with the gate and its recorded status named, when either
-required gate is not `PASS` or no snapshot exists. A workflow without a
-snapshot has no gate history, so every workflow that records a gate runs
-`project-state init` first, including standalone `review-plan` and `fix-ci`.
+required gate is not `PASS` or no snapshot exists. The record is scoped: each
+gate entry carries the phase it was recorded in and the latest outcome per
+reasoning unit, `advance` clears `verification` and `review`, and a `PASS`
+recorded in another phase or alongside an open `RETRY` on another unit does
+not count. Both runtimes rewrite the same file under one lock per path, so a
+gate record and a reservation cannot overwrite each other and the check inside
+`reserve` is atomic with its write. A workflow without a snapshot has no gate
+history, so every workflow that records a gate runs `project-state init`
+first, including standalone `review-plan` and `fix-ci`.
 
 ## Block Shape
 

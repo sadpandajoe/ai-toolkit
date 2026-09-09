@@ -20,17 +20,16 @@ phaseability judgement itself is model work recorded in ``phaseability``.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from dataclasses import dataclass
-import fcntl
 from functools import wraps
-import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import stat
 import tempfile
+
+from .artifact_lock import artifact_lock
 
 
 BEGIN = "<!-- aitk-project-state:v2 -->"
@@ -81,10 +80,17 @@ SNAPSHOT_KEYS = {
 }
 # Snapshots written before the escalation ladder and the per-gate record
 # existed lack these keys; they read as empty instead of failing validation.
-# ``gates`` is the last recorded status per gate name. The checkpoint runtime
-# reads it before reserving an effect the contract gates on verification or
-# review, which is what makes "two records, one truth" a machine invariant.
+# ``gates`` maps a gate name to ``{"status", "phase", "units"}``: the aggregate
+# outcome, the phase it was recorded in, and the latest outcome per reasoning
+# unit. The checkpoint runtime reads it before reserving an effect the contract
+# gates on verification or review, which is what makes "two records, one
+# truth" a machine invariant. A record is scoped to its phase: ``advance``
+# clears the phase-scoped gates, and a record from another phase never
+# satisfies a reservation.
 OPTIONAL_SNAPSHOT_KEYS = {"escalations": dict, "gates": dict}
+# Gates whose outcome belongs to the phase that recorded it. A per-unit review
+# PASS on slice one must not satisfy the integrated review the next phase runs.
+PHASE_SCOPED_GATES = ("verification", "review")
 PHASE_KEYS = {"name", "complexity", "size", "status"}
 # `tree` is the commit or tree SHA the phase ended on. It is the next phase's
 # review base, so it is recorded as data, never remembered.
@@ -195,43 +201,51 @@ def _fsync_dir(path: Path) -> None:
         os.close(descriptor)
 
 
-@contextmanager
-def _snapshot_lock(path: Path):
-    """Serialize snapshot writers on one PROJECT.md, like the checkpoint block.
+def _valid_gate_record(value: object) -> bool:
+    if not isinstance(value, dict) or set(value) != {"status", "phase", "units"}:
+        return False
+    if value["status"] not in GATE_STATUSES or value["status"] == "PENDING":
+        return False
+    if TOKEN.fullmatch(str(value["phase"])) is None:
+        return False
+    units = value["units"]
+    return isinstance(units, dict) and all(
+        TOKEN.fullmatch(str(unit)) is not None and status in GATE_STATUSES and status != "PENDING"
+        for unit, status in units.items()
+    )
 
-    Two lanes recording gates at the same moment would otherwise read the same
-    snapshot and the second write would drop the first's outcome.
+
+def gate_blockers(snapshot: dict[str, object], gates: list[str] | tuple[str, ...]) -> list[str]:
+    """Name what stops each gate from counting as PASS for the current phase.
+
+    Empty means every named gate is PASS: recorded in the current phase, with
+    no reasoning unit left at a non-PASS outcome. The checkpoint runtime turns
+    the list into its refusal message.
     """
-    lock_root = Path(tempfile.gettempdir()) / f"ai-toolkit-project-state-locks-{os.getuid()}"
-    lock_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    metadata = lock_root.lstat()
-    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid() or lock_root.is_symlink():
-        raise ProjectStateError("project state lock directory is unsafe")
-    os.chmod(lock_root, 0o700)
-    identity = hashlib.sha256(str(path).encode()).hexdigest()
-    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(lock_root / f"{identity}.lock", flags, 0o600)
-    try:
-        lock_metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(lock_metadata.st_mode)
-            or lock_metadata.st_uid != os.getuid()
-            or lock_metadata.st_nlink != 1
-        ):
-            raise ProjectStateError("project state lock file is unsafe")
-        os.fchmod(descriptor, 0o600)
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
-        yield
-    finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
+    phase = snapshot["current_phase"]
+    recorded = snapshot["gates"]
+    blockers: list[str] = []
+    for gate in gates:
+        entry = recorded.get(gate)
+        if entry is None:
+            blockers.append(f"{gate}=unrecorded")
+        elif entry["phase"] != phase:
+            blockers.append(f"{gate}={entry['status']} recorded in phase {entry['phase']}, not {phase}")
+        elif entry["status"] != "PASS":
+            units = [unit for unit, status in entry["units"].items() if status != "PASS"]
+            where = f" (unit {', '.join(sorted(units))})" if units else ""
+            blockers.append(f"{gate}={entry['status']}{where}")
+    return blockers
 
 
 def _serialized(function):
+    """Hold the artifact lock shared with the checkpoint runtime; see
+    ``aitk.artifact_lock`` for why both blocks lock the same identity."""
+
     @wraps(function)
     def wrapped(path: Path, *args, **kwargs):
         _reject_unsafe_path(path)
-        with _snapshot_lock(path):
+        with artifact_lock(path, ProjectStateError):
             return function(path, *args, **kwargs)
 
     return wrapped
@@ -342,10 +356,12 @@ def validate_snapshot(payload: object) -> dict[str, object]:
         raise ProjectStateError("attempts must map units to counts within budget")
     gates = result["gates"]
     if not isinstance(gates, dict) or any(
-        TOKEN.fullmatch(str(key)) is None or value not in GATE_STATUSES or value == "PENDING"
+        TOKEN.fullmatch(str(key)) is None or not _valid_gate_record(value)
         for key, value in gates.items()
     ):
-        raise ProjectStateError("gates must map gate names to recorded outcomes")
+        raise ProjectStateError(
+            "gates must map gate names to {status, phase, units} records"
+        )
     escalations = result["escalations"]
     if not isinstance(escalations, dict) or any(
         TOKEN.fullmatch(str(key)) is None
@@ -492,7 +508,7 @@ def initialize(
         "gate_status": "PASS",
         "attempts": {},
         "escalations": {},
-        "gates": {"classification": "PASS"},
+        "gates": {"classification": {"status": "PASS", "phase": phase, "units": {}}},
         "phases": [],
     }
     return _write(path, content, before, snapshot)
@@ -566,8 +582,14 @@ def record_gate(
     once instead of earning that owner a retry. Within one owner the budget of
     two already escalates the second attempt.
 
-    Every outcome is also written to ``gates[gate]``, the per-gate record the
-    checkpoint runtime reads before reserving a gated effect.
+    Every outcome is also written to ``gates[gate]`` as ``{status, phase,
+    units}``: the record the checkpoint runtime reads before reserving a gated
+    effect. The record is scoped to the current phase (a record from an
+    earlier phase is replaced, not merged) and tracks the latest outcome per
+    reasoning unit, so a ``PASS`` on slice one cannot hide a ``RETRY`` on slice
+    two: the aggregate ``status`` is ``PASS`` only when the latest outcome and
+    every unit's latest outcome are ``PASS``. A ``PASS`` recorded without a
+    unit is gate-wide and clears the unit outcomes.
     """
     content, before = _read(path)
     if before is None:
@@ -604,10 +626,31 @@ def record_gate(
     after["gate_status"] = effective
     after["attempts"] = attempts
     after["escalations"] = escalations
-    gates = dict(before["gates"])
-    gates[after["current_gate"]] = effective
-    after["gates"] = gates
+    after["gates"] = _record_gate_outcome(
+        before["gates"], after["current_gate"], before["current_phase"], effective, unit
+    )
     return _write(path, content, before, after)
+
+
+def _record_gate_outcome(
+    gates: dict[str, object], gate: str, phase: str, effective: str, unit: str | None
+) -> dict[str, object]:
+    updated = dict(gates)
+    previous = updated.get(gate)
+    if isinstance(previous, dict) and previous["phase"] == phase:
+        units = dict(previous["units"])
+    else:
+        units = {}
+    if unit is None and effective == "PASS":
+        units = {}
+    elif unit is not None:
+        units[_validate_token(unit, "unit")] = effective
+    else:
+        units[gate] = effective
+    outstanding = [status for status in units.values() if status != "PASS"]
+    status = effective if effective != "PASS" else (outstanding[0] if outstanding else "PASS")
+    updated[gate] = {"status": status, "phase": phase, "units": units}
+    return updated
 
 
 @_serialized
@@ -629,6 +672,12 @@ def advance_phase(path: Path, phase: str) -> ProjectStateResult:
     after["current_phase"] = _validate_token(phase, "phase")
     after["current_gate"] = phase
     after["gate_status"] = "PENDING"
+    # A gate outcome belongs to the phase that recorded it. Clearing the
+    # phase-scoped gates here means the next phase's effects wait for that
+    # phase's own verification and review, never a stale PASS.
+    after["gates"] = {
+        name: record for name, record in before["gates"].items() if name not in PHASE_SCOPED_GATES
+    }
     return _write(path, content, before, after)
 
 
