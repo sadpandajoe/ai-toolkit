@@ -8,8 +8,8 @@ the safety gates, and replaces what runs underneath them.
 ### What changes for you
 
 - Run the parent session on the workhorse family: `/model sonnet` on Claude
-  Code (not `opusplan`; the planner agent runs Fable, the parent does not), Sol
-  on Codex. Fable plans only COMPLEX work; Sol or Opus review independently;
+  Code (not `opusplan`, which would put Opus in the parent for every plan),
+  Sol on Codex. Fable plans only COMPLEX work; Sol or Opus review independently;
   Fable and Astra are the read-only deep advisors, one per provider; Astra
   needs Codex CLI 0.153.0 or newer.
 - Nothing asks you to clear context. Fresh workers are the phase boundary;

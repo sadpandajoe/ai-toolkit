@@ -45,7 +45,7 @@ class RoutingPolicyTests(RoutingTestCase):
                 )
                 self.assertEqual(expected, (route.family, route.effort, control))
 
-    def test_sonnet_implements_and_fable_only_plans(self) -> None:
+    def test_sonnet_implements_and_fable_plans_only_complex(self) -> None:
         with self.assertRaisesRegex(ModelRouteError, "unknown or nonspawnable"):
             resolve_route(ROOT, "frontier-implementation", "claude")
         implementation = resolve_route(ROOT, "implementation", "claude")

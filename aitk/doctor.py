@@ -68,7 +68,7 @@ PROVIDER_PATTERNS = (
         "provider lifecycle command",
         re.compile(r"/(?:clear|compact|schedule|loop|goal)\b"),
     ),
-    ("Claude model tier", re.compile(r"\bmodel:\s*(?:haiku|sonnet|opus)\b", re.I)),
+    ("Claude model tier", re.compile(r"\bmodel:\s*(?:haiku|sonnet|opus|fable)\b", re.I)),
     ("Claude skill directory", re.compile(r"\bCLAUDE_SKILL_DIR\b")),
     ("Claude plugin cache", re.compile(r"\.claude/plugins/cache/")),
 )

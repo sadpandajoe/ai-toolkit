@@ -10,7 +10,8 @@ durable data rather than from memory.
 Two classification axes are orthogonal on purpose:
 
 - ``complexity`` answers "how hard or risky is the reasoning?" and chooses the
-  reasoning tier (Sonnet alone, or Opus/Sol specialists).
+  reasoning tier (Sonnet alone, or the routed specialists: the Fable
+  planner, Opus or Sol judgment, Astra or Fable on the deep routes).
 - ``size`` answers "how much implementation surface is there?" and, together
   with a phaseability judgement, derives ``execution_shape``.
 

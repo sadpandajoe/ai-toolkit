@@ -24,8 +24,9 @@ provider syntax.
   auto-compaction protects the parent, `/clear` is optional user hygiene.
   Recommended settings: `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`, a lower
   `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` if the parent grows quickly, and the
-  `sonnet` model alias for the parent session (not `opusplan`: the planner
-  agent, not the parent, runs Fable). Subagents spend the same limit as the
+  `sonnet` model alias for the parent session (not `opusplan`, which would
+  put Opus in the parent for every plan; the planner agent runs Fable only
+  for COMPLEX work). Subagents spend the same limit as the
   parent; the Codex review lane does not, so prefer the toolkit's `review-code`
   over general multi-agent review commands when quota is tight.
 - `recurrence`: Claude Code's recurring workflow facility with explicit stop

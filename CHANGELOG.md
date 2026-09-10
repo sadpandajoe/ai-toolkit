@@ -39,7 +39,7 @@
   longer reports Codex runs as unpriced.
 - Fable is the Claude planner: the `planning` route and the `aitk-planner`
   agent run Fable at `high` for COMPLEX decompositions and phase plans, while
-  Opus keeps `review`, `rca`, and the finding verifier so Fable stays a
+  Opus keeps the Claude side of `review` and `rca` so Fable stays a
   distinct escalation rung above them. A COMPLEX plan now spends Fable quota
   from a Claude parent; STANDARD work is still planned inline by Sonnet.
 - GPT-6 Astra is the Codex deep tier: `deep-review` and `deep-rca` run on
