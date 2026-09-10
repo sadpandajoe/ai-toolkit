@@ -28,7 +28,7 @@ You: "Fix this bug" / "Add X" / "Review this branch and fix anything important"
   → the goal loop runs bounded capabilities, each returning a compact handoff
   → every gate answers PASS | RETRY | ESCALATE | RECLASSIFY | USER_DECISION | BLOCKED
     (one retry per owner, a bounded escalation ladder, STRONG verification before any push)
-  → specialists (Opus planner, Sol reviewer or RCA) enter only where classification says so
+  → specialists (Fable planner, Sol reviewer or RCA) enter only where classification says so
   → PROJECT.md checkpoints each phase; fresh workers are the context boundary
 ```
 
@@ -41,7 +41,7 @@ blocked environment, or a publish, destructive, or production authorization.
 |---|---|---|---|---|
 | Orchestrator (parent session) | Sonnet | Sol | high | Always: classification, goal loop, TRIVIAL and STANDARD work |
 | `implementation` | Sonnet | Sol | high | Substantial edits and tests from an accepted artifact |
-| `planning` | Opus | Sol | high | COMPLEX decomposition or a COMPLEX phase plan, read-only |
+| `planning` | Fable | Sol | high | COMPLEX decomposition or a COMPLEX phase plan, read-only |
 | `review` | Opus | Sol | high | The one independent code, plan, or PR review, preferring the other provider |
 | `deep-review` | Fable | Astra | xhigh | Adversarial, architecture, or security lens on flagged risk; other provider first |
 | `rca` | Opus | Sol | high | Independent RCA validation when the parent's hypothesis is uncertain |
@@ -61,9 +61,9 @@ requires a manual clear.
 
 Quota: every subagent spends the limit of the provider it runs on. The
 independent review lane and the deep lenses run on Codex (Sol, then Astra for
-the deep routes) from a Claude parent and spend no Claude quota; the Opus
-planner, the second-family review lane on COMPLEX or CORE diffs, and the Fable
-second vote do. Astra needs Codex CLI 0.153.0 or newer. Use the toolkit's `review-code` workflow rather
+the deep routes) from a Claude parent and spend no Claude quota; the Fable
+planner on COMPLEX work, the Opus second-family review lane on COMPLEX or CORE
+diffs, and the Fable second vote do. Astra needs Codex CLI 0.153.0 or newer. Use the toolkit's `review-code` workflow rather
 than a general-purpose multi-agent review command, keep the parent on Sonnet so
 any agent that inherits the parent model inherits Sonnet, and queue sessions
 instead of running several in parallel when the limit is tight.
@@ -87,7 +87,7 @@ bin/aitk doctor --installed --strict
 | `${CODEX_HOME:-~/.codex}/AGENTS.md` | Codex personal instructions with the same managed block |
 | `~/.claude/skills/<skill>` | Per-skill Claude links for public skills |
 | `~/.agents/skills/<skill>` | Cross-provider Agent Skill links used by Codex |
-| `~/.claude/agents/aitk-*.md` | Native Claude agents: planner (Opus), implementer, debugger, tester (Sonnet), reviewer fallback (Opus) |
+| `~/.claude/agents/aitk-*.md` | Native Claude agents: planner (Fable), implementer, debugger, tester (Sonnet), reviewer fallback (Opus) |
 | `${CODEX_HOME:-~/.codex}/agents/aitk-*.toml` | Native Codex agents with pinned effort and sandbox |
 | `~/.ai-toolkit/install-state.json` | Mode-0600 ownership ledger and one-level rollback record |
 

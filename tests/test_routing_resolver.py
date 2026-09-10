@@ -56,7 +56,7 @@ class RoutingResolverTests(RoutingTestCase):
         planner = resolve_route(
             ROOT, "planning", "claude", boundary="workflows.create-feature-planning"
         )
-        self.assertEqual("opus", planner.family)
+        self.assertEqual("fable", planner.family)
         self.assertIn("skills/planning/SKILL.md", planner.required_contracts)
 
     def test_deep_lens_route_boundaries_enforce_tier(self) -> None:

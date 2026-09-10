@@ -76,7 +76,7 @@
           "sandbox": "read-only"
         },
         "claude": {
-          "model": "opus",
+          "model": "fable",
           "permission_mode": "plan",
           "disallowed_tools": [
             "Write",

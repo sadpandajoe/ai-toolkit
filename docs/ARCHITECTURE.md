@@ -16,7 +16,7 @@ the control plane in the cheapest capable model.
    the shared verify, fix, recheck loop every goal workflow chains.
 3. `agents/` holds the worker roster. `agents/claude/*.md` and
    `agents/codex/*.toml` are native subagent definitions the installer links
-   into the user's provider directories: planner (Opus, read-only),
+   into the user's provider directories: planner (Fable, read-only),
    implementer, debugger, tester (Sonnet), and a same-provider reviewer
    fallback. Each provider has a workhorse family and a deep family (Sonnet and
    Opus with Fable; Sol with Astra); deep routes run only on the deep family. `agents/specialists/*.md` are provider-neutral contracts

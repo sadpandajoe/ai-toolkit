@@ -11,7 +11,7 @@ and launches specialists with `<toolkit-root>/bin/aitk model-run`.
 |---|---|---|---|---|
 | Orchestrator (parent session) | Sonnet | Sol | high | Always. Classifies, runs the goal loop, does TRIVIAL and STANDARD work |
 | `implementation` | Sonnet | Sol | high | Substantial edits and tests, from an accepted artifact |
-| `planning` | Opus | Sol | high | COMPLEX architecture decomposition or a COMPLEX phase plan, read-only |
+| `planning` | Fable | Sol | high | COMPLEX architecture decomposition or a COMPLEX phase plan, read-only |
 | `review` | Opus | Sol | high | The one independent code, plan, or PR review |
 | `deep-review` | Fable | Astra | xhigh | Adversarial, architecture, or security lens on flagged risk; exceptional escalation |
 | `rca` | Opus | Sol | high | Independent RCA validation when the parent's hypothesis is uncertain |
@@ -23,7 +23,10 @@ and launches specialists with `<toolkit-root>/bin/aitk model-run`.
 - Prefer the other provider for independent review and validation: a Claude
   parent asks Codex Sol, a Codex parent asks Claude Opus. Same-provider review
   through the toolkit's reviewer agent is the fallback and is disclosed as such.
-- Opus plans only COMPLEX work. Sonnet plans STANDARD work inline.
+- Fable plans only COMPLEX work. Sonnet plans STANDARD work inline. Opus stays
+  the Claude judgment tier for review, verification, and RCA, so Fable remains
+  a distinct escalation rung above them; a COMPLEX plan spends Fable quota
+  from a Claude parent.
 - Fable and Astra are the read-only deep advisors, one per provider, on the
   deep routes. Neither implements. Deep lenses follow the same other-provider
   preference as review: a Claude parent runs them on Astra first, and Fable is

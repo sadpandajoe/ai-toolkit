@@ -28,7 +28,7 @@ class RoutingPolicyTests(RoutingTestCase):
         cases = {
             ("implementation", "codex"): ("sol", "high", "workspace-write"),
             ("implementation", "claude"): ("sonnet", "high", "acceptEdits"),
-            ("planning", "claude"): ("opus", "high", "plan"),
+            ("planning", "claude"): ("fable", "high", "plan"),
             ("planning", "codex"): ("sol", "high", "read-only"),
             ("review", "claude"): ("opus", "high", "plan"),
             ("deep-review", "claude"): ("fable", "xhigh", "plan"),
@@ -45,7 +45,7 @@ class RoutingPolicyTests(RoutingTestCase):
                 )
                 self.assertEqual(expected, (route.family, route.effort, control))
 
-    def test_sonnet_implements_and_opus_only_plans(self) -> None:
+    def test_sonnet_implements_and_fable_only_plans(self) -> None:
         with self.assertRaisesRegex(ModelRouteError, "unknown or nonspawnable"):
             resolve_route(ROOT, "frontier-implementation", "claude")
         implementation = resolve_route(ROOT, "implementation", "claude")
@@ -53,11 +53,15 @@ class RoutingPolicyTests(RoutingTestCase):
             ("sonnet", "high"), (implementation.family, implementation.effort)
         )
         planning = resolve_route(ROOT, "planning", "claude")
-        self.assertEqual("opus", planning.family)
+        self.assertEqual(("fable", "high", "plan"), (planning.family, planning.effort, planning.controls["permission_mode"]))
         self.assertEqual(
             ["Write", "Edit", "NotebookEdit"], planning.controls["disallowed_tools"]
         )
-        # Fable stays a read-only deep advisor on every automatic route.
+        # Opus is the standard judgment tier, so Fable stays a distinct
+        # escalation rung above review and RCA.
+        for name in ("review", "rca"):
+            self.assertEqual("opus", resolve_route(ROOT, name, "claude").family)
+        # Fable is read-only on every automatic route and deep only on the deep ones.
         for name in ("deep-review", "deep-rca"):
             route = resolve_route(ROOT, name, "claude")
             self.assertEqual(("fable", "xhigh", "plan"), (route.family, route.effort, route.controls["permission_mode"]))
@@ -137,7 +141,7 @@ class RoutingPolicyTests(RoutingTestCase):
             # The agent roster is authored content too: an agent file that pins a
             # dated selector would drift the moment the catalog is promoted.
             (root / "rules/leaked-selector.md").unlink()
-            claude_selector = MODEL_CATALOG["claude"]["models"]["opus"]["selector"]
+            claude_selector = MODEL_CATALOG["claude"]["models"]["fable"]["selector"]
             (root / "agents/claude/aitk-planner.md").write_text(
                 f"---\nname: aitk-planner\ndescription: x\nmodel: {claude_selector}\n---\n"
             )

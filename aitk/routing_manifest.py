@@ -549,14 +549,16 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "acceptEdits",
             (),
         ),
-        # Opus plans only COMPLEX work, read-only; the parent writes PLAN.md.
+        # Fable plans only COMPLEX work, read-only, at the standard effort; the
+        # parent writes PLAN.md. Opus stays the Claude judgment tier for review
+        # and RCA so Fable remains a distinct escalation rung above them.
         "planning": (
             "standard",
             "planning",
             False,
             "sol",
             "read-only",
-            "opus",
+            "fable",
             "plan",
             ("Write", "Edit", "NotebookEdit"),
         ),

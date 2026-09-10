@@ -5,10 +5,10 @@ operations. Shared workflows own behavior and gates; these bindings only select
 provider syntax.
 
 - `planning_boundary`: read-only exploration in the parent. For COMPLEX work
-  the plan itself comes from the `aitk-planner` agent (Opus) via
+  the plan itself comes from the `aitk-planner` agent (Fable) via
   `fresh_subagent`; the parent writes `PLAN.md`.
 - `fresh_subagent`: the Agent tool with one of the toolkit's installed agents
-  in `~/.claude/agents/`: `aitk-planner` (Opus, plan-only), `aitk-implementer`
+  in `~/.claude/agents/`: `aitk-planner` (Fable, plan-only), `aitk-implementer`
   (Sonnet, edits and runs tests), `aitk-debugger` (Sonnet, evidence-first
   investigation), `aitk-tester` (Sonnet, test authoring), `aitk-reviewer`
   (Opus, read-only cold reviewer: the second-family lane on COMPLEX and CORE
@@ -25,7 +25,7 @@ provider syntax.
   Recommended settings: `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`, a lower
   `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` if the parent grows quickly, and the
   `sonnet` model alias for the parent session (not `opusplan`: the planner
-  agent, not the parent, runs Opus). Subagents spend the same limit as the
+  agent, not the parent, runs Fable). Subagents spend the same limit as the
   parent; the Codex review lane does not, so prefer the toolkit's `review-code`
   over general multi-agent review commands when quota is tight.
 - `recurrence`: Claude Code's recurring workflow facility with explicit stop

@@ -1,7 +1,7 @@
 ---
 name: aitk-planner
 description: Plan-only specialist for COMPLEX work. Produces an architecture decomposition or one just-in-time phase plan from a bounded brief and returns it compactly. Read-only; never implements or edits PROJECT.md. Use only when the goal workflow classified the work COMPLEX.
-model: opus
+model: fable
 effort: high
 permissionMode: plan
 tools: Read, Grep, Glob

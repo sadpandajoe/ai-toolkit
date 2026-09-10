@@ -465,7 +465,7 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual({"codex": "sol", "claude": "sonnet"}, payload["policy"]["orchestrator"])
         routes = {route["name"]: route for route in payload["routes"]}
         self.assertEqual("sonnet", routes["implementation"]["providers"]["claude"]["model"])
-        self.assertEqual("opus", routes["planning"]["providers"]["claude"]["model"])
+        self.assertEqual("fable", routes["planning"]["providers"]["claude"]["model"])
         self.assertEqual("plan", routes["planning"]["providers"]["claude"]["permission_mode"])
         self.assertEqual("opus", routes["review"]["providers"]["claude"]["model"])
         self.assertEqual("fable", routes["deep-review"]["providers"]["claude"]["model"])
@@ -477,7 +477,7 @@ class ConformanceTests(unittest.TestCase):
             self.assertEqual("sol", routes[name]["providers"]["codex"]["model"])
         self.assertNotIn("ensembles", payload)
         rule = (ROOT / "rules/model-assignment.md").read_text()
-        self.assertIn("Opus plans only COMPLEX work", rule)
+        self.assertIn("Fable plans only COMPLEX work", rule)
         self.assertIn("Prefer the other provider for independent review", rule)
 
     def test_specialist_contracts_are_inlined_for_their_lanes(self) -> None:

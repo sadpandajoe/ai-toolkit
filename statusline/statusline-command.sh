@@ -269,7 +269,7 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
                 model_lc=$(printf "%s" "$model" | tr '[:upper:]' '[:lower:]')
                 case "$model_lc" in
                     *haiku*|*mini*)             agents_light=$((agents_light + 1)) ;;
-                    *opus*|gpt-*|o1*|o3*|o4*)   agents_heavy=$((agents_heavy + 1)) ;;
+                    *opus*|*fable*|gpt-*|o1*|o3*|o4*)   agents_heavy=$((agents_heavy + 1)) ;;
                     *sonnet*|codex-*|*codex*)   agents_standard=$((agents_standard + 1)) ;;
                     *)                          agents_unknown_tier=$((agents_unknown_tier + 1)) ;;
                 esac
