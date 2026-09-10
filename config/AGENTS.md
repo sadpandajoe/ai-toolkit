@@ -6,8 +6,17 @@ AI Toolkit is installed at `{{TOOLKIT_DIR}}`.
   `{{TOOLKIT_DIR}}/rules/resource-management.md`, and
   `{{TOOLKIT_DIR}}/rules/context-management.md`. These are the canonical
   always-on rules declared by `interfaces/guidance.json`.
-- Use the `$workflows` skill for end-to-end feature, bug, CI, testing, QA, review, PR, checkpoint, and maintenance work.
-- Treat `skills/` as canonical behavior. Provider adapters may translate syntax and tool names but must preserve safety, authorization, state, verification, and reporting semantics.
-- Keep read-only answers read-only. For mutating or long-running workflows, use the durable state file required by the selected workflow.
-- Before publishing or destructive actions, obey the workflow's explicit authorization boundary and verification gate.
-- Resolve shared capability identifiers through `{{TOOLKIT_DIR}}/config/providers/codex.md`; read that binding before planning boundaries, delegation, worktrees, context resets, recurrence, or independent review.
+- Describe the outcome in plain language; the `$workflows` skill selects the
+  workflow, classifies complexity and size, persists the routing snapshot in
+  `PROJECT.md`, and drives the gates. Specialists (planner, RCA, independent
+  reviewer) run only where their reasoning is worth the cost.
+- Treat `skills/` as canonical behavior. Provider adapters translate syntax and
+  tool names but preserve safety, authorization, state, verification, and
+  reporting semantics.
+- Keep read-only answers read-only. For mutating or long-running workflows, use
+  the durable state the selected workflow declares.
+- Before publishing or destructive actions, obey the workflow's authorization
+  boundary and verification gate.
+- Resolve shared capability identifiers through
+  `{{TOOLKIT_DIR}}/config/providers/codex.md` before delegating, planning,
+  creating worktrees, scheduling, or requesting independent review.

@@ -250,7 +250,7 @@ def analyze(sessions):
                     f"All {format_cost(total_cost)} is on Opus. If 60% of subagent work "
                     f"moved to Sonnet, estimated savings: ~{format_cost(savings * 0.6)}/period."
                 ),
-                "action": "Apply model tiering per rules/orchestration.md — Sonnet for triage/review, Opus for hard planning only.",
+                "action": "Apply model tiering per rules/model-assignment.md — Sonnet orchestrates and implements, Opus reviews, Fable plans COMPLEX work only.",
             }
         )
 

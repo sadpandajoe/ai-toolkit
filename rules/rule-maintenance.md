@@ -1,24 +1,33 @@
 # Rule Maintenance
 
-Rules are living documents. Update them based on real-world usage:
+Rules are living documents driven by evidence, not by intuition mid-task.
+
+## Signal Source
+
+High-signal events go to the observation queue owned by the `reflection` skill
+(`.ai-toolkit/observations.jsonl`): a user correction, a skill misroute or
+manual override, a reclassification, the same gate failing twice, a specialist
+invalidating an RCA or plan assumption, a repeated manual workaround, a
+low-yield review lane. Periodic `reflect` review clusters them; a cluster is the
+evidence a rule change needs.
 
 ## When a rule is violated
-A rule that agents ignore is too weak. After observing a violation:
-- Strengthen the language (add NEVER lists, move critical instructions to top)
-- Add the failure pattern as a concrete example of what NOT to do
-- Consider whether the rule needs to load earlier or more prominently
+
+Strengthen the language, add the failure as a concrete negative example, and
+consider loading it earlier. Add the eval case that would have caught it.
 
 ## When a rule is stale
-Rules drift from reality as code, APIs, and processes change. When you notice a mismatch:
-- Update the rule to match current behavior
-- Remove conditions or thresholds that no longer apply
-- Flag the update in your summary so the user knows
+
+Update it to current behavior, remove dead thresholds, and say so in the summary.
 
 ## When a new pattern emerges
-Recurring workarounds or repeated feedback across conversations signal a missing rule. When you see a pattern:
-- Check if an existing rule covers it (update if partially covered)
-- Extract a new focused rule file if it's genuinely new
-- Keep it small — one concern per file, 20-40 lines
 
-## Scope
-Rule updates are limited to the `rules/` directory in this toolkit. Do not modify project-level provider guidance or vendor system behavior. Rule changes should be proposed to the user during the summary phase, not applied silently mid-workflow.
+Check existing rules for partial coverage first. A rule belongs in `rules/` only
+when it applies across skills; workflow sequences and domain methods belong in
+skills. Keep one concern per file, 20 to 40 lines, kebab-case names.
+
+## Promotion
+
+Rule and skill changes require human approval and ship with an eval candidate
+under `evals/`. Never mutate rules or skills automatically from observations.
+Scope is the toolkit's `rules/`; never edit a project's own guidance.

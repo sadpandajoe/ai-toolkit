@@ -5,7 +5,7 @@ The deterministic checkpoint API owns the machine block in
 human-readable phase below it:
 
 ```markdown
-- Phase: read-plan / detect-reviewers / review-iterations / cold-read / update / summarize
+- Phase: read-plan / choose-mode / validate / revise / record / summarize
 ```
 
-No additional Workflow fields. Reviewers selected, current scores, and revision count belong in `## Current Status`.
+No additional Workflow fields. The validator lane, its verdict, and the revision count belong in `## Current Status`.

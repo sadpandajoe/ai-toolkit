@@ -8,16 +8,17 @@ Filter `.ai-toolkit/metrics.jsonl` events to those relevant to this project (tim
 | Metric | Value |
 |--------|-------|
 | Total commands run | [N] |
-| Pass rate (clean/micro-fix) | [N%] |
-| Blocked/failed | [N] |
-| Average review rounds | [N.N] |
-| Complexity distribution | [N] trivial / [N] moderate / [N] standard |
-| Worker usage | [role/tier]: [N] |
+| Pass rate (`PASS`) | [N%] |
+| Escalated / user decisions / blocked | [N] / [N] / [N] |
+| Gate retries / escalations | [N] / [N] |
+| Complexity distribution | [N] trivial / [N] standard / [N] complex |
+| Review yield (accepted / raised per lane) | independent [N/N], second-family [N/N], deep lenses [N/N] |
+| Worker usage | [agent or route]: [N] |
 
 ### Command Breakdown
-| Command | Runs | Clean | Blocked |
-|---------|------|-------|---------|
-| [name] | [N] | [N] | [N] |
+| Command | Runs | PASS | ESCALATE | BLOCKED |
+|---------|------|------|----------|---------|
+| [name] | [N] | [N] | [N] | [N] |
 ```
 
 If no metrics file exists or no events found in range, emit `No metrics recorded for this project` and continue.

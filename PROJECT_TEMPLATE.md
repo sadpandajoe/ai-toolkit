@@ -29,6 +29,9 @@
 <!-- High-level testing approach: what types of tests, test boundaries, edge cases to consider -->
 <!-- NOT the implementation details - just the strategy -->
 
+## Routing Snapshot
+<!-- Managed by bin/aitk project-state; never hand-edit the machine block written below this comment -->
+
 ## Current Status
 <!-- What's done, in progress, not started, what's blocked -->
 **In Progress**:

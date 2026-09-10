@@ -160,7 +160,7 @@ Return the PR URL.
 
 ### 8. PROJECT.md Update (Hard Gate)
 
-Before emitting the chat summary, append a `## PR Created` entry to PROJECT.md so the project state reflects the new PR. Without this write, `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) immediately after `create-pr` loses the PR pointer and the next session has no record that the PR exists.
+Before emitting the chat summary, append a `## PR Created` entry to PROJECT.md so the project state reflects the new PR. Without this write, a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) immediately after `create-pr` loses the PR pointer and the next session has no record that the PR exists.
 
 ```markdown
 ## PR Created

@@ -111,10 +111,13 @@ class SafetyInvariantTests(unittest.TestCase):
         self.assertIn("--step", text)
 
     def test_review_requires_fresh_reviewer_and_consistent_core_routing(self) -> None:
-        code_quality = read("skills/review/references/code-quality.md")
+        local = read("skills/review/references/local-review.md")
         pr_review = read("skills/review/references/pr-review.md")
-        self.assertNotIn("Review your own fix", code_quality)
-        self.assertIn("fresh-context", code_quality)
+        reviewer = read("agents/specialists/reviewer.md")
+        self.assertIn("never review\ninline", local)
+        self.assertIn("Launch one fresh reviewer worker", local)
+        self.assertIn("Launch one fresh reviewer worker", pr_review)
+        self.assertIn("you never edit, run tests, or dispatch anything", reviewer)
         self.assertNotIn("TRIVIAL + CORE -> full review team", pr_review)
 
     def test_resource_policy_is_capacity_based_not_container_count_based(self) -> None:

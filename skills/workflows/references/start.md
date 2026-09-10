@@ -9,8 +9,8 @@ Use the repository-root [PROJECT_TEMPLATE.md](../../../PROJECT_TEMPLATE.md) when
 
 Effect: `local_mutation`.
 
-This command is the only supported entrypoint for resuming work after `context_reset`.
-It restores workflow state from PROJECT.md rather than relying on chat memory.
+This command is the only supported entrypoint for resuming work in a fresh session.
+It restores workflow state from PROJECT.md (routing snapshot plus checkpoint) rather than relying on chat memory.
 
 ## Steps
 
@@ -67,16 +67,21 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
      - Active plan: [PLAN.md or none]
      - Resume target: [saved item or iteration]
      ```
-   - **For STANDARD top-level commands, emit a Remaining Phase Plan block** showing what's left and where clears will fire. Derive it from the command's STANDARD happy path minus the phases already completed (use the saved Phase + Current Status `Done:` list). Example:
+   - **Read the routing snapshot** with `bin/aitk project-state show`. Resume at
+     its `current_phase` and `current_gate`. If the snapshot is missing or its
+     complexity vocabulary predates v2 (a legacy three-tier value, or no
+     snapshot at all), re-run the Complexity Gate before continuing and record it. For
+     MULTI_PHASE work, emit the remaining phase table:
 
      ```markdown
-     ### Remaining Phase Plan
-     Completed: plan ✓ → plan-review ✓
-     Ahead: implement-slice → [clear] → review-code → [clear] → feature-validation → summary
-     Next clear after: `## Slice 1 Complete` written to PROJECT.md.
+     ### Remaining Phases
+     Done: <phases marked done>
+     Active: <phase> (<complexity>/<size>)
+     Ahead: <pending phases>
+     Next gate: <gate> — <what PASS requires>
      ```
 
-     This makes the cadence visible after every resume, so the user knows when the next clear fires without needing to recall the original phase plan. Skip this block for MODERATE/TRIVIAL resumes — they don't have planned phase boundaries.
+     Skip this block for SINGLE_PHASE resumes.
    - **Defer loading PLAN.md.** Read PROJECT.md alone for orientation. Only load PLAN.md when the next phase actually requires it (entering review iterations or starting an implementation slice). This keeps context lean for resumes that are just status checks or fix-it work.
    - **Automatically resume the saved top-level workflow** from the checkpoint. Do not prompt the user.
    - The resumed command loads its own rules, skills, and supporting files on demand.
@@ -106,6 +111,7 @@ It restores workflow state from PROJECT.md rather than relying on chat memory.
    - Cherry-picking → `$cherry-pick`
    - Ready to open a PR → `create-pr`
    - Capturing a pattern or reviewing memories → `reflect`
+   - `.ai-toolkit/observations.jsonl` holds 10 or more unreviewed lines → `reflect observations`
    - Completed phases cluttering PROJECT.md → [`archive-project-file`](../../archive-project-file/SKILL.md)
    - Want to see all available workflows → `custom-skills-info`
 

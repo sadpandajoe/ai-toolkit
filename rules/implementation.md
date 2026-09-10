@@ -1,73 +1,46 @@
-# Implementation Principles
+# Implementation
 
 ## Golden Rules
-- [ ] **Understand codebase** before writing code
-- [ ] **Plan tests before implementation** — TDD (see Test-First Modes below)
-- [ ] **If test-first is blocked, record why** — do not silently skip the order
-- [ ] **Follow existing patterns** — consistency over creativity
-- [ ] **Update existing code** before creating new
-- [ ] **Commit working states** — safe rollback points
-- [ ] **NEVER use `git add -A` or `git add .`** — add only YOUR files
-- [ ] **Never rewrite git history** unless explicitly asked — no force push, no rebase of shared branches, no amending published commits
-- [ ] **Only amend HEAD** — if asked to amend, verify it's the most recent commit. Never amend older commits without explicit instruction.
-- [ ] **Be factual in PRs** — describe what changed and why, not how great the change is
+
+- Understand the surrounding code before writing; follow its patterns.
+- Implement the accepted artifact (plan slice, RCA, or approved comment), not a
+  wider idea of it. Out-of-scope needs go in the handoff as residual risk.
+- Regression evidence first: bugs get a RED/GREEN test, features get the
+  slice's acceptance tests as the spec. If a test cannot run here, write it and
+  record the gap; never silently switch to test-after.
+- Update existing code before creating new; smallest change that meets the exit
+  criteria.
+- Commit only working states, only with authorization, and never with
+  `git add -A` or `git add .`.
+- Never rewrite history unless explicitly asked: no force push, no rebase of
+  shared branches, no amending published commits; amend only HEAD.
+- PR descriptions are factual: what changed and why.
 
 ## Test-First Modes
 
-Two modes. Plans pick which mode applies, and `skills/implement-change/` executes accordingly. Both share "tests before implementation"; granularity and intent differ.
+**RED/GREEN per slice (bugs).** Write the failing regression test, run it and
+see it fail, make the minimum change, run it and see it pass. A test that passes
+before the fix does not capture the bug.
 
-### RED/GREEN per slice — for bug fixes
+**Test set as specification (features).** Write the slice's acceptance tests
+first as the spec, implement, then reconcile: fix the code when the code is
+wrong, fix the test and note why when the spec evolved.
 
-Write the failing regression test → run it and confirm it fails (**RED**) → implement the minimum code change → run again and confirm it passes (**GREEN**).
+## Worker Scope
 
-The cycle proves the test captures the bug. If the test passes before the fix, it does not capture the bug — rewrite it. If the test fails for a reason other than the bug, narrow it.
+A routed or native implementation worker receives one slice and returns the
+compact handoff in `rules/specialist-handoff.md`. It never commits, never edits
+`PROJECT.md` or `PLAN.md`, never widens scope, and stops with `blocked` after the
+same approach fails twice. The parent runs acceptance, owns review, and owns
+any authorized git action.
 
-### Test set as specification — for features
+## Standards
 
-Write the slice's full acceptance test set first. The test set encodes the specification you're committing to before implementation begins, so design choices don't get rationalized into the spec.
+Functions about 20 lines, files about 300, nesting two levels with early
+returns, descriptive names, explicit error handling.
 
-Then implement. Then run the test set and reconcile any failures:
+## Pre-Flight Before Any Commit
 
-- **Implementation wrong** → fix the code.
-- **Test assumed wrong** → update the test, and **note in the slice's notes (or PR) what changed and why** (the test is committing to a spec; if the spec evolved, that's a real decision).
-
-The full set up-front (vs. one-at-a-time RED/GREEN) is deliberate for features — it forces the spec to be visible before implementation lock-in.
-
-### When test-first is blocked
-
-Both modes default to writing the test first. When env, repro, or harness constraints make running the test impossible:
-
-- Write the test anyway (writing is separate from running)
-- Record the verification gap explicitly in the slice or PR
-- Do not silently fall back to "test alongside" or "test after" — record the reason
-
-## Code Standards
-
-- Functions: ≤20 lines (guideline)
-- Files: ≤300 lines
-- Nesting: ≤2 levels (use early returns)
-- Names: Descriptive > clever
-
-## Best Practices
-
-| Do | Don't |
-|----|-------|
-| Follow existing patterns | Create new patterns |
-| Early returns | Deep nesting |
-| Handle errors explicitly | Silent catches |
-| Small, focused commits | Large commits |
-| Add files individually | `git add -A` |
-| `fixup` + `rebase` for old commits | Amend non-HEAD commits |
-| Factual PR descriptions | Hyperbolic language |
-
-## Pre-Flight Checks
-
-**Before every commit**, verify:
-1. **Build passes**: `npm run build`, `tsc --noEmit`, or equivalent
-2. **Type-check passes**: if TypeScript/Flow/mypy is used
-3. **Linting passes**: `npm run lint`, `ruff check`, or equivalent
-4. **Formatting passes**: run the formatter in check mode (`ruff format --check`, `prettier --check`, `gofmt -l`) in addition to the linter — lint and format are separate passes and CI runs both. If the check reports diffs, apply the formatter and re-stage before committing.
-5. **Tests pass**: run at minimum the tests related to changed files
-6. **Pre-commit hooks**: let them run — do NOT use `--no-verify`
-
-**In worktrees**: dependencies and build outputs may not exist. Run `npm install` / rebuild before pre-flight checks.
+Build, typecheck, lint, formatter in check mode, tests for changed files, and
+pre-commit hooks (never `--no-verify`). In a worktree, install dependencies
+first.

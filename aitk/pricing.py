@@ -6,6 +6,41 @@ from datetime import datetime, timezone
 
 
 PRICING = {
+    # OpenAI selectors as Codex CLI names them. Cache-write is billed at 1.25x
+    # input; the usage records carry Anthropic-style cache keys, so the same
+    # four fields apply.
+    "gpt-6-astra": {
+        "input": 10.00,
+        "output": 50.00,
+        "cache_read": 1.00,
+        "cache_create": 12.50,
+    },
+    # Promotional through 2026-11-21 (see SOL_STANDARD_FROM below); the standard
+    # rate returns after that date.
+    "gpt-5.6-sol": {
+        "input": 4.00,
+        "output": 20.00,
+        "cache_read": 0.40,
+        "cache_create": 5.00,
+    },
+    "claude-fable-5-1": {
+        "input": 10.00,
+        "output": 50.00,
+        "cache_read": 0.25,
+        "cache_create": 12.50,
+    },
+    "claude-fable-5": {
+        "input": 10.00,
+        "output": 50.00,
+        "cache_read": 1.00,
+        "cache_create": 12.50,
+    },
+    "claude-opus-5": {
+        "input": 5.00,
+        "output": 25.00,
+        "cache_read": 0.50,
+        "cache_create": 6.25,
+    },
     "claude-opus-4-8": {
         "input": 5.00,
         "output": 25.00,
@@ -44,6 +79,16 @@ SONNET_5_STANDARD_PRICING = {
     "cache_create": 3.75,
 }
 SONNET_5_STANDARD_FROM = datetime(2026, 9, 1, tzinfo=timezone.utc)
+# The Sol promotional rate (20% off input, 33% off output) was announced as
+# lasting at least through 2026-11-21; records after that date bill at the
+# pre-promotion standard rate. Cached input is the usual 10% of input.
+SOL_STANDARD_PRICING = {
+    "input": 5.00,
+    "output": 30.00,
+    "cache_read": 0.50,
+    "cache_create": 6.25,
+}
+SOL_STANDARD_FROM = datetime(2026, 11, 22, tzinfo=timezone.utc)
 
 
 def parse_record_time(value: object) -> datetime | None:
@@ -65,14 +110,19 @@ def get_pricing(
     require_timestamp: bool = False,
 ) -> dict[str, float] | None:
     """Return pricing; promotional models use the record's absolute time."""
-    if model.startswith("claude-sonnet-5"):
-        when = parse_record_time(timestamp)
-        if when is None:
-            if require_timestamp:
-                return None
-            when = datetime.now(timezone.utc)
-        if when >= SONNET_5_STANDARD_FROM:
-            return SONNET_5_STANDARD_PRICING
+    promotions = (
+        ("claude-sonnet-5", SONNET_5_STANDARD_FROM, SONNET_5_STANDARD_PRICING),
+        ("gpt-5.6-sol", SOL_STANDARD_FROM, SOL_STANDARD_PRICING),
+    )
+    for prefix, standard_from, standard in promotions:
+        if model.startswith(prefix):
+            when = parse_record_time(timestamp)
+            if when is None:
+                if require_timestamp:
+                    return None
+                when = datetime.now(timezone.utc)
+            if when >= standard_from:
+                return standard
     if model in PRICING:
         return PRICING[model]
     for key in sorted(PRICING, key=len, reverse=True):

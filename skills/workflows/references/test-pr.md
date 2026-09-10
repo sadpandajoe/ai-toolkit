@@ -55,17 +55,17 @@ The main thread owns PR identity, app URL, scenario selection, evidence paths, p
 
 ## PROJECT.md Discipline
 
-**Every run** writes at least one entry to PROJECT.md before the chat summary, so `context_reset` or [`archive-project-file`](../../archive-project-file/SKILL.md) immediately after `test-pr` does not lose the QA record.
+**Every run** writes at least one entry to PROJECT.md before the chat summary, so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) immediately after `test-pr` does not lose the QA record.
 
-For STANDARD or expensive runs (CORE impact, broad scenario set, repeated re-validation), follow `rules/context-management.md` and write durable state to PROJECT.md at each phase boundary before checkpoint + context_reset:
+For STANDARD or expensive runs (CORE impact, broad scenario set, repeated re-validation), follow `rules/context-management.md` and write durable state to PROJECT.md at each phase boundary before any checkpoint:
 
 - After scenario selection: `## Test-PR Scenarios` (PR identity, app URL, impact tier, scenario list).
 - After execution: `## Test-PR Results` (per-scenario result, evidence paths, recording path).
 - After posting: `## Test-PR Posted` (Shortcut/PR comment link or "local only").
 
-These writes are **hard gates before any checkpoint + context_reset** on STANDARD/expensive runs.
+These writes are **hard gates before any checkpoint** on STANDARD/expensive runs.
 
-For TRIVIAL/MODERATE runs (including `--smoke`), a single `## Test-PR Results` entry at completion is the minimum:
+For TRIVIAL/STANDARD runs (including `--smoke`), a single `## Test-PR Results` entry at completion is the minimum:
 
 ```markdown
 ## Test-PR Results — PR #[number]

@@ -7,7 +7,7 @@ and PR identifier below it:
 **Single-PR mode**:
 
 ```markdown
-- Phase: gather / complexity-gate / understand-problem / detect-team / launch-review / pattern-analysis / scoring / gate / post / summarize
+- Phase: gather / classify / premise / independent-review / second-family / deep-lenses / validate / post / summarize
 - PR: <number> — <title>
 ```
 
@@ -18,4 +18,4 @@ and PR identifier below it:
 - Phase: gather-list / dispatch-reviews / collect-results / batch-summary
 ```
 
-Reviewer team, scores, recommendation, and post status (single-PR), or per-PR completion counts (batch) belong in `## Current Status`.
+Lanes run (with family and raised/accepted counts), validated findings, recommendation, and post status (single-PR), or per-PR completion counts (batch) belong in `## Current Status`.

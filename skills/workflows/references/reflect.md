@@ -19,6 +19,7 @@ reflect prune                    # Remove outdated or redundant memories
 reflect propose-rule             # Extract a recurring pattern into a draft rule
 reflect failure                  # Record a structured postmortem
 reflect promote <filename>       # Move a project memory to a global rule
+reflect observations             # Cluster the observation queue and propose rule or skill changes
 ```
 
 ## Route
@@ -34,6 +35,7 @@ Parse the first argument:
 | `propose-rule` | [skills/reflection/references/rule-promotion.md](../../reflection/references/rule-promotion.md) |
 | `failure` | [skills/reflection/references/failure-postmortem.md](../../reflection/references/failure-postmortem.md) |
 | `promote` | [skills/reflection/references/rule-promotion.md](../../reflection/references/rule-promotion.md) |
+| `observations` | [skills/reflection/references/observations.md](../../reflection/references/observations.md) (the *Review* section) |
 
 ## Contract
 
@@ -46,5 +48,6 @@ Parse the first argument:
 ## Notes
 
 - `reflect` is read-only for the codebase except for confirmed rule changes (single canonical gate: the rule-text confirmation in the Contract section).
-- When called from `start`, suggest `reflect review` if memories have not been reviewed in > 30 days.
+- When called from `start`, suggest `reflect review` if memories have not been reviewed in > 30 days, and `reflect observations` when `.ai-toolkit/observations.jsonl` holds 10 or more unreviewed lines (the Stop hook `hooks/observation-reminder.sh` prints the same reminder at the end of a turn).
+- `reflect observations` runs `bin/aitk lane-yield` first: a lane below its yield threshold is a demotion proposal with the numbers attached, not a hunch.
 - `reflect failure` is best used immediately after a failure while context is fresh.

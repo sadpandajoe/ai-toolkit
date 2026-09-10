@@ -10,7 +10,7 @@ restructuring that makes the change dramatically simpler. The two lenses are
 deliberately separate contracts: naming that sibling file here would pull its
 severity-graded findings rules into this lane's inline closure.
 
-Pinned to the `deep-review` route (see the review SKILL Invocation section) —
+Pinned to the `deep-review` route (boundary `review.code-judo` in `interfaces/model-routing.json`) —
 this is deliberately the deepest-reasoning tier because reframing an
 architecture requires holding an alternative design in view. This pass runs iff
 `classify-diff` reports `Code-judo lane: YES`; that file owns the trigger
@@ -27,7 +27,6 @@ silently downgrading the model.
 
 ## Required Context
 
-Read before starting: `rules/stop-rules.md`.
 Input: the diff (uncommitted, committed range, or PR) and, when available, the
 change title / commit subjects. This lens emits unscored **proposals**, not
 severity-tagged findings, so the toolkit grading contracts (code-review,
@@ -108,7 +107,7 @@ Effort / blast radius: [rough size of the restructure]
 Frame every proposal as a **recommendation requiring behavior-preserving
 verification**, never an assertion that the current code is wrong. If a proposal
 cannot be shown behavior-preserving from the diff alone, say so and name what
-would need to be checked. Apply the stop rules in `rules/stop-rules.md`.
+would need to be checked.
 
 ### Routed result mapping
 

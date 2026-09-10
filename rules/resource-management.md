@@ -1,35 +1,34 @@
-# Resource Management Principles
+# Resource Management
 
 ## Golden Rules
-- [ ] **Check resources before consuming them** — Docker, test workers, builds
-- [ ] **Fit work to measured capacity** — do not use container count as a proxy
-- [ ] **Scale workers to available resources** — not to CPU count
+
+- Check resources before consuming them: Docker, test workers, builds, agents.
+- Fit work to measured capacity, not to container count or CPU count.
+- Bound agent trees: one worker layer below the goal skill, one exceptional
+  specialist child (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`). Parallel workers
+  share the machine; two or three at once is the normal ceiling.
 
 ## Routing
 
-Use this file as the always-on index. Load the scoped rule only when the task needs it:
-
 | Work | Read |
-|------|------|
+|---|---|
 | Starting Docker or local app stacks | `skills/preflight/rules.md` |
 | Entering or preparing a git worktree | `skills/preflight/rules.md` |
 | Running Jest, pytest, Playwright, or similar suites | `skills/testing/rules.md` |
 
 ## Always-On Guardrails
 
-- Before starting containers, run `docker ps` and check **two things**:
-  1. **Capacity fit** — read the daemon cap (`docker info | grep "Total Memory"`) and current aggregate use before starting a heavy stack. Estimate the new stack's footprint, show the math, and proceed if it fits. Ask only on genuine over-capacity, where starting the stack risks disrupting running work. `--ask` (or an explicit user preference) restores always-ask.
-  2. **Which look stale** — surface any container running > 24h (column: `STATUS`) or whose name references an old branch/feature, list them with age, and ask the user whether to stop them. Do not stop without confirmation.
-- Before heavy test runs, choose worker counts intentionally; do not blindly use CPU count.
-- In worktrees, assume dependencies, build outputs, and env files may be missing until checked.
+- Before starting containers, run `docker ps` and check two things: capacity
+  fit (read the daemon cap with `docker info | grep "Total Memory"` and current
+  aggregate use, estimate the new stack, show the math, proceed if it fits, ask
+  only on genuine over-capacity) and staleness (list containers running over 24h
+  or named for old branches, and ask before stopping any).
+- Choose test worker counts intentionally.
+- In worktrees, assume dependencies, build outputs, and env files may be missing.
 
 ## Capacity Reference
 
-Docker Desktop's memory cap is set independently of host RAM — check
-`docker info | grep "Total Memory"` and `docker stats --no-stream` rather than
-encoding one machine's hardware in a reusable rule. A Superset stack typically
-uses 4–6 GB; use measured current consumption plus that estimate.
-
-If the user is hitting capacity limits, suggest raising Docker Desktop → Settings → Resources → Memory rather than killing work. Do not change Docker Desktop settings programmatically.
-
-Detailed stack, worktree, and worker-count rules are skill-scoped so they only load for environment prep or testing work.
+Docker Desktop's memory cap is independent of host RAM; measure it rather than
+encoding one machine. A Superset stack typically uses 4 to 6 GB. If the user is
+at capacity, suggest raising Docker Desktop memory rather than killing work, and
+never change Docker settings programmatically.

@@ -1,80 +1,117 @@
-# Code Review Principles
+# Code Review
+
+## The Review Model
+
+- **One independent review by default.** A fresh reviewer on the other
+  provider (Codex Sol when Claude orchestrates, Claude Opus when Codex does)
+  reviews the whole recorded diff once. It never sees the implementer's
+  transcript. COMPLEX and CORE-impact diffs add one more lane on the other
+  family, concurrently and cold; the two merge by convergence. Breadth is
+  bounded at two families; depth is never added by another round.
+- **Validate before fixing.** The reviewer is a critic, not an authority. The
+  orchestrator checks each finding against the current repo and diff, records
+  accepted versus rejected with a one-line reason for each rejection, and only
+  then changes code.
+- **Delta review, not a second full review.** After substantive remediation,
+  one delta-only pass grades the fixes against the accepted findings. Mechanical
+  fixes (renames, one-line reverts, formatting) need no second pass.
+- **Deep lenses on flagged risk only.** The classifier's risk flags (security
+  sensitivity, architecture change, refactor shape, explicit ask) add at most
+  two `deep-review` lenses: adversarial, deep quality, or architecture.
+- **Bounded rounds.** A review round is a reasoning unit under `rules/gates.md`:
+  the same finding class surviving two rounds is `ESCALATE`, not round three.
+- **Reviewer yield is measured.** Accepted findings per lane per run are
+  recorded, and a lane below its threshold is demoted by the rule in Yield
+  Thresholds below; the observation queue records the demotion.
+
+## Review Shape by Tier
+
+Depth follows the decision surface, never the diff size. The cap is the
+tier's, and a simpler tier never inherits a deeper one's rounds.
+
+| Tier or shape | Lanes | Delta pass | Notes |
+|---|---|---|---|
+| TRIVIAL | exception, or one lane when any logic changed | none: fixes are re-verified, not re-reviewed | a fix that adds logic reclassifies to STANDARD |
+| STANDARD | one lane | one, only after a substantive fix | the default for real, contained work |
+| COMPLEX or CORE impact | one lane plus the second family, deep lenses on flags | one | convergence merges the lanes |
+| STANDARD, clean verdict above 200 lines or 5 files | one lane, then the second family after the fact | one | the clean-verdict guard: a clean verdict on that much surface is checked, not trusted |
+| BATCHED | one lane on the first wave; later identical waves are verification-only | one, on the reviewed wave | a wave that deviates from the transformation gets its own lane; the integrated review checks the aggregate |
+| MULTI_PHASE | per phase by that phase's tier, on the phase base | per phase | one integrated review over the branch base before completion |
+
+## Yield Thresholds
+
+Yield is `accepted / raised` per lane per run, recorded in the Review Record
+and in the metrics event's `review.lanes`. Before dispatching an optional lane
+the parent runs `bin/aitk lane-yield` (it reads this repository's
+`.ai-toolkit/metrics.jsonl` and applies the table below) and honors the
+consequence it prints. The independent lane is never optional and never demoted.
+
+| Lane | Window | Threshold | Consequence |
+|---|---|---|---|
+| Deep lens (adversarial, deep-quality, architecture) | last 5 runs of that lens | fewer than 1 accepted in 4 raised, or 0 accepted | Demoted to opt-in: runs only on an explicit ask until `reflect` reviews it; the classifier flag is recorded as `deferred (low yield)` |
+| Second family | last 10 runs | 0 findings accepted that the first lane did not raise, and 0 first-lane majors it refuted | Demoted from CORE to COMPLEX-only; the clean-verdict guard keeps it |
+| Finding verifier | last 10 runs | `CONFIRMED` on fewer than 3 of 10 single-source majors | The raising lane's single-source majors default to `[minor]` and the observation queue gets a `low-yield-lane` line for that lane |
+| Delta review | last 10 runs | 0 `not fixed` and 0 `fixed-but-introduced` | Skip threshold widens: the delta pass runs only after a `[major]` fix |
+
+A demotion is a `Lane demoted` line in the Review Record and a `low-yield-lane`
+observation; `reflect` proposes the durable rule change. A demoted lane is
+restored by `reflect` or an explicit user ask, never silently.
 
 ## Core Principles
-- **DRY** — Check three forms of duplication before accepting new code:
-  1. **Within the repo** — similar logic already exists? Extract if maintained together, parameterize if independent.
-  2. **Against installed packages** — does a dependency in `package.json` / `requirements.txt` / `go.mod` / equivalent already provide this? Reimplementing utilities from a shipped library or internal shared package is `[minor]` — or `[major]` if the reimplementation drifts from documented behavior the library has already gotten right.
-  3. **Against language built-ins** — modern stdlib often covers what looks custom (`Object.groupBy`, `Array.prototype.flatMap`, `itertools.groupby`, etc.). Flag custom helpers that duplicate built-ins.
-- **Consistency** — follow existing patterns and conventions (grep for similar files to find them)
-- **Modeling** — logic lives in the right module/package/class; signatures match neighbors; new code is placed where a future reader would look for it
-- **File-size smell** — a diff that pushes a file across 1000 lines (from under 1000 to over, or already over 1000 and grown materially by the diff) is a `[minor]` decomposition prompt by default; ask whether it should be split first. Escalate to `[major]` under the deep-quality lens (`skills/review/references/deep-quality.md`).
-- **Spaghetti growth** — new ad-hoc conditionals or one-off branches inserted into unrelated flows are a design problem, not a style nit; prefer a helper/model/module over tangling an existing path. `[minor]` when it worsens legibility, `[major]` when it makes an existing flow materially harder to reason about.
-- **Test quality** — tests should not silently pass (always-green tests are noise); data should match types
 
-## Scoring
+- **DRY at three levels**: within the repo, against installed packages, against
+  language built-ins. A reimplemented utility is `[minor]`, `[major]` if it
+  drifts from behavior the library already gets right.
+- **Consistency and modeling**: follow neighboring patterns; logic lives where a
+  future reader would look; signatures match neighbors.
+- **File-size and spaghetti smells**: a diff pushing a file past roughly 1000
+  lines, or ad-hoc branches inserted into unrelated flows, is a `[minor]`
+  design prompt, `[major]` when it makes an existing flow materially harder to
+  reason about.
+- **Tests must be able to fail**: always-green tests are noise; data matches
+  types.
 
-Use the universal rubric in `rules/scoring.md`. Score each component:
+## Severity
 
-| Component | What to evaluate |
-|-----------|-----------------|
-| **Root Cause** | Is the underlying problem identified? |
-| **Solution** | Is the fix clean, maintainable, and minimal? |
-| **Tests** | Do tests cover the changed behavior meaningfully? |
-| **Code** | Is the code readable, consistent, and correct? |
-| **Docs** | Are changes self-explanatory or properly documented? |
+Tags and definitions are in `rules/severity.md`. Calibrate missing-test
+findings by what changed:
 
-A single blocking component (1-2) pulls the overall score into the 3-5 range — the overall is not a simple average.
+| Change | Missing tests | Severity |
+|---|---|---|
+| New public logic, new endpoint, bug fix, behavioral change | none | `[major]` |
+| Config, flag, env var | none | `[minor]` |
+| Docs, comments, types, renames, moves, formatting | none | not a finding |
 
-## Severity Tags
+**Name the locking assertion.** A missing-test finding states the assertion that
+fails on today's code and passes once the change is correct. A finding whose
+assertion cannot be named is either an unobservable behavior (the more serious
+finding, say so) or a structure preference capped at `[nitpick]`.
 
-Use the canonical code-review tags and definitions from `rules/severity.md`.
-This rule only adds the test-coverage calibration below.
-
-### Test Coverage Severity Calibration
-
-Missing tests are not always the same severity. Calibrate based on what the change actually does:
-
-| Change Type | Missing Tests | Severity | Rationale |
-|-------------|--------------|----------|-----------|
-| New public function/method with logic | No tests | **[major]** | Untested logic is a regression waiting to happen |
-| New API endpoint or route | No integration test | **[major]** | Contract changes need verification |
-| Bug fix | No regression test | **[major]** | The same bug will come back |
-| Behavioral change to existing code | No updated tests | **[major]** | Tests should prove the new behavior works |
-| Config change, feature flag, env var | No test | **[minor]** | Lower risk, but still worth testing |
-| Doc-only, comment-only, type annotation | No test | Not a finding | No behavior changed — tests would be noise |
-| Rename, move, reformatting | No test | Not a finding | Mechanical change — compiler/linter covers this |
-| One-liner typo fix in non-logic code | No test | Not a finding | Test would be testing a string literal |
-
-**Name the locking assertion.** A missing-test finding must state the assertion
-that fails on today's code and passes once the change is correct — the specific
-condition, not "add tests for X". Record it in the finding's *Locking assertion*
-column. This is what makes the finding checkable: without it the fix is graded by
-whether a test file grew, which any always-green test satisfies, and the reviewer
-who raised the finding is the only one who knows what it was supposed to prove.
-
-A finding whose assertion cannot be named is usually not a coverage finding.
-Either the behavior is not actually observable — in which case say that, since an
-unobservable behavior is the more serious finding — or the concern is a
-preference about test structure, which caps at `[nitpick]`. Drop it one severity
-level and move it to the summary's Remaining section rather than blocking on it.
-
-**Impact escalation**: When the impact assessment (from the `qa` skill's `references/assess-impact.md`) is CORE, shift all "missing test" findings up one severity level. A config change with no test is normally `[minor]` — but if it touches a CORE workflow (login, auth, payment), it becomes `[major]`.
-
-When reviewing, **assess what the PR does before scoring test coverage**. A blanket "no tests = major" penalizes trivial PRs unfairly and lets risky PRs hide behind a few token tests.
-
-## Invalid Review Patterns
-- Minor formatting (periods, spacing)
-- Personal style preferences
-- Demanding specific implementation
-- Scope creep (unrelated fixes)
+CORE impact (login, auth, payment, data loss) shifts missing-test findings up
+one level.
 
 ## Finding Calibration
 
-Rules of thumb for grading and triaging findings. They apply to every review path — single-reviewer, adversarial, and multi-reviewer synthesis.
+- **Scope is upstream of correctness.** Confirm the `file:line` is in the diff
+  before grading. Unchanged code goes to Remaining, not findings.
+- **The diff is the recorded base to HEAD in every round.** Never re-derive
+  scope from the last fix delta; a defect the review itself introduced in round
+  one must still be reportable in round two.
+- **Symmetry findings cap at `[minor]`** unless the change plausibly covers or
+  worsened the sibling path.
+- **Convergent beats single-source.** Two independent lanes surfacing the same
+  finding unprompted is high confidence; keep its severity. A `[major]` only
+  one lane raised is verified by a fresh lane on the other model family before
+  it blocks (`rules/gates.md`, Independent Judgment); until then it is worth
+  investigating, not worth blocking on.
+- **CORE impact shifts missing-test findings up one level**, and a TRIVIAL diff
+  on a CORE path is reviewed as STANDARD with no review exception.
+- **History audit before "wrong semantics".** Check whether an apparent
+  regression is a deliberate reversal the history already justifies.
+- **Do not steer the reviewer.** The prompt supplies diff facts, risk flags, and
+  posture; never a finding shape.
 
-- **Scope is upstream of correctness.** Before grading whether a finding is a real bug, confirm its `file:line` is actually in the diff. If the cited code is unchanged by the change set, drop the finding regardless of whether it's correct — it's a pre-existing-code observation, not a review of this change. Adjudicate correctness only for in-scope findings.
-- **"The diff" means the recorded review base to HEAD, in every round.** The span is fixed when review round 1 resolves its base; later rounds keep it. Applied to the last fix delta instead, the rule above inverts: work this review itself introduced and committed in an earlier round is "unchanged code" by round 2, so the one rule meant to keep reviewers honest becomes the reason a defect the review created can never be reported. Findings against any commit in the recorded span are in scope no matter which round produced it.
-- **Symmetry findings cap at `[minor]`.** "The same problem exists in sibling path X" is at most `[minor]`, and only if the change's stated scope plausibly covers X *or* the change worsened X. If X is unchanged and not worsened, it's a follow-up-PR suggestion masquerading as a finding — note it in the summary's Remaining section, don't grade it. Symmetry findings feel rigorous ("I traced all N call sites") but reward breadth over the risk the change actually introduced.
-- **Convergent beats single-source.** When two independent reviewers (different model, fresh context) surface the same finding without prompting, treat it as high-confidence and keep its severity. A finding only one reviewer raised is worth investigating but rarely worth blocking on alone — verify before promoting it past `[minor]`.
-- **History audit before grading a "wrong semantics" finding.** When a change reverses or amends prior behavior, scan recent history of the touched files (`git log --follow -p <file> | head -200`) for the PR it's undoing. A change that looks like a regression is often a conscious reversal the history already justifies.
-- **Don't leading-question subagents.** When spawning reviewer subagents, the prompt supplies diff facts, lens list, and posture — never a finding shape ("look for a case where X breaks", "check if Y is null"). Steering a worker toward a specific finding pre-decides what matters and reproduces the orchestrator's framing as findings. The lens already encodes what to look for.
+## Invalid Findings
+
+Formatting nits the formatter owns, personal style, demanding a specific
+implementation, and scope creep.

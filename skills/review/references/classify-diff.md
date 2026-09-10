@@ -1,161 +1,96 @@
 ---
 name: classify-diff
-description: Analyze a changeset and return which review domains are relevant, with trigger reasons.
-tier: Standard
+description: Analyze a changeset and return its file domains, risk flags, and which conditional deep lenses should run.
 ---
 
 # Classify Diff
 
-Deterministic reviewer routing. Read the changeset and return which review domains should be activated, why each triggered, and whether the diff is security-sensitive.
+Deterministic risk routing for a review. The classifier reports facts; the
+calling orchestration decides dispatch.
 
 <!-- aitk-model-route-exempt:describes-caller-owned-dispatch -->
-This skill replaces inline reviewer-selection logic in commands. The calling workflow dispatches subagents based on this skill's output — this skill classifies, the command orchestrates.
+This reference never dispatches reviewers or launches workers itself; the
+calling workflow owns orchestration.
 
-## Required Context
+## Inputs
 
-The caller provides:
-- The diff (staged, unstaged, or commit range)
-- The complexity tier (`TRIVIAL`, `MODERATE`, or `STANDARD`) from the Complexity Gate
-- The requested review effort, if the command supplied one (`high` / `max` / `ultra`). Treat an explicit **deep-tier phrase** as `ultra` — these are escalation phrases, not route names.
-- The change title / commit subjects, when available (PR title or commit messages)
-
-## Deep-tier phrases (canonical list)
-
-The deep-tier phrase list is exactly:
-
-> **"deep review"** · **"deep quality review"** · **"thermonuclear"**
-
-Those three phrases, plus `max`/`ultra` effort, are the *only* things that set `Deep-tier escalation: YES`. This file owns the list; every other rule here and in the consuming orchestrators refers back to it rather than re-listing the phrases.
-
-**A bare "deep quality" ask is deliberately *not* on that list.** It names the [deep-quality lens](deep-quality.md) — strict structural findings on the cheap `review` route — so it fires that one lens and changes nothing else. Match the longest phrase: "deep quality review" is a deep-tier escalation, "deep quality" alone is a lens request. The one-word difference is load-bearing: the first buys the whole review at deep tier, the second buys one cheap lens.
+The diff, the complexity from the Complexity Gate, the change title or commit
+subjects when available, and any explicit ask (`--adversarial`, "deep review",
+"deep quality", "code judo").
 
 ## Steps
 
-1. **Gather the changeset**: Read the diff. Identify all changed files with their paths and change types (added, modified, deleted, renamed).
+1. **Classify files** into domains by path and content: Frontend (`*.tsx`,
+   `*.jsx`, `*.vue`, `*.css`, `components/`), Backend (`*.py` non-test, `*.go`,
+   `*.rs`, `*.java`, `api/`, `server/`), Tests (`*_test.*`, `*.test.*`,
+   `tests/`, `conftest.py`), Infrastructure (`Dockerfile`, CI YAML,
+   `terraform/`), Config (`*.toml`, `*.ini`, `.env*`, `settings.*`).
 
-2. **Classify each file** into domains based on path patterns and content:
+2. **Set risk flags.**
+   - **Security-sensitive**: authentication or authorization, cryptography,
+     unsanitized input, dynamic SQL or ORM input, secrets or tokens,
+     permission checks, agent capability configuration (which model, effort,
+     sandbox, permission mode, or tool list a worker runs under:
+     `interfaces/model-routing.json`, `aitk/model_routing.py`,
+     `aitk/routing_*.py`, `agents/`, hook
+     and MCP config), worker context assembly (`aitk/routing_closure.py`,
+     `aitk/routing_markdown.py`), or trust-boundary changes (publish or push
+     authorization, sandbox enforcement, fail-closed checks becoming advisory:
+     `aitk/routing_manifest.py`, `aitk/routing_resolver.py`,
+     `aitk/routing_transport.py`, `aitk/installer.py`). Name the
+     implementation files, not only a facade; extend this list in the same
+     commit when a subsystem is decomposed.
+   - **Architecture change**: new module boundaries, changed public contracts,
+     new patterns, cross-subsystem data flow.
+   - **Refactor-shaped**: title matches `^refactor` or mentions restructure,
+     extract, decompose, clean up; or net-neutral line delta with high churn or
+     renames and unchanged tests. Formatting sweeps, lock bumps, and generated
+     churn are not refactors.
+   - **Deep-tier escalation**: exactly the phrases **"deep review"**,
+     **"deep quality review"**, **"thermonuclear"**, or `max`/`ultra` effort.
+     This pins complexity to at least COMPLEX and routes the independent review
+     on `deep-review`. A bare "deep quality" ask is a lens request, not an
+     escalation.
 
-| Domain | File Signals | Content Signals |
-|--------|-------------|-----------------|
-| Frontend | `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.css`, `*.scss`, `components/`, `pages/`, `views/` | React hooks, state management, DOM manipulation, CSS-in-JS |
-| Backend | `*.py` (non-test), `*.go`, `*.rs`, `*.java`, `api/`, `server/`, `handlers/`, `middleware/` | Route definitions, DB queries, auth logic, API handlers |
-| Tests | `*_test.*`, `*.test.*`, `*.spec.*`, `test_*`, `tests/`, `__tests__/`, `conftest.py` | Test assertions, mocks, fixtures, test utilities |
-| Infrastructure | `Dockerfile`, `*.yml`/`*.yaml` (CI/CD), `terraform/`, `k8s/`, `.github/workflows/` | Pipeline configs, deploy scripts, container definitions |
-| Config | `*.json` (config), `*.toml`, `*.ini`, `.env*`, `settings.*` | Environment variables, feature flags, connection strings |
-
-3. **Determine review domains** by mapping file domains to reviewers:
+3. **Select deep lenses** (at most two; the independent review always runs):
 
 | Review Domain | Trigger | Skill |
-|---------------|---------|-------|
-| Code quality | Always | `review/references/code-quality.md` |
-| Deep quality | Refactor-shaped diff (see step 3a) OR any STANDARD-tier diff OR the tier's `deep-review` route is otherwise empty (step 3c); always under deep-tier escalation or a bare "deep quality" lens ask. Strict structural findings on the `deep-review` route. | `review/references/deep-quality.md` |
-| Code-judo | Deep-tier escalation OR title matches `^refactor` OR an explicit Code-judo ask. Generative restructuring proposal — routes to `deep-review` (see review SKILL Invocation). A `^refactor` title auto-fires; the refactor **shape signal alone** (step 3a, no `^refactor` title) is **advisory** — recommend it, do not auto-fire. | `review/references/code-judo.md` |
-| Adversarial | Security-sensitive diff (step 4) OR an explicit `--adversarial` / red-team ask. Severity-tagged findings on the `deep-review` route. | `review/references/adversarial.md` |
-| Architecture | STANDARD + logic changes in source files; MODERATE only when ownership/design placement is unclear | `plan-review/references/architecture.md` |
-| Tests | MODERATE or STANDARD + test files exist in diff OR test files exist for changed source files | `testing/references/review-tests.md` |
-| Test plan | MODERATE or STANDARD + behavior changed AND no test files exist in diff AND no test files found for changed source files | `testing/references/review-testplan.md` |
-| Frontend | MODERATE or STANDARD + frontend files changed | `plan-review/references/frontend.md` |
-| Backend | MODERATE or STANDARD + backend files changed | `plan-review/references/backend.md` |
+|---|---|---|
+| Adversarial | Security-sensitive, or an explicit adversarial ask | review/references/adversarial.md |
+| Deep quality | Refactor-shaped, a "deep quality" ask, or deep-tier escalation | review/references/deep-quality.md |
+| Architecture | Architecture change on STANDARD or COMPLEX | plan-review/references/architecture.md |
 
-**3a. Detect refactor shape** (feeds the Deep quality and Code-judo rows). Compute from the diff and title:
-- **Title signal**: change title / commit subject matches `^refactor` (conventional-commit prefix) or contains "restructure", "extract", "decompose", "clean up".
-- **Shape signal**: net-neutral or negative line delta with high churn, a high rename ratio (`git diff --find-renames`), or moves without new public surface, **and** tests unchanged.
-- A change is **refactor-shaped** if the title signal fires, or the shape signal fires on a non-TRIVIAL diff.
-- **False-positive guard**: pure formatting sweeps, dependency-lock bumps, and generated-file churn are *not* refactors even when net-neutral — exclude them from the shape signal.
+   When three would fire, drop the one whose domain the diff touches least and
+   report it. Test quality, frontend, and backend checklists
+   (`testing/references/review-tests.md`, `plan-review/references/frontend.md`,
+   `plan-review/references/backend.md`) are inlined in the independent
+   reviewer's contract and applied to the domains this classification reports.
 
-Rules:
-- Code quality **always** triggers regardless of complexity tier.
-- **Deep quality vs Code-judo (cost discipline).** Both run on `deep-review`; the difference is budget and output. Deep quality is *findings* and occupies one of the tier's lens lanes — auto-fire it on refactor shape, on STANDARD, or to fill an empty `deep-review` route (step 3c). Code-judo is a *generative* pass that runs outside the lane budget as an extra stage — auto-fire it only on high-confidence intent (deep-tier escalation, `^refactor` title, or an explicit Code-judo ask). When only the shape signal fires, **recommend** Code-judo in the output ("looks like a refactor — consider a code-judo pass") rather than triggering it; do not spend an extra deep stage on a heuristic guess.
-- TRIVIAL diffs never **auto**-trigger Deep quality or Code-judo by tier or shape alone (a rename or one-liner needs neither). Explicit asks still fire on TRIVIAL, each to its own scope: a bare "deep quality" ask fires the Deep quality lens only; a Code-judo ask fires the Code-judo lane only; deep-tier escalation fires both.
-- **Deep-tier escalation.** When effort is `ultra`/`max` or the request carries a deep-tier phrase (see *Deep-tier phrases* above), report that deep-tier escalation applies. It has three effects, all owned downstream: the complexity tier is **pinned to at least STANDARD** regardless of diff size, *every* triggered lens routes through `deep-review`, and the Code-judo lane is added. Report the pinned tier as the Complexity value, with the size-derived tier in parentheses, so a one-file deep review is never silently handled as TRIVIAL. Escalation is *sufficient* for the Code-judo lane, not necessary — a `^refactor` title or an explicit Code-judo ask triggers the lane on its own with escalation `NO`. classify-diff only flags these facts; the review SKILL Invocation owns the routing (see its Deep review mode section).
-- TRIVIAL complexity: code quality reviewer only **by default** — this is the baseline when no explicit escalation applies. Explicit asks and deep-tier escalation still fire the deep lenses (per the TRIVIAL rule above), and impact or security sensitivity can escalate the tier.
-- MODERATE complexity: triggered lanes only; do not launch the full review team just because one lane triggers.
-- STANDARD complexity: launch all triggered lanes, include architecture for logic changes, and consider optional second opinion.
-- Frontend and Backend are additive for MODERATE/STANDARD diffs — both can trigger on the same diff.
-- Tests and Test Plan are mutually exclusive — if tests exist, use Tests; if not, use Test Plan.
-- Security-sensitive diffs escalate to STANDARD handling even when initial size signals look MODERATE.
-- **Adversarial is a findings lens, not a separate workflow.** It sits inside the reviewer fan-out on the `deep-review` route, so its `[major]`/`[minor]` findings merge and dedupe with the other lanes — unlike Code-judo, which returns unscored proposals at its own boundary. The `review-code-adversarial` workflow is a different thing: a whole review run made of adversarial lanes. Triggering this row does not start that workflow.
-- The Adversarial row fires on any tier — a one-line auth change is exactly the TRIVIAL diff that wants it. Local review dispatches it at its own TRIVIAL fan-out; PR review's Trivial path is a single pass with no fan-out boundary, so that procedure bumps an explicitly-asked adversarial PR to Moderate rather than dropping the lane. Security sensitivity escalates to STANDARD under the rule above either way.
-
-**3b. Lens priority order** (used only when more lenses trigger than the tier's
-lane budget allows — see [ensemble.md](ensemble.md)). Keep lanes in this order
-and shed from the bottom:
-
-1. Adversarial — when the diff is security-sensitive
-2. Code quality — always triggers
-3. Backend or Frontend — whichever subsystem the diff actually changes most
-4. Tests or Test plan — mutually exclusive; whichever triggered
-5. Architecture
-6. Deep quality
-7. The second of Backend/Frontend, when both triggered
-8. Any lens whose subsystem the diff does not touch
-
-Report every shed lane by name and reason in the output so a truncated team is
-never mistaken for a full one. Code-judo is not in this order — it runs outside
-the findings fan-out and does not consume a lane.
-
-**3c. Cover every mandatory lens route.** The tier's roster lists the routes it
-must exercise, and the reported coverage level assumes each one carried a lane.
-If the triggered set leaves a route empty — the common case is a MODERATE diff
-where only `review`-route lenses fire and nothing runs on `deep-review` — add
-Deep quality as the `deep-review` lane before shedding anything else. Shedding
-happens within a route, never to the point of emptying one.
-
-4. **Assess security sensitivity**: Flag as security-sensitive if the diff touches:
-   - Authentication or authorization logic
-   - Cryptographic operations
-   - User input handling without sanitization
-   - SQL queries or ORM calls with dynamic input
-   - Secret management, token handling, or credential files
-   - Permission checks or access control
-   - **Agent capability configuration** — which model, effort, permission mode, sandbox, or tool allow/deny list a routed worker runs under: `interfaces/model-routing.json`, `aitk/model_routing.py`, `aitk/routing_*.py`, agent and subagent definitions, hook registrations, MCP server config
-   - **Worker context assembly** — the code or data deciding what a routed worker is allowed to read or receive, and any change that widens it: `aitk/routing_closure.py`, `aitk/routing_markdown.py`
-   - **Trust boundary changes** — what a component is permitted to do: publish/push authorization, CI credentials, sandbox and read-only enforcement, fail-closed checks becoming advisory: `aitk/routing_manifest.py`, `aitk/routing_resolver.py`, `aitk/routing_transport.py`
-
-   The last three rows exist because a change can be security-relevant while containing no auth code at all. A diff that lets a worker resolve a cheaper model, read a contract it was not granted, or skip a fail-closed check is a privilege change; the first six rows would all read `NO` on it. Those rows name concrete file signals rather than describing a category so a repo can check its own dispatch surfaces are covered rather than deciding case by case.
-
-   **Name the implementation, not only the entry point.** `aitk/model_routing.py` is a re-export facade; the fail-closed logic lives in the `aitk/routing_*.py` layers behind it. A predicate that names only the facade reads as covering the subsystem while every diff that actually changes a trust boundary lands in a file it never mentions — which is how the split that produced these layers classified itself as not security-sensitive. When a subsystem named here is decomposed, extend the signals in the same commit.
+4. **Code-judo lane**: `YES` only on deep-tier escalation, a `^refactor`
+   title, or an explicit ask. It runs outside the findings lanes and returns
+   proposals.
 
 ## Output
 
 ```markdown
 ## Diff Classification
-
-Complexity: TRIVIAL / MODERATE / STANDARD   (when pinned: "STANDARD (pinned by deep review; size signal MODERATE)")
-Security-sensitive: YES / NO
-Deep-tier escalation: YES / NO   (YES only on `max`/`ultra` effort or a deep-tier phrase — the tier is then pinned to at least STANDARD, every triggered lens routes through `deep-review`, and the Code-judo lane is added)
-Code-judo lane: YES / NO         (YES iff a Code-judo row appears in Triggered Reviewers below — set by escalation, a `^refactor` title, or an explicit Code-judo ask. Orchestrators dispatch the judo pass on this field, never on the escalation field.)
-Ensemble: trivial / moderate / standard / deep / security   (deep whenever escalation is YES; security when the diff is security-sensitive)
-Files analyzed: [count]
-
-### Triggered Reviewers
-| Review Domain | Trigger Reason | Skill |
-|---------------|----------------|-------|
-| Code quality | Always | review/references/code-quality.md |
-| [domain] | [specific trigger reason] | [skill file] |
-
-Code-judo appears here as a row like any other triggered domain (trigger reason: deep-tier escalation, `^refactor` title, or explicit ask) — the `Code-judo lane` field above must agree with its presence. It is nonetheless dispatched outside the findings fan-out, on the `deep-review` route; the orchestrator owns that split.
-
-### Shed Lanes (over lane budget)
-- [Only when more lenses triggered than the budget allows] [domain] — shed per priority order (step 3b) because [reason]. Omit this section when empty.
-
-### Advisory (not triggered)
-- [Only when refactor shape fired without high-confidence intent] Looks like a refactor — consider a code-judo pass (`review/references/code-judo.md`, deep-review route). Omit this section when empty.
+Complexity: TRIVIAL | STANDARD | COMPLEX   (note when pinned by escalation)
+Security-sensitive: YES | NO — <why>
+Architecture change: YES | NO
+Refactor-shaped: YES | NO
+Deep-tier escalation: YES | NO
+Code-judo lane: YES | NO
+Deep lenses: <adversarial | deep-quality | architecture, or none> — <dropped lens and reason, if any>
+Files analyzed: <count>
 
 ### File Domain Summary
 | Domain | Files | Examples |
-|--------|-------|---------|
-| Frontend | [N] | [top 3 paths] |
-| Backend | [N] | [top 3 paths] |
-| Tests | [N] | [top 3 paths] |
+|--------|-------|----------|
 ```
 
 ## Notes
+
 <!-- aitk-model-route-exempt:explicitly-not-a-dispatch -->
-- This skill classifies — it does not dispatch reviewers or launch subagents. The calling workflow owns orchestration.
-- File domain detection uses path patterns first, content signals second. When a file matches multiple domains (e.g., a test for a frontend component), classify it under each applicable domain.
-- The trigger table is the single source of truth for which reviewers activate. If the table needs updating (new reviewer, new trigger), update it here rather than in individual commands.
-- This skill owns two independent predicates, and downstream orchestration (the review SKILL Invocation, `local-review.md`, `pr-review.md`, `review-pr.md`) consumes each without re-deriving it:
-  - **Deep-tier escalation** — `max`/`ultra` effort or a deep-tier phrase. Controls *which route* every triggered lens runs on.
-  - **Code-judo lane** — escalation, a `^refactor` title, or an explicit Code-judo ask. Controls *whether the generative pass runs at all*. Because a `^refactor` title fires it alone, orchestrators must key judo dispatch on `Code-judo lane`, not on `Deep-tier escalation`.
-- The canonical deep-tier phrase list lives in *Deep-tier phrases* above and nowhere else, so the predicate cannot drift between the classifier and the orchestrators that read it. When adding a phrase, add it there only.
+- This reference classifies; it does not dispatch reviewers or launch subagents.
+- The trigger table is the single source of truth for deep lenses. Update it
+  here, not in the orchestration references.

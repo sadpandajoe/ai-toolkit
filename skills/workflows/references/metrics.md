@@ -37,13 +37,13 @@ Apply filters from arguments:
 
 From the filtered events, compute:
 
-**Pass rates**: percentage of workflows ending in each status (`clean`, `blocked`, `user-decision`, `skipped`, `micro-fix`)
+**Gate outcomes**: percentage of workflows ending in each terminal gate status (`PASS`, `ESCALATE`, `USER_DECISION`, `BLOCKED`), and how many ended on the review exception
 
-**Round counts**: average and max review rounds per workflow
+**Retries and escalations**: average and max `retries`, `escalations`, and `reclassifications` per workflow; review rounds are `1` (independent) or `2` (plus delta)
 
 **Worker usage**: total subagent/worker invocations by role or reasoning tier when recorded
 
-**Complexity gate accuracy**: ratio of TRIVIAL classifications that ended `clean` without re-classification (indicates the gate is correctly identifying easy work)
+**Complexity gate accuracy**: ratio of TRIVIAL classifications that ended `PASS` with zero `reclassifications` (indicates the gate is correctly identifying easy work)
 
 **Workflow frequency**: how often each workflow is used
 
@@ -56,14 +56,14 @@ Period: [7d / 30d / all]
 Events: [total count]
 
 ### Workflow Usage
-| Workflow | Runs | Clean | Blocked | Other |
-|---------|------|-------|---------|-------|
-| [name] | [N] | [N] | [N] | [N] |
+| Workflow | Runs | PASS | ESCALATE | USER_DECISION | BLOCKED |
+|---------|------|------|----------|---------------|---------|
+| [name] | [N] | [N] | [N] | [N] | [N] |
 
-### Review Rounds
-| Workflow | Avg Rounds | Max Rounds |
-|---------|------------|------------|
-| [name] | [N.N] | [N] |
+### Retries and Escalations
+| Workflow | Avg Retries | Max Retries | Escalations | Reclassifications |
+|---------|-------------|-------------|-------------|-------------------|
+| [name] | [N.N] | [N] | [N] | [N] |
 
 ### Worker Usage
 | Worker / Tier | Invocations | % |
@@ -72,10 +72,10 @@ Events: [total count]
 
 ### Complexity Gate
 - Trivial workflows: [N] ([%] of total)
-- Trivial → clean: [N] ([accuracy %])
+- Trivial → PASS without reclassification: [N] ([accuracy %])
 
 ### Trends
-- [Notable patterns: improving/declining pass rate, command with high blocked rate, etc.]
+- [Notable patterns: improving/declining PASS rate, a workflow with a high ESCALATE or BLOCKED rate, etc.]
 - [If insufficient data for trends: "Not enough data for trend analysis (need 10+ events)"]
 ```
 

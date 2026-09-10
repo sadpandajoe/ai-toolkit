@@ -1,69 +1,62 @@
----
-name: review-rca
-description: Review root cause analysis and proposed fix before implementation.
-tier: Heavy
----
+# RCA Gate
 
-# Review RCA
+The RCA gate decides whether a root-cause story is evidenced enough to plan a
+fix. The parent grades STANDARD bugs itself; an independent specialist grades
+COMPLEX or uncertain ones.
 
-Review the root cause analysis and proposed solution before implementation.
-This is a shared validator, not a persona-owned workflow.
+## Evidence checklist
 
-Use `rca` when the causal chain is bounded and evidence is direct. Use
-`deep-rca` when causes compete, reproduction is intermittent, history matters,
-or multiple systems participate. Both routes are read-only.
+`PASS` requires every item evidenced, not asserted:
 
-If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
+1. The failure mechanism is explained, not merely correlated.
+2. Evidence points to the relevant execution or data path.
+3. Competing likely causes were considered or ruled out.
+4. The proposed fix changes the causal point, not only a visible symptom.
+5. A verification strategy exists that could disprove the RCA.
+6. For a bug fix, regression evidence fails before and passes after when
+   feasible; otherwise the reason is recorded.
 
-Focus on these sections if present:
-- Issue
-- Evidence
-- Root Cause
-- Proposed Fix
-- Tests
+## Confidence calibration
 
-## Root Cause Validation
+The confidence number means one thing everywhere:
 
-Determine whether the stated root cause is plausible.
+| Confidence | Meaning |
+|---|---|
+| 9-10 | Root cause reproduced locally; the fix is narrow and behavior-preserving |
+| 7-8 | Root cause strongly evidenced but not directly reproduced; the fix is targeted |
+| 5-6 | Root cause plausible but alternatives are still live; fix scope may move |
+| 3-4 | Several plausible root causes; investigation incomplete |
+| 1-2 | Root cause unknown; evidence indirect or contradictory |
 
-Check:
-- whether the explanation matches the behavior of the code
-- whether alternative root causes could exist
-- whether the evidence is sufficient
-- whether assumptions require validation
+## Parent grading (STANDARD)
 
-Identify missing investigation steps if the RCA is uncertain.
+Grade the investigation handoff against the checklist. Confidence 8/10 or
+higher with every item evidenced → `PASS`. Below that, one more bounded
+investigation (`RETRY`), then escalate to the specialist. A `PASS` at 8 is an
+evidenced story without a reproduction; record that the regression test is the
+reproduction it lacks.
 
-## Proposed Fix Evaluation
+## Specialist grading (COMPLEX, uncertain, or after a failed attempt)
 
-Analyze the proposed solution.
+<!-- aitk-model-route:debug.rca-specialist -->
+Launch one fresh RCA specialist worker on `rca` (default) or `deep-rca`
+(competing causes still live after an `rca` pass, intermittent or
+history-dependent failures, or cross-system behavior). Prefer the other
+provider. The prompt carries the symptom in code-level terms, the evidence
+gathered, the current hypothesis and confidence, the alternatives considered,
+the proposed regression check, and whether the specialist is validating or
+producing the RCA. The worker receives its contract inline from the route
+runner and returns `Verdict: PASS | REVISE | ESCALATE`.
 
-Determine:
-- whether the fix actually addresses the root cause
-- whether the approach introduces unnecessary complexity
-- whether the plan could introduce new bugs
-- whether important edge cases are unhandled
+## Consume the verdict
 
-## Risk Analysis
+- `PASS` → gate `PASS`; the root cause and regression check go into
+  `PROJECT.md`, and planning starts.
+- `REVISE` → close the named gaps once (parent or debugger worker), then
+  re-validate once.
+- `ESCALATE` → `deep-rca` if not yet used; otherwise `USER_DECISION` with the
+  fact or environment access the specialist named.
 
-Identify possible failure scenarios such as:
-- race conditions
-- state inconsistencies
-- partial failures
-- integration issues
-- performance risks
-
-## Output
-
-```markdown
-## RCA Review
-### Score: X/10
-### Strengths
-- [What the RCA does well — thorough evidence, clear causal chain, etc.]
-### Issues
-- [High/Medium/Low] [Issue — why it matters for the fix]
-### Suggestions
-- [Specific improvement to the analysis or proposed fix]
-### Missing
-- [What the RCA should address — alternative causes, untested assumptions, etc.]
-```
+Record with `bin/aitk project-state gate --gate rca --status <...> --unit rca`.
+Two failed implementation attempts or a materially changed RCA reopen this
+gate; that is the rabbit-hole guardrail.

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from dataclasses import dataclass
-import fcntl
 from functools import wraps
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,7 +12,9 @@ import stat
 import tempfile
 from typing import Callable
 
+from .artifact_lock import artifact_lock
 from .conformance import contract_digest, contracts_by_name
+from .project_state import ProjectStateError, gate_blockers, parse_project_state
 from .workflows import load_workflows
 
 
@@ -60,45 +59,19 @@ class CheckpointResult:
         }
 
 
-@contextmanager
-def _checkpoint_lock(path: Path):
-    lock_root = Path(tempfile.gettempdir()) / (
-        f"ai-toolkit-checkpoint-locks-{os.getuid()}"
-    )
-    lock_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    metadata = lock_root.lstat()
-    if (
-        not stat.S_ISDIR(metadata.st_mode)
-        or metadata.st_uid != os.getuid()
-        or lock_root.is_symlink()
-    ):
-        raise CheckpointError("checkpoint lock directory is unsafe")
-    os.chmod(lock_root, 0o700)
-    identity = hashlib.sha256(str(path).encode()).hexdigest()
-    lock_path = lock_root / f"{identity}.lock"
-    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(lock_path, flags, 0o600)
-    try:
-        lock_metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(lock_metadata.st_mode)
-            or lock_metadata.st_uid != os.getuid()
-            or lock_metadata.st_nlink != 1
-        ):
-            raise CheckpointError("checkpoint lock file is unsafe")
-        os.fchmod(descriptor, 0o600)
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
-        yield
-    finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
-
-
 def _serialized_checkpoint(function):
+    """Hold the artifact lock shared with the routing snapshot runtime.
+
+    Both blocks live in one file and both writers rewrite the whole file, so a
+    lock per runtime would let a gate record and a reservation overwrite each
+    other. One lock identity per path also makes the gate check inside
+    ``reserve`` atomic with its write: no ``RETRY`` can land between them.
+    """
+
     @wraps(function)
     def wrapped(root: Path, workflow: str, path: Path, *args, **kwargs):
         _reject_unsafe_path(path)
-        with _checkpoint_lock(path):
+        with artifact_lock(path, CheckpointError):
             return function(root, workflow, path, *args, **kwargs)
 
     return wrapped
@@ -446,6 +419,36 @@ def advance(
     return _write_transition(path, content, before, after, contract)
 
 
+SNAPSHOT_GATES = ("verification", "review")
+
+
+def _require_snapshot_gates(contract: dict[str, object], content: str, key: str) -> None:
+    """Two records, one truth: an effect gated on verification or review is
+    reserved only while the routing snapshot in the same artifact shows that
+    gate PASS. Without this check the rule in ``rules/gates.md`` is prose."""
+    authorization = contract.get("authorization")
+    gates = authorization.get("gates", []) if isinstance(authorization, dict) else []
+    required = [gate for gate in SNAPSHOT_GATES if gate in gates]
+    if not required:
+        return
+    try:
+        snapshot = parse_project_state(content)
+    except ProjectStateError as error:
+        raise CheckpointError(f"routing snapshot is unreadable: {error}") from error
+    if snapshot is None:
+        raise CheckpointError(
+            f"effect {key} requires gates {', '.join(required)} PASS in the routing "
+            "snapshot, and no snapshot exists; run `aitk project-state init` and "
+            "record the gates first"
+        )
+    blockers = gate_blockers(snapshot, required)
+    if blockers:
+        raise CheckpointError(
+            f"effect {key} requires gates {', '.join(required)} PASS in the routing "
+            f"snapshot for phase {snapshot['current_phase']} ({'; '.join(blockers)})"
+        )
+
+
 @_serialized_checkpoint
 def reserve(
     root: Path,
@@ -461,6 +464,7 @@ def reserve(
         raise CheckpointError(f"effect key is not declared by the contract: {key}")
     if TOKEN.fullmatch(operation_id) is None:
         raise CheckpointError("operation ID is not a portable token")
+    _require_snapshot_gates(contract, content, key)
     effects = [dict(item) for item in before["effects"]]
     current = next(
         (

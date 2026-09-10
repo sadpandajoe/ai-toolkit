@@ -104,8 +104,8 @@ gh api --paginate repos/<owner>/<repo>/pulls/<number>/reviews
 
 Classify scope before acting:
 
-| Signal | Trivial | Moderate | Standard |
-|--------|---------|----------|----------|
+| Signal | TRIVIAL | STANDARD | COMPLEX |
+|--------|---------|----------|---------|
 | Comment count | 1-2 | 3-6, one subsystem | 7+ or several subsystems |
 | Fix type | Cosmetic, naming | Contained logic or test update | Behavioral, architectural, or cross-cutting |
 | Scope | Single file/area | Single subsystem | Cross-cutting |
@@ -113,9 +113,9 @@ Classify scope before acting:
 
 Emit the Complexity Gate block from `rules/complexity-gate.md`.
 
-Trivial plus confidence 8/10 or higher can use the quick-fix path: fix, draft the reply, summarize, and skip the full triage table. Posting is the default boundary; hold posts only under `--draft` or `--step`.
+TRIVIAL with `HIGH` classification confidence uses the quick-fix path: fix, draft the reply, summarize, and skip the full triage table. Posting is the default boundary; hold posts only under `--draft` or `--step`.
 
-Moderate path: run the triage table, fix approved items inline or in one bounded wave, verify, then draft replies. Use full standard handling only when comments span subsystems, require user/product decisions, or need multiple fix/review waves.
+STANDARD path: run the triage table, fix approved items inline or in one bounded wave, verify, then draft replies. COMPLEX handling — a plan for the fix wave and the full gate ladder — applies only when comments span subsystems, require user/product decisions, or need more than one fix/review wave.
 
 ## Investigate
 
@@ -153,7 +153,7 @@ Before the Confirmation Gate, append a `## Feedback Triage` section to PROJECT.m
 - The triage table (comment id, reviewer, verdict, reasoning, confidence)
 - Open thread IDs that need resolution
 
-This is the source of truth for resuming after `context_reset`. The triage table is the most expensive thing to reconstruct (it requires re-fetching every comment + redoing reviewer judgment), so it MUST land in PROJECT.md before any checkpoint + context_reset. STANDARD path: do not invoke checkpoint + context_reset after triage until this section exists in PROJECT.md.
+This is the source of truth for resuming in a fresh session. The triage table is the most expensive thing to reconstruct (it requires re-fetching every comment + redoing reviewer judgment), so it MUST land in PROJECT.md before any checkpoint. Do not hand the next phase to a fresh worker until this section exists in PROJECT.md.
 
 ## Confirmation Gate
 
