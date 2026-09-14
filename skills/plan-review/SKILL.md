@@ -1,47 +1,32 @@
 ---
 name: plan-review
-description: "Use for reviewer lenses that critique a technical plan before implementation. Do NOT use for product scoping, finished-code review, or implementation."
+description: "Use for the focused lenses a plan validator or deep code review applies: architecture, implementation feasibility, backend, frontend. Do NOT use for product scoping, running the validation loop, or implementation."
 ---
 
-# Plan Review
+# Plan Review Lenses
 
 ## Before Starting
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 
-Umbrella for reviewer lenses that critique a *technical plan* before implementation starts. Each reference is a reviewer subagent prompt applying a specific angle to the plan.
+Focused checklists, not a reviewer roster. The independent plan validator
+(`agents/specialists/plan-validator.md`, run by
+`planning/references/validate-plan.md`) covers architecture, feasibility, and
+test strategy in one pass; these files hold the detailed checklists it and the
+parent draw on. The architecture lens is also a conditional deep lens in code
+review.
 
-## Distinction from other review umbrellas
+| Lens | Reference | Used by |
+|---|---|---|
+| Architecture | [references/architecture.md](references/architecture.md) | Plan validator focus; `deep-review` code lens on architecture changes |
+| Implementation feasibility | [references/implementation.md](references/implementation.md) | Plan validator focus |
+| Backend | [references/backend.md](references/backend.md) | Plan validator focus when the plan touches API, DB, or migrations |
+| Frontend | [references/frontend.md](references/frontend.md) | Plan validator focus when the plan touches UI |
 
-| Umbrella | Reviews | When |
-|----------|---------|------|
-| `plan-review/` (this skill) | Technical plan | During `planning/references/iterate-review.md` loop (pre-implementation) |
-| `pm/review-feature-brief` | Feature brief (scope/AC/milestones) | During PM iteration (pre-planning) |
-| `review/` | Shipped code | `review-code`, `review-pr` (post-implementation) |
-| `testing/review-tests` and `review-testplan` | Test code and test strategy | During review (code) or plan-review (strategy) |
+Test-strategy review lives in `testing/references/review-testplan.md`.
 
-## Reviewer Lenses
+## Output
 
-| Lens | Always-on | When conditional | Reference |
-|------|-----------|------------------|-----------|
-| Architecture | Substantial plans | — | [references/architecture.md](references/architecture.md) |
-| Implementation feasibility | Substantial plans | — | [references/implementation.md](references/implementation.md) |
-| Backend | — | Plan touches API / DB / migrations | [references/backend.md](references/backend.md) |
-| Frontend | — | Plan touches React / CSS / UI components | [references/frontend.md](references/frontend.md) |
-
-(Test-strategy plan review is in `testing/references/review-testplan.md` — it always fires for substantial plans alongside this umbrella's always-ons.)
-
-## Invocation
-
-Each reference is an independent-review prompt. The `planning` skill's
-iterate-review reference dispatches them with `fresh_subagent` and
-`parallel_fanout`; provider bindings choose concrete syntax.
-
-Map the tier to the current runtime's actual model or reasoning-effort controls at dispatch time.
-
-Each returns severity-tagged findings + score. The iterate loop continues until the 8/10 threshold is met or a blocker surfaces.
-
-## Notes
-
-- "Plan-review" is a distinct persona from "code-review". A plan reviewer reasons about whether the plan is *achievable* and *well-scoped*; a code reviewer reasons about whether the code is *correct* and *safe*.
-- Same conceptual reviewer personas exist for code (`review/references/code-quality.md`, `review/references/adversarial.md`, `testing/references/review-tests.md`) — different lens, different phase.
+Plan-domain findings are `[High]`, `[Medium]`, `[Low]` with a verdict, never a
+numeric score. In code-lens mode the architecture lens reports `[major]`,
+`[minor]`, `[nitpick]` per `rules/code-review.md`.

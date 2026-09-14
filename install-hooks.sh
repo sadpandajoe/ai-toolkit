@@ -154,6 +154,9 @@ STOP_HOOK_ENTRIES=$(cat <<HOOKJSON
 [
   {
     "hooks": [{"type": "command", "command": "bash \"$REPO_DIR/hooks/check-plan-drift.sh\""}]
+  },
+  {
+    "hooks": [{"type": "command", "command": "bash \"$REPO_DIR/hooks/observation-reminder.sh\""}]
   }
 ]
 HOOKJSON

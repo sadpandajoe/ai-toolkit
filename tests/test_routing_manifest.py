@@ -65,7 +65,7 @@ class RoutingManifestTests(RoutingTestCase):
             boundary = next(
                 item
                 for item in payload["dispatch_boundaries"]
-                if item["id"] == "review.pr-standard"
+                if item["id"] == "review.pr-deep-lenses"
             )
             self.assertEqual([], validate_dispatch_boundaries(root, payload))
             lens = "skills/review/references/adversarial.md"
@@ -74,37 +74,30 @@ class RoutingManifestTests(RoutingTestCase):
             document = root / "skills/review/references/pr-review.md"
             original = document.read_text()
             document.write_text(
-                original.replace("  [adversarial.md](adversarial.md),\n", "", 1)
+                original.replace("[adversarial.md](adversarial.md) for security sensitivity", "adversarial for security sensitivity", 1)
             )
             problems = validate_dispatch_boundaries(root, declared_only)
             self.assertIn(
                 f"declared lens is not linked in the dispatch span: "
-                f"review.pr-moderate/{lens}",
+                f"review.pr-deep-lenses/{lens}",
                 problems,
             )
             document.write_text(original)
 
             prose_only = json.loads(manifest.read_text())
             for item in prose_only["dispatch_boundaries"]:
-                if item["id"] == "review.pr-standard":
+                if item["id"] == "review.pr-deep-lenses":
                     item["lenses"] = [
                         value for value in item["lenses"] if value != lens
                     ]
             problems = validate_dispatch_boundaries(root, prose_only)
             self.assertIn(
                 f"reviewer lens linked in the dispatch span but not declared: "
-                f"review.pr-standard/{lens}",
+                f"review.pr-deep-lenses/{lens}",
                 problems,
             )
             # And the menu is what `--lens` resolves against: a lens missing from
-            # it is unroutable rather than mis-scoped. This is shown against the
-            # *unmutated* manifest with a lens that belongs to the plan menu,
-            # because a code menu can no longer be narrowed below its floor at
-            # all: `lens_floors` is pinned in `routing_policy.py`, so the edit
-            # that used to make room for this check -- dropping the lens from the
-            # floor as well -- is now itself a validation failure. That is the
-            # floor doing its job, and proving the resolver's behaviour must not
-            # require disabling it.
+            # it is unroutable rather than mis-scoped.
             with self.assertRaisesRegex(ModelRouteError, "is not named at boundary"):
                 resolve_route(
                     root,
@@ -130,12 +123,9 @@ class RoutingManifestTests(RoutingTestCase):
             pristine = manifest.read_text()
             self.assertEqual([], validate_model_routing(root))
             for identifier, dropped in (
-                ("review.pr-standard", "skills/review/references/adversarial.md"),
-                ("review.local-primary-lanes", "skills/review/references/deep-quality.md"),
-                (
-                    "workflows.review-plan-fresh",
-                    "skills/plan-review/references/implementation.md",
-                ),
+                ("review.pr-deep-lenses", "skills/review/references/adversarial.md"),
+                ("review.deep-lenses", "skills/review/references/deep-quality.md"),
+                ("review.deep-lenses", "skills/plan-review/references/architecture.md"),
             ):
                 with self.subTest(boundary=identifier, dropped=dropped):
                     payload = json.loads(pristine)
@@ -186,31 +176,31 @@ class RoutingManifestTests(RoutingTestCase):
             self.assertEqual([], validate_model_routing(root))
             for identifier, mutation in (
                 ("review.pr-batch", {"lenses": ["skills/review/SKILL.md"]}),
-                ("review.pr-standard", {"lenses": ["skills/review/SKILL.md"]}),
+                ("review.pr-deep-lenses", {"lenses": ["skills/review/SKILL.md"]}),
                 # One rule per fixture. A single menu of two identical
                 # nonexistent paths broke the duplicate rule *and* the existence
                 # rule at once, so either one going missing left the case green
                 # and neither was independently covered.
                 (
-                    "review.pr-standard",
+                    "review.pr-deep-lenses",
                     {
                         "lenses": [
                             "skills/review/nonexistent.md",
-                            "skills/review/code-quality.md",
+                            "skills/review/references/deep-quality.md",
                         ]
                     },
                 ),
                 (
-                    "review.pr-standard",
-                    {"lenses": ["skills/review/code-quality.md"] * 2},
+                    "review.pr-deep-lenses",
+                    {"lenses": ["skills/review/references/deep-quality.md"] * 2},
                 ),
-                ("review.pr-standard", {"lenses": []}),
+                ("review.pr-deep-lenses", {"lenses": []}),
                 # A well-formed menu on a lane that declares no domain.
                 (
-                    "review.code-quality-final",
+                    "cherry-pick.scope-leak-review",
                     {
                         "lenses": [
-                            "skills/review/references/code-quality.md",
+                            "skills/review/references/adversarial.md",
                             "skills/review/references/deep-quality.md",
                         ]
                     },
@@ -258,10 +248,6 @@ class RoutingManifestTests(RoutingTestCase):
             ),
             (lambda p: p.update(lens_floors={}), "lens_floors must not be empty"),
             (lambda p: p.update(lens_floors=None), "lens_floors must be an object"),
-            (
-                lambda p: p["lens_floors"].pop("plan"),
-                "lens floor for plan drops pinned lenses",
-            ),
             (
                 lambda p: p["lens_floors"]["code"].remove(adversarial),
                 "lens floor for code drops pinned lenses",

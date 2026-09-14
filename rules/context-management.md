@@ -1,68 +1,50 @@
 # Context Management
 
-At every chain boundary or loop iteration, update durable state before applying
-the provider's `context_reset` capability. Chat history is disposable; declared
-artifacts are authoritative.
+Autonomous workflows never depend on the user clearing context. The parent
+session stays thin and long-lived; fresh workers are the phase boundaries;
+auto-compaction is a safety net; `PROJECT.md` is the authoritative resume state.
 
-## Proactive Phase Reset Policy
+## What Lives Where
 
-- **TRIVIAL**: stay in one session unless tool or log output becomes unusually large.
-- **MODERATE**: reset when logs, diffs, or review rounds become noisy, especially before independent review.
-- **STANDARD / expensive**: reset at every major phase boundary after the current artifact and machine checkpoint are current.
+- **Parent context**: user intent, the active skill, the routing snapshot, gate
+  results, short handoffs, user decisions. Nothing else.
+- **Workers**: large logs, diffs, repository exploration, implementation detail.
+  They return handoffs, never transcripts (`rules/specialist-handoff.md`).
+- **Files**: `PROJECT.md` (state, snapshot, checkpoint), `PLAN.md` (accepted
+  plan), workflow manifests (`CI_FIX.md`, `WATCH.md`, `CHERRY_PICK.md`).
 
-Standard boundaries are:
+## Phase Boundaries
 
-1. Investigation or planning artifact written.
-2. Plan/RCA review and action gate recorded.
-3. Implementation slice or wave completed and verified.
-4. Review findings and fix queue recorded.
-5. Review fixes completed with the next validation/reporting action recorded.
+Before every worker dispatch and after every handoff, update the durable
+artifact first, then continue. A fresh worker resuming from those artifacts
+alone must be able to do the next phase; if it could not, the artifact is
+incomplete, not the context.
 
-Batch work resets between waves. Skip a standard reset only when the next phase
-is tiny and the durable artifact already contains everything needed; record the
-reason in `PROJECT.md`.
+Reuse a worker only inside the same bounded phase when re-discovery would cost
+more than the resume. Start fresh across phases.
 
-## Reactive Thresholds
+## Compaction and Clearing
 
-- Below roughly 70% context and below $3 estimated session cost: continue.
-- At or above roughly 70%, or above $8: finish the in-flight action, checkpoint,
-  then apply `context_reset`.
-- Between $3 and $8: consider whether a fresh context would be cheaper and clearer.
+- Keep auto-compaction on. Set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` lower (for
+  example `80`) when the parent grows faster than expected; compaction of the
+  parent does not erase worker history.
+- Manual compaction is optional hygiene when the parent gets noisy mid-task.
+- Clearing the conversation is optional hygiene between unrelated tasks or
+  after heavy manual steering. It is never a workflow step, and a workflow never
+  asks for it.
+- Bound nesting with `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`: goal skill, one
+  worker layer, one exceptional child.
+- Codex: the same rules apply with its native custom agents; a fresh session
+  resumes from `PROJECT.md` through the `start` workflow when needed.
 
-Never cut off an edit, tool call, or review round mid-action. Do not start the
-next phase before the checkpoint is durable.
+## Resume
 
-## Save and Continue Protocol
+`start` reads the routing snapshot and checkpoint, re-runs classification only
+when the snapshot predates the workflow's contract, and continues at the
+recorded gate. Provider task lists mirror state; they never replace files.
 
-1. Use the deterministic checkpoint API and the selected workflow contract to
-   update the `PROJECT.md` machine block and human continuation record.
-2. Leave uncommitted work untouched unless the workflow already has commit
-   authorization; record dirty state instead.
-3. Apply the provider's `context_reset` binding or its declared fresh-session fallback.
-4. Resume through the `start` workflow, which reloads the checkpoint, declared
-   state artifacts, and next phase.
+## Reference Loading
 
-Do not rely on chat memory after a reset. Provider task lists may mirror the
-current phase but never replace `PROJECT.md`, `PLAN.md`, or workflow manifests.
-Provider-native recurrence, worktree, or session state is likewise a disposable
-binding behind the shared capability contract.
-
-## Batch Manifest Checkpoints
-
-For large batches, preserve the manifest pointer and next unit/wave, not raw
-per-item history:
-
-- cherry-pick trains: `CHERRY_PICK.md`;
-- multi-failure CI fixes: `CI_FIX.md`;
-- large feature builds: `PLAN.md`;
-- PR watches: `WATCH.md`.
-
-Update the relevant manifest before the checkpoint so resume never depends on
-discarded conversation state.
-
-## Reference Loading Policy
-
-Public workflow references should load only the short rules needed at entry.
-Resolve detailed domain skills through `interfaces/skills.json` when entering
-their phase. Provider adapters are never behavior owners; canonical skills and
-references are.
+Load short rules at entry and domain skills at phase entry through
+`interfaces/skills.json`. Provider adapters translate capabilities and never own
+behavior.

@@ -8,7 +8,7 @@ tier: Heavy
 
 Evaluate whether the plan is practically implementable with realistic effort and sequencing.
 
-Read before scoring: `rules/scoring.md`, `rules/severity.md`
+Read before grading: `rules/severity.md`
 
 If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
 
@@ -37,7 +37,6 @@ Do NOT comment on:
 
 ```markdown
 ## Implementation Review
-### Score: X/10
 ### Strengths
 - [What the plan does well for implementability]
 ### Issues

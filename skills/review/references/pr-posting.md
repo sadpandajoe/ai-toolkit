@@ -10,9 +10,9 @@ Use after PR review synthesis has produced a recommendation.
 
 Detail level scales with complexity and findings.
 
-- **Trivial + clean**: return an approve recommendation; post/approve directly only with `--auto` or explicit user authorization.
-- **Moderate + clean**: approve with compact summary in draft/confirmation mode; post directly only with `--auto`.
-- **Standard + clean**: pause with a one-line confirmation before approving unless `--auto` was passed.
+- **TRIVIAL + clean**: return an approve recommendation; post/approve directly only with `--auto` or explicit user authorization.
+- **STANDARD + clean**: approve with compact summary in draft/confirmation mode; post directly only with `--auto`.
+- **COMPLEX + clean**: pause with a one-line confirmation before approving unless `--auto` was passed; the clean verdict has already passed the second-family guard.
 - **Any findings**: post only user-confirmed findings with adjusted severities.
 - **`--draft`**: show review in conversation only. Do not post.
 - **`--auto`**: skip confirmations and post/approve directly.
@@ -49,23 +49,19 @@ If `--adversarial` was not used and the diff touches security-sensitive areas (a
 ## Review-PR Complete
 PR #<number>: <title> — <Approve / Request Changes / Comment>
 
-### Team Selected
-| Reviewer | Why |
-|----------|-----|
-| Code quality | Always |
+### Classification
+TRIVIAL / STANDARD / COMPLEX · size S/M/L/XL · flags: <deep lenses or none>
 
-### Scores
-| Component | Score |
-|-----------|-------|
-| Root Cause | X/10 |
-| Solution | X/10 |
-| Tests | X/10 |
-| Code | X/10 |
-| Docs | X/10 |
-| Overall | X/10 |
+### Lanes
+| Lane | Family | Raised | Accepted | Notes |
+|------|--------|--------|----------|-------|
+| independent | codex/sol | N | N | always |
+| second-family | claude/opus | N | N | COMPLEX or CORE, or clean-verdict guard |
+| deep lens: <name> | codex/astra or claude/fable | N | N | on flag |
+| verify-major | <other family> | N | N | CONFIRMED / REFUTED |
 
-### Issues Found
-- <N> major, <N> minor, <N> nitpick
+### Findings
+- <N> major, <N> minor, <N> nitpick (after validation; single-source majors carry their verifier verdict)
 
 ### Posted
 <Yes — link / No — draft mode>

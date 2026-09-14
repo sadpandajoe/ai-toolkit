@@ -84,6 +84,30 @@ class CostScriptTests(unittest.TestCase):
             ),
         )
 
+    def test_codex_families_are_priced_and_the_sol_promotion_ends_on_time(self) -> None:
+        """Astra and Sol are priced by selector; Sol's promotion is timestamp-aware."""
+        usage = {
+            "input_tokens": 1_000_000,
+            "output_tokens": 1_000_000,
+            "cache_read_input_tokens": 1_000_000,
+            "cache_creation_input_tokens": 1_000_000,
+        }
+        for script in ("show-cost.py", "optimize-cost.py"):
+            module = load_script(script)
+            with self.subTest(script=script):
+                self.assertEqual(
+                    {"input": 10.0, "output": 50.0, "cache_read": 1.0, "cache_create": 12.5},
+                    module.get_pricing("gpt-6-astra", "2026-09-05T00:00:00Z"),
+                )
+                self.assertEqual(73.5, module.compute_cost(usage, "gpt-6-astra", "2026-09-05T00:00:00Z"))
+                # Promotional Sol until the announced end date, standard after it.
+                self.assertEqual(4.0, module.get_pricing("gpt-5.6-sol", "2026-11-21T23:59:59Z")["input"])
+                self.assertEqual(5.0, module.get_pricing("gpt-5.6-sol", "2026-11-22T00:00:00Z")["input"])
+                self.assertEqual(20.0, module.get_pricing("gpt-5.6-sol", "2026-09-05T00:00:00Z")["output"])
+                self.assertEqual(30.0, module.get_pricing("gpt-5.6-sol", "2026-12-01T00:00:00Z")["output"])
+                # A promotional model without a timestamp stays unpriced, as for Sonnet.
+                self.assertEqual(0.0, module.compute_cost(usage, "gpt-5.6-sol"))
+
     def test_promotional_pricing_uses_each_records_absolute_timestamp(self) -> None:
         boundaries = {
             "2026-08-31T23:59:59.999999Z": 2.0,

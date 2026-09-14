@@ -1,0 +1,3 @@
+{"id": "fix-bug-standard", "mode": "judgment", "input": "Contained bug with a clear failing test", "expected": {"rca_specialist": false, "independent_review": 1, "delta_review": "conditional", "premium_calls": 0}, "source": "plan"}
+{"id": "fix-bug-complex", "mode": "judgment", "input": "Bug with competing causes across two services", "expected": {"rca_specialist": true, "fix_plan_validation": true}, "source": "plan"}
+{"id": "resume-from-snapshot", "mode": "judgment", "input": "Fresh session; PROJECT.md snapshot says fix-bug, phase implement, gate verification RETRY 1/2", "expected": {"resume_phase": "implement", "reclassify": false}, "source": "plan"}

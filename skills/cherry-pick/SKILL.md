@@ -24,9 +24,9 @@ If the workflow would cross a contract boundary, stop and ask — do not cross f
 Per-cherry push is the default action at step 8 — every successfully validated cherry is pushed to the target branch before the next cherry starts. `--no-push` opts out: validate locally, record `pending-authorization`, and stop before publishing. The per-cherry push boundary (step 8) and its hard-gate confirmation block still run on every cherry regardless; `--no-push` only changes whether the boundary's outcome is `pushed` or `pending-authorization`.
 
 For non-trivial or expensive cherry-picks, follow
-`rules/context-management.md`: checkpoint and apply `context_reset` after
-investigate/gate/plan is recorded, and again after apply/adapt/validate when
-push authorization and final reporting remain. Batch runs reset between waves.
+`rules/context-management.md`: checkpoint after investigate/gate/plan is
+recorded and again after apply/adapt/validate, so a fresh worker or session
+resumes from the manifest. Batch runs checkpoint between waves.
 
 ## Usage
 

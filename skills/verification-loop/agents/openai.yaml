@@ -1,0 +1,6 @@
+interface:
+  display_name: "Verification Loop"
+  short_description: "Shared verify, fix, recheck loop with gate outcomes"
+
+policy:
+  allow_implicit_invocation: false

@@ -4,36 +4,26 @@ tier: Heavy
 
 # Deep Quality Review (Strict Structural Findings)
 
-A strict maintainability **findings** lens — the concrete, pattern-matchable
-half of a deep structural review. It escalates `references/code-quality.md`; it
-does not replace it. Run the baseline code-quality loop for
-DRY/reuse/placement/test-coverage, and run this for strict structural findings.
+A strict maintainability **findings** lens: the concrete, pattern-matchable half
+of a deep structural review. It runs as a conditional deep lens beside the
+independent reviewer, which owns the baseline DRY, reuse, placement, and
+test-coverage checks; this lens adds strict structural findings on
+`deep-review`.
 
-This lens finds structural problems. Its generative sibling,
-`references/code-judo.md`, *proposes* behavior-preserving restructurings. Both
-run on the `deep-review` route; the difference between them is budget and
-output, not model. This lens occupies one of the tier's lens lanes and returns
-findings; code-judo runs outside that budget as an extra stage and returns
-unscored proposals.
+Its generative sibling, `references/code-judo.md`, *proposes*
+behavior-preserving restructurings and returns unscored proposals at its own
+boundary. The difference is output, not model.
 
 ## Triggers
 
-`classify-diff` owns the trigger predicate — see its *Deep quality* row,
-*Detect refactor shape* step, and *Deep-tier phrases* list. This lens activates
-whenever that classifier lists it under Triggered Reviewers, and never
-re-derives the conditions here.
-
-Two route facts belong to this lens rather than the classifier: it runs on the
-`deep-review` route, which is also how a tier whose mandatory `deep-review`
-route would otherwise carry no lane gets one (see `references/ensemble.md`); and
-a bare "deep quality" ask fires *this lens only* — that ask is not a deep-tier
-phrase, so it neither pins the tier, nor escalates the other lenses' routes, nor
-adds a Code-judo pass.
+`classify-diff` owns the trigger predicate (refactor shape, a "deep quality"
+ask, or deep-tier escalation). This lens activates when the classifier lists it
+under `Deep lenses`, and never re-derives the conditions. A bare "deep quality"
+ask fires this lens only; it is not a deep-tier escalation.
 
 ## Required Context
 
-Read before starting: `rules/code-review.md`, `rules/severity.md`,
-`rules/stop-rules.md`.
+Read before starting: `rules/code-review.md`, `rules/severity.md`.
 Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 
 ## Standards
@@ -100,6 +90,6 @@ notes. Do not flood the review with nits when larger structural issues exist.
 
 ## Stop Rules
 
-Apply stop rules from `rules/stop-rules.md`. Grade only in-scope findings per the
+Apply the retry budget in `rules/gates.md`. Grade only in-scope findings per the
 `rules/code-review.md` Finding Calibration (scope-before-correctness, symmetry
 cap at `[minor]`).

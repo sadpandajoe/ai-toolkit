@@ -1,0 +1,10 @@
+{"id": "route-review-and-fix", "mode": "deterministic", "input": "review this branch and fix anything important", "expected": {"workflow": "review-code"}, "source": "plan"}
+{"id": "route-fix-bug", "mode": "deterministic", "input": "fix this bug: pagination skips rows after an update", "expected": {"workflow": "fix-bug"}, "source": "plan"}
+{"id": "route-create-feature", "mode": "deterministic", "input": "build a feature that adds bulk edit for dashboard filters", "expected": {"workflow": "create-feature"}, "source": "plan"}
+{"id": "route-fix-ci", "mode": "deterministic", "input": "fix the failing CI checks on this PR", "expected": {"workflow": "fix-ci"}, "source": "plan"}
+{"id": "route-address-feedback", "mode": "deterministic", "input": "address review comments on PR 123", "expected": {"workflow": "address-feedback"}, "source": "plan"}
+{"id": "route-watch-pr", "mode": "deterministic", "input": "watch pr 123 until it is green", "expected": {"workflow": "watch-pr"}, "source": "plan"}
+{"id": "route-review-plan", "mode": "deterministic", "input": "review technical plan in PLAN.md", "expected": {"workflow": "review-plan"}, "source": "plan"}
+{"id": "route-unrelated", "mode": "deterministic", "input": "what does this regex match?", "expected": {"workflow": null}, "source": "plan"}
+{"id": "route-review-only", "mode": "judgment", "input": "review this; don't change anything", "expected": {"workflow": "review-code", "remediation": false}, "source": "plan"}
+{"id": "route-rca-only", "mode": "judgment", "input": "investigate why exports time out; do not modify code", "expected": {"skill": "debug", "mutation": false}, "source": "plan"}

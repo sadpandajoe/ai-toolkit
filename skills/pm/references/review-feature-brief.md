@@ -8,7 +8,7 @@ tier: Heavy
 
 Review the product-facing feature brief before technical planning begins.
 
-Read before scoring: `rules/scoring.md`, `rules/severity.md`
+Read before grading: `rules/severity.md`
 
 If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
 
@@ -33,7 +33,6 @@ Do NOT comment on:
 
 ```markdown
 ## Feature Brief Review
-### Score: X/10
 ### Strengths
 - [What the brief does well]
 ### Issues

@@ -64,91 +64,123 @@ class RoutingClosureTests(RoutingTestCase):
         # the other direction: the worker silently loses a lens it is told to
         # run, and a negative-membership assertion alone stays green.
         expected = {
-            # A fan-out lane carries exactly one lens plus that lens's own
-            # grading contracts — never the six siblings the marker also names.
-            ("review.local-primary-lanes", "skills/review/references/deep-quality.md"): (
+            # A deep-lens lane carries exactly one lens plus that lens's own
+            # grading contracts, never its two siblings.
+            ("review.deep-lenses", "skills/review/references/deep-quality.md"): (
                 "rules/code-review.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/stop-rules.md",
+                "rules/specialist-handoff.md",
                 "skills/review/SKILL.md",
                 "skills/review/references/deep-quality.md",
                 "skills/review/references/local-review.md",
             ),
-            ("review.local-final-pass", "skills/review/references/code-quality.md"): (
+            ("review.pr-deep-lenses", "skills/review/references/adversarial.md"): (
                 "rules/code-review.md",
+                "rules/gates.md",
                 "rules/model-assignment.md",
-                "rules/review-gate.md",
                 "rules/severity.md",
-                "rules/stop-rules.md",
+                "rules/specialist-handoff.md",
                 "skills/review/SKILL.md",
-                "skills/review/references/code-quality.md",
-                "skills/review/references/local-review.md",
+                "skills/review/references/adversarial.md",
+                "skills/review/references/pr-review.md",
             ),
-            # The independent lanes launch an external capability rather than a
-            # lens, so their closure stays near the seeds — but both grade
-            # findings onto the toolkit scale, so both keep the full grading
-            # pair. With no lens in the closure, `local-review.md`'s own
-            # Required Context is the only thing supplying it.
-            ("review.local-independent-second-opinion", None): (
+            # The independent and delta lanes carry the reviewer contract and
+            # the grading rules, and nothing about deep lenses or judo.
+            ("review.independent", None): (
+                "agents/specialists/reviewer.md",
                 "rules/code-review.md",
+                "rules/gates.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/stop-rules.md",
-                "skills/review/SKILL.md",
-                "skills/review/references/local-review.md",
-            ),
-            ("review.local-independent-capability", None): (
-                "rules/code-review.md",
-                "rules/model-assignment.md",
-                "rules/review-gate.md",
-                "rules/severity.md",
-                "rules/stop-rules.md",
+                "rules/specialist-handoff.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
                 "skills/review/SKILL.md",
                 "skills/review/references/local-review.md",
+                "skills/testing/references/review-tests.md",
             ),
-            ("review.code-quality-final", None): (
+            ("review.delta", None): (
+                "agents/specialists/reviewer.md",
+                "rules/code-review.md",
+                "rules/gates.md",
+                "rules/model-assignment.md",
+                "rules/severity.md",
+                "rules/specialist-handoff.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/local-review.md",
+                "skills/testing/references/review-tests.md",
+            ),
+            # The second-family lane is the independent lane's twin: same
+            # contract, same checklists, nothing from the first lane.
+            ("review.second-family", None): (
+                "agents/specialists/reviewer.md",
+                "rules/code-review.md",
+                "rules/gates.md",
+                "rules/model-assignment.md",
+                "rules/severity.md",
+                "rules/specialist-handoff.md",
+                "skills/plan-review/references/backend.md",
+                "skills/plan-review/references/frontend.md",
+                "skills/review/SKILL.md",
+                "skills/review/references/local-review.md",
+                "skills/testing/references/review-tests.md",
+            ),
+            # The single-finding verifier carries its own contract and the
+            # grading rules; never the reviewer contract or the domain
+            # checklists, so it cannot widen into a second review.
+            ("review.verify-major", None): (
+                "agents/specialists/finding-verifier.md",
                 "rules/code-review.md",
                 "rules/model-assignment.md",
-                "rules/review-gate.md",
                 "rules/severity.md",
-                "rules/stop-rules.md",
+                "rules/specialist-handoff.md",
                 "skills/review/SKILL.md",
-                "skills/review/references/code-quality.md",
+                "skills/review/references/local-review.md",
             ),
-            # The batch worker is a single reviewer that applies its own lenses,
-            # so the classifier *and* the lenses it may select both have to reach
-            # it. They arrive as declared boundary contracts rather than as an
-            # accident of what the classifier links to: the document says the
-            # worker applies every triggered lens, and a closure carrying none of
-            # them described a worker instructed to run procedures it could not
-            # read. `adversarial.md` and `architecture.md` are deliberately
-            # absent -- both carry a `deep-review` route floor, and this lane runs
-            # on `review` too, so inlining them here would defeat the floor rather
-            # than honour it. `pr-posting.md` is absent because the worker never
-            # posts; that contract belongs to the main thread alone.
+            # The batch worker applies the reviewer contract itself and reads
+            # its own payload's classification; the floored deep lenses are
+            # deliberately absent because the lane runs on `review` too.
             ("review.pr-batch", None): (
+                "agents/specialists/reviewer.md",
                 "rules/code-review.md",
+                "rules/gates.md",
                 "rules/model-assignment.md",
-                "rules/review-gate.md",
-                "rules/scoring.md",
                 "rules/severity.md",
-                "rules/stop-rules.md",
+                "rules/specialist-handoff.md",
                 "skills/plan-review/references/backend.md",
                 "skills/plan-review/references/frontend.md",
                 "skills/review/SKILL.md",
                 "skills/review/references/classify-diff.md",
-                "skills/review/references/code-quality.md",
-                "skills/review/references/deep-quality.md",
                 "skills/review/references/pr-batch.md",
-                "skills/review/references/pr-review.md",
-                "skills/testing/references/review-testplan.md",
                 "skills/testing/references/review-tests.md",
             ),
+            # Plan validation is one worker with the validator contract plus
+            # the two plan checklists it inlines; the floored architecture lens
+            # never rides along.
+            ("planning.validate", None): (
+                "agents/specialists/plan-validator.md",
+                "rules/model-assignment.md",
+                "rules/severity.md",
+                "rules/specialist-handoff.md",
+                "skills/plan-review/references/implementation.md",
+                "skills/planning/SKILL.md",
+                "skills/planning/references/validate-plan.md",
+                "skills/testing/references/review-testplan.md",
+            ),
+            ("debug.rca-specialist", None): (
+                "agents/specialists/rca.md",
+                "rules/model-assignment.md",
+                "rules/specialist-handoff.md",
+                "skills/debug/SKILL.md",
+                "skills/debug/gotchas.md",
+                "skills/debug/lessons.md",
+                "skills/debug/references/review-rca.md",
+            ),
         }
-        allowed = {
-            boundary["id"]: boundary for boundary in payload["dispatch_boundaries"]
-        }
+        allowed = {b["id"]: b for b in payload["dispatch_boundaries"]}
         for (identifier, lens), contracts in expected.items():
             for route in _routes_for(allowed[identifier], lens):
                 with self.subTest(boundary=identifier, route=route):
@@ -283,24 +315,19 @@ class RoutingClosureTests(RoutingTestCase):
         would happily record a lane that quietly lost its calibration.
         """
         grading_boundaries = {
-            # Lens fan-outs: every lens the marker names, on every route.
-            "review.local-primary-lanes",
-            "review.local-final-pass",
-            "review.pr-moderate",
-            "review.pr-standard",
-            "review.pr-lenses",
+            # Deep-lens fan-outs: every lens the marker names.
+            "review.deep-lenses",
+            "review.pr-deep-lenses",
             # Single-lane code review with no fan-out.
-            "review.code-quality-final",
+            "review.independent",
+            "review.second-family",
+            "review.delta",
+            "review.verify-major",
+            "review.pr-independent",
+            "review.pr-second-family",
             "review.pr-batch",
-            # Capability lanes: no lens at all, so the orchestration reference
-            # is the only supplier.
-            "review.local-independent-second-opinion",
-            "review.local-independent-capability",
             # Code-review lanes owned by another skill, which therefore do not
             # receive the review umbrella.
-            "workflows.review-code-orchestration",
-            "workflows.review-code-fresh",
-            "workflows.review-pr-fresh",
             "workflows.adversarial-primary",
             "workflows.adversarial-second-opinion",
         }

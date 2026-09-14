@@ -16,7 +16,7 @@ For UI and workflow features, use Playwright MCP as the default validation path 
 
 - Feature brief or acceptance criteria.
 - Implemented slice or feature summary.
-- Review Gate status.
+- Review gate status.
 - App URL or environment state, when user-visible behavior changed.
 
 ## Core Steps

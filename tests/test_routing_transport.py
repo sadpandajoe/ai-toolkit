@@ -131,7 +131,7 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             calls.append(argv)
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.144.5\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
             flags = " ".join(
                 (
                     "--ephemeral --strict-config --ignore-user-config --ignore-rules ",
@@ -161,7 +161,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "deep-review",
                     "codex",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=Path(cwd),
                     dry_run=True,
@@ -170,7 +170,9 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(0, code)
         self.assertEqual(2, len(calls))
         argv = payload["argv"]
-        self.assertIn(MODEL_CATALOG["codex"]["models"]["sol"]["selector"], argv)
+        # The deep route on Codex is Astra, never the Sol workhorse.
+        self.assertIn(MODEL_CATALOG["codex"]["models"]["astra"]["selector"], argv)
+        self.assertNotIn(MODEL_CATALOG["codex"]["models"]["sol"]["selector"], argv)
         self.assertIn('model_reasoning_effort="xhigh"', argv)
         self.assertIn("read-only", argv)
         self.assertIn("--ignore-user-config", argv)
@@ -186,7 +188,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_prerelease_at_minimum_version_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
-                argv, 0, "codex-cli 0.144.5-alpha.1\n", ""
+                argv, 0, "codex-cli 0.153.0-alpha.1\n", ""
             )
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
@@ -199,7 +201,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "review",
                     "codex",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     dry_run=True,
@@ -232,7 +234,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "deep-review",
                     "claude",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     dry_run=True,
@@ -295,7 +297,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "deep-review",
                     "claude",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=runner,
@@ -304,14 +306,14 @@ class RoutingTransportTests(RoutingTestCase):
         for contract in (
             "rules/model-assignment.md",
             "skills/review/SKILL.md",
-            "skills/review/references/code-quality.md",
+            "agents/specialists/reviewer.md",
         ):
             self.assertIn(f"CONTRACT path={contract} sha256=", worker_input)
         expected_contracts = resolve_route(
             ROOT,
             "deep-review",
             "claude",
-            boundary="review.code-quality-final",
+            boundary="review.independent",
         ).required_contracts
         self.assertEqual(len(expected_contracts), worker_input.count("CONTRACT path="))
         self.assertNotIn("CONTRACT path=README.md", worker_input)
@@ -319,7 +321,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_unreadable_codex_final_message_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.144.5\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -343,7 +345,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "review",
                     "codex",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=runner,
@@ -355,7 +357,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_codex_success_path_returns_the_structured_result(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.144.5\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -381,7 +383,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "review",
                     "codex",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=runner,
@@ -471,7 +473,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "review",
                     "claude",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=claude_runner(graded),
@@ -487,7 +489,7 @@ class RoutingTransportTests(RoutingTestCase):
         plan-domain lane could return no score at all, and both passed the
         generic envelope check. Downstream that is silent: the code aggregator
         dedupes and escalates on `[major]`/`[minor]`/`[nitpick]` and drops what
-        it cannot read, and plan review iterates against a score it never got.
+        it cannot read, and plan validation branches on a verdict it never got.
 
         Both checks were substring searches, which is not how the aggregator
         reads either value. A plan-tagged finding that named `[major]` anywhere
@@ -498,52 +500,52 @@ class RoutingTransportTests(RoutingTestCase):
         cases = (
             # (boundary, route, lens, worker, expected exit, error fragment)
             (
-                "review.pr-standard",
-                "review",
-                "skills/review/references/code-quality.md",
+                "review.pr-deep-lenses",
+                "deep-review",
+                "skills/review/references/deep-quality.md",
                 {"findings": ["[major] unchecked index"], "summary": "one blocker"},
                 0,
                 None,
             ),
             (
-                "review.pr-standard",
-                "review",
-                "skills/review/references/code-quality.md",
+                "review.pr-deep-lenses",
+                "deep-review",
+                "skills/review/references/deep-quality.md",
                 {"findings": ["[High] unchecked index"], "summary": "one blocker"},
                 3,
                 "do not open with a [major]/[minor]/[nitpick] tag",
             ),
             (
-                "workflows.review-plan-fresh",
+                "planning.validate",
                 "review",
-                "skills/plan-review/references/implementation.md",
-                {"findings": ["[Medium] no rollback step"], "summary": "Score: 7/10"},
+                None,
+                {"findings": ["[Medium] no rollback step"], "summary": "Verdict: CHANGES_REQUIRED"},
                 0,
                 None,
             ),
             (
-                "workflows.review-plan-fresh",
+                "planning.validate",
                 "review",
-                "skills/plan-review/references/implementation.md",
-                {"findings": ["[minor] no rollback step"], "summary": "Score: 7/10"},
+                None,
+                {"findings": ["[minor] no rollback step"], "summary": "Verdict: CHANGES_REQUIRED"},
                 3,
                 "do not open with a [High]/[Medium]/[Low] tag",
             ),
             (
-                "workflows.review-plan-fresh",
+                "planning.validate",
                 "review",
-                "skills/plan-review/references/implementation.md",
+                None,
                 {"findings": ["[Medium] no rollback step"], "summary": "looks workable"},
                 3,
-                "no `Score: X/10` line",
+                "no `Verdict: APPROVE|CHANGES_REQUIRED|REPLAN` line",
             ),
             # The two bypasses the substring form allowed. A cross-domain
             # finding that mentions the right tag somewhere in its prose is not
             # tagged; a summary that quotes any ratio has not scored itself.
             (
-                "review.pr-standard",
-                "review",
-                "skills/review/references/code-quality.md",
+                "review.pr-deep-lenses",
+                "deep-review",
+                "skills/review/references/deep-quality.md",
                 {
                     "findings": ["[High] unchecked index — as bad as any [major] defect"],
                     "summary": "one blocker",
@@ -552,23 +554,23 @@ class RoutingTransportTests(RoutingTestCase):
                 "do not open with a [major]/[minor]/[nitpick] tag",
             ),
             (
-                "workflows.review-plan-fresh",
+                "planning.validate",
                 "review",
-                "skills/plan-review/references/implementation.md",
+                None,
                 {
                     "findings": ["[Medium] no rollback step"],
-                    "summary": "rollback covers 7/10 of the call sites",
+                    "summary": "we would not approve this as-is; changes required",
                 },
                 3,
-                "no `Score: X/10` line",
+                "no `Verdict: APPROVE|CHANGES_REQUIRED|REPLAN` line",
             ),
             # Formatting in front of the tag is formatting, not a missing tag:
             # a check that rejects `**[major]** ...` fails a worker that answered
             # correctly and teaches the next one to strip Markdown, not to tag.
             (
-                "review.pr-standard",
-                "review",
-                "skills/review/references/code-quality.md",
+                "review.pr-deep-lenses",
+                "deep-review",
+                "skills/review/references/deep-quality.md",
                 {
                     "findings": [
                         "- [minor] stale comment",
@@ -581,26 +583,26 @@ class RoutingTransportTests(RoutingTestCase):
                 None,
             ),
             (
-                "workflows.review-plan-fresh",
+                "planning.validate",
                 "review",
-                "skills/plan-review/references/implementation.md",
+                None,
                 {
                     "findings": ["[Medium] no rollback step"],
-                    "summary": "Workable.\n\n**Score:** 7/10",
+                    "summary": "Workable.\n\n**Verdict:** APPROVE",
                 },
                 0,
                 None,
             ),
-            # The form every plan lens actually prints: `### Score: X/10` under a
-            # `## <Lens> Review` heading. Rejecting the canonical template failed
-            # workers that followed their own contract.
+            # The form the validator contract prints: a `Verdict:` line under a
+            # heading. Rejecting the canonical template would fail workers that
+            # followed their own contract.
             (
-                "workflows.review-plan-fresh",
+                "planning.validate",
                 "review",
-                "skills/plan-review/references/implementation.md",
+                None,
                 {
                     "findings": ["[Medium] no rollback step"],
-                    "summary": "## Implementation Review\n### Score: 7/10\n### Issues",
+                    "summary": "## Plan Validation\n### Verdict: REPLAN\n### Issues",
                 },
                 0,
                 None,
@@ -608,9 +610,9 @@ class RoutingTransportTests(RoutingTestCase):
             # A worker that could not review is reporting why, not grading. Held
             # to the vocabulary, a legible failure becomes an unparseable one.
             (
-                "review.pr-standard",
-                "review",
-                "skills/review/references/code-quality.md",
+                "review.pr-deep-lenses",
+                "deep-review",
+                "skills/review/references/deep-quality.md",
                 {
                     "status": "blocked",
                     "findings": ["the diff was empty, nothing to review"],
@@ -790,19 +792,13 @@ class RoutingTransportTests(RoutingTestCase):
         # tags it will be checked against.
         code_route = resolve_route(
             ROOT,
-            "review",
+            "deep-review",
             "claude",
-            "review.pr-standard",
-            lens="skills/review/references/code-quality.md",
+            "review.pr-deep-lenses",
+            lens="skills/review/references/deep-quality.md",
         )
-        plan_route = resolve_route(
-            ROOT,
-            "review",
-            "claude",
-            "workflows.review-plan-fresh",
-            lens="skills/plan-review/references/implementation.md",
-        )
-        plain = resolve_route(ROOT, "review", "claude", "review.code-quality-final")
+        plan_route = resolve_route(ROOT, "review", "claude", "planning.validate")
+        plain = resolve_route(ROOT, "review", "claude", "cherry-pick.scope-leak-review")
         batch = resolve_route(ROOT, "review", "claude", "review.pr-batch")
         self.assertIn(
             "grading=every finding must begin with one of "
@@ -811,7 +807,8 @@ class RoutingTransportTests(RoutingTestCase):
         )
         self.assertIn(
             "grading=every finding must begin with one of [High]|[Medium]|[Low]; "
-            "summary must contain a `Score: X/10` line of its own\n",
+            "summary must contain a `Verdict: APPROVE|CHANGES_REQUIRED|REPLAN` "
+            "line of its own\n",
             worker_prompt(plan_route, "task", ()),
         )
         # The batch lane's summary is checked line by line, so the header names
@@ -864,7 +861,7 @@ class RoutingTransportTests(RoutingTestCase):
                             ROOT,
                             "review",
                             "claude",
-                            "review.code-quality-final",
+                            "review.independent",
                             Path(prompt.name),
                             cwd=ROOT,
                             timeout_seconds=1,
@@ -909,7 +906,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "review",
                     "claude",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=runner,
@@ -960,7 +957,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "review",
                     "claude",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=runner,
@@ -982,7 +979,7 @@ class RoutingTransportTests(RoutingTestCase):
                         ROOT,
                         "review",
                         "claude",
-                        "review.code-quality-final",
+                        "review.independent",
                         prompt,
                         cwd=ROOT,
                     )
@@ -997,7 +994,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "review",
                     "claude",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     dry_run=True,
@@ -1021,7 +1018,7 @@ class RoutingTransportTests(RoutingTestCase):
                     ROOT,
                     "review",
                     "claude",
-                    "review.code-quality-final",
+                    "review.independent",
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=runner,
@@ -1070,7 +1067,7 @@ class RoutingTransportTests(RoutingTestCase):
                             ROOT,
                             "review",
                             "claude",
-                            "review.code-quality-final",
+                            "review.independent",
                             Path(prompt.name),
                             cwd=ROOT,
                             runner=runner,

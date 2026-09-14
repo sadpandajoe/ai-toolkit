@@ -1,29 +1,91 @@
 # Architecture
 
-AI Toolkit separates stable workflow behavior from provider syntax.
+AI Toolkit separates stable workflow behavior from provider syntax, and puts
+the control plane in the cheapest capable model.
 
 ## Layers
 
-1. `rules/` contains short cross-workflow constraints.
-2. `skills/` contains canonical Agent Skills and lazy references. `skills/workflows/` is the public daily-workflow router.
-3. `interfaces/workflows.json` and the optional extension manifests declare
-   workflow identity, owner skill, routing, rule imports, and execution class.
-   `interfaces/contracts.json` v2 declares the phase graph, authorization,
-   effects, idempotency, verification, reporting, and recovery behavior.
-   `interfaces/skills.json`, `providers.json`, `model-routing.json`,
-   `guidance.json`, and `support.json` make public discovery, provider
-   capabilities, fail-closed model routing, shared always-on guidance, and the
-   release matrix explicit.
-4. `.codex-plugin/`, `skills/*/agents/openai.yaml`, `hooks/hooks.json`, and `config/AGENTS.md` form the Codex adapter.
-5. `aitk/` and `bin/aitk` build, route, validate, transact installation, and
-   serialize durable workflow checkpoints.
+1. `rules/` holds short cross-workflow constraints: durable state, gates and
+   the retry budget, complexity and size classification, model roles, the
+   specialist handoff contract.
+2. `skills/` holds canonical Agent Skills and lazy references.
+   `skills/workflows/` is the public router; its references are the goal
+   workflows (thin state machines the parent runs inline). Domain skills
+   (`planning`, `review`, `debug`, `testing`, `qa`, `feedback`, ...) hold
+   reusable knowledge loaded at phase entry. `skills/verification-loop/` is
+   the shared verify, fix, recheck loop every goal workflow chains.
+3. `agents/` holds the worker roster. `agents/claude/*.md` and
+   `agents/codex/*.toml` are native subagent definitions the installer links
+   into the user's provider directories: planner (Fable, read-only),
+   implementer, debugger, tester (Sonnet), and a same-provider reviewer
+   fallback. Each provider has a workhorse family and a deep family (Sonnet and
+   Opus with Fable; Sol with Astra); deep routes run only on the deep family. `agents/specialists/*.md` are provider-neutral contracts
+   (reviewer, RCA, plan validator, finding verifier) the route runner inlines
+   into cross-provider specialists.
+4. `interfaces/` makes everything machine-checkable: workflow identity and
+   triggers, v2 durable contracts, skill classification, provider capability
+   bindings, model routing (catalog, routes, dispatch boundaries, lens floors),
+   always-on guidance, and the support matrix.
+5. `aitk/` and `bin/aitk` build, route, validate, install transactionally,
+   serialize checkpoints, and own the `PROJECT.md` routing snapshot.
 
-Optional extensions repeat the same pattern below `extensions/<name>/`: a manifest, canonical Agent Skill, and any extension-specific rules. `--with-pgm` opts the bundled PGM extension into validation, routing, and installation.
+## Control Plane
 
-The version 0.2.0 Codex plugin packages the core `skills/` tree. PGM remains an
-explicitly source-linked extension until plugin distribution supports its
-separate skill root; `interfaces/support.json` makes that distribution boundary
-machine-readable.
+The parent session runs on the workhorse family named in
+`interfaces/model-routing.json` (`policy.orchestrator`). A goal workflow reads
+the routing snapshot, evaluates the current gate, runs the next bounded
+capability, records the handoff, and repeats until every required gate is
+`PASS`. Only `USER_DECISION`, `BLOCKED`, and the hard safety gates in
+`interfaces/contracts.json` reach the user.
+
+Classification has two orthogonal axes plus a derived shape:
+
+- **Complexity** (`TRIVIAL` / `STANDARD` / `COMPLEX`) chooses the reasoning
+  tier. Hard signals (migrations, auth, public contracts, concurrency, caching,
+  cross-service, compatibility, new architecture) force `COMPLEX`.
+- **Size** (`S` / `M` / `L` / `XL`) estimates implementation surface.
+- **Execution shape** (`SINGLE_PHASE` / `BATCHED` / `MULTI_PHASE`) is derived
+  by `aitk.project_state.derive_execution_shape` from size and a phaseability
+  judgement; L must be assessed, XL decomposes by default unless mechanical.
+
+`aitk project-state` persists the snapshot in a delimited block in
+`PROJECT.md`, records gate outcomes, and enforces the attempt budget: a unit
+gets one attempt and one informed retry per owner, and the runtime turns the
+second `RETRY` into `ESCALATE` (or the first, when it repeats a failure that
+already exhausted a previous owner). An escalation climbs a bounded per-unit ladder
+(three steps, then `USER_DECISION`) and resets the budget for the next owner;
+editorial retries, `USER_DECISION`, and `BLOCKED` are recorded without being
+charged; `RECLASSIFY` resets the counters. Verification gates carry a strength
+(`STRONG` / `PARTIAL` / `WEAK`), and only `STRONG` authorizes an auto-push.
+
+## Isolation and Routing
+
+Fresh workers are the phase boundary. The parent keeps only intent, the active
+skill, the snapshot, gate results, and short handoffs; large logs, diffs, and
+implementation detail live in workers that return the compact handoff in
+`rules/specialist-handoff.md`. No workflow depends on a manual context clear.
+
+Same-provider workers are native subagents. Independent review, RCA
+validation, and plan validation prefer the other provider and cross the
+source-linked transport: skills name stable routes at inventoried markers,
+`bin/aitk model-route` resolves selector, effort, and permissions, and
+`bin/aitk model-run` inlines the boundary's validated contract closure, pins one
+selector, forbids fallback, and validates the result envelope. Codex targets run
+from a sanitized temporary project root with a scoped `--add-dir` and no user
+config, hooks, MCP servers, or project documents. Provider result formats do
+not attest the internal serving model, so backend substitution stays outside
+the toolkit's evidence boundary.
+
+Review is one independent lane by default, validated by the parent before any
+fix, with one delta pass after substantive remediation and at most two
+`deep-review` lenses (adversarial, deep quality, architecture) on classifier
+flags. COMPLEX and CORE-impact diffs add a second cold lane on the other model
+family, merged by convergence; on other diffs a `[major]` only one lane raised
+is confirmed by a fresh verifier on the other model family before it blocks, and a security-sensitive, `--deep`, or
+adversarial review is `BLOCKED (degraded)` rather than downgraded when the
+other provider is unreachable. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
+REPLAN`; the RCA gate is an evidence checklist the parent grades for STANDARD
+bugs and a specialist grades for COMPLEX or uncertain ones.
 
 ## Source-of-truth flow
 
@@ -32,77 +94,50 @@ workflow manifest + v2 contract + canonical skill reference
                  │
        ┌─────────┴──────────┐
        │                    │
- routing/validation  checkpoint runtime
+ routing/validation   snapshot + checkpoint runtime
                             │
-                   PROJECT.md machine block
+                   PROJECT.md machine blocks
 ```
-
-Provider adapters may translate invocation syntax, tool names, planning controls, scheduling, and independent-review capabilities. They may not weaken authorization boundaries, protected state, stop conditions, verification labels, or reporting contracts.
-
-Model workers cross a stricter source-linked boundary. Skills declare stable
-route names at inventoried dispatch sites. `<toolkit-root>/bin/aitk model-route`
-resolves the exact selector, effort, and permissions from
-`interfaces/model-routing.json`; `<toolkit-root>/bin/aitk model-run` validates
-the boundary, provider CLI, and route before launching one structured worker
-without downgrade or generic-worker fallback. Each boundary deterministically
-derives a validated transitive inline contract closure from the shared model
-rule, owner and responsibility skills, required-context dependencies, selected
-review lenses, and canonical dispatch document; callers cannot substitute
-arbitrary files. Codex launches from a sanitized temporary project root and
-exposes the target only through `--add-dir`, while also disabling project-document discovery,
-user config, hooks, MCP servers, and exec-policy rules. The toolkit guarantees
-the requested CLI configuration and validates the returned envelope. Inline
-SHA-256 labels identify the exact content sent for diagnostics; they are not
-compared with a separately trusted expected digest. Neither supported provider
-result format attests the internal serving-model identity, so provider backend
-execution and substitution remain the provider's responsibility.
-
-The Codex plugin bundle retains `bin/`, `aitk/`, `config/`, `interfaces/`,
-`rules/`, and `skills/` beneath one plugin root. Routed skills resolve that root
-from their installed location; they never assume the user's product repository
-contains `bin/aitk`. Isolated-plugin tests execute the resolver from an
-unrelated working directory.
 
 ## State and recovery
 
-Long-running workflows write human state plus one canonical
-`aitk-checkpoint:v1` JSON block in `PROJECT.md`. `bin/aitk checkpoint` owns its
-serialization, legal phase transitions, generation counter, and pending/applied
-effect records. A stable operation ID is reserved before an effect and applied
-only after execution or reconciliation. Semantic contract changes invalidate
-old checkpoints through a canonical contract digest. Effect keys are categories,
-not one-shot slots: repeated pushes, posts, and review rounds append distinct
-records keyed by their stable operation IDs.
+Long-running workflows write human state plus two machine blocks in
+`PROJECT.md`: the `aitk-project-state:v2` routing snapshot and the
+`aitk-checkpoint:v1` phase and effect record. `bin/aitk checkpoint` owns phase
+transitions, the generation counter, and pending/applied effect records with
+stable operation IDs. Focused manifests (`PLAN.md`, `WATCH.md`, `CI_FIX.md`,
+`CHERRY_PICK.md`) supplement it. All local workflow-state files are ignored by
+git and blocked by the safety hook. Resume uses durable files, never chat.
 
-Focused manifests such as `PLAN.md`, `WATCH.md`, or `CI_FIX.md` can supplement
-that checkpoint. All local workflow-state files are ignored by git and blocked
-by the safety hook if staged. Resume uses durable files, never chat history.
+## Learning loop
+
+High-signal events (user corrections, misroutes, reclassifications, repeated
+gate failures, specialist invalidations, repeated workarounds, low-yield review
+lanes) append to `.ai-toolkit/observations.jsonl`. `reflect` clusters them,
+proposes rule or skill changes for human approval, and writes eval candidates
+under `evals/`. Tests protect invariants and deterministic transitions; evals
+protect model judgment.
 
 ## Install ownership
 
 Source-linked installation is a transaction recorded in mode-0600
-`~/.ai-toolkit/install-state.json`. The inventory is derived from the manifests
-and public skill classification. Guidance is owned only inside delimiters;
-links are owned by exact target/source records. Install/upgrade, uninstall, and
-one-level rollback validate every ledger path before mutation, preserve user
-conflicts, and restore exact bytes/modes/links on pre-commit failure. A moved
-checkout is an explicit upgrade whose prior root remains recoverable.
-
-Internal skills are packaged for resolver use but are not linked as standalone
-Agent Skills. During a 0.2.0 upgrade, the lifecycle ledger removes old
-toolkit-owned Claude aliases while preserving unrelated personal commands.
+`~/.ai-toolkit/install-state.json`. The inventory is derived from the
+manifests, the public skill classification, and the agent roster. Guidance is
+owned only inside delimiters; links are owned by exact target/source records.
+Install, uninstall, and one-level rollback validate every ledger path before
+mutation and preserve user conflicts.
 
 ## Adding a workflow
 
-1. Add `skills/workflows/references/<name>.md`.
-2. Register the name, summary, arguments, rules, and routing triggers in `interfaces/workflows.json`.
-3. Add a total v2 entry to `interfaces/contracts.json`; use the canonical
-   durable runtime rule and runtime-contract section when execution is durable.
-4. Classify any new skill in `interfaces/skills.json`.
-5. Run `bin/aitk build` (or `--with-pgm` to validate the bundled extension).
-6. Add positive and negative routing, semantic, recovery, and provider cases,
-   then run `bin/aitk check`.
+1. Add `skills/workflows/references/<name>.md` in the goal-loop shape used by
+   `fix-bug.md` and `create-feature.md`.
+2. Register it in `interfaces/workflows.json` (rules, triggers, class) and add a
+   total v2 entry to `interfaces/contracts.json`.
+3. Mark every dispatch sentence with an inventoried route marker and declare the
+   boundary (routes, contracts, lens menu when it fans out) in
+   `interfaces/model-routing.json`; pin its route ceiling in
+   `aitk/routing_manifest.py`.
+4. Add routing, classification, and gate eval cases under `evals/`.
+5. Run `bin/aitk check`.
 
 Do not add workflow logic to provider config, hooks, or the manifest.
-
-For an optional extension, use the matching `extensions/<name>/interfaces/workflows.json` and `extensions/<name>/skills/<name>/references/` locations, then validate it with the same conformance gate.

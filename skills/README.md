@@ -33,6 +33,8 @@ Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 ```
 This convention ensures scoped guidance loads without bloating always-on context.
 
+Worker and specialist definitions live outside `skills/`: `agents/claude/` and `agents/codex/` hold the native subagent roster, `agents/specialists/` the provider-neutral contracts the route runner inlines.
+
 ## When each file fires
 
 - `rules.md` — always read when the skill is invoked. Same shape as global `/rules` files.
@@ -48,17 +50,17 @@ End-to-end workflow umbrellas:
 | Umbrella | Use for |
 |----------|---------|
 | [workflows/](workflows/) | Public daily-workflow routing and canonical orchestration references |
-| [debug/](debug/) | Investigating bugs, diagnosing failures, RCA review, CI failure classification, fix verification |
+| [debug/](debug/) | Investigating bugs, the RCA gate and specialist, CI failure classification, fix verification |
 | [feedback/](feedback/) | PR review feedback triage, approved fixes, reviewer replies, and thread handling |
 | [pr-watch/](pr-watch/) | Watch-and-fix loop over an open PR — CI status + review comments, dispatching to debug/ and feedback/ |
-| [reflection/](reflection/) | Memory capture, memory review/prune, failure postmortems, rule promotion |
-| [planning/](planning/) | Producing/iterating technical plans, finalize cold read, classifying review findings as plan vs code |
+| [reflection/](reflection/) | Observation queue, memory review/prune, failure postmortems, rule promotion with eval candidates |
+| [planning/](planning/) | Sized planning: inline plans, decomposition, just-in-time phase plans, independent validation |
 | [pm/](pm/) | Product scoping before planning — feature briefs, acceptance criteria, milestones |
-| [plan-review/](plan-review/) | Reviewer lenses that critique a plan: architecture, backend, frontend, feasibility |
+| [plan-review/](plan-review/) | Focused lenses the plan validator and deep code review apply: architecture, backend, frontend, feasibility |
 | [qa/](qa/) | Triage, fix validation, impact assessment, use-case discovery, scenario expansion, bug filing |
 | [testing/](testing/) | HOW to test — creating/updating automated test suites, reviewing test code |
-| [review/](review/) | Reviewing code diffs — dispatching code-review lenses, code-quality, adversarial |
-| [implement-change/](implement-change/) | Executing one approved slice of a plan |
+| [review/](review/) | One independent review, validate-then-fix, delta re-review, conditional deep lenses, PR posting |
+| [implement-change/](implement-change/) | Executing one accepted slice or phase as a bounded worker contract |
 | [cherry-pick/](cherry-pick/) | Cross-branch movement of isolated changes — safety gates, scope-leak detection |
 | [preflight/](preflight/) | Worktree prep, dependency/env checks, Docker readiness before work begins |
 
@@ -66,10 +68,9 @@ Workflow scaffolding (mostly orchestrator-only; not auto-routed):
 
 | Umbrella | Use for |
 |----------|---------|
-| [action-gate/](action-gate/) | Execution Gate block (Risk/Confidence/Decision/Verification) after investigation |
+| [verification-loop/](verification-loop/) | Shared verify, fix, recheck loop returning PASS / RETRY / ESCALATE / RECLASSIFY / USER_DECISION / BLOCKED |
 | [reporting/](reporting/) | Final summary + continuation checkpoint shapes |
 | [metrics-emit/](metrics-emit/) | Append structured event to `.ai-toolkit/metrics.jsonl` |
-| [workstreams/](workstreams/) | Fan-in after parallel implementation subagents finish |
 | [archive-project-file/](archive-project-file/) | Move completed PROJECT.md content to PROJECT_ARCHIVE.md |
 | [agent-setup-maintainer/](agent-setup-maintainer/) | Auditing or updating toolkit skills, rules, interfaces, and generated adapters |
 

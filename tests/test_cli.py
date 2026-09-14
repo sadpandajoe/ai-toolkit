@@ -75,51 +75,39 @@ class CliTests(unittest.TestCase):
     def test_model_route_resolves_and_rejects_exactly(self) -> None:
         resolved = self.run_cli(
             "model-route",
-            "deep-review",
+            "review",
             "--provider",
-            "claude",
+            "codex",
             "--boundary",
-            "workflows.review-plan-fresh",
-            "--lens",
-            "skills/plan-review/references/architecture.md",
+            "planning.validate",
             "--json",
         )
         self.assertEqual(0, resolved.returncode, resolved.stderr)
         payload = json.loads(resolved.stdout)
-        self.assertEqual("fable", payload["family"])
-        self.assertEqual("xhigh", payload["effort"])
-        self.assertEqual("plan", payload["controls"]["permission_mode"])
+        self.assertEqual("sol", payload["family"])
+        self.assertEqual("high", payload["effort"])
+        self.assertEqual("read-only", payload["controls"]["sandbox"])
         self.assertEqual("plan", payload["lens_domain"])
         for contract in (
             "rules/model-assignment.md",
-            "rules/stop-rules.md",
-            "skills/workflows/SKILL.md",
-            "skills/workflows/references/review-plan.md",
-            "skills/plan-review/references/architecture.md",
-            "rules/scoring.md",
+            "rules/specialist-handoff.md",
+            "skills/planning/SKILL.md",
+            "skills/planning/references/validate-plan.md",
+            "agents/specialists/plan-validator.md",
             "rules/severity.md",
         ):
             self.assertIn(contract, payload["required_contracts"])
-        # This boundary reviews *plans*. It rides the review route but is owned
-        # by the workflows skill, so the shipped-code review umbrella — and the
-        # code-review grading contract it used to drag along — must not reach it.
-        # The grading contract is declared on the code fan-out boundaries rather
-        # than in these lens documents precisely so this stays true: the lenses
-        # are shared with code review, and a document cannot declare a contract
-        # for one of its two domains only.
-        for leaked in ("skills/review/SKILL.md", "rules/code-review.md"):
-            self.assertNotIn(leaked, payload["required_contracts"])
-        # One dispatch, one lens. The sibling lenses on this boundary's menu are
-        # what the worker must *not* receive: handing it all six made it review
-        # under six conflicting output formats at once.
-        for sibling in (
-            "skills/plan-review/references/implementation.md",
-            "skills/plan-review/references/frontend.md",
-            "skills/plan-review/references/backend.md",
-            "skills/testing/references/review-testplan.md",
-            "skills/pm/references/review-feature-brief.md",
+        # The validator inlines its plan checklists but never the code-review
+        # umbrella, the code grading rules, or the floored architecture lens.
+        self.assertIn(
+            "skills/plan-review/references/implementation.md", payload["required_contracts"]
+        )
+        for leaked in (
+            "skills/review/SKILL.md",
+            "rules/code-review.md",
+            "skills/plan-review/references/architecture.md",
         ):
-            self.assertNotIn(sibling, payload["required_contracts"])
+            self.assertNotIn(leaked, payload["required_contracts"])
 
         rejected = self.run_cli(
             "model-route", "unknown", "--provider", "codex", "--json"
@@ -129,21 +117,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual("MODEL_ROUTE_INVALID", error["code"])
 
     def test_model_route_rejects_a_lens_below_its_declared_floor(self) -> None:
-        """The architecture lens must not resolve to the cheap route.
-
-        Both fan-out routes are on the boundary's `routes` list, so membership
-        alone let an architecture or adversarial dispatch land on Opus/high with
-        no complaint — the lens documents say `deep-review` and nothing enforced
-        it. The floor lives in the manifest so the resolver checks data rather
-        than trusting a dispatcher to have read the prose.
-        """
+        """The deep lenses never resolve to the cheap route."""
         rejected = self.run_cli(
             "model-route",
             "review",
             "--provider",
             "claude",
             "--boundary",
-            "review.pr-standard",
+            "review.deep-lenses",
             "--lens",
             "skills/review/references/adversarial.md",
             "--json",
@@ -151,7 +132,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(2, rejected.returncode)
         error = json.loads(rejected.stdout)["error"]
         self.assertEqual("MODEL_ROUTE_INVALID", error["code"])
-        self.assertIn("below its declared floor", error["message"])
+        self.assertIn("not allowed at boundary", error["message"])
 
         allowed = self.run_cli(
             "model-route",
@@ -159,7 +140,7 @@ class CliTests(unittest.TestCase):
             "--provider",
             "claude",
             "--boundary",
-            "review.pr-standard",
+            "review.deep-lenses",
             "--lens",
             "skills/review/references/adversarial.md",
             "--json",
@@ -169,10 +150,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual("fable", payload["family"])
         self.assertEqual("xhigh", payload["effort"])
         self.assertEqual("code", payload["lens_domain"])
-        # A code fan-out declares the code-review grading contract at the
-        # boundary, so every lane there reports in severity tags — including the
-        # four lenses this menu shares with plan review.
         self.assertIn("rules/code-review.md", payload["required_contracts"])
+        self.assertNotIn(
+            "skills/review/references/deep-quality.md", payload["required_contracts"]
+        )
 
     def test_model_route_rejects_a_lens_without_a_boundary(self) -> None:
         """`--lens` alone used to resolve a route that silently ignored it."""

@@ -79,10 +79,17 @@ Tests passed: [N] | Tests failed: [N]
 Verification: STRONG / PARTIAL / WEAK — [reason]
 ```
 
-**Strength tiers:**
-- **STRONG**: All changed files have corresponding tests and all pass
-- **PARTIAL**: Some changed files have tests and all found tests pass
-- **WEAK**: No tests found, tests couldn't run, or failures exist
+**Strength tiers** (the definitions live in `rules/gates.md`, Verification
+Strength; this is the same table, not a second one):
+- **STRONG**: the failing or acceptance command itself (or a close equivalent)
+  ran locally and passes
+- **PARTIAL**: related checks that exercise the changed code ran and pass, but
+  not the exact command
+- **WEAK**: inspection only — no tests found or tests could not run
+
+A failing check is never a strength: it is a `RETRY` (or `ESCALATE` by budget)
+for the caller, reported with the failure output. File-to-test coverage is
+reported as `Files changed / Tests found` above and does not raise the tier.
 
 ## Notes
 - Report-only — does not fix failing tests. The caller owns the response.

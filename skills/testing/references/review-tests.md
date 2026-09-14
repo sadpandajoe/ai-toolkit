@@ -9,7 +9,7 @@ tier: Heavy
 ## Required Context
 
 Read before starting: `rules/code-review.md`, `rules/severity.md`,
-`rules/stop-rules.md`.
+`rules/gates.md`.
 Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 
 ## Goal

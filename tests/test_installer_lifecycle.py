@@ -61,6 +61,7 @@ class InstallerLifecycleTests(unittest.TestCase):
     def copy_checkout(self, name: str) -> Path:
         checkout = self.base / name
         for directory in (
+            "agents",
             "config",
             "docs",
             "interfaces",
@@ -478,7 +479,7 @@ class InstallerLifecycleTests(unittest.TestCase):
         initial = json.loads(paths.ledger.read_text())
         pyproject = checkout / "pyproject.toml"
         pyproject.write_text(
-            pyproject.read_text().replace('version = "0.2.0"', 'version = "0.2.1"')
+            pyproject.read_text().replace('version = "0.3.0"', 'version = "0.3.1"')
         )
 
         self.assertTrue(
@@ -491,7 +492,7 @@ class InstallerLifecycleTests(unittest.TestCase):
         self.assertEqual("upgrade", upgraded.operation)
         self.assertEqual("ok", upgraded.status, upgraded.conflicts)
         self.assertEqual(
-            "0.2.1", json.loads(paths.ledger.read_text())["toolkit_version"]
+            "0.3.1", json.loads(paths.ledger.read_text())["toolkit_version"]
         )
         restored = rollback(paths)
         self.assertEqual("ok", restored.status, restored.conflicts)
@@ -754,6 +755,7 @@ class InstallerLifecycleTests(unittest.TestCase):
         second = self.base / "checkout-two"
         for checkout in (first, second):
             for name in (
+                "agents",
                 "config",
                 "docs",
                 "interfaces",

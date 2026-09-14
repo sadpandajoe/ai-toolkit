@@ -321,32 +321,30 @@ class WorkflowInterfaceTests(unittest.TestCase):
                 self.assertTrue(any(expected in item for item in problems), problems)
 
     def test_every_named_inline_skill_resource_is_resolved_exactly(self) -> None:
+        # Two channels name skill resources: a bare skill-relative path in
+        # backticks (`fix-bug` names the existing-fix check) and a Markdown link
+        # (`review-code` links the classifier). Both must fail closed when the
+        # target vanishes, and they report through different checks.
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
-            resource = root / "skills/plan-review/references/architecture.md"
-            resource.unlink()
-
+            (root / "skills/debug/references/check-existing-fix.md").unlink()
             problems = validate_contracts(root)
-
-            # Two workflows name this lens and both must notice it vanished, but
-            # they name it through different channels, so they report through
-            # different checks. `fix-bug` names the bare skill-relative path;
-            # `review-plan` names it as a Markdown link, because its fan-out span
-            # has to be a link for the route runner to resolve the selected lens
-            # at all. Pinning only the first message let the second channel go
-            # unchecked -- the assertion passed on `fix-bug` alone.
             self.assertTrue(
                 any(
                     "fix-bug: named skill resource is missing or unsafe: "
-                    "plan-review/references/architecture.md" in item
+                    "debug/references/check-existing-fix.md" in item
                     for item in problems
                 ),
                 problems,
             )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.fixture(temporary)
+            (root / "skills/review/references/classify-diff.md").unlink()
+            problems = validate_contracts(root)
             self.assertTrue(
                 any(
-                    "review-plan: dependency link target is missing or not a file: "
-                    "../../plan-review/references/architecture.md" in item
+                    "review-code: dependency link target is missing or not a file: "
+                    "../../review/references/classify-diff.md" in item
                     for item in problems
                 ),
                 problems,

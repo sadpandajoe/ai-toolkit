@@ -27,9 +27,9 @@ The main thread owns final review, posting, thread resolution, and user-facing s
 
 ## Review Gate
 
-Run `review-code` on changed files after substantive fixes. The developer emits the Review Gate block from `rules/review-gate.md`.
+Run `review-code` on changed files after substantive fixes; it emits the `## Gate: review` block from `rules/gates.md`.
 
-For truly minimal edits, such as typo fixes or mechanical renames, review may be skipped under the review-gate skip rule. State the skip reason.
+For truly minimal edits, such as typo fixes or mechanical renames, the review exception in `rules/gates.md` applies. State the reason.
 
 ## Commit Strategy
 
@@ -54,9 +54,9 @@ git push --force-with-lease
 
 Force-push only after explicit user authorization, only on the current feature branch, and only with `--force-with-lease`. Never force-push main/master or a protected branch.
 
-## Persist Fix Wave to PROJECT.md (Hard Gate Before Clear)
+## Persist Fix Wave to PROJECT.md (Hard Gate Before Handoff)
 
-After each fix wave, before checkpoint + context_reset can fire, the orchestrator must append a `## Feedback Round N` entry to PROJECT.md:
+After each fix wave, before any checkpoint, the orchestrator must append a `## Feedback Round N` entry to PROJECT.md:
 
 ```markdown
 ## Feedback Round N
@@ -64,12 +64,12 @@ Wave: [comment ids addressed]
 Files changed: [list]
 Tests: [added/updated/none]
 Verification: [STRONG/PARTIAL/WEAK + result]
-Review Gate: [status]
+Review gate: [PASS | RETRY | ESCALATE | USER_DECISION]
 Residual risk: [...]
 Next: [next wave / posting / done]
 ```
 
-This block is what `start` reads to resume mid-feedback-round after a clear. Without it, the comment-id → fix-state mapping is lost.
+This block is what `start` reads to resume mid-feedback-round in a fresh session or worker. Without it, the comment-id → fix-state mapping is lost.
 
 ## Stop Conditions
 

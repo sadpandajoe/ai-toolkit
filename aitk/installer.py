@@ -286,6 +286,28 @@ def desired_targets(paths: InstallPaths, with_pgm: bool) -> list[Target]:
                 source,
             )
         )
+    # The worker roster: native subagent definitions for each provider. Claude
+    # discovers user-level agents in ~/.claude/agents; Codex reads custom agent
+    # TOML from $CODEX_HOME/agents. Both are per-file links so unrelated personal
+    # agents beside them are never touched.
+    for source in sorted((paths.root / "agents/claude").glob("*.md")):
+        result.append(
+            Target(
+                f"claude-agent:{source.stem}",
+                "symlink",
+                paths.home / ".claude/agents" / source.name,
+                source,
+            )
+        )
+    for source in sorted((paths.root / "agents/codex").glob("*.toml")):
+        result.append(
+            Target(
+                f"codex-agent:{source.stem}",
+                "symlink",
+                paths.codex_home / "agents" / source.name,
+                source,
+            )
+        )
     return sorted(result, key=lambda item: str(item.target))
 
 

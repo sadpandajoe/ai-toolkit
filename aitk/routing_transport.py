@@ -24,7 +24,7 @@ from aitk.routing_policy import (
     DOMAIN_SEVERITIES,
     FAILED_EXIT,
     ModelRouteError,
-    PLAN_SCORE_PATTERN,
+    PLAN_VERDICT_PATTERN,
     PREFLIGHT_TIMEOUT,
     PROMPT_LIMIT,
     ResolvedRoute,
@@ -106,7 +106,10 @@ def worker_prompt(
         tags = "|".join(DOMAIN_SEVERITIES[route.lens_domain])
         grading = f"every finding must begin with one of {tags}"
         if route.lens_domain == "plan":
-            grading += "; summary must contain a `Score: X/10` line of its own"
+            grading += (
+                "; summary must contain a `Verdict: APPROVE|CHANGES_REQUIRED|REPLAN` "
+                "line of its own"
+            )
     if route.summary_form is not None:
         lines = "; ".join(label for label, _ in SUMMARY_FORMS[route.summary_form])
         form = f"summary must contain these lines, one per line: {lines}"
@@ -161,8 +164,8 @@ def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | No
 
     `_valid_worker` only proves the envelope is well-formed: every string passes.
     But the domain decides how the caller *consumes* the result -- code findings
-    dedupe and escalate by `[major]`/`[minor]`/`[nitpick]`, plan findings iterate
-    against a `X/10` score -- so an untagged or cross-tagged finding is silently
+    dedupe and escalate by `[major]`/`[minor]`/`[nitpick]`, plan findings branch
+    on an APPROVE/CHANGES_REQUIRED/REPLAN verdict -- so an untagged or cross-tagged finding is silently
     dropped by the aggregator rather than rejected here. Enforcing the vocabulary
     at the boundary is what makes `lens_domain` more than prompt prose.
 
@@ -186,12 +189,13 @@ def _domain_problem(route: ResolvedRoute, result: dict[str, object]) -> str | No
             f"{len(untagged)} finding(s) that do not open with a "
             f"{'/'.join(tags)} tag; the first is: {str(untagged[0])[:120]}"
         )
-    if route.lens_domain == "plan" and not PLAN_SCORE_PATTERN.search(
+    if route.lens_domain == "plan" and not PLAN_VERDICT_PATTERN.search(
         str(result["summary"])
     ):
         return (
-            f"plan-domain boundary {route.boundary} returned no `Score: X/10` line "
-            "in its summary; plan review iterates against that score"
+            f"plan-domain boundary {route.boundary} returned no "
+            "`Verdict: APPROVE|CHANGES_REQUIRED|REPLAN` line in its summary; "
+            "plan validation branches on that verdict"
         )
     return None
 

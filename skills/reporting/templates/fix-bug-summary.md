@@ -28,7 +28,7 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether the
 - Root cause: [brief]
 - Fix: [what changed]
 - Files changed: [list]
-- Review: Rounds [N] | Status [clean/blocked]
+- Review: Gate [PASS/ESCALATE/USER_DECISION/BLOCKED] | Independent review [provider/family or same-provider] | Delta [clean/reopened N/not required]
 
 </details>
 ```

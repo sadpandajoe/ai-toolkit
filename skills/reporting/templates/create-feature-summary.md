@@ -17,7 +17,8 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether acc
 - [Decisions made during planning that shaped the implementation]
 
 ### What to do next
-- [Specific next action — PR, deploy step, remaining slices]
+- [Specific next action — the next phase's PR in roadmap order, deploy step, remaining slices]
+- [MULTI_PHASE: list the PRs per phase in delivery order, the prepared commits awaiting publish authorization, or the single-PR opt-out and its reason]
 
 ### Open risks
 - [Anything uncertain or untested — omit section if none]
@@ -25,7 +26,8 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether acc
 <details><summary>Technical details</summary>
 
 - Files changed: [list]
-- Review: Rounds [N] | Status [clean/blocked]
+- Review: per-unit gates [PASS ×N] | Integrated review [gate, lane | not applicable]
+- Delivery: [PR per phase #… | single PR]
 
 </details>
 ```

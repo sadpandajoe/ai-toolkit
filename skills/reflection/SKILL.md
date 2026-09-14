@@ -1,6 +1,6 @@
 ---
 name: reflection
-description: Use for memory review, pruning, rule promotion, and workflow failure postmortems. Do NOT use for ordinary project notes, implementation retrospectives, or product documentation.
+description: Use for recording high-signal workflow observations, reviewing and clustering them, pruning memories, proposing rule or skill changes with eval candidates, and failure postmortems. Do NOT use for ordinary project notes, implementation retrospectives, or product documentation.
 ---
 
 # Reflection
@@ -9,20 +9,26 @@ description: Use for memory review, pruning, rule promotion, and workflow failur
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 
-This skill owns memory management and rule-promotion workflows used by `reflect`.
+Owns the toolkit's learning loop: event-driven observations during real work,
+periodic review that clusters them, and human-approved promotion into rules,
+skills, and regression evals. There is no always-on observer; only the
+high-signal triggers in `references/observations.md` write anything.
 
 ## Phases
 
 | Phase | When | Reference |
-|-------|------|-----------|
-| Add/List memories | Capture a memory or inspect memory inventory | [references/memory-basics.md](references/memory-basics.md) |
-| Review/Prune memories | Assess accuracy, duplication, staleness, and deletion candidates | [references/memory-review.md](references/memory-review.md) |
-| Propose/Promote rule | Convert recurring patterns into rule changes | [references/rule-promotion.md](references/rule-promotion.md) |
-| Failure postmortem | Record a structured failure memory with prevention guidance | [references/failure-postmortem.md](references/failure-postmortem.md) |
+|---|---|---|
+| Record observation | A trigger fired during a workflow | [references/observations.md](references/observations.md) |
+| Review observations | `reflect` or `complete-project`; cluster, propose, generate eval candidates | [references/observations.md](references/observations.md) |
+| Add or list memories | Capture or inspect memory inventory | [references/memory-basics.md](references/memory-basics.md) |
+| Review or prune memories | Accuracy, duplication, staleness | [references/memory-review.md](references/memory-review.md) |
+| Propose or promote rule | A cluster or recurring memory justifies a rule or skill change | [references/rule-promotion.md](references/rule-promotion.md) |
+| Failure postmortem | A workflow produced a bad outcome | [references/failure-postmortem.md](references/failure-postmortem.md) |
 
 ## Notes
 
-- The provider adapter resolves its configured memory directory. Do not hard-code one provider's storage path in the shared workflow.
-- Memory files use YAML frontmatter plus structured body.
-- Rule changes require confirmation.
-- A pattern seen once is a memory; a pattern seen across projects can become a rule candidate.
+- Observations, memories, and evals are local files; rule and skill changes
+  need user confirmation and ship with an eval candidate under `evals/`.
+- A pattern seen once is a memory; a cluster across projects is a rule
+  candidate; a repeated manual workaround is a skill candidate.
+- The provider adapter resolves the memory directory; never hard-code it.

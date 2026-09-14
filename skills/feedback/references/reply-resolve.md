@@ -117,8 +117,8 @@ PR #[number] - [N] fixed, [N] skipped, [N] discussed
 Record metrics with:
 
 - `command`: `address-feedback`
-- `complexity`: `trivial`, `moderate`, or `standard`
-- `status`: `clean`, `blocked`, `user-decision`, `skipped`, or `micro-fix`
-- `rounds`: review rounds if any
-- `gate_decisions`: complexity, triage, review
+- `complexity`: `trivial`, `standard`, or `complex`
+- `status`: terminal gate status — `PASS`, `ESCALATE`, `USER_DECISION`, or `BLOCKED` (`skipped` when no comment was actionable)
+- `retries`, `escalations`: gate ladder counts for the fix wave
+- `gates`: classification, triage, review outcomes
 - `worker_usage`: subagent/worker invocation counts when applicable

@@ -26,7 +26,7 @@ failures:
     root_cause: <hypothesis>
     fix: <narrow proposed change>
     verification: <how to verify locally>
-    complexity: trivial | moderate | standard
+    complexity: trivial | standard | complex
     confidence: <0-10>
     ours: true | false
 notes: <any cross-failure context>
@@ -45,20 +45,20 @@ Not-our-failure fast path: if all classified failures are pre-existing or not ca
 
 Evaluate each remaining failure:
 
-| Signal | Trivial | Moderate | Standard |
+| Signal | TRIVIAL | STANDARD | COMPLEX |
 |--------|---------|----------|----------|
 | Failure pattern | Known-pattern, mechanical | Known-pattern but behavioral | Novel or mixed |
 | Files touched | 1-2 | 2-4, single subsystem | 3+ or unclear scope |
 | Fix type | Mechanical | Logic change, known pattern | Behavioral, cross-cutting |
 | Verification | STRONG or PARTIAL available | STRONG or PARTIAL available | WEAK only |
 
-Trivial path: apply, verify, emit/obtain Review Gate, update PROJECT.md, summarize.
+TRIVIAL path: apply, verify, review gate (exception allowed), update PROJECT.md, summarize.
 
-Moderate path: plan inline, apply, verify, run `review-code`, update PROJECT.md, summarize.
+STANDARD path: plan inline, apply, verify, run `review-code`, update PROJECT.md, summarize.
 
-Standard path: update PROJECT.md, validate RCA when needed, run the Action Gate, then apply only if the gate allows it.
+COMPLEX path: update PROJECT.md, run the RCA gate with the specialist when needed, then apply only when it passes.
 
-## RCA and Action Gate
+## RCA Gate
 
 Use RCA validation when:
 - the failure is novel
@@ -66,26 +66,26 @@ Use RCA validation when:
 - multiple plausible root causes exist
 - the proposed fix changes behavior
 
-Proceed automatically only when the Action Gate says the fix is low-risk, high-confidence, and sufficiently verifiable.
+Proceed automatically only when the RCA gate is `PASS` and verification can run locally or downstream (`rules/gates.md`).
 
 ## Apply Safe Fixes
 
 - Trivial path: orchestrator applies the proposed fix inline.
-- Standard path: plan the fix in the main thread after RCA. The orchestrator applies the plan.
+- COMPLEX path: plan the fix in the main thread after the RCA gate passes. The orchestrator applies the plan.
 
 Keep scope limited to the failing surface. If verification is weak or root cause is ambiguous, stop instead of widening scope.
 
 ## Commit Recommendation Strategy
 
-For STRONG-verified trivial/moderate fixes with a clean Review Gate, the default flow creates a new commit on the current feature branch and pushes it. Amend, rebase, and force-push still require explicit user authorization for this run, and the push target must be the current feature branch on the expected remote. PARTIAL/WEAK verification and standard-path holds stay non-committing.
+For STRONG-verified TRIVIAL/STANDARD fixes with a `PASS` review gate, the default flow creates a new commit on the current feature branch and pushes it. Amend, rebase, and force-push still require explicit user authorization for this run, and the push target must be the current feature branch on the expected remote. PARTIAL/WEAK verification and standard-path holds stay non-committing.
 
 | Scenario | Action |
 |----------|--------|
 | Lint/style only, cherry-pick flow | Recommend amending into the breaking cherry-pick commit; ask before rebase/force-push |
 | Lint/style only, single parent commit clear | Recommend amend; ask before force-push |
 | Lint/style only, multiple parent commits | Recommend `style:` commit; ask before commit/push |
-| Trivial code fix + STRONG verification | Recommend a new commit; ask before commit/push |
-| Standard path or PARTIAL/WEAK verification | Stop before commit — present diagnosis and recommended next step |
+| TRIVIAL/STANDARD code fix + STRONG verification + `PASS` review | Create a new commit on the current feature branch and push it (the default flow above); amend, rebase, and force-push still need explicit authorization |
+| COMPLEX path or PARTIAL/WEAK verification | Stop before commit — present diagnosis and recommended next step |
 
 Detecting cherry-pick flow: check `git log --grep="cherry picked from commit"` on recent branch commits. If cherry-picked commits are present, trace which one last touched the lint-failing files (`git log -- <file>` filtered to cherry-picked SHAs). That is the commit to amend into, not necessarily the latest.
 

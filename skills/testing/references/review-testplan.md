@@ -8,7 +8,7 @@ tier: Heavy
 
 Evaluate whether the plan's testing strategy will provide meaningful regression protection.
 
-Read before scoring: `rules/scoring.md`, `rules/severity.md`
+Read before grading: `rules/severity.md`
 
 This lens sits in both a plan-review menu and a code-review menu, and the two want
 different output. The route runner names which in its `lens_domain` header: `plan`
@@ -45,7 +45,6 @@ When `lens_domain=plan` (reviewing the written plan):
 
 ```markdown
 ## Test Plan Review
-### Score: X/10
 ### Strengths
 - [What the plan does well for testing]
 ### Issues
