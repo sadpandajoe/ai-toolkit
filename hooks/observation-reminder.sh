@@ -8,7 +8,11 @@
 # unreviewed lines and says so once the queue is worth a look.
 #
 # Fail-open: exits 0 on any unexpected state (never blocks on errors).
-# Threshold: 10 unreviewed observations.
+# Threshold: 10 unreviewed observations.#
+# The nudge is returned as JSON on stdout with a `systemMessage`, which the
+# runtime shows to the user; stderr from a hook that exits 0 goes only to the
+# debug log, so a plain stderr line would never be seen. The same text is
+# still written to stderr for runtimes that surface it.
 #
 
 set -euo pipefail
@@ -38,10 +42,9 @@ COUNT=$(grep -c '[^[:space:]]' "$QUEUE" 2>/dev/null || true)
 COUNT=${COUNT:-0}
 
 if (( COUNT >= THRESHOLD )); then
-    cat >&2 <<EOF
-[observations] $COUNT unreviewed observations in $QUEUE.
-Run \`reflect observations\` to cluster them and propose rule or skill changes.
-EOF
+    MESSAGE="[observations] $COUNT unreviewed observations in $QUEUE. Run \`reflect observations\` to cluster them and propose rule or skill changes."
+    printf '%s\n' "$MESSAGE" >&2
+    jq -cn --arg message "$MESSAGE" '{systemMessage: $message}'
 fi
 
 exit 0

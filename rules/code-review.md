@@ -50,7 +50,7 @@ consequence it prints. The independent lane is never optional and never demoted.
 |---|---|---|---|
 | Deep lens (adversarial, deep-quality, architecture) | last 5 runs of that lens | fewer than 1 accepted in 4 raised, or 0 accepted | Demoted to opt-in: runs only on an explicit ask until `reflect` reviews it; the classifier flag is recorded as `deferred (low yield)` |
 | Second family | last 10 runs | 0 findings accepted that the first lane did not raise, and 0 first-lane majors it refuted | Demoted from CORE to COMPLEX-only; the clean-verdict guard keeps it |
-| Finding verifier | last 10 runs | `CONFIRMED` on fewer than 3 of 10 single-source majors | The raising lane's single-source majors default to `[minor]` and the observation queue gets a `low-yield-lane` line for that lane |
+| Finding verifier | last 10 runs | `CONFIRMED` on fewer than 3 in 10 of the single-source majors it verified in the window (a window that verified none is not judged) | The raising lane's single-source majors default to `[minor]` and the observation queue gets a `low-yield-lane` line for that lane |
 | Delta review | last 10 runs | 0 `not fixed` and 0 `fixed-but-introduced` | Skip threshold widens: the delta pass runs only after a `[major]` fix |
 
 A demotion is a `Lane demoted` line in the Review Record and a `low-yield-lane`

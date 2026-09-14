@@ -56,13 +56,20 @@ class LaneYieldTests(unittest.TestCase):
                 "delta": {"not_fixed": 1},
             }
         )
-        # Only the most recent window counts, so one good run inside it is enough
-        # for the verifier at three confirmed and clears the other two lanes.
+        # Only the most recent window counts, so one good run inside it clears
+        # the second family and the delta lane; the verifier is judged on the
+        # rate over what it verified, so one confirmed against nine refuted
+        # still demotes and three in ten does not.
         self.assertEqual(
             ["verify-major"],
             [item.lane for item in evaluate([idle] * (LANE_WINDOW - 1) + [earning])],
         )
         self.assertEqual([], evaluate([idle] * (LANE_WINDOW - 3) + [earning] * 3))
+        # A rate, not a count: one confirmed and nothing refuted is a perfect
+        # record, and a window that verified nothing is not judged at all.
+        quiet = event(**{"verify-major": {"confirmed": 0, "refuted": 0}})
+        self.assertEqual([], evaluate([quiet] * (LANE_WINDOW - 1) + [earning]))
+        self.assertEqual([], evaluate([quiet] * LANE_WINDOW))
 
     def test_malformed_lines_and_missing_file_read_as_no_history(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

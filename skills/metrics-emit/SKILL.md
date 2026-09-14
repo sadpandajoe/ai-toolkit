@@ -29,8 +29,12 @@ From the routing snapshot and the run:
   "demoted": [...] }` — `lanes` is what `bin/aitk lane-yield` reads to apply
   the yield thresholds in `rules/code-review.md`; lane names are `independent`,
   `second-family`, `verify-major`, `delta`, and the deep lens name
-  (`adversarial`, `deep-quality`, `architecture`); `not_fixed` and
-  `introduced` are the delta lane's counts
+  (`adversarial`, `deep-quality`, `architecture`); `converged` is how many of
+  the lane's raised findings the other lane also raised (the convergence merge
+  in `rules/code-review.md`), so `accepted - converged` is what the lane added
+  on its own; `confirmed` and `refuted` are the verifier's verdicts on
+  single-source majors; `not_fixed` and `introduced` are the delta lane's
+  counts
 - `workers`: `{ "<agent or route>": count }` and `premium_calls` (planning,
   deep-review, deep-rca, rca)
 - `observations`: count of observation lines written this run

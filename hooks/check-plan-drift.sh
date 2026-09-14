@@ -6,7 +6,11 @@
 # PROJECT.md, suggesting active work that hasn't updated the state file.
 #
 # Fail-open: exits 0 on any unexpected state (never blocks on errors).
-# Threshold: 30 minutes — avoids noise during active editing.
+# Threshold: 30 minutes — avoids noise during active editing.#
+# The nudge is returned as JSON on stdout with a `systemMessage`, which the
+# runtime shows to the user; stderr from a hook that exits 0 goes only to the
+# debug log, so a plain stderr line would never be seen. The same text is
+# still written to stderr for runtimes that surface it.
 #
 
 set -euo pipefail
@@ -42,10 +46,9 @@ DELTA=$((PLAN_MTIME - PROJECT_MTIME))
 
 # 1800 seconds = 30 minutes. Only warn if PLAN.md is significantly newer.
 if (( DELTA > 1800 )); then
-    cat >&2 <<EOF
-[plan-drift] PLAN.md is $((DELTA / 60)) minutes newer than PROJECT.md.
-PROJECT.md should reflect current state. Update it before the workflow ends.
-EOF
+    MESSAGE="[plan-drift] PLAN.md is $((DELTA / 60)) minutes newer than PROJECT.md. PROJECT.md should reflect current state. Update it before the workflow ends."
+    printf '%s\n' "$MESSAGE" >&2
+    jq -cn --arg message "$MESSAGE" '{systemMessage: $message}'
 fi
 
 exit 0
