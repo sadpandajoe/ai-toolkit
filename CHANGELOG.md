@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- The Stop hooks (`hooks/observation-reminder.sh`, `hooks/check-plan-drift.sh`)
+  return their nudge as JSON with a `systemMessage` on stdout, which the
+  runtime shows to the user; they used to write to stderr and exit 0, which
+  Claude Code sends only to the debug log, so the reminder was never seen.
+  `tests/test_stop_hooks.py` covers both thresholds and the fail-open path.
+- The finding-verifier yield threshold is the rate the rule states: `aitk
+  lane-yield` demotes `verify-major` when fewer than three in ten of the
+  single-source majors it verified in the window came back `CONFIRMED`, and a
+  window that verified nothing is not judged; it no longer counts three
+  confirmations as an absolute floor.
+- `skills/metrics-emit` defines the `review.lanes` counts lane-yield reads:
+  `converged` (findings the other lane also raised), `confirmed` and `refuted`
+  (verifier verdicts), and the delta lane's `not_fixed` and `introduced`.
+- `watch-pr` records `complexity` in the current vocabulary: `trivial` for a
+  watch that dispatched no fix, otherwise the dispatched fix's `standard` or
+  `complex`.
+
 ## 0.3.0 — 2026-09-05
 
 - Gate runtime: only `RETRY` charges the attempt budget; `--editorial` records

@@ -22,7 +22,9 @@ from pathlib import Path
 DEEP_LENSES = ("adversarial", "deep-quality", "architecture")
 LENS_WINDOW = 5
 LANE_WINDOW = 10
-VERIFIER_MINIMUM_CONFIRMED = 3
+# The rule reads "CONFIRMED on fewer than 3 in 10": a rate over the majors the
+# verifier actually judged in the window, not an absolute count of confirmations.
+VERIFIER_CONFIRMED_PER_TEN = 3
 NEVER_DEMOTED = ("independent",)
 
 
@@ -127,14 +129,15 @@ def evaluate(events: list[dict[str, object]]) -> list[Demotion]:
                     )
                 )
         elif lane == "verify-major":
-            confirmed = _sum(window, "confirmed")
-            if confirmed < VERIFIER_MINIMUM_CONFIRMED:
+            confirmed, refuted = _sum(window, "confirmed"), _sum(window, "refuted")
+            verified = confirmed + refuted
+            if verified and confirmed * 10 < verified * VERIFIER_CONFIRMED_PER_TEN:
                 demotions.append(
                     Demotion(
                         lane,
                         LANE_WINDOW,
                         len(window),
-                        {"confirmed": confirmed, "refuted": _sum(window, "refuted")},
+                        {"confirmed": confirmed, "refuted": refuted, "verified": verified},
                         "single-source majors from the raising lane default to [minor]; "
                         "write a low-yield-lane observation for that lane",
                     )
