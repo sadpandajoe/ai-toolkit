@@ -20,12 +20,19 @@
 # is absent (jq, python3, git, the aitk package) or the directory is not a git
 # repository.
 #
+# A command the hook cannot parse, or nests deeper than it follows, counts as a
+# PR creation (the fast filter already saw `gh` and `create`), and every PR
+# creation in one request is checked against the repository it runs in.
+#
 # Known limits (this is a tripwire against skipping the workflow, not a shell
 # sandbox):
 #   - The snapshot carries no branch or tree binding, so a review PASS left by
 #     an earlier workflow in the same PROJECT.md still satisfies the gate.
 #   - Command matching is static: `cd` inside a conditional or subshell is
 #     treated as taken, and `gh api` or an alias can open a PR unseen.
+#   - PROJECT.md is looked up from the working directory to the git top level,
+#     so a linked worktree does not see the main checkout's PROJECT.md and a PR
+#     opened from one is blocked until its own workflow records the gate.
 #
 # Bypass (the user's override for work outside a workflow; the block message
 # tells the agent to ask rather than bypass on its own):
@@ -98,34 +105,58 @@ GH_VALUE_FLAGS = {"-R", "--repo", "--hostname"}
 BYPASS_OFF = {"", "0", "false"}
 
 
-HEREDOC = re.compile(r"<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([^\s'\"<>;|&()\\]+)\2")
+WORD_START = " \t\n;&|("
 
 
 def split_lines(text):
-    """Turn each unquoted newline into `;`; drop here-document bodies."""
+    """Normalize a command for tokenizing.
+
+    Unquoted newlines become `;`, backslash-newline joins lines, comments are
+    dropped, and here-document bodies are skipped, including one opened inside
+    a `$(...)` within double quotes (`--body "$(cat <<'EOF' ...)"`).
+    """
     out = []
     quote = None
     pending = []
+    substitutions = 0
+    previous = "\n"
     index = 0
     while index < len(text):
         char = text[index]
         if char == "\\" and quote != "'" and index + 1 < len(text):
-            out.append(text[index : index + 2])
+            if text[index + 1] != "\n":
+                out.append(text[index : index + 2])
+                previous = "a"
             index += 2
             continue
-        if quote is None and char == "<":
-            match = HEREDOC.match(text, index) if not text.startswith("<<<", index) else None
+        if quote is None and char == "#" and previous in WORD_START:
+            while index < len(text) and text[index] != "\n":
+                index += 1
+            continue
+        if char == "<" and (quote is None or (quote == '"' and substitutions)):
+            match = None
+            if not text.startswith("<<<", index) and previous in WORD_START:
+                match = HEREDOC.match(text, index)
             if match:
                 pending.append((match.group(1) == "-", match.group(3)))
                 out.append(match.group(0))
+                previous = "a"
                 index = match.end()
                 continue
+        if quote == '"':
+            if text.startswith("$(", index):
+                substitutions += 1
+            elif char == ")" and substitutions:
+                substitutions -= 1
         if quote is None and char in "'\"":
             quote = char
         elif quote == char:
             quote = None
-        if quote is None and char == "\n":
-            out.append(" ; ")
+            substitutions = 0
+        if char == "\n" and (quote is None or pending):
+            out.append(" ; " if quote is None else "\n")
+            previous = "\n"
             index += 1
             for strip, delimiter in pending:
                 while index < len(text):
@@ -138,6 +169,7 @@ def split_lines(text):
             pending = []
             continue
         out.append(char)
+        previous = char
         index += 1
     return "".join(out)
 
@@ -145,6 +177,7 @@ def split_lines(text):
 def tokenize(text):
     lexer = shlex.shlex(split_lines(text), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    lexer.commenters = ""
     return list(lexer)
 
 
@@ -167,7 +200,7 @@ def segments(tokens):
 
 
 WRAPPER_VALUE_FLAGS = {
-    "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
+    "env": {"-u", "--unset"},
     "timeout": {"-s", "--signal", "-k", "--kill-after"},
     "xargs": {"-I", "-i", "-n", "-P", "-L", "-d", "-E", "-s", "-a"},
     "nice": {"-n", "--adjustment"},
@@ -177,27 +210,49 @@ WRAPPER_VALUE_FLAGS = {
 }
 
 
+def env_option(arg, rest):
+    """`env -C dir` / `env -S string` in every spelling: (key, value, tokens used)."""
+    for short, long_, key in (("-C", "--chdir", "chdir"), ("-S", "--split-string", "split")):
+        if arg in (short, long_):
+            return key, rest[1] if len(rest) > 1 else "", 2
+        if arg.startswith(long_ + "="):
+            return key, arg[len(long_) + 1 :], 1
+        if arg.startswith(short) and len(arg) > 2:
+            return key, arg[2:], 1
+    return None
+
+
 def skip_options(wrapper, rest):
+    """Skip a wrapper's own options; return (rest, bypassed, env effects)."""
     valued = WRAPPER_VALUE_FLAGS.get(wrapper, set())
     bypassed = False
+    effects = {"chdir": []}
     while rest:
         arg = rest[0]
+        option = env_option(arg, rest) if wrapper == "env" and arg.startswith("-") else None
         if is_assignment(arg):
             name, _, value = arg.partition("=")
             bypassed = bypassed or (name == "SKIP_PR_GATE" and value not in BYPASS_OFF)
             rest = rest[1:]
+        elif option:
+            if option[0] == "chdir":
+                effects["chdir"].append(option[1])
+            else:
+                effects["split"] = option[1]
+            rest = rest[option[2] :]
         elif arg.startswith("-") and arg != "-":
             rest = rest[2:] if arg in valued else rest[1:]
         elif wrapper == "timeout" and re.fullmatch(r"\d+(\.\d+)?[smhd]?", arg):
             rest = rest[1:]
         else:
             break
-    return rest, bypassed
+    return rest, bypassed, effects
 
 
 def strip_prefixes(segment):
-    """Drop assignments, keywords, and wrappers; return (rest, bypassed)."""
+    """Drop assignments, keywords, and wrappers; return (rest, bypassed, env effects)."""
     bypassed = False
+    effects = {"chdir": []}
     rest = list(segment)
     while rest:
         head = os.path.basename(rest[0])
@@ -208,11 +263,14 @@ def strip_prefixes(segment):
         elif head in KEYWORDS:
             rest = rest[1:]
         elif head in SIMPLE_WRAPPERS or head in WRAPPER_VALUE_FLAGS:
-            rest, skipped = skip_options(head, rest[1:])
+            rest, skipped, found = skip_options(head, rest[1:])
             bypassed = bypassed or skipped
+            effects["chdir"].extend(found["chdir"])
+            if "split" in found:
+                effects["split"] = found["split"]
         else:
             break
-    return rest, bypassed
+    return rest, bypassed, effects
 
 
 def is_shell_command_flag(arg):
@@ -244,38 +302,90 @@ def advance_dir(workdir, args):
     return os.path.normpath(path) if os.path.isdir(path) else workdir
 
 
+def inner_commands(text):
+    """Bodies of `$(...)` and backtick substitutions, wherever they are quoted."""
+    found = re.findall(r"`([^`]*)`", text)
+    index = 0
+    while True:
+        start = text.find("$(", index)
+        if start < 0:
+            return found
+        depth, position = 1, start + 2
+        while position < len(text) and depth:
+            depth += {"(": 1, ")": -1}.get(text[position], 0)
+            position += 1
+        found.append(text[start + 2 : position - 1 if depth == 0 else position])
+        index = start + 2
+
+
+DIRECTORY_CHANGE = re.compile(r"(?<![\w-])(?:cd|pushd)(?![\w-])|--chdir|(?<!\w)-C")
+
+
+def unresolved(text, workdir):
+    """Where an unparseable or too-deeply nested command opens its PR.
+
+    The starting directory when nothing in it changes directory; otherwise
+    unknown (None), which blocks rather than inherit the starting repo's PASS.
+    """
+    return None if DIRECTORY_CHANGE.search(text) else workdir
+
+
 def find_pr_create(text, workdir, depth=0):
-    """Return (workdir, bypassed) for the first `gh pr create`, else None."""
+    """Every `gh pr create` in the command as (workdir, bypassed).
+
+    A command that cannot be parsed, or that nests deeper than DEPTH_LIMIT,
+    counts as a PR creation: the fast filter already saw `gh` and `create`.
+    """
     try:
         tokens = tokenize(text)
     except Exception:
-        return None
+        return [(unresolved(text, workdir), False)]
+    matches = []
     for segment in segments(tokens):
-        rest, bypassed = strip_prefixes(segment)
+        for inner in inner_commands(" ".join(segment)):
+            if depth >= DEPTH_LIMIT:
+                matches.append((unresolved(inner, workdir), False))
+            else:
+                matches.extend(find_pr_create(inner, workdir, depth + 1))
+        rest, bypassed, effects = strip_prefixes(segment)
+        target = workdir
+        for value in effects["chdir"]:
+            target = advance_dir(target, [value])
+        nested = None
+        if "split" in effects:
+            split = effects["split"].replace("\\_", " ")
+            nested = " ".join(["env", split] + [shlex.quote(arg) for arg in rest])
+        elif rest and os.path.basename(rest[0]) in SHELLS:
+            flags = [i for i, arg in enumerate(rest[1:], 1) if is_shell_command_flag(arg)]
+            if flags and flags[0] + 1 < len(rest):
+                nested = rest[flags[0] + 1]
+        elif rest and os.path.basename(rest[0]) == "eval":
+            nested = " ".join(rest[1:])
+        if nested is not None:
+            if depth >= DEPTH_LIMIT:
+                matches.append((unresolved(nested, target), bypassed))
+            else:
+                matches.extend(
+                    (path, bypassed or skipped)
+                    for path, skipped in find_pr_create(nested, target, depth + 1)
+                )
+            continue
         if not rest:
             continue
         head = os.path.basename(rest[0])
         if head in {"cd", "pushd"}:
             workdir = advance_dir(workdir, rest[1:])
         elif head == "gh" and gh_creates_pr(rest[1:]):
-            return workdir, bypassed
-        elif depth < DEPTH_LIMIT and head in SHELLS:
-            flags = [i for i, arg in enumerate(rest[1:], 1) if is_shell_command_flag(arg)]
-            if flags and flags[0] + 1 < len(rest):
-                found = find_pr_create(rest[flags[0] + 1], workdir, depth + 1)
-                if found:
-                    return found[0], bypassed or found[1]
-        elif depth < DEPTH_LIMIT and head == "eval":
-            found = find_pr_create(" ".join(rest[1:]), workdir, depth + 1)
-            if found:
-                return found[0], bypassed or found[1]
-    return None
+            matches.append((target, bypassed))
+    return matches
 
 
-found = find_pr_create(command, cwd)
-if found is None or found[1]:
+targets = []
+for path, bypassed in find_pr_create(command, cwd):
+    if not bypassed and path not in targets:
+        targets.append(path)
+if not targets:
     sys.exit(0)
-workdir = found[0]
 
 
 def git_toplevel(path):
@@ -304,10 +414,6 @@ def block(reason):
     sys.exit(2)
 
 
-root = git_toplevel(workdir)
-if root is None:
-    sys.exit(0)
-
 sys.path.insert(0, toolkit_root)
 try:
     from aitk.project_state import gate_blockers, parse_project_state
@@ -328,18 +434,20 @@ def find_project_file(start, stop):
         current = os.path.dirname(current)
 
 
-def pending_publish(content):
-    """A pending `published_pr` reservation: `reserve` already required review PASS."""
+def pending_publish(content, workflow):
+    """A pending `published_pr` reservation from this workflow: `reserve` already required review PASS."""
     match = re.search(
         r"<!-- aitk-checkpoint:v1 -->\n(.*?)\n<!-- /aitk-checkpoint -->", content, re.S
     )
     if match is None:
         return False
     try:
-        effects = json.loads(match.group(1)).get("effects", [])
+        checkpoint = json.loads(match.group(1))
+        effects = checkpoint.get("effects", [])
+        same_workflow = checkpoint.get("workflow") == workflow
     except Exception:
         return False
-    return any(
+    return same_workflow and any(
         isinstance(effect, dict)
         and effect.get("key") == "published_pr"
         and effect.get("status") == "pending"
@@ -347,40 +455,55 @@ def pending_publish(content):
     )
 
 
-project_file = find_project_file(workdir, root)
-if project_file is None:
-    block("no PROJECT.md exists in the repository, so no workflow ran")
+def check(workdir):
+    if workdir is None:
+        block(
+            "the command changes directory in a way this hook cannot follow, so the "
+            "repository it opens the PR in is unknown (run `gh pr create` as its own "
+            "simple command)"
+        )
+    root = git_toplevel(workdir)
+    if root is None:
+        return
+    project_file = find_project_file(workdir, root)
+    if project_file is None:
+        block("no PROJECT.md exists in the repository, so no workflow ran")
 
-try:
-    with open(project_file, encoding="utf-8") as handle:
-        content = handle.read()
-except OSError as error:
-    block(f"PROJECT.md could not be read ({error.strerror or error})")
+    try:
+        with open(project_file, encoding="utf-8") as handle:
+            content = handle.read()
+    except OSError as error:
+        block(f"PROJECT.md could not be read ({error.strerror or error})")
 
-try:
-    snapshot = parse_project_state(content)
-except Exception as error:
-    block(f"the routing snapshot in PROJECT.md is unreadable ({error})")
+    try:
+        snapshot = parse_project_state(content)
+    except Exception as error:
+        block(f"the routing snapshot in PROJECT.md is unreadable ({error})")
 
-if snapshot is None:
-    block("PROJECT.md has no routing snapshot, so no workflow classified this change")
+    if snapshot is None:
+        block("PROJECT.md has no routing snapshot, so no workflow classified this change")
 
-try:
-    blockers = gate_blockers(snapshot, ["review"])
-except Exception as error:
-    block(f"the review gate record in PROJECT.md is unreadable ({error})")
+    try:
+        blockers = gate_blockers(snapshot, ["review"])
+    except Exception as error:
+        block(f"the review gate record in PROJECT.md is unreadable ({error})")
 
-if blockers:
-    # A reservation stands in for a review PASS that `advance` cleared. It never
-    # overrides a gate recorded non-PASS in the current phase (e.g. a later RETRY).
-    recorded = snapshot["gates"].get("review")
-    explicit_non_pass = (
-        recorded is not None
-        and recorded["phase"] == snapshot["current_phase"]
-        and recorded["status"] != "PASS"
-    )
-    if explicit_non_pass or not pending_publish(content):
-        block("the snapshot does not show it passing: " + "; ".join(blockers))
+    if blockers:
+        # A reservation stands in for a review PASS that `advance` cleared. It never
+        # overrides a gate recorded non-PASS in the current phase (e.g. a later RETRY),
+        # and only the workflow that made it counts.
+        recorded = snapshot["gates"].get("review")
+        explicit_non_pass = (
+            recorded is not None
+            and recorded["phase"] == snapshot["current_phase"]
+            and recorded["status"] != "PASS"
+        )
+        if explicit_non_pass or not pending_publish(content, snapshot.get("workflow")):
+            block("the snapshot does not show it passing: " + "; ".join(blockers))
+
+
+for target in targets:
+    check(target)
 
 sys.exit(0)
 PY

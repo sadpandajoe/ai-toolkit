@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -159,6 +160,19 @@ class ReviewGateHookTests(unittest.TestCase):
             "timeout --signal TERM 60 gh pr create --fill",
             "xargs -I '{}' gh pr create",
             'printf \'%s\' "first \\"\nsecond"\ngh pr create --fill',
+            "# open the PR\ngh pr create --fill",
+            "git push # push first\ngh pr create --fill",
+            "git push -u origin HEAD && \\\n  gh pr create --fill",
+            "gh pr create --title \"x\" --body \"$(cat <<'EOF'\n## Summary\n- supports 12\" screens\nEOF\n)\"",
+            "cat <<'END-BODY' > /dev/null\nit's here\nEND-BODY\ngh pr create --fill",
+            "env -S 'gh pr create --fill'",
+            "env --split-string='gh pr create --fill'",
+            'echo "$(gh pr create --fill)"',
+            "URL=`gh pr create --fill`",
+            'gh pr create --title "never closed',
+            "echo a\\ #; gh pr create --fill",
+            "env -S '-u UNUSED gh pr create --fill'",
+            "env -S 'gh\\_pr\\_create'",
         ):
             with self.subTest(command=command):
                 self.assertEqual(2, run_hook(command, self.repo).returncode)
@@ -175,6 +189,10 @@ class ReviewGateHookTests(unittest.TestCase):
             "gh repo new",
             "cat <<'EOF' > notes.md\ngh pr create\nEOF",
             "cat <<-EOF\n\tgh pr create\n\tEOF\nls",
+            "cat <<'END-DOC' > notes.md\ngh pr create\nEND-DOC",
+            "# gh pr create later\nls",
+            'git commit -m "x" # gh pr create',
+            'echo "${#HOME} $#"',
             "ls",
         ):
             with self.subTest(command=command):
@@ -196,6 +214,85 @@ class ReviewGateHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as bare:
             subprocess.run(["git", "-C", bare, "init", "-q", "-b", "main"], check=True)
             self.assertEqual(0, run_hook(f"cd {other} && {PR_CREATE}", Path(bare)).returncode)
+
+    def ungated_repo(self) -> Path:
+        other = self.repo.parent / (self.repo.name + "-other")
+        other.mkdir()
+        self.addCleanup(lambda: __import__("shutil").rmtree(other, ignore_errors=True))
+        subprocess.run(["git", "-C", str(other), "init", "-q", "-b", "main"], check=True)
+        return other
+
+    def test_env_chdir_selects_the_repository_checked(self) -> None:
+        self.classify()
+        self.record_review("PASS")
+        other = self.ungated_repo()
+        for command in (
+            f"env -C {other} gh pr create --fill",
+            f"env --chdir={other} gh pr create --fill",
+            f"env -C{other} gh pr create --fill",
+        ):
+            with self.subTest(command=command):
+                self.assert_blocked(run_hook(command, self.repo), "no PROJECT.md")
+
+    def test_every_pr_creation_in_a_request_is_checked(self) -> None:
+        self.classify()
+        self.record_review("PASS")
+        other = self.ungated_repo()
+        self.assert_blocked(
+            run_hook(f"{PR_CREATE}; cd {other} && {PR_CREATE}", self.repo), "no PROJECT.md"
+        )
+        self.assert_blocked(
+            run_hook(f"SKIP_PR_GATE=1 {PR_CREATE}; cd {other} && {PR_CREATE}", self.repo),
+            "no PROJECT.md",
+        )
+        self.assertEqual(0, run_hook(f"{PR_CREATE}; git status", self.repo).returncode)
+
+    def test_pending_reservation_from_another_workflow_does_not_count(self) -> None:
+        self.classify()
+        checkpoint(self.repo, "init")
+        project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
+        self.record_review("PASS")
+        checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase-one")
+        project_state(
+            self.repo,
+            "init", "--replace",
+            "--workflow", "fix-bug",
+            "--complexity", "STANDARD",
+            "--size", "S",
+            "--phaseability", "none",
+            "--phase", "fix",
+        )
+        self.assert_blocked(run_hook(PR_CREATE, self.repo), "review=unrecorded")
+
+    def test_directory_context_follows_the_command_order(self) -> None:
+        self.classify()
+        self.record_review("PASS")
+        other = self.ungated_repo()
+        (self.repo / "sub").mkdir()
+        (other / "sub").mkdir()
+        for command in (
+            f'cd {other} && echo "$(gh pr create --fill)"',
+            f'{PR_CREATE}; cd {other}; echo "$(gh pr create)"',
+            f"env -C {other} env -C sub gh pr create --fill",
+        ):
+            with self.subTest(command=command):
+                self.assert_blocked(run_hook(command, self.repo), "no PROJECT.md")
+
+    def test_unresolvable_target_blocks_instead_of_inheriting_a_pass(self) -> None:
+        self.classify()
+        self.record_review("PASS")
+        other = self.ungated_repo()
+        nested = f"cd {other} && gh pr create --fill"
+        for _ in range(5):
+            nested = f"sh -c {shlex.quote(nested)}"
+        for command in (
+            f"cd {other}; gh pr create --title $'it\\'s fixed' --body x",
+            nested,
+        ):
+            with self.subTest(command=command):
+                self.assert_blocked(run_hook(command, self.repo), "cannot follow")
+        # Without a directory change the starting repo is the target, so a pass holds.
+        self.assertEqual(0, run_hook("gh pr create --title $'it\\'s fixed' --body x", self.repo).returncode)
 
     def test_blocks_when_project_file_is_unreadable(self) -> None:
         project = self.repo / "PROJECT.md"

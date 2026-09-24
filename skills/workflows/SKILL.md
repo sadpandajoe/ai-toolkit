@@ -17,7 +17,7 @@ the gate, run the next bounded capability, record the handoff, repeat.
 2. If no workflow matches, handle the request directly. If equally specific
    triggers name different workflows, ask which one. Either way, state the
    outcome once as `Workflow entered: <name>` or `Workflow entered: none —
-   <why>` before any edit.
+   <why>` before any edit; `none` persists no snapshot.
 3. Confirm the manifest owner is `workflows` and join its `reference_root` with
    `<workflow.name>.md`. Reject absolute paths or traversal.
 4. Load exactly that reference, its declared rules, and only the domain skills

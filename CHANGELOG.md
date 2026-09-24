@@ -13,7 +13,12 @@
   `hooks/hooks.json` and `install-hooks.sh`. Known limits: the snapshot has no
   branch or tree binding, so a review PASS left by an earlier workflow in the
   same `PROJECT.md` still satisfies it, and command matching is static
-  (conditional or subshell `cd`, `gh api`, and aliases are not followed).
+  (conditional or subshell `cd`, `gh api`, and aliases are not followed; a
+  single-quoted `$(...)` literal blocks in an ungated repo; a linked worktree
+  does not see the main checkout's `PROJECT.md`). It follows `cd`, `env -C`
+  and `env -S`, comments, line continuations, `bash -c`, `eval`, and quoted
+  substitutions, checks every PR creation in a request, and blocks a command
+  it cannot parse when that command also changes directory.
 - `rules/universal.md` gains an always-on entry rule: a request to add or
   change behavior loads the `workflows` skill before the first edit, on intent,
   so the workflow no longer depends on the session choosing to enter it.
