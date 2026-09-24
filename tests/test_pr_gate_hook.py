@@ -58,7 +58,9 @@ class ReviewGateHookTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self._temporary.cleanup)
-        self.repo = Path(self._temporary.name)
+        # macOS temp dirs sit under the /var -> /private/var symlink, which
+        # `aitk checkpoint` refuses; resolve like tests/test_checkpoint.py.
+        self.repo = Path(self._temporary.name).resolve()
         subprocess.run(["git", "-C", str(self.repo), "init", "-q", "-b", "main"], check=True)
 
     def classify(self, repo: Path | None = None) -> None:
