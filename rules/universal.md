@@ -5,6 +5,13 @@
 - **Durable state is files, not chat.** `PROJECT.md` holds current state and the
   routing snapshot; `PLAN.md` holds the active plan when one was needed. Both are
   local-only and never committed. Resume from them, never from remembered chat.
+- **Behavior changes enter a workflow first.** Any request to add or change
+  behavior in a repo loads the `workflows` skill before the first edit or PR
+  action, on intent alone. Emit `Workflow entered: <name>` (or `none — <why>`
+  when no workflow matches) and, once a workflow is entered, persist the routing
+  snapshot before touching files. Small direct answers, read-only work, and fixed-procedure skills that
+  change no repo behavior (commit, archive) are exempt; a domain skill that
+  edits behavior runs inside the workflow, not instead of it.
 - **No PII on public surfaces.** No customer names, ticket IDs (`sc-XXXXX`,
   Linear, Jira), customer URLs, or reporter identity in PR titles, bodies,
   comments, or commit messages. Describe behavior generically. Local files and

@@ -143,6 +143,10 @@ HOOK_ENTRIES=$(cat <<HOOKJSON
   },
   {
     "matcher": "Bash",
+    "hooks": [{"type": "command", "command": "bash \"$REPO_DIR/hooks/require-review-gate.sh\""}]
+  },
+  {
+    "matcher": "Bash",
     "if": "Bash(jest*|pytest*|npm test*|npx jest*|playwright*)",
     "hooks": [{"type": "command", "command": "bash \"$REPO_DIR/hooks/check-resources.sh\""}]
   }
@@ -233,6 +237,7 @@ echo ""
 info "Hooks:"
 echo "  prevent-project-commit  — Blocks unsafe git flags, main/master force-pushes, and local workflow state commits"
 echo "  pre-push-validate       — Runs repository-pinned lint and targeted tests before git push"
+echo "  require-review-gate     — Blocks gh pr create until the review gate is PASS in the PROJECT.md snapshot"
 echo "  check-resources         — Warns when tests run with constrained resources"
 echo "  check-plan-drift        — Warns at turn end when PLAN.md outpaces PROJECT.md"
 echo "  agent-setup-edit-reminder — Reminds to load agent-setup-maintainer when an agent-setup file is edited"

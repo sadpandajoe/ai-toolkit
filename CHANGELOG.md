@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- `hooks/require-review-gate.sh` (PreToolUse, Bash) blocks `gh pr create`
+  unless the `PROJECT.md` routing snapshot records the `review` gate as `PASS`
+  for the current phase, using the same `gate_blockers` check `checkpoint
+  reserve` applies. A missing `PROJECT.md` or snapshot blocks too, since that
+  is the shape of a change that never entered a workflow; a pending
+  `published_pr` reservation also counts, so a multi-phase run that advanced
+  after `reserve` can still open its PR. `SKIP_PR_GATE=1` is the user's
+  override; the block message tells the agent to ask instead. Registered in
+  `hooks/hooks.json` and `install-hooks.sh`. Known limits: the snapshot has no
+  branch or tree binding, so a review PASS left by an earlier workflow in the
+  same `PROJECT.md` still satisfies it, and command matching is static
+  (conditional or subshell `cd`, `gh api`, and aliases are not followed; a
+  single-quoted `$(...)` literal blocks in an ungated repo; a linked worktree
+  does not see the main checkout's `PROJECT.md`). It follows `cd`, `env -C`
+  and `env -S`, comments, line continuations, `bash -c`, `eval`, and quoted
+  substitutions, checks every PR creation in a request, and blocks a command
+  it cannot parse when that command also changes directory.
+- `rules/universal.md` gains an always-on entry rule: a request to add or
+  change behavior loads the `workflows` skill before the first edit, on intent,
+  so the workflow no longer depends on the session choosing to enter it.
 - The Stop hooks (`hooks/observation-reminder.sh`, `hooks/check-plan-drift.sh`)
   return their nudge as JSON with a `systemMessage` on stdout, which the
   runtime shows to the user; they used to write to stderr and exit 0, which

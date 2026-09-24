@@ -57,6 +57,7 @@ class ProviderAdapterTests(unittest.TestCase):
         productive = {
             "prevent-project-commit.sh",
             "pre-push-validate.sh",
+            "require-review-gate.sh",
             "check-resources.sh",
             "check-plan-drift.sh",
             "observation-reminder.sh",
