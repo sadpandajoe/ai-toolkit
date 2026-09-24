@@ -250,6 +250,7 @@ only their registration is provider-specific.
 |------|-------|----------|
 | `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, and commits of local workflow state files |
 | `pre-push-validate.sh` | PreToolUse (Bash) | Runs repository-pinned lint and targeted tests before a push |
+| `require-review-gate.sh` | PreToolUse (Bash) | Blocks `gh pr create` unless the `PROJECT.md` snapshot records the review gate as PASS; `SKIP_PR_GATE=1` is the user's override |
 | `check-resources.sh` | PreToolUse (Bash) | Warns when running tests with constrained resources |
 | `check-plan-drift.sh` | Stop | Warns at turn end when PLAN.md outpaces PROJECT.md |
 | `agent-setup-edit-reminder.sh` | PostToolUse (Edit/Write/MultiEdit/NotebookEdit) | Reminds to load `agent-setup-maintainer` when an agent-setup file is edited |

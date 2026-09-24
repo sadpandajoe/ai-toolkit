@@ -15,7 +15,9 @@ the gate, run the next bounded capability, record the handoff, repeat.
    highest-specificity natural-language trigger. "Review this and fix" means
    `review-code` with remediation; "don't change anything" means review-only.
 2. If no workflow matches, handle the request directly. If equally specific
-   triggers name different workflows, ask which one.
+   triggers name different workflows, ask which one. Either way, state the
+   outcome once as `Workflow entered: <name>` or `Workflow entered: none —
+   <why>` before any edit.
 3. Confirm the manifest owner is `workflows` and join its `reference_root` with
    `<workflow.name>.md`. Reject absolute paths or traversal.
 4. Load exactly that reference, its declared rules, and only the domain skills

@@ -152,6 +152,12 @@ Pause and wait for confirmation only when:
 
 ### 7. Create PR
 
+Hook-enforced precondition, outside this workflow's contract: `hooks/require-review-gate.sh`
+blocks `gh pr create` unless the `PROJECT.md` routing snapshot records the
+review gate `PASS` (`bin/aitk project-state show`). Without it, run
+`review-code` first. Never add `SKIP_PR_GATE=1` on your own: stop and ask the
+user, who alone can override it for a change outside any workflow.
+
 ```bash
 gh pr create --title "..." --body "..." [--draft] [--base ...]
 ```
