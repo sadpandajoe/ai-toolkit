@@ -76,18 +76,17 @@ osc8_link() {
 model_raw=$(echo "$input" | jq -r '.model.display_name // empty')
 model_name=$(echo "$model_raw" | sed -E 's/^([Cc]laude|OpenAI) //')
 
-# Effort level
+# Effort level: the live session value (tracks /effort and --effort); absent
+# when the model has no effort parameter. settings.json holds only the saved
+# default, so it is never consulted.
 effort_str=""
-settings_file="$HOME/.claude/settings.json"
-if [ -f "$settings_file" ]; then
-    effort=$(jq -r '.effortLevel // empty' "$settings_file" 2>/dev/null)
-    if [ -n "$effort" ]; then
-        case "$effort" in
-            max)  effort_str=$(printf "%b%s%b" "$FG_RED"    "$effort" "$RESET") ;;
-            high) effort_str=$(printf "%b%s%b" "$FG_YELLOW" "$effort" "$RESET") ;;
-            *)    effort_str=$(printf "%b%s%b" "$GRAY"      "$effort" "$RESET") ;;
-        esac
-    fi
+effort=$(echo "$input" | jq -r '.effort.level // empty')
+if [ -n "$effort" ]; then
+    case "$effort" in
+        max)        effort_str=$(printf "%b%s%b" "$FG_RED"    "$effort" "$RESET") ;;
+        high|xhigh) effort_str=$(printf "%b%s%b" "$FG_YELLOW" "$effort" "$RESET") ;;
+        *)          effort_str=$(printf "%b%s%b" "$GRAY"      "$effort" "$RESET") ;;
+    esac
 fi
 
 # Message count + session duration
