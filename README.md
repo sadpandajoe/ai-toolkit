@@ -63,7 +63,7 @@ Quota: every subagent spends the limit of the provider it runs on. The
 independent review lane and the deep lenses run on Codex (Sol, then Astra for
 the deep routes) from a Claude parent and spend no Claude quota; the Fable
 planner on COMPLEX work, the Opus second-family review lane on COMPLEX or CORE
-diffs, and the Fable second vote do. Astra needs Codex CLI 0.153.0 or newer. Use the toolkit's `review-code` workflow rather
+diffs, and the Fable second vote do. Astra needs Codex CLI 0.155.0 or newer. Use the toolkit's `review-code` workflow rather
 than a general-purpose multi-agent review command, keep the parent on Sonnet so
 any agent that inherits the parent model inherits Sonnet, and queue sessions
 instead of running several in parallel when the limit is tight.

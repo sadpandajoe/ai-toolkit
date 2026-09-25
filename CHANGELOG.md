@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Model selectors move to the newest releases: the Codex workhorse is GPT-6
+  Sol (was GPT-5.6 Sol, which Codex now migrates) and the Claude judgment tier
+  is Opus 5.5 (was Opus 5), so Codex-lane reviews and implementation run on
+  GPT-6 Sol and Claude-lane reviews on Opus 5.5. The provider CLI floors rise
+  to the versions that introduced them (Codex 0.155.0 for GPT-6 Sol, Claude
+  Code 2.1.280 for Opus 5.5); older CLIs now fail preflight. Pricing adds both
+  at their published rates (GPT-6 Sol $2/$10, Opus 5.5 $4/$20 with 0.05x cache
+  reads) and keeps the older entries so past session records still price. A
+  test now requires every routed selector to have an exact pricing key so a
+  promotion cannot silently fall back to its predecessor's rate. The pricing
+  tables do not model GPT-6's long-context surcharge (prompts over 272K input
+  tokens), which applies to every Codex family.
+
 - Commits and pushes to the current feature branch no longer wait for
   confirmation: once verification and review pass, workflows (`create-feature`,
   `create-tests`, `update-tests`, `rules/implementation.md`) commit and push

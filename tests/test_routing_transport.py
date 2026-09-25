@@ -131,7 +131,7 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             calls.append(argv)
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
             flags = " ".join(
                 (
                     "--ephemeral --strict-config --ignore-user-config --ignore-rules ",
@@ -188,7 +188,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_prerelease_at_minimum_version_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
-                argv, 0, "codex-cli 0.153.0-alpha.1\n", ""
+                argv, 0, "codex-cli 0.155.0-alpha.1\n", ""
             )
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
@@ -211,10 +211,59 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertFalse(payload["transport"]["started"])
         self.assertTrue(payload["dry_run"])
 
+    def test_cli_one_release_below_the_provider_floor_fails_closed(self) -> None:
+        """GPT-6 Sol needs Codex 0.155.0 and Opus 5.5 needs Claude Code 2.1.280."""
+        ALL_FLAGS = " ".join(
+            (
+                "--ephemeral --strict-config --ignore-user-config --ignore-rules",
+                "--skip-git-repo-check --disable --model --config --sandbox --cd",
+                "--add-dir --output-schema --output-last-message --json",
+                "--print --no-session-persistence --safe-mode --strict-mcp-config",
+                "--mcp-config --effort --permission-mode --json-schema",
+                "--output-format --disallowedTools --tools",
+            )
+        )
+        cases = (
+            ("codex", "/bin/codex", "codex-cli 0.154.9\n"),
+            ("claude", "/bin/claude", "2.1.279\n"),
+        )
+        for provider, executable, version in cases:
+            with self.subTest(provider=provider):
+
+                def runner(
+                    argv: list[str], version: str = version, **_: object
+                ) -> subprocess.CompletedProcess[str]:
+                    # Only the version is stale; every flag probe succeeds, so a
+                    # rejection can come from nothing but the floor.
+                    if "--version" in argv:
+                        return subprocess.CompletedProcess(argv, 0, version, "")
+                    return subprocess.CompletedProcess(argv, 0, ALL_FLAGS, "")
+
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+                    prompt.write("Review this change.")
+                    prompt.flush()
+                    with mock.patch(
+                        "aitk.routing_transport.shutil.which",
+                        return_value=executable,
+                    ):
+                        code, payload = run_model(
+                            ROOT,
+                            "review",
+                            provider,
+                            "review.independent",
+                            Path(prompt.name),
+                            cwd=ROOT,
+                            dry_run=True,
+                            runner=runner,
+                        )
+                self.assertEqual(3, code)
+                self.assertFalse(payload["transport"]["started"])
+                self.assertIn("does not meet minimum", str(payload["error"]))
+
     def test_dry_run_emits_exact_claude_controls_without_fallback(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
             flags = " ".join(
                 (
                     "--print --no-session-persistence --safe-mode --strict-mcp-config ",
@@ -267,7 +316,7 @@ class RoutingTransportTests(RoutingTestCase):
         ) -> subprocess.CompletedProcess[str]:
             nonlocal worker_input
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -321,7 +370,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_unreadable_codex_final_message_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -357,7 +406,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_codex_success_path_returns_the_structured_result(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.153.0\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -402,7 +451,7 @@ class RoutingTransportTests(RoutingTestCase):
         ) -> Callable[..., subprocess.CompletedProcess[str]]:
             def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
                 if "--version" in argv:
-                    return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                    return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
                 if "--help" in argv:
                     flags = " ".join(
                         (
@@ -836,7 +885,7 @@ class RoutingTransportTests(RoutingTestCase):
                     argv: list[str], **_: object
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
-                        return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                        return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
                     if "--help" in argv:
                         flags = " ".join(
                             (
@@ -883,7 +932,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_provider_failure_diagnostic_is_bounded(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -922,7 +971,7 @@ class RoutingTransportTests(RoutingTestCase):
     ) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -1034,7 +1083,7 @@ class RoutingTransportTests(RoutingTestCase):
                     argv: list[str], **_: object
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
-                        return subprocess.CompletedProcess(argv, 0, "2.1.214\n", "")
+                        return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
                     if "--help" in argv:
                         flags = " ".join(
                             (
