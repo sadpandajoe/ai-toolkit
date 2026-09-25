@@ -26,6 +26,10 @@
   "should I commit/push?". Never open a pull request (`gh pr create`,
   `create-pr`) until the user says to. Amend, rebase, force-push, and pushes to
   `main`/`master`/protected branches still need explicit authorization.
+  When the user asks for a PR on a change that never entered a workflow (a
+  chore, a config tweak), run `review-code` on the branch first so the review
+  gate is recorded, then open the PR; never hand the user an
+  override-or-review choice.
 - **Regression evidence over ceremony.** Bug fixes get a test that fails before
   and passes after when feasible; features get acceptance tests as the spec.
   Test-first is a strong default, not a universal ritual; when blocked, write

@@ -84,6 +84,7 @@ class ReviewGateHookTests(unittest.TestCase):
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("BLOCKED", result.stderr)
         self.assertIn("stop and ask the user", result.stderr)
+        self.assertIn("`review-code` on the branch for a change outside any workflow", result.stderr)
         self.assertNotIn("SKIP_PR_GATE", result.stderr)
         self.assertNotIn("--status PASS", result.stderr)
         for fragment in fragments:
