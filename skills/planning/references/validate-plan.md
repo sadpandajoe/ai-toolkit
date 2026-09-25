@@ -1,8 +1,7 @@
 # Validate Plan
 
-One independent validator, one informed revision, then adjudicate. This
-replaces the multi-reviewer, numeric-threshold plan loop: a plan is not
-improved by a third round of the same reviewers.
+One independent validator, one informed revision, then adjudicate. A plan is
+not improved by a third round of the same reviewers.
 
 ## When
 

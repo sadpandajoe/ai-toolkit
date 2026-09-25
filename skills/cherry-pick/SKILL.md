@@ -209,4 +209,4 @@ State to checkpoint:
 - **PROJECT.md**: branch-movement operations — the parent workflow owns any PROJECT.md update, not this skill.
 - Always use `cherry-pick -x` to preserve source reference.
 - `--force` overrides the gate's accept/reject only, never downstream phases.
-- When in doubt, reject.
+- If the accept/reject category itself is ambiguous, treat it as reject and surface `--force`. (`Target-affected: UNCLEAR` still proceeds, per [references/gate.md](references/gate.md).)

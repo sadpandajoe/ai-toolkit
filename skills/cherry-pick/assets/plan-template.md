@@ -4,7 +4,7 @@
 
 - The **Execution Table Row** is required for every cherry-pick — it is the tracking artifact that follows the cherry through apply → adapt → validate.
 - For trivial changes, the Adaptation Strategy can be a single line ("Clean apply expected, no adaptation needed"). For non-trivial, use per-file detail.
-- See [../examples/execution-table.md](../examples/execution-table.md) for the full 12-column batch table and field meanings.
+- See [../examples/execution-table.md](../examples/execution-table.md) for the full 13-column batch table and field meanings.
 - Do not re-litigate the gate's go/no-go — the plan is about *how*, not *whether*.
 
 ## Template

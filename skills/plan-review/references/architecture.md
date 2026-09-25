@@ -15,8 +15,7 @@ different output. The route runner names which in its `lens_domain` header: `pla
 means the written plan, `code` means the diff. Read that field and use the matching
 Output block below; the code-review grading contract arrives from the code fan-out
 boundary itself, which is what knows its own domain. Neither vocabulary is a
-default — guessing produced a lane that returned `X/10` scores into a code review
-that merges severity tags, where they are either dropped or silently reweighted.
+default; do not guess.
 
 If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
 
