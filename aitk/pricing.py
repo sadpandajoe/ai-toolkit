@@ -15,6 +15,13 @@ PRICING = {
         "cache_read": 1.00,
         "cache_create": 12.50,
     },
+    "gpt-6-sol": {
+        "input": 2.00,
+        "output": 10.00,
+        "cache_read": 0.20,
+        "cache_create": 2.50,
+    },
+    # Superseded by gpt-6-sol; kept so older session records still price.
     # Promotional through 2026-11-21 (see SOL_STANDARD_FROM below); the standard
     # rate returns after that date.
     "gpt-5.6-sol": {
@@ -34,6 +41,13 @@ PRICING = {
         "output": 50.00,
         "cache_read": 1.00,
         "cache_create": 12.50,
+    },
+    # Opus 5.5 cache reads bill at 0.05x input, not the usual 0.1x.
+    "claude-opus-5-5": {
+        "input": 4.00,
+        "output": 20.00,
+        "cache_read": 0.20,
+        "cache_create": 5.00,
     },
     "claude-opus-5": {
         "input": 5.00,

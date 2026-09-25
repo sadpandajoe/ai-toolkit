@@ -17,7 +17,7 @@
       "minimum_cli": "0.153.0",
       "models": {
         "sol": {
-          "selector": "gpt-5.6-sol"
+          "selector": "gpt-6-sol"
         },
         "astra": {
           "selector": "gpt-6-astra"
@@ -28,7 +28,7 @@
       "minimum_cli": "2.1.214",
       "models": {
         "opus": {
-          "selector": "claude-opus-5"
+          "selector": "claude-opus-5-5"
         },
         "fable": {
           "selector": "claude-fable-5-1"

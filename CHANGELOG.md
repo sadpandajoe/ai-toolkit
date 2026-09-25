@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Model selectors move to the newest releases: the Codex workhorse is GPT-6
+  Sol (was GPT-5.6 Sol, which Codex now migrates) and the Claude judgment tier
+  is Opus 5.5 (was Opus 5), so Codex-lane reviews and implementation run on
+  GPT-6 Sol and Claude-lane reviews on Opus 5.5. Pricing adds both at their published rates (GPT-6 Sol $2/$10, Opus 5.5
+  $4/$20 with 0.05x cache reads); the older entries stay so past session
+  records still price. Astra, Fable 5.1, Sonnet 5, and Haiku 4.5 were already
+  current.
 - Commits and pushes to the current feature branch no longer wait for
   confirmation: once verification and review pass, workflows (`create-feature`,
   `create-tests`, `update-tests`, `rules/implementation.md`) commit and push

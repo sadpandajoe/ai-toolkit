@@ -12,8 +12,9 @@ from datetime import datetime, timedelta
 from aitk.pricing import compute_cost, get_pricing
 
 # Per-model global API-equivalent pricing ($/MTok) lives in aitk/pricing.py.
-# Keep unknown models unpriced. Claude 5 family rates (Fable 5.1, Opus 5,
-# Sonnet 5) were taken from the Anthropic model table on 2026-09-05; Sonnet 5
+# Keep unknown models unpriced. Claude 5 family rates (Fable 5.1, Opus 5.5,
+# Opus 5, Sonnet 5) were taken from the Anthropic model table (Opus 5.5 on
+# 2026-09-25); Sonnet 5
 # promotional pricing is timestamp-aware.
 # ANSI colors
 RESET = "\033[0m"
