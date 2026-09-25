@@ -211,6 +211,55 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertFalse(payload["transport"]["started"])
         self.assertTrue(payload["dry_run"])
 
+    def test_cli_one_release_below_the_provider_floor_fails_closed(self) -> None:
+        """GPT-6 Sol needs Codex 0.155.0 and Opus 5.5 needs Claude Code 2.1.280."""
+        ALL_FLAGS = " ".join(
+            (
+                "--ephemeral --strict-config --ignore-user-config --ignore-rules",
+                "--skip-git-repo-check --disable --model --config --sandbox --cd",
+                "--add-dir --output-schema --output-last-message --json",
+                "--print --no-session-persistence --safe-mode --strict-mcp-config",
+                "--mcp-config --effort --permission-mode --json-schema",
+                "--output-format --disallowedTools --tools",
+            )
+        )
+        cases = (
+            ("codex", "/bin/codex", "codex-cli 0.154.9\n"),
+            ("claude", "/bin/claude", "2.1.279\n"),
+        )
+        for provider, executable, version in cases:
+            with self.subTest(provider=provider):
+
+                def runner(
+                    argv: list[str], version: str = version, **_: object
+                ) -> subprocess.CompletedProcess[str]:
+                    # Only the version is stale; every flag probe succeeds, so a
+                    # rejection can come from nothing but the floor.
+                    if "--version" in argv:
+                        return subprocess.CompletedProcess(argv, 0, version, "")
+                    return subprocess.CompletedProcess(argv, 0, ALL_FLAGS, "")
+
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+                    prompt.write("Review this change.")
+                    prompt.flush()
+                    with mock.patch(
+                        "aitk.routing_transport.shutil.which",
+                        return_value=executable,
+                    ):
+                        code, payload = run_model(
+                            ROOT,
+                            "review",
+                            provider,
+                            "review.independent",
+                            Path(prompt.name),
+                            cwd=ROOT,
+                            dry_run=True,
+                            runner=runner,
+                        )
+                self.assertEqual(3, code)
+                self.assertFalse(payload["transport"]["started"])
+                self.assertIn("does not meet minimum", str(payload["error"]))
+
     def test_dry_run_emits_exact_claude_controls_without_fallback(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
