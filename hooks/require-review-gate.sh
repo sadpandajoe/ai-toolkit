@@ -405,10 +405,12 @@ def block(reason):
     print(
         "BLOCKED: `gh pr create` needs a recorded review gate (rules/gates.md), "
         f"and {reason}.\n"
-        "Run the workflow that owns this change (create-feature or fix-bug) or "
-        "`review-code` on the branch so the review gate is recorded by the "
-        "workflow. Do not bypass this on your own: stop and ask the user, "
-        "who alone can override it for a change outside any workflow.",
+        "Run the workflow that owns this change (create-feature or fix-bug), or "
+        "`review-code` on the branch for a change outside any workflow, so the "
+        "review gate is recorded by the workflow; then retry. The user asking "
+        "for the PR already authorizes that review. Do not bypass this on your "
+        "own: if review-code cannot run, stop and ask the user, who alone can "
+        "override it.",
         file=sys.stderr,
     )
     sys.exit(2)

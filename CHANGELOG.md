@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Commits and pushes to the current feature branch no longer wait for
+  confirmation: once verification and review pass, workflows (`create-feature`,
+  `create-tests`, `update-tests`, `rules/implementation.md`) commit and push
+  without asking. Opening a pull request stays a separate step that waits for
+  the user's request (`create-pr` or explicit words; `--deliver-per-phase` at
+  intake). Amend, rebase, force-push, and protected-branch pushes still need
+  explicit authorization. A PR requested for a change that never entered a
+  workflow (a chore) runs `review-code` first to record the review gate, then
+  opens the PR, instead of asking the user to override or review;
+  `review-code` now ensures a routing snapshot, `create-pr` checks the gate,
+  and the hook's block message says to run the review. Multi-phase deliveries read `pushed — awaiting PR
+  request` where they read `prepared — awaiting publish authorization`.
 - `hooks/require-review-gate.sh` (PreToolUse, Bash) blocks `gh pr create`
   unless the `PROJECT.md` routing snapshot records the `review` gate as `PASS`
   for the current phase, using the same `gate_blockers` check `checkpoint

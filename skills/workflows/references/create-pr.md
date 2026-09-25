@@ -32,6 +32,14 @@ branches, or history rewriting remain outside that grant.
 
 ### 1. Validate Branch State
 
+- Ensure the review gate is recorded: `bin/aitk project-state show` must list
+  `review` as `PASS` for the current phase (`hooks/require-review-gate.sh`
+  blocks `gh pr create` otherwise). When it does not, including when there is
+  no snapshot because the change fit no other workflow, run `review-code` on
+  the branch first, then continue. Invoking `create-pr` already authorizes this;
+  do not ask the user to choose between an override and a review. `SKIP_PR_GATE`
+  is the user's override alone.
+
 - Verify current branch is not `main` (or the repo's default branch)
 - Determine base branch: `--base` argument, or infer from `git config` / repo default
 - Check if branch is pushed to remote; push with `-u` if not

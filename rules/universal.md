@@ -21,6 +21,15 @@
 - **Resolve uncertainty yourself.** Investigate, read code, run checks. Ask the
   user only for a genuine product, design, or scope choice, a fact only they
   hold, or a protected effect. Those are the only `USER_DECISION` cases.
+- **Commit and push freely; open PRs only on request.** Once verification and
+  review pass, commit to the current feature branch and push it without asking
+  "should I commit/push?". Never open a pull request (`gh pr create`,
+  `create-pr`) until the user says to. Amend, rebase, force-push, and pushes to
+  `main`/`master`/protected branches still need explicit authorization.
+  When the user asks for a PR on a change that never entered a workflow (a
+  chore, a config tweak), run `review-code` on the branch first so the review
+  gate is recorded, then open the PR; never hand the user an
+  override-or-review choice.
 - **Regression evidence over ceremony.** Bug fixes get a test that fails before
   and passes after when feasible; features get acceptance tests as the spec.
   Test-first is a strong default, not a universal ritual; when blocked, write
@@ -49,7 +58,8 @@
 
 - Direct about errors, no apologies. Show commands and outputs.
 - Explain the reasoning behind a choice in one line.
-- Confirm before destructive or publishing actions; never before routine ones.
+- Confirm before destructive actions; never before routine ones. Commits and
+  pushes to the current feature branch are routine; opening a PR is not.
 
 ## Override Hierarchy
 

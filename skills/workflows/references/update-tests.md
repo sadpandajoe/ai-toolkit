@@ -94,15 +94,14 @@ update-tests --function normalize_query
 
 8. **Commit Boundary**
 
-   If the user explicitly requested commit behavior, verification is strong, and `review-code` leaves no unresolved `[major]` or `[minor]` issues:
-   - create a `test:` commit
+   If verification is strong and `review-code` leaves no unresolved `[major]` or `[minor]` issues:
+   - create a `test:` commit and push the current feature branch (no confirmation; never open a PR unprompted)
 
    Commit message format:
    - `test: update <scope> coverage`
    - fallback: `test: update targeted coverage`
 
    Stop instead of committing when:
-   - commit behavior was not explicitly requested
    - verification is partial or blocked
    - meaningful ambiguity remains
    - the workflow handed off to `create-tests`

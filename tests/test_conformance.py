@@ -563,14 +563,14 @@ class ConformanceTests(unittest.TestCase):
         feature = (ROOT / "skills/workflows/references/create-feature.md").read_text()
         self.assertIn("## Feature Complexity Signals", feature)
         self.assertIn("Cosmetic changes are TRIVIAL regardless of file count", feature)
-        # Per-phase delivery is prepared by default and published only under the
-        # contract's publish-explicit gate, one effect record per phase.
+        # Per-phase delivery is committed and pushed by default; a PR opens only
+        # under the contract's publish-explicit gate, one effect record per phase.
         self.assertIn("`publish-explicit` gate", feature)
         self.assertIn("operation ID `phase:<name>`", feature)
-        self.assertIn("prepared — awaiting publish authorization", feature)
+        self.assertIn("pushed — awaiting PR request", feature)
         handoff = (ROOT / "skills/reporting/templates/phase-handoff.md").read_text()
         self.assertIn("Tree:", handoff)
-        self.assertIn("prepared — awaiting publish authorization", handoff)
+        self.assertIn("pushed — awaiting PR request", handoff)
         contracts = json.loads((ROOT / "interfaces/contracts.json").read_text())
         by_name = {c["name"]: c for c in contracts["contracts"]}
         feature_edges = {(e["from"], e["to"]) for e in by_name["create-feature"]["transitions"]}
