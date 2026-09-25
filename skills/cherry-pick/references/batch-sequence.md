@@ -118,4 +118,4 @@ Do not populate risk, confidence, or decision fields — those belong to per-che
 
 The orchestrator maintains this table across all cherry-picks in a batch, updating as each per-cherry subagent completes.
 
-See [../examples/execution-table.md](../examples/execution-table.md) for the 12-column format and field meanings.
+See [../examples/execution-table.md](../examples/execution-table.md) for the 13-column format and field meanings.

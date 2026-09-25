@@ -7,7 +7,7 @@
 
 Effect: `local_mutation`.
 
-This is the single command for updating PROJECT.md state. It absorbed the older `/update-project-file` — for quick progress logs, use `checkpoint "message"`.
+This is the single command for updating PROJECT.md state. For quick progress logs, use `checkpoint "message"`.
 
 ## Usage
 

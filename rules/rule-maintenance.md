@@ -13,8 +13,9 @@ evidence a rule change needs.
 
 ## When a rule is violated
 
-Strengthen the language, add the failure as a concrete negative example, and
-consider loading it earlier. Add the eval case that would have caught it.
+Diagnose whether context, scope, or placement failed: add the reason the rule
+exists, narrow it to the step that failed, or load it earlier. Add the eval case
+that would have caught it.
 
 ## When a rule is stale
 
@@ -24,7 +25,7 @@ Update it to current behavior, remove dead thresholds, and say so in the summary
 
 Check existing rules for partial coverage first. A rule belongs in `rules/` only
 when it applies across skills; workflow sequences and domain methods belong in
-skills. Keep one concern per file, 20 to 40 lines, kebab-case names.
+skills. Keep one concern per file; split a rule that covers two. Kebab-case names.
 
 ## Promotion
 

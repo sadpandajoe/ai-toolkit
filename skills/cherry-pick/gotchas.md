@@ -2,7 +2,7 @@
 
 Empirical failure modes observed in past sessions. Read at decision points; update when a new failure surfaces.
 
-Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
+Format per entry: **Symptom** → **Why** → **Do instead**.
 
 ---
 
@@ -14,8 +14,6 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 **Do instead:** Run the diff audit (`scripts/scope-audit.sh`) on **every** cherry-pick — including clean applies with zero conflicts. Compare source-commit diff vs cherry-pick result diff. Revert any hunks that don't trace to the cherry-picked commit.
 
-**First seen:** PR #38809 / SC-104110 (P1) — clean cherry-pick leaked the `hideTab` guard from an adjacent commit.
-
 ---
 
 ## `git checkout --theirs` / `--ours` silently discards changes
@@ -25,8 +23,6 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 **Why:** In cherry-pick context, `--theirs` takes the source branch's full file (not a merge), `--ours` takes the target's. Both throw away the other side wholesale.
 
 **Do instead:** Always read conflict markers and edit surgically. If the file is too large to resolve by hand, abort and split the cherry-pick into smaller pieces.
-
-**First seen:** Pre-existing rule, repeatedly re-learned.
 
 ---
 
@@ -38,8 +34,6 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 **Do instead:** Verify `.git/CHERRY_PICK_HEAD` exists before `--continue`. If missing after re-running the cherry-pick produces the same modify/delete-only state, resolve with `git rm` + `git commit` (manually writing the cherry-pick message with the `(cherry picked from commit <sha>)` reference). Do not fall back to `git apply` for ≤5 excluded files.
 
-**First seen:** Standing rule encoded in apply phase.
-
 ---
 
 ## Re-running `check-existing-fix` after the gate already consumed it
@@ -49,20 +43,6 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 **Why:** Investigation already runs the existing-fix check. The gate consumes the result; it does not re-check. Downstream phases must trust the gate's decision.
 
 **Do instead:** Investigate runs the check once. Gate consumes the output. Plan and apply do not re-litigate.
-
-**First seen:** Standing rule encoded in gate phase.
-
----
-
-## Plan subagent tries to override the gate
-
-**Symptom:** Plan subagent comes back with "this should be rejected" or restructures the cherry-pick scope contrary to the gate's decision.
-
-**Why:** Plan operates downstream of the gate and should treat the go/no-go as decided. Re-litigating wastes the cycle and confuses orchestration.
-
-**Do instead:** The plan can note disagreement for the reviewer to consider, but produces a plan as instructed. Only the main thread re-evaluates gate decisions.
-
-**First seen:** Standing rule encoded in plan phase.
 
 ---
 
@@ -74,8 +54,6 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 **Do instead:** When a bug-fix cherry-pick is rejected or trimmed, assess whether the underlying bug exists on the target via a different code path. If yes, surface it as an actionable residual item in the final report's "What to do next" — not buried in adaptation notes.
 
-**First seen:** Standing rule encoded in adapt phase.
-
 ---
 
 ## Conflict resolution adds indent levels and trips line-length lint
@@ -86,8 +64,6 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 **Do instead:** Run pre-commit on the changed files as part of step 7b validation, **before push**. Fix any failures (auto-fixers via `git add` + `--amend`, manual fixes via edit + `--amend`). Don't push first and force-push later — amend pre-push when CI hasn't run yet.
 
-**First seen:** PR #39798 cherry-pick to 6.0-release — comment block landed at indent 20 (vs source indent 16), two lines over 88 chars, surfaced only when CI ran.
-
 ---
 
 ## Push batched at end instead of per-cherry
@@ -96,9 +72,7 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 **Why:** `git push` happening once per batch is the natural rhythm when you're orchestrating a tight loop ("apply, validate, next, …, done, push"). Even with per-cherry push as the default, the per-cherry directive is easy to skim past because it sits as a trailing step after the validate references rather than as a numbered phase, and the Batch Flow section doesn't restate it.
 
-**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must emit a `## Push Boundary — <pr-or-sha>` confirmation block (see SKILL.md step 8) before any subsequent work runs. Default behavior: push runs **per cherry, before starting the next dependent one**, and the block records `Status: pushed`. Under `--no-push`, stop with `Status: pending-authorization` instead. Only batch pushes when the user explicitly requests it (e.g., to reduce CI cost) — confirm first.
-
-**First seen:** 4-PR batch into 6.0-release, 2026-05-06. Pushed once at the end; user flagged it.
+**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must emit a `## Push Boundary — <pr-or-sha>` confirmation block (see SKILL.md step 8) before any subsequent work runs. Default behavior: push runs **per cherry, before starting the next dependent one**, and the block records `Status: pushed`. Under `--no-push`, stop with `Status: pending-authorization` instead. Batch pushes only when the user asks for it (e.g., to reduce CI cost); the request is the authorization.
 
 ---
 
@@ -117,8 +91,6 @@ Format per entry: **Symptom** → **Why** → **Do instead** → **First seen**.
 
 If tests existed and weren't run, flag the gap explicitly with what was available, why skipped, and recommended follow-up.
 
-**First seen:** Standing rule encoded in validate phase.
-
 ---
 
 ## Orchestrator prescribes `git apply` for partial cherry-picks
@@ -131,8 +103,6 @@ If tests existed and weren't run, flag the gap explicitly with what was availabl
 
 **Remediation if already pushed:** Reset to before the bad commit, re-run `git cherry-pick -x` properly, then re-cherry-pick (or `rebase --onto`) any subsequent commits onto the corrected base, then `git push --force-with-lease`. Do not just amend the message — that leaves the wrong author.
 
-**First seen:** 2026-05-08 batch into 6.0-release. Partial cherry-pick of PR #39636 used `git format-patch | git apply` per the subagent prompt I wrote; landed with author=Joe Li (should have been Amin Ghadersohi) and a modified subject `(partial)`. User flagged; remediation required reset + redo + force-push of 5 commits.
-
 ---
 
 ## Blocked cherry reported with no path to unstick
@@ -144,5 +114,3 @@ If tests existed and weren't run, flag the gap explicitly with what was availabl
 **Do instead:** Step 7c (Unblock Discovery) runs for every `Blocked`/`Rejected` row whose blocker looks like "target is missing something" — modify/delete, missing prereq, missing architecture. A discovery subagent (Standard tier by default) maps the missing files/symbols/prereqs to upstream PRs that introduced them, filters to those merged on source but not on target, and returns an ordered "apply these first" list. Result lands in `CHERRY_PICK.md` under the row's Subagent Handoff `Unblock candidates` field and in the Final Report under "What to do next" as "Could cherry if we first apply: #X, #Y, #Z." Inform-only for now — auto-prepending the candidates to the active wave is a future `--auto-unblock` extension. See [references/unblock-discovery.md](references/unblock-discovery.md).
 
 **Skip 7c** when the rejection is intrinsic (reject-category API rewrite, dependency bump, build-system change). Record "no unblock path" with the one-line reason and move on.
-
-**First seen:** 2026-05-21, user flagged the gap during workflow review — blocked cherries were terminating without forward path; user explicitly asked for inform-only first, auto-pick later.

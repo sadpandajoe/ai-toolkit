@@ -77,11 +77,7 @@ Identify tests that should be:
 ## Output
 
 This lens grades **shipped tests**, so it reports in the code-review vocabulary
-its Required Context declares — severity tags, no score. It previously emitted
-`Score: X/10` and `[High/Medium/Low]`, the plan-review format, while sitting in
-the code fan-out beside lanes returning `[major]`/`[minor]`: the orchestrator
-merges and dedupes those findings, and a lane speaking a different vocabulary
-either gets dropped from the merge or silently reweighted against the rest.
+its Required Context declares — severity tags (`[major]`/`[minor]`/`[nitpick]`), no score.
 
 ```markdown
 ## Test Review
