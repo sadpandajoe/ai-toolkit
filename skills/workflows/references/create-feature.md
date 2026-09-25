@@ -20,8 +20,8 @@ routing snapshot and gates.
 ```bash
 create-feature "add bulk edit for dashboard filters"
 create-feature sc-12345 | apache/superset#28456 | <github or shortcut url>
-create-feature <request> --watch              # chain into watch-pr after the final push
-create-feature <request> --deliver-per-phase  # authorize one push and PR per phase at intake
+create-feature <request> --watch              # chain into watch-pr once the PR exists
+create-feature <request> --deliver-per-phase  # authorize one PR per phase at intake
 ```
 
 ## Feature Complexity Signals
@@ -108,12 +108,12 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    decomposition`, an update to `## Decomposition` in `PLAN.md`, and one
    revalidation in `decomposition` mode before the next phase is planned.
    For MULTI_PHASE work the phase is then **prepared** as its own commit in
-   the roadmap's delivery order (`decompose-work.md`). It is pushed and opened
-   as a PR only under the contract's `publish-explicit` gate: authorization
-   granted at intake (`--deliver-per-phase` or the user's explicit words) or
-   once at the first phase boundary, recorded as a `published_pr` effect with
+   the roadmap's delivery order (`decompose-work.md`). The commit is pushed to
+   the feature branch without asking. It is opened as a PR only under the
+   contract's `publish-explicit` gate: the user's explicit words, or
+   `--deliver-per-phase` at intake, recorded as a `published_pr` effect with
    operation ID `phase:<name>`. Without it the phase stays
-   `prepared — awaiting publish authorization` and the loop continues. Fresh
+   `pushed — awaiting PR request` and the loop continues. Fresh
    workers are the context boundary; no manual clear is needed.
 10. **Integrated review** (MULTI_PHASE and BATCHED only; hard gate before
     `## Feature Complete`). After the last unit's checkpoint, run one more
@@ -126,18 +126,18 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
     that owns the code, then the integrated delta pass runs once.
 11. **Finish.** Write the `## Feature Complete` entry, emit the summary from
     `reporting/templates/create-feature-summary.md`, record `metrics-emit`.
-    Nothing is pushed or opened without publish authorization, whatever the
-    shape. SINGLE_PHASE work stops before commit and PR unless authorized.
-    MULTI_PHASE work presents its prepared phases in roadmap order: already
-    authorized, the final phase's PR is the last effect; not yet authorized,
-    the prepared commits are listed and pushed only when the user says so (as
-    one PR per phase, or one PR when the opt-out was recorded). With
-    `--watch`, chain into `watch-pr` after the final push lands.
+    Commit and push the current feature branch without asking; no PR is opened
+    without the user's request, whatever the shape. SINGLE_PHASE work ends
+    committed and pushed with no PR. MULTI_PHASE work presents its pushed
+    phases in roadmap order: already authorized, the final phase's PR is the
+    last effect; not yet authorized, the commits are listed and PRs are opened
+    only when the user says so (as one PR per phase, or one PR when the opt-out
+    was recorded). With `--watch`, chain into `watch-pr` once the PR exists.
 
 ## User Intervention Points
 
 Only an unresolved product, UX, or compatibility trade-off; a fact only the user
-holds; a `BLOCKED` environment; or the publish authorization boundary. Ordinary
+holds; a `BLOCKED` environment; or the PR-creation boundary. Ordinary
 plan-validation findings and review findings are handled in the loop.
 
 ## Hard Gates
@@ -149,8 +149,8 @@ plan-validation findings and review findings are handled in the loop.
   phase or wave transition; `## Feature Complete` before the chat summary.
 - MULTI_PHASE and BATCHED work: integrated review gate `PASS` over the branch
   base, with its own Review Record entry, before `## Feature Complete`.
-- Commit or push only with STRONG verification, a `PASS` review gate, and prior
-  authorization. Each per-phase push is its own `published_pr` record with
+- Commit or push only with STRONG verification and a `PASS` review gate; no
+  confirmation is needed. Opening a PR needs the user's request. Each per-phase PR is its own `published_pr` record with
   operation ID `phase:<name>`; the reference and `interfaces/contracts.json`
   describe the same gate.
 
@@ -166,5 +166,5 @@ Review: <lane, accepted/raised findings>
 Behavior validation: <pass | fail | skipped — reason>
 Integrated review: <gate, lane, accepted/raised | not applicable (SINGLE_PHASE)>
 Residual risk: <one line or none>
-Delivery: <PR per phase, in roadmap order: #a, #b, #c | prepared per phase, awaiting publish authorization | single PR (opt-out: <reason>) | no PR yet>
+Delivery: <PR per phase, in roadmap order: #a, #b, #c | pushed per phase, awaiting PR request | single PR (opt-out: <reason>) | no PR yet>
 ```

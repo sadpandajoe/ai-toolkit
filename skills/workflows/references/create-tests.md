@@ -78,14 +78,14 @@ create-tests --function <name>       # First meaningful tests for a specific fun
    - [Anything still not covered]
 
    ### Next Decision
-   - [Ready for manual commit / needs more work]
+   - [Committed and pushed / needs more work]
    ```
 
 ## Notes
 - `create-tests` is a test-only command, not the normal entrypoint for feature or bug workflows
 - Favor the smallest set of high-signal tests over broad test quantity
 - `review-code` is an internal phase here, not the expected next top-level user step
-- Stop before committing unless the user explicitly requested commit/push behavior.
+- With strong verification and a passing `review-code`, commit the tests as a `test:` commit and push the current feature branch without asking; never open a PR unprompted. Stop before committing when verification is partial or blocked.
 - Every run writes at least a one-line `## Tests Created` entry to PROJECT.md before the chat summary so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) after `create-tests` does not lose the record. TRIVIAL/STANDARD runs satisfy this with a single end-of-run entry; COMPLEX or expensive runs follow the hard-gate cadence in the Command Contract.
 
   Minimum entry shape for TRIVIAL/STANDARD:

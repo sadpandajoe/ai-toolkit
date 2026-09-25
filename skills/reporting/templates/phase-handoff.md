@@ -31,14 +31,14 @@ Invariant changes: <none, or RECLASSIFY recorded>
 Evidence: <verification gate reference>
 Roadmap check: <holds | RECLASSIFY — decomposition revalidated: <what changed>>
 Tree: <sha the phase ended on — the next phase's review base>
-Delivered as: <commit <sha> | PR #n | prepared — awaiting publish authorization | single-PR opt-out>
+Delivered as: <commit <sha> | PR #n | pushed — awaiting PR request | single-PR opt-out>
 Next phase: <name, reclassified as <complexity>/<size>, or "done">
 ```
 
 `Tree` is recorded in the snapshot too: `bin/aitk project-state phase --name
 <phase> --status done --sha <sha>` refuses `done` without it, so the next
-review's base is data rather than memory. `Delivered as` never presumes a push:
-without publish authorization the phase is prepared and the loop continues.
+review's base is data rather than memory. `Delivered as` never presumes a PR:
+without the user's request the phase is committed and pushed, and the loop continues.
 
 The roadmap check answers two questions with what this phase learned: does the
 decomposition still hold, and is the next phase's exit goal still right?

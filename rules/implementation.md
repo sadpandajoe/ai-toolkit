@@ -10,8 +10,9 @@
   record the gap; never silently switch to test-after.
 - Update existing code before creating new; smallest change that meets the exit
   criteria.
-- Commit only working states, only with authorization, and never with
-  `git add -A` or `git add .`.
+- Commit only working states (verification and review passed) and never with
+  `git add -A` or `git add .`. Committing and pushing the current feature branch
+  needs no confirmation; opening a PR waits for the user.
 - Never rewrite history unless explicitly asked: no force push, no rebase of
   shared branches, no amending published commits; amend only HEAD.
 - PR descriptions are factual: what changed and why.
