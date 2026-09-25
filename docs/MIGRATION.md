@@ -11,7 +11,7 @@ the safety gates, and replaces what runs underneath them.
   Code (not `opusplan`, which would put Opus in the parent for every plan),
   Sol on Codex. Fable plans only COMPLEX work; Sol or Opus review independently;
   Fable and Astra are the read-only deep advisors, one per provider; Astra
-  needs Codex CLI 0.153.0 or newer.
+  needs Codex CLI 0.155.0 or newer.
 - Nothing asks you to clear context. Fresh workers are the phase boundary;
   compaction is a safety net; clearing is optional hygiene between tasks.
 - Reviews run once, independently, on the other provider when reachable. The

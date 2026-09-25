@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from aitk.pricing import PRICING
 from aitk.workflows import load_workflows
 
 
@@ -30,6 +31,16 @@ class CostScriptTests(unittest.TestCase):
             self.assertEqual(
                 0.0, module.compute_cost(usage, "unknown-provider-model"), script
             )
+
+    def test_every_routed_selector_has_an_exact_pricing_key(self) -> None:
+        """Prefix fallback would price a promoted model at its predecessor's rate."""
+        catalog = json.loads(
+            (Path(__file__).resolve().parents[1] / "interfaces" / "model-routing.json").read_text()
+        )
+        for provider in catalog["providers"].values():
+            for model in provider["models"].values():
+                with self.subTest(selector=model["selector"]):
+                    self.assertIn(model["selector"], PRICING)
 
     def test_current_model_families_have_explicit_pricing(self) -> None:
         module = load_script("show-cost.py")
@@ -119,6 +130,7 @@ class CostScriptTests(unittest.TestCase):
                     module.get_pricing("gpt-6-sol", "2026-12-01T00:00:00Z"),
                 )
                 self.assertEqual(14.7, round(module.compute_cost(usage, "gpt-6-sol", "2026-09-25T00:00:00Z"), 6))
+                self.assertEqual(14.7, round(module.compute_cost(usage, "gpt-6-sol"), 6))
 
     def test_promotional_pricing_uses_each_records_absolute_timestamp(self) -> None:
         boundaries = {

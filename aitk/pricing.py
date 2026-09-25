@@ -15,6 +15,7 @@ PRICING = {
         "cache_read": 1.00,
         "cache_create": 12.50,
     },
+    # Published rates, developers.openai.com/api/docs/models/gpt-6-sol (2026-09-25).
     "gpt-6-sol": {
         "input": 2.00,
         "output": 10.00,

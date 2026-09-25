@@ -11,7 +11,7 @@ provider syntax or the declared fallback.
   `aitk-planner` (read-only), `aitk-implementer`, `aitk-debugger`,
   `aitk-tester`. They inherit the parent's Sol model and pin their own effort
   and sandbox; the deep routes (`deep-review`, `deep-rca`) never run as agents
-  and go through `model-run`, which pins Astra at `xhigh` (Codex CLI 0.153.0 or
+  and go through `model-run`, which pins Astra at `xhigh` (Codex CLI 0.155.0 or
   newer). The spawn prompt carries the full contract per
   `rules/specialist-handoff.md`; the agent returns a compact handoff.
 - `parallel_fanout`: spawn several agents in one turn for disjoint units; the

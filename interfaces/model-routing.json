@@ -14,7 +14,7 @@
   },
   "providers": {
     "codex": {
-      "minimum_cli": "0.153.0",
+      "minimum_cli": "0.155.0",
       "models": {
         "sol": {
           "selector": "gpt-6-sol"
@@ -25,7 +25,7 @@
       }
     },
     "claude": {
-      "minimum_cli": "2.1.214",
+      "minimum_cli": "2.1.280",
       "models": {
         "opus": {
           "selector": "claude-opus-5-5"
