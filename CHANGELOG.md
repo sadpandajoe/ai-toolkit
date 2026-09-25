@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The statusline effort label shows the live session effort (`/effort`,
+  `--effort`) instead of the `effortLevel` saved in `settings.json`, which made
+  it read the saved default no matter what the session ran. It is omitted when
+  the model reports no effort, and `xhigh` is colored like `high`.
+
 - Model selectors move to the newest releases: the Codex workhorse is GPT-6
   Sol (was GPT-5.6 Sol, which Codex now migrates) and the Claude judgment tier
   is Opus 5.5 (was Opus 5), so Codex-lane reviews and implementation run on
