@@ -27,7 +27,8 @@ review-code --review-only    # findings and record, no fixes
 
 Ensure a routing snapshot exists before any gate is recorded: `bin/aitk
 project-state init --workflow review-code --complexity <classified> --size
-<S|M|L|XL>`; it is a no-op when an owning workflow already wrote one. This is
+<S|M|L|XL>` when none exists; an owning workflow's snapshot stays as it is
+(`init` refuses a different workflow without `--replace`). This is
 also the standalone entry for a change that fits no other workflow, such as a
 chore, when the user asks for a PR: the classifier decides between the review
 exception (zero-logic or micro-fix diffs) and the independent lane, and the

@@ -20,8 +20,9 @@ routing snapshot and gates.
 ```bash
 create-feature "add bulk edit for dashboard filters"
 create-feature sc-12345 | apache/superset#28456 | <github or shortcut url>
+create-feature <request> --no-pr              # commit and push only; skip the draft PR
 create-feature <request> --watch              # chain into watch-pr once the PR exists
-create-feature <request> --deliver-per-phase  # authorize one PR per phase at intake
+create-feature <request> --deliver-per-phase  # separate branch + draft PR per phase; no-op alias on one branch
 ```
 
 ## Feature Complexity Signals
@@ -109,10 +110,10 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    revalidation in `decomposition` mode before the next phase is planned.
    For MULTI_PHASE work the phase is then **prepared** as its own commit in
    the roadmap's delivery order (`decompose-work.md`). The commit is pushed to
-   the feature branch without asking. It is opened as a PR only under the
-   contract's `publish-explicit` gate: the user's explicit words, or
-   `--deliver-per-phase` at intake, recorded as a `published_pr` effect with
-   operation ID `phase:<name>`. Without it the phase stays
+   the feature branch without asking and opened as a draft PR by the delivery
+   sequence in step 11, before the phase is marked advanced. Phases on the same
+   branch reuse the one draft PR (no new reservation); a phase on a separate
+   branch does its own lookup and reservation. With `--no-pr` the phase stays
    `pushed — awaiting PR request` and the loop continues. Fresh
    workers are the context boundary; no manual clear is needed.
 10. **Integrated review** (MULTI_PHASE and BATCHED only; hard gate before
@@ -126,18 +127,43 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
     that owns the code, then the integrated delta pass runs once.
 11. **Finish.** Write the `## Feature Complete` entry, emit the summary from
     `reporting/templates/create-feature-summary.md`, record `metrics-emit`.
-    Commit and push the current feature branch without asking; no PR is opened
-    without the user's request, whatever the shape. SINGLE_PHASE work ends
-    committed and pushed with no PR. MULTI_PHASE work presents its pushed
-    phases in roadmap order: already authorized, the final phase's PR is the
-    last effect; not yet authorized, the commits are listed and PRs are opened
-    only when the user says so (as one PR per phase, or one PR when the opt-out
-    was recorded). With `--watch`, chain into `watch-pr` once the PR exists.
+    Deliver after the review gate is `PASS` and before any `project-state
+    advance`, never from `main`, in this order:
+    1. `--no-pr`: commit and push per step 2, then stop, recording
+       `pushed — awaiting PR request`.
+    2. Commit and push the current feature branch. When the branch
+       already has an upstream, require
+       `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal
+       `<remote>/<branch>` (the upstream's own remote), else pause (ambiguous
+       push target); then push with
+       `git push "<remote>" "HEAD:refs/heads/<branch>"` (never a bare `git push`,
+       never `-u`). With no upstream, run `git push -u <remote> HEAD` (`<remote>` is
+       `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`;
+       pause on an ambiguous push target).
+    3. Run `create-pr --draft [--base <branch>]`. Its `## PR Exists` result is
+       recorded as `PR #n (existing, draft|ready)` (from its `Draft:` value)
+       with no reservation; `## PR Not
+       Opened` records its `pushed — awaiting PR request (<reason>)` line.
+    4. On `## PR Ready`, reserve the effect with `bin/aitk checkpoint reserve
+       --workflow create-feature --key published_pr --operation-id
+       phase:<name>` (`phase:single` for SINGLE_PHASE), resume `create-pr` at
+       its step 7, then record it with `bin/aitk checkpoint apply --workflow
+       create-feature --key published_pr --operation-id phase:<name>
+       --result-digest sha256:<sha256 of the PR URL>`, and finish `create-pr`
+       steps 8-9.
+    5. Write the completion entry.
+
+    The PR is a draft only: promotion to ready for review, reviewers, and merge
+    need the user's explicit words, and a non-draft PR needs them too.
+    MULTI_PHASE phases that share a branch share one draft PR, opened by the
+    first phase that completes; a separate PR per phase exists only for phases
+    on separate branches. With `--watch`, chain into `watch-pr` once the PR
+    exists.
 
 ## User Intervention Points
 
 Only an unresolved product, UX, or compatibility trade-off; a fact only the user
-holds; a `BLOCKED` environment; or the PR-creation boundary. Ordinary
+holds; a `BLOCKED` environment; or promoting a draft PR (ready for review, reviewers, merge). Ordinary
 plan-validation findings and review findings are handled in the loop.
 
 ## Hard Gates
@@ -149,10 +175,12 @@ plan-validation findings and review findings are handled in the loop.
   phase or wave transition; `## Feature Complete` before the chat summary.
 - MULTI_PHASE and BATCHED work: integrated review gate `PASS` over the branch
   base, with its own Review Record entry, before `## Feature Complete`.
-- Commit or push only with STRONG verification and a `PASS` review gate; no
-  confirmation is needed. Opening a PR needs the user's request. Each per-phase PR is its own `published_pr` record with
-  operation ID `phase:<name>`; the reference and `interfaces/contracts.json`
-  describe the same gate.
+- Commit, push, or open a draft PR only with STRONG verification and a `PASS`
+  review gate; no confirmation is needed. Promoting a draft needs the user's
+  request. The draft PR is the contract's `publish-explicit` gate satisfied by
+  the covered workflow's `create-pr --draft` step. Each is its own
+  `published_pr` record with operation ID `phase:<name>` (`phase:single` for
+  SINGLE_PHASE), reserved before creation and applied after.
 
 ```markdown
 ## Feature Complete
@@ -166,5 +194,5 @@ Review: <lane, accepted/raised findings>
 Behavior validation: <pass | fail | skipped — reason>
 Integrated review: <gate, lane, accepted/raised | not applicable (SINGLE_PHASE)>
 Residual risk: <one line or none>
-Delivery: <PR per phase, in roadmap order: #a, #b, #c | pushed per phase, awaiting PR request | single PR (opt-out: <reason>) | no PR yet>
+Delivery: <draft PR #n | draft PR per phase branch, in roadmap order: #a, #b, #c | no PR (--no-pr) | pushed — awaiting PR request>
 ```
