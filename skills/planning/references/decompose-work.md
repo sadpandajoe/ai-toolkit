@@ -28,12 +28,13 @@ known constraints, and any existing architecture notes in `PROJECT.md`.
   provisional complexity. No file lists or step lists for later phases.
 - **Delivery order**: one commit per phase is the default, pushed to the feature
   branch without asking; the roadmap states the order in which they land and
-  what each leaves deployable. A phase is opened as its own PR only under the
-  workflow's `publish-explicit` gate (the user's explicit words, or
-  `--deliver-per-phase` at intake); until then it is `pushed — awaiting PR
-  request`. A whole-feature PR is an explicit opt-out recorded as
-  `Delivery: single PR — <reason>` (a migration that cannot ship ahead of its
-  consumer, a contract that must flip atomically).
+  what each leaves deployable. Phases that share a branch share one draft PR,
+  opened by the first phase that completes (later phases reuse it; `--no-pr`
+  leaves a phase `pushed — awaiting PR request`). A separate PR per phase
+  exists only when phases live on separate branches (`--deliver-per-phase`
+  means a separate branch and draft PR per phase; otherwise it is a no-op
+  alias). Keep a single PR when a migration cannot ship ahead of its consumer
+  or a contract must flip atomically.
 
 Never turn BATCHED work into fake architectural phases; a repeated mechanical
 operation is waves, not phases. Never cut phases as horizontal layers (all

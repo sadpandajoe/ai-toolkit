@@ -20,6 +20,7 @@ transition and effect record.
 create-tests                         # First meaningful tests for current uncommitted work
 create-tests <file>                  # First meaningful tests for a specific file
 create-tests --function <name>       # First meaningful tests for a specific function
+create-tests <target> --no-pr        # Commit and push only; skip the draft PR
 ```
 
 ## Command Contract
@@ -85,7 +86,7 @@ create-tests --function <name>       # First meaningful tests for a specific fun
 - `create-tests` is a test-only command, not the normal entrypoint for feature or bug workflows
 - Favor the smallest set of high-signal tests over broad test quantity
 - `review-code` is an internal phase here, not the expected next top-level user step
-- With strong verification and a passing `review-code`, commit the tests as a `test:` commit and push the current feature branch without asking; never open a PR unprompted. Stop before committing when verification is partial or blocked.
+- With strong verification and a passing `review-code`, commit the tests as a `test:` commit, push (when the branch already has an upstream, require `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal `<remote>/<branch>`, else pause as an ambiguous push target, then push with `git push "<remote>" "HEAD:refs/heads/<branch>"`, never a bare `git push`, never `-u`; with no upstream, `git push -u <remote> HEAD`, where `<remote>` is `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`, pausing on an ambiguous push target), then open a draft PR with `create-pr --draft` straight through, with no checkpoint reservation. All without asking, never from `main`. `--no-pr` stops after the push and records `pushed — awaiting PR request`. Promoting the draft to ready for review, requesting reviewers, and merging need the user's words. Stop before committing when verification is partial or blocked.
 - Every run writes at least a one-line `## Tests Created` entry to PROJECT.md before the chat summary so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) after `create-tests` does not lose the record. TRIVIAL/STANDARD runs satisfy this with a single end-of-run entry; COMPLEX or expensive runs follow the hard-gate cadence in the Command Contract.
 
   Minimum entry shape for TRIVIAL/STANDARD:

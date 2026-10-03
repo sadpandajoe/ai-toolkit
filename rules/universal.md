@@ -21,10 +21,13 @@
 - **Resolve uncertainty yourself.** Investigate, read code, run checks. Ask the
   user only for a genuine product, design, or scope choice, a fact only they
   hold, or a protected effect. Those are the only `USER_DECISION` cases.
-- **Commit and push freely; open PRs only on request.** Once verification and
-  review pass, commit to the current feature branch and push it without asking
-  "should I commit/push?". Never open a pull request (`gh pr create`,
-  `create-pr`) until the user says to. Amend, rebase, force-push, and pushes to
+- **Commit, push, and open a draft PR freely; promote only on request.** Once
+  verification and review pass, commit to the current feature branch, push it,
+  and open a **draft** PR through `create-pr --draft`, without asking "should I
+  commit/push?". Workflow runs only; never from `main`; `--no-pr` opts out and
+  leaves the work `pushed — awaiting PR request`. Marking a PR ready for
+  review, requesting reviewers, merging, and opening a non-draft PR need the
+  user's explicit words. Amend, rebase, force-push, and pushes to
   `main`/`master`/protected branches still need explicit authorization.
   When the user asks for a PR on a change that never entered a workflow (a
   chore, a config tweak), run `review-code` on the branch first so the review
@@ -58,8 +61,9 @@
 
 - Direct about errors, no apologies. Show commands and outputs.
 - Explain the reasoning behind a choice in one line.
-- Confirm before destructive actions; never before routine ones. Commits and
-  pushes to the current feature branch are routine; opening a PR is not.
+- Confirm before destructive actions; never before routine ones. Commits,
+  pushes to the current feature branch, and a draft PR from a workflow are
+  routine; promoting a draft out of draft is not.
 
 ## Override Hierarchy
 

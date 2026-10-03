@@ -205,6 +205,21 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual("fix-bug", replaced.workflow)
         self.assertEqual(0, replaced.generation)
 
+    def test_applied_published_pr_no_longer_blocks_restarting_the_checkpoint(self) -> None:
+        path = self.directory / "PROJECT.md"
+        initialize(ROOT, "create-feature", path)
+        pass_gates(path, "create-feature")
+        reserve(ROOT, "create-feature", path, "published_pr", "phase:single")
+        with self.assertRaisesRegex(CheckpointError, "pending effects"):
+            initialize(ROOT, "create-feature", path, replace_existing=True)
+
+        apply(ROOT, "create-feature", path, "published_pr", "phase:single", DIGEST_A)
+        replaced = initialize(ROOT, "create-feature", path, replace_existing=True)
+
+        self.assertTrue(replaced.changed)
+        self.assertEqual((), replaced.effects)
+        self.assertEqual([], machine_payload(path)["effects"])
+
     def test_checkpoint_paths_reject_symlinks_without_outside_mutation(self) -> None:
         outside = self.directory / "outside"
         outside.mkdir()

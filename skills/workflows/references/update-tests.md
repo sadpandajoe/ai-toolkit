@@ -21,6 +21,7 @@ update-tests sql-lab
 update-tests src/features/sql-lab
 update-tests tests/unit/sql_lab/
 update-tests --function normalize_query
+update-tests <target> --no-pr        # Commit and push only; skip the draft PR
 ```
 
 ## Command Contract
@@ -51,7 +52,7 @@ update-tests --function normalize_query
    Identify the meaningful existing tests for the target area before planning any updates.
 
    If no meaningful suite exists:
-   - announce the transition and hand off into the `create-tests` flow automatically — the delegated intent ("get this area properly tested") is the same deliverable, and end-to-end workflows own their internal loops
+   - announce the transition and hand off into the `create-tests` flow automatically (carrying `--no-pr` when it was passed) — the delegated intent ("get this area properly tested") is the same deliverable, and end-to-end workflows own their internal loops
    - `--step` (or `--no-handoff`) restores the stop-and-recommend behavior
    - either way, do not build the first suite using `update-tests`' own improvement loop — first suites follow `create-tests`' procedure
 
@@ -95,7 +96,7 @@ update-tests --function normalize_query
 8. **Commit Boundary**
 
    If verification is strong and `review-code` leaves no unresolved `[major]` or `[minor]` issues:
-   - create a `test:` commit and push the current feature branch (no confirmation; never open a PR unprompted)
+   - create a `test:` commit and push (when the branch already has an upstream, require `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal `<remote>/<branch>`, else pause as an ambiguous push target, then push with `git push "<remote>" "HEAD:refs/heads/<branch>"`, never a bare `git push`, never `-u`; with no upstream, `git push -u <remote> HEAD`, where `<remote>` is `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`, pausing on an ambiguous push target), then open a draft PR with `create-pr --draft` straight through, with no checkpoint reservation (no confirmation, never from `main`); `--no-pr` stops after the push and records `pushed — awaiting PR request`; promotion to ready, reviewers, and merge need the user's words
 
    Commit message format:
    - `test: update <scope> coverage`
