@@ -23,10 +23,15 @@
 - Commits and pushes to the current feature branch no longer wait for
   confirmation: once verification and review pass, workflows (`create-feature`,
   `create-tests`, `update-tests`, `rules/implementation.md`) commit and push
-  without asking. Opening a pull request stays a separate step that waits for
-  the user's request (`create-pr` or explicit words; `--deliver-per-phase` at
-  intake). Amend, rebase, force-push, and protected-branch pushes still need
-  explicit authorization. A PR requested for a change that never entered a
+  without asking. After the push, `create-feature`, `fix-bug`, `fix-ci`,
+  `create-tests`, and `update-tests` open a draft PR through `create-pr
+  --draft` (`--no-pr` opts out; phases sharing a branch share one draft PR,
+  and `--deliver-per-phase` means a separate branch and draft PR per phase,
+  otherwise a no-op alias; `create-tests` and `update-tests` open the draft PR through
+  `create-pr`'s own contract, and their contracts do not declare a
+  `published_pr` effect). Marking a PR ready for review, reviewers, merging, and a non-draft
+  PR need the user's explicit words. Amend, rebase, force-push, and
+  protected-branch pushes still need explicit authorization. A PR requested for a change that never entered a
   workflow (a chore) runs `review-code` first to record the review gate, then
   opens the PR, instead of asking the user to override or review;
   `review-code` now ensures a routing snapshot, `create-pr` checks the gate,

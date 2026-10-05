@@ -18,7 +18,7 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether the
 - [Omit for straightforward fixes with no meaningful alternatives]
 
 ### What to do next
-- [Specific next action — PR link, CI re-run, merge step]
+- [Specific next action — draft PR link (or `pushed — awaiting PR request` with `--no-pr`), CI re-run, promotion to ready]
 
 ### Open risks
 - [Anything uncertain or untested — omit section if none]

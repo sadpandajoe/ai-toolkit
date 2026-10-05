@@ -7,7 +7,7 @@ import shutil
 import tempfile
 import unittest
 
-from aitk.conformance import route_workflow, validate_contracts
+from aitk.conformance import contracts_by_name, route_workflow, validate_contracts
 from aitk.routing_policy import DOMAIN_SEVERITIES, WORKER_SCHEMA
 from aitk.workflows import load_workflows
 
@@ -43,6 +43,14 @@ def _markdown_table_rows(block: str) -> list[list[str]]:
             continue
         rows.append(cells)
     return rows
+
+
+# The owner push rule: an existing upstream must be `<remote>/<branch>`, then push explicitly.
+PUSH_RULE_TOKENS = (
+    "`<remote>/<branch>`",
+    '`git push "<remote>" "HEAD:refs/heads/<branch>"`',
+    "never a bare `git push`",
+)
 
 
 class ConformanceTests(unittest.TestCase):
@@ -649,6 +657,108 @@ class ConformanceTests(unittest.TestCase):
                     if retired.search(line):
                         offenders.append(f"{path.relative_to(ROOT)}:{number}")
         self.assertEqual([], offenders)
+
+    def test_draft_pr_opens_through_the_create_pr_contract(self) -> None:
+        references = ROOT / "skills/workflows/references"
+        contracts = contracts_by_name(ROOT)
+        for name in ("create-tests", "update-tests"):
+            with self.subTest(contract=name):
+                serialized = json.dumps(contracts[name])
+                self.assertNotIn("publish-explicit", serialized)
+                self.assertNotIn("published_pr", serialized)
+
+        create_pr = (references / "create-pr.md").read_text()
+        for token in (
+            "-f head=",
+            "%(push:remotename)",
+            "%(upstream:remoteref)",
+            "$branch@{upstream}",
+            "get-url --push",
+            "isFork",
+            "env.BRANCH",
+            'BRANCH="$branch" HEAD_REPO="$head_repo" gh api',
+            "PR conflict:",
+            "## PR Ready",
+            "## PR Exists",
+            "## PR Not Opened",
+        ):
+            with self.subTest(create_pr_contains=token):
+                self.assertIn(token, create_pr)
+        for token in ("gh pr list --head", "--limit 10"):
+            with self.subTest(create_pr_omits=token):
+                self.assertNotIn(token, create_pr)
+
+        # The reservation yield sits between presenting the PR and creating it.
+        step_six = create_pr.index("### 6.")
+        step_seven = create_pr.index("### 7.")
+        self.assertGreaterEqual(create_pr.find("## PR Ready", step_six), 0)
+        self.assertLess(create_pr.index("## PR Ready", step_six), step_seven)
+        # The paginated lookup belongs to step 1, before any context is gathered.
+        lookup = create_pr.index("--paginate -X GET")
+        self.assertLess(create_pr.index("### 1."), lookup)
+        self.assertLess(lookup, create_pr.index("### 2."))
+        # Step 1 resolves the lookup rows, then continues through context, title,
+        # body, scrub, and pause; it never jumps straight to creation.
+        step_one = create_pr[create_pr.index("### 1.") : create_pr.index("### 2.")]
+        self.assertNotIn("straight into step 7", step_one)
+        self.assertIn("continue with steps 2-6", step_one)
+        self.assertIn("already has an upstream", create_pr)
+        for token in PUSH_RULE_TOKENS:
+            with self.subTest(create_pr_push_rule=token):
+                self.assertIn(token, create_pr)
+        # The pre-push guard names concrete refusals; the default branch is checked later.
+        self.assertIn('"refs/remotes/<remote>/HEAD"', create_pr)
+        # Creation pins the head identity the lookup used.
+        self.assertGreaterEqual(
+            create_pr.find('--head "$head_owner:$branch"', step_seven), 0
+        )
+
+        for name in ("create-feature", "fix-bug", "fix-ci"):
+            with self.subTest(owner=name):
+                text = (references / f"{name}.md").read_text()
+                ready = text.index("## PR Ready")
+                reserve = text.index("checkpoint reserve")
+                self.assertLess(ready, reserve)
+                self.assertLess(reserve, text.index("checkpoint apply"))
+                self.assertLess(text.index("--no-pr"), ready)
+        for name in ("create-tests", "update-tests"):
+            with self.subTest(owner=name):
+                text = (references / f"{name}.md").read_text()
+                self.assertIn("create-pr --draft", text)
+                self.assertIn("--no-pr", text)
+                self.assertNotIn("checkpoint reserve", text)
+        for name in ("create-feature", "fix-bug", "fix-ci", "create-tests", "update-tests"):
+            with self.subTest(push=name):
+                text = (references / f"{name}.md").read_text()
+                self.assertIn("git push -u", text)
+                self.assertIn("ambiguous push target", text)
+                self.assertIn("already has an upstream", text)
+                for token in PUSH_RULE_TOKENS:
+                    with self.subTest(push_rule=token):
+                        self.assertIn(token, text)
+        for name in ("create-feature", "fix-bug", "fix-ci"):
+            with self.subTest(no_pr_pushes_per_step_two=name):
+                text = (references / f"{name}.md").read_text()
+                self.assertIn("`--no-pr`: commit and push per step 2, then stop", text)
+                self.assertNotIn("skip the rest", text)
+        for name in ("create-feature", "fix-bug", "fix-ci"):
+            with self.subTest(existing_pr_record=name):
+                text = (references / f"{name}.md").read_text()
+                self.assertIn("existing, draft|ready", text)
+                self.assertNotIn("`draft PR #n (existing)`", text)
+
+        universal = (ROOT / "rules/universal.md").read_text()
+        self.assertIn("draft", universal)
+        self.assertIn("`--no-pr`", universal)
+        self.assertNotIn("Never open a pull request", universal)
+
+        workflows = {
+            item["name"]: item
+            for item in json.loads((ROOT / "interfaces/workflows.json").read_text())["workflows"]
+        }
+        for name in ("create-feature", "fix-bug", "fix-ci", "create-tests", "update-tests"):
+            with self.subTest(arguments=name):
+                self.assertIn("[--no-pr]", workflows[name]["arguments"])
 
     def test_optional_pgm_workflows_do_not_embed_provider_primitives(self) -> None:
         forbidden = re.compile(

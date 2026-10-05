@@ -12,7 +12,8 @@
   criteria.
 - Commit only working states (verification and review passed) and never with
   `git add -A` or `git add .`. Committing and pushing the current feature branch
-  needs no confirmation; opening a PR waits for the user.
+  needs no confirmation, and a workflow opens a draft PR after the push
+  (`--no-pr` skips it); marking it ready for review waits for the user.
 - Never rewrite history unless explicitly asked: no force push, no rebase of
   shared branches, no amending published commits; amend only HEAD.
 - PR descriptions are factual: what changed and why.

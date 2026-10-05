@@ -18,7 +18,7 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether acc
 
 ### What to do next
 - [Specific next action — the next phase's PR in roadmap order, deploy step, remaining slices]
-- [MULTI_PHASE: list the PRs per phase in delivery order, the pushed commits awaiting a PR request, or the single-PR opt-out and its reason]
+- [Draft PR link and, when ready, promotion to review (the user's call); MULTI_PHASE: the shared draft PR (or one per phase branch, in delivery order), or the pushed commits awaiting a PR (`--no-pr`)]
 
 ### Open risks
 - [Anything uncertain or untested — omit section if none]
@@ -27,7 +27,7 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether acc
 
 - Files changed: [list]
 - Review: per-unit gates [PASS ×N] | Integrated review [gate, lane | not applicable]
-- Delivery: [PR per phase #… | single PR]
+- Delivery: [draft PR #n | draft PR per phase branch #… | no PR (--no-pr) | pushed — awaiting PR request]
 
 </details>
 ```

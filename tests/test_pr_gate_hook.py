@@ -18,6 +18,16 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 AITK = str(ROOT / "bin" / "aitk")
 PR_CREATE = 'gh pr create --title "t" --body "b"'
+DRAFT_PR_CREATE = "gh pr create --draft --base main --head o:feat/x --title t --body b"
+# The lookup exactly as create-pr.md fences it, env prefix included.
+PR_LOOKUP = (
+    'BRANCH="$branch" HEAD_REPO="$head_repo" gh api --paginate -X GET "repos/$base_repo/pulls" \\\n'
+    '  -f state=open -f per_page=100 -f head="$head_owner:$branch" \\\n'
+    "  --jq '.[] | select(.head.ref == env.BRANCH and ((.head.repo.full_name // \"\") | ascii_downcase) == env.HEAD_REPO)"
+    " | [.number, .draft, .base.ref, .html_url] | @tsv'"
+)
+REPO_VIEW = "gh repo view --json nameWithOwner,defaultBranchRef,isFork"
+DIGEST = "sha256:" + "a" * 64
 
 
 def run_hook(command: str, cwd: Path, **env: str) -> subprocess.CompletedProcess[str]:
@@ -45,9 +55,11 @@ def project_state(repo: Path, *args: str) -> None:
     )
 
 
-def checkpoint(repo: Path, action: str, *args: str) -> None:
-    subprocess.run(
-        [AITK, "checkpoint", action, "--workflow", "create-feature", "--file", str(repo / "PROJECT.md"), *args],
+def checkpoint(
+    repo: Path, action: str, *args: str, workflow: str = "create-feature"
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [AITK, "checkpoint", action, "--workflow", workflow, "--file", str(repo / "PROJECT.md"), *args],
         check=True,
         capture_output=True,
         text=True,
@@ -63,11 +75,11 @@ class ReviewGateHookTests(unittest.TestCase):
         self.repo = Path(self._temporary.name).resolve()
         subprocess.run(["git", "-C", str(self.repo), "init", "-q", "-b", "main"], check=True)
 
-    def classify(self, repo: Path | None = None) -> None:
+    def classify(self, repo: Path | None = None, workflow: str = "create-feature") -> None:
         project_state(
             repo or self.repo,
             "init",
-            "--workflow", "create-feature",
+            "--workflow", workflow,
             "--complexity", "STANDARD",
             "--size", "M",
             "--phaseability", "none",
@@ -337,6 +349,61 @@ class ReviewGateHookTests(unittest.TestCase):
         self.classify(nested)
         project_state(nested, "gate", "--gate", "review", "--status", "PASS")
         self.assertEqual(0, run_hook(PR_CREATE, nested).returncode)
+
+    def test_ignores_the_draft_pr_identity_and_lookup_commands(self) -> None:
+        for command in (PR_LOOKUP, REPO_VIEW, "git push -u origin HEAD"):
+            with self.subTest(command=command):
+                result = run_hook(command, self.repo)
+                self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_gates_the_unprefixed_draft_pr_creation(self) -> None:
+        self.assert_blocked(run_hook(DRAFT_PR_CREATE, self.repo), "no PROJECT.md")
+        self.classify()
+        self.assert_blocked(run_hook(DRAFT_PR_CREATE, self.repo), "review=unrecorded")
+        self.record_review("PASS")
+        self.assertEqual(0, run_hook(DRAFT_PR_CREATE, self.repo).returncode)
+
+    def test_test_workflows_open_a_draft_on_review_pass_without_a_checkpoint(self) -> None:
+        for workflow in ("create-tests", "update-tests"):
+            with self.subTest(workflow=workflow):
+                (self.repo / "PROJECT.md").unlink(missing_ok=True)
+                self.classify(workflow=workflow)
+                self.record_review("PASS")
+                result = run_hook(DRAFT_PR_CREATE, self.repo)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertNotIn("published_pr", (self.repo / "PROJECT.md").read_text())
+
+    def test_applied_reservation_no_longer_covers_a_phase_advance(self) -> None:
+        self.classify()
+        checkpoint(self.repo, "init")
+        project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
+        self.record_review("PASS")
+        checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase:single")
+        checkpoint(
+            self.repo, "apply", "--key", "published_pr", "--operation-id", "phase:single",
+            "--result-digest", DIGEST,
+        )
+        project_state(self.repo, "advance", "--to", "next-phase")
+        self.assert_blocked(run_hook(DRAFT_PR_CREATE, self.repo), "review=unrecorded")
+
+    def test_pending_reservation_covers_a_draft_after_a_phase_advance(self) -> None:
+        self.classify()
+        checkpoint(self.repo, "init")
+        project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
+        self.record_review("PASS")
+        checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase:single")
+        project_state(self.repo, "advance", "--to", "next-phase")
+        result = run_hook(DRAFT_PR_CREATE, self.repo)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_opt_out_leaves_no_effect_and_allows_restarting_the_checkpoint(self) -> None:
+        self.classify()
+        checkpoint(self.repo, "init")
+        project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
+        self.record_review("PASS")
+        # `--no-pr`: the owner never reserves, so a fresh run can replace the checkpoint.
+        replaced = checkpoint(self.repo, "init", "--replace", "--json")
+        self.assertEqual([], json.loads(replaced.stdout)["effects"])
 
     def test_allows_outside_a_git_repository(self) -> None:
         with tempfile.TemporaryDirectory() as outside:
