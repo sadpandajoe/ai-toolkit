@@ -31,9 +31,14 @@ Turn a failed scenario into a crisp bug report with reliable repro steps, expect
 
 | Severity | Indicators |
 |----------|-----------|
-| **high** | Data loss, security bypass, crash, blocks core user workflow |
-| **medium** | Incorrect behavior with workaround, non-blocking regression |
+| **high** | Data loss, security bypass, crash, blocks a core user workflow, affects many users |
+| **medium** | Incorrect behavior with a workaround, non-blocking regression |
 | **low** | Cosmetic misalignment, rare edge case, minor impact |
+
+This table is the single home of QA bug severity. Across domains, `[major]` =
+`[High]` = high (must address); `[minor]` = `[Medium]` = medium (should
+address); `[nitpick]` = `[Low]` = low (optional). The review tags themselves
+are defined in `rules/severity.md`.
 
 ## Output
 

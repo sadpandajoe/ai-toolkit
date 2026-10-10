@@ -15,9 +15,9 @@ architecture lens runs as a conditional deep lens in code review.
 | Lens | Reference | Used by |
 |---|---|---|
 | Architecture | [references/architecture.md](references/architecture.md) | `deep-review` code lens on architecture changes |
-| Implementation feasibility | [references/implementation.md](references/implementation.md) | Plan validator, `phase-plan` and `fix-plan` modes |
-| Backend | [references/backend.md](references/backend.md) | Independent code reviewer, for backend files in the diff |
-| Frontend | [references/frontend.md](references/frontend.md) | Independent code reviewer, for frontend files in the diff |
+| Implementation feasibility | [references/implementation.md](references/implementation.md) | Parent reference; the plan validator's contract carries its checks |
+| Backend | [references/backend.md](references/backend.md) | Parent reference; the independent reviewer carries a one-line backend hint |
+| Frontend | [references/frontend.md](references/frontend.md) | Parent reference; the independent reviewer carries a one-line UI hint |
 
 Test-strategy review lives in `testing/references/review-testplan.md`.
 

@@ -10,10 +10,9 @@ provider syntax.
 - `fresh_subagent`: the Agent tool with one of the toolkit's installed agents
   in `~/.claude/agents/`: `aitk-planner` (plan-only), `aitk-implementer`
   (edits and runs tests), `aitk-debugger` (evidence-first investigation),
-  `aitk-tester` (test authoring), `aitk-reviewer` (read-only cold reviewer:
-  the second-family lane on COMPLEX and CORE reviews, and the same-provider
-  fallback when Codex is unreachable). Each agent's frontmatter pins its model
-  and effort. The spawn prompt carries
+  `aitk-tester` (test authoring). Each agent's frontmatter pins its model
+  and effort. Reviewers are not native agents: every review lane, including
+  the Claude second family, runs through `model-run`. The spawn prompt carries
   the full contract per `rules/specialist-handoff.md`; the agent returns a
   compact handoff.
 - `parallel_fanout`: several Agent calls in one turn for disjoint units; the
@@ -28,9 +27,10 @@ provider syntax.
   toolkit root from the installed skill, then run
   `<toolkit-root>/bin/aitk model-run review --provider codex --boundary
   <marker-id>` with the boundary's prompt file; the runner inlines
-  `agents/specialists/reviewer.md` and the grading rules. If Codex is
-  unreachable, run the `aitk-reviewer` agent with the same contract inline and
-  record `Independent review: same-provider`. In that single-provider case the
+  `agents/specialists/reviewer.md` and the grading rules. The second-family
+  lane is `model-run review --provider claude --boundary
+  review.second-family`. If Codex is unreachable, run the independent boundary
+  with `--provider claude` and record `Independent review: same-provider`. In that single-provider case the
   second-family lane is skipped and a `review`-route verifier would be Opus
   again, so the single-finding verifier runs on `deep-review` (Fable) or the
   finding stays capped at `[minor]` with `Verifier: unavailable — single

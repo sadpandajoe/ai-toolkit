@@ -504,6 +504,47 @@ class ConformanceTests(unittest.TestCase):
         rca = (ROOT / "agents/specialists/rca.md").read_text()
         self.assertIn("Verdict: PASS | REVISE | ESCALATE", rca)
 
+    def test_review_lanes_run_through_model_run_with_their_own_contracts(self) -> None:
+        """No native reviewer agent; each critic reads only what grades its lane.
+
+        The second family and the same-provider fallback are `model-run`
+        lanes (D7). Checklists for other lanes moved into the two contracts
+        that use them, and the QA bug table has one home.
+        """
+        self.assertFalse((ROOT / "agents/claude/aitk-reviewer.md").exists())
+        for content_root in ("config", "rules", "skills", "agents"):
+            for path in sorted((ROOT / content_root).rglob("*.md")):
+                with self.subTest(path=str(path.relative_to(ROOT))):
+                    self.assertNotIn("aitk-reviewer", path.read_text())
+        self.assertNotIn("aitk-reviewer", (ROOT / "README.md").read_text())
+        binding = (ROOT / "config/providers/claude.md").read_text()
+        self.assertIn("review.second-family", binding)
+        reviewer = (ROOT / "agents/specialists/reviewer.md").read_text()
+        validator = (ROOT / "agents/specialists/plan-validator.md").read_text()
+        for retired in (
+            "plan-review/references/backend.md",
+            "plan-review/references/frontend.md",
+            "testing/references/review-tests.md",
+            "plan-review/references/implementation.md",
+            "testing/references/review-testplan.md",
+        ):
+            self.assertNotIn(retired, reviewer)
+            self.assertNotIn(retired, validator)
+        rule = " ".join((ROOT / "rules/code-review.md").read_text().split())
+        self.assertIn("Each new test fails when the behaviour it covers breaks", rule)
+        self.assertIn("No mocks of internal code", rule)
+        self.assertIn("Pre-verdict claim check", rule)
+        flat_validator = " ".join(validator.split())
+        self.assertIn("dependent code may already be deployed", flat_validator)
+        self.assertIn("A first failing test is named per slice", flat_validator)
+        severity = (ROOT / "rules/severity.md").read_text()
+        self.assertNotIn("| high |", severity)
+        self.assertIn("skills/qa/references/file-bug.md", severity)
+        bug = (ROOT / "skills/qa/references/file-bug.md").read_text()
+        self.assertIn("`[major]` =\n`[High]` = high", bug)
+        gates = " ".join((ROOT / "rules/gates.md").read_text().split())
+        self.assertIn("A refused security or adversarial lens may reroute once", gates)
+
     def test_the_rca_pass_list_and_record_have_one_home(self) -> None:
         """The parent gate and the specialist grade against the same list.
 

@@ -125,6 +125,11 @@ installer) is reviewed as STANDARD.
   does not: the gate is `BLOCKED (degraded)` until the other provider is
   reachable or the user overrides with `--allow-degraded`, which is recorded
   as a `USER_DECISION`.
+- **A refusal is not an outage.** `model-run` reports a provider's refusal as
+  `refused`, with its category, apart from `unavailable`. A refused security
+  or adversarial lens may reroute once to the other provider; the reroute is
+  recorded in the run's result and disclosed in the review record, and it is
+  not a downgrade. Any other refusal, or a second one, is `BLOCKED`.
 
 ## Continuation
 

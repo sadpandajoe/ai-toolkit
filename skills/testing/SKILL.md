@@ -35,11 +35,11 @@ QA is what to test (scenarios, triage, validation, bug filing); testing is how
 Launch one fresh tester worker on `implementation` (the toolkit's tester agent)
 for a substantial suite in `create-tests` / `update-tests`; the parent
 implements small test changes inline and hands either result to `review-code`.
-- `review-tests` is inlined in the independent reviewer's contract
-  (`agents/specialists/reviewer.md`) and `review-testplan` in the plan
-  validator's (`agents/specialists/plan-validator.md`); they are mutually
-  exclusive per artifact (a diff that contains tests versus a plan's test
-  strategy).
+- The independent reviewer grades tests in a diff by `rules/code-review.md`
+  (each new test fails when the behaviour breaks; no mocks of internal code),
+  and the plan validator grades a plan's test strategy by its own contract
+  (`agents/specialists/plan-validator.md`). `review-tests` and
+  `review-testplan` remain the checklists for the test workflows.
 
 ## Notes
 

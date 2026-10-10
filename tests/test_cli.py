@@ -102,12 +102,12 @@ class CliTests(unittest.TestCase):
             "skills/planning/references/validate-plan.md",
         ):
             self.assertNotIn(parent_file, payload["required_contracts"])
-        # The validator inlines its plan checklists but never the code-review
-        # umbrella, the code grading rules, or the floored architecture lens.
-        self.assertIn(
-            "skills/plan-review/references/implementation.md", payload["required_contracts"]
-        )
+        # The validator's contract carries its own checks: no plan checklist
+        # files, the code-review umbrella, the code grading rules, or the
+        # floored architecture lens.
         for leaked in (
+            "skills/plan-review/references/implementation.md",
+            "skills/testing/references/review-testplan.md",
             "skills/review/SKILL.md",
             "rules/code-review.md",
             "skills/plan-review/references/architecture.md",

@@ -114,7 +114,7 @@ ai-toolkit/
 ├── bin/aitk                # Build, doctor, routing, checkpoint, project-state CLI
 ├── aitk/                   # Standard-library implementation
 ├── agents/
-│   ├── claude/             # Native Claude subagents (aitk-planner, aitk-implementer, aitk-debugger, aitk-tester, aitk-reviewer)
+│   ├── claude/             # Native Claude subagents (aitk-planner, aitk-implementer, aitk-debugger, aitk-tester)
 │   ├── codex/              # Native Codex custom agents (TOML)
 │   └── specialists/        # Provider-neutral contracts: reviewer.md, rca.md, plan-validator.md, finding-verifier.md
 ├── interfaces/

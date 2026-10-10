@@ -40,8 +40,8 @@ on the other provider when reachable, with the PR title and body, the diff and
 full changed files, the classifier's flags and impact, and any premise notes.
 Never include earlier review rounds or other reviewers' comments; the lane must
 be cold. The worker receives its contract inline from the route runner. If no
-cross-provider lane is reachable, use the toolkit's same-provider reviewer agent
-and disclose it in the report, except under `--deep` or a security-sensitive
+cross-provider lane is reachable, run the same boundary on the parent's own
+provider through `bin/aitk model-run` and disclose it in the report, except under `--deep` or a security-sensitive
 flag: there the review is `BLOCKED (degraded)` until the other provider is
 reachable or the user passes `--allow-degraded`, recorded as `USER_DECISION`
 (`rules/gates.md`, Independent Judgment). Single-source `[major]` findings are
@@ -56,8 +56,9 @@ when the PR classifies COMPLEX or CORE impact.
 Merge under the convergence rule (`rules/code-review.md`); no verifier runs
 when this lane ran. A `[major]` the parent would reject, a reviewer-reported
 missing flag, and lane yields are handled exactly as in `local-review.md`. On a Claude
-parent this is the Opus reviewer agent and spends Claude quota, so STANDARD PRs
-stay at one lane. Skip and disclose when the second provider is unreachable and
+parent this lane runs through `bin/aitk model-run review --provider claude
+--boundary review.pr-second-family` (Opus) and spends Claude quota, so STANDARD
+PRs stay at one lane. Skip and disclose when the second provider is unreachable and
 the PR is not security-sensitive.
 
 ## Deep Lenses (conditional)

@@ -83,27 +83,18 @@ class RoutingClosureTests(RoutingTestCase):
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
                 "rules/severity.md",
-                "skills/plan-review/references/backend.md",
-                "skills/plan-review/references/frontend.md",
-                "skills/testing/references/review-tests.md",
             ),
             ("review.delta", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
                 "rules/severity.md",
-                "skills/plan-review/references/backend.md",
-                "skills/plan-review/references/frontend.md",
-                "skills/testing/references/review-tests.md",
             ),
             # The second-family lane is the independent lane's twin: same
-            # contract, same checklists, nothing from the first lane.
+            # contract, nothing from the first lane.
             ("review.second-family", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
                 "rules/severity.md",
-                "skills/plan-review/references/backend.md",
-                "skills/plan-review/references/frontend.md",
-                "skills/testing/references/review-tests.md",
             ),
             # The single-finding verifier carries its own contract and the
             # grading rules; never the reviewer contract or the domain
@@ -120,19 +111,14 @@ class RoutingClosureTests(RoutingTestCase):
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
                 "rules/severity.md",
-                "skills/plan-review/references/backend.md",
-                "skills/plan-review/references/frontend.md",
                 "skills/review/references/classify-diff.md",
-                "skills/testing/references/review-tests.md",
             ),
-            # Plan validation is one worker with the validator contract plus
-            # the two plan checklists it inlines; the floored architecture lens
-            # never rides along.
+            # Plan validation is one worker with the validator contract, which
+            # carries its own checks; the floored architecture lens never rides
+            # along.
             ("planning.validate", None): (
                 "agents/specialists/plan-validator.md",
                 "rules/severity.md",
-                "skills/plan-review/references/implementation.md",
-                "skills/testing/references/review-testplan.md",
             ),
             ("debug.rca-specialist", None): ("agents/specialists/rca.md",),
             # The planner gets its own contract and the two plan shapes it
@@ -336,6 +322,20 @@ class RoutingClosureTests(RoutingTestCase):
             "skills/workflows/references/create-feature.md",
         ):
             self.assertNotIn(contract, resolved.required_contracts)
+
+    def test_the_independent_reviewer_contract_stays_under_its_word_budget(self) -> None:
+        """A cold lane reads its whole contract every run; keep it short.
+
+        The reviewer's handoff is its contract, the code-review rule and the
+        severity tags. Checklists for other lanes and the parent's procedure
+        are what pushed it past this budget before, so the cap is the check.
+        """
+        resolved = resolve_route(ROOT, "review", "codex", boundary="review.independent")
+        words = sum(
+            len((ROOT / contract).read_text().split())
+            for contract in resolved.required_contracts
+        )
+        self.assertLess(words, 2500, resolved.required_contracts)
 
     def test_every_listed_contract_exists_and_no_worker_gets_parent_files(self) -> None:
         """Each lane's list names real files; parent-only files reach no worker.

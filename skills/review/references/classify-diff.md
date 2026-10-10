@@ -27,7 +27,8 @@ subjects when available, and any explicit ask (`--adversarial`, "deep review",
      permission checks, agent capability configuration (which model, effort,
      sandbox, permission mode, or tool list a worker runs under:
      `interfaces/model-routing.json`, `aitk/model_routing.py`,
-     `aitk/routing_*.py`, `agents/`, hook
+     `aitk/routing_*.py`, `agents/`, `aitk/build.py` (renders the native
+     agents' model, tools, and sandbox), hook
      and MCP config), worker context assembly (`aitk/routing_closure.py`,
      `aitk/routing_markdown.py`), or trust-boundary changes (publish or push
      authorization, sandbox enforcement, fail-closed checks becoming advisory:
@@ -56,10 +57,10 @@ subjects when available, and any explicit ask (`--adversarial`, "deep review",
 | Architecture | Architecture change on STANDARD or COMPLEX | plan-review/references/architecture.md |
 
    When three would fire, drop the one whose domain the diff touches least and
-   report it. Test quality, frontend, and backend checklists
-   (`testing/references/review-tests.md`, `plan-review/references/frontend.md`,
-   `plan-review/references/backend.md`) are inlined in the independent
-   reviewer's contract and applied to the domains this classification reports.
+   report it. There are no separate test-quality, frontend, or backend lanes:
+   the independent reviewer's contract carries the test checks and a one-line
+   backend and UI hint, and applies them to the domains this classification
+   reports.
 
 4. **Code-judo lane**: `YES` only on deep-tier escalation, a `^refactor`
    title, or an explicit ask. It runs outside the findings lanes and returns

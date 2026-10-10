@@ -68,7 +68,9 @@ restored by `reflect` or an explicit user ask, never silently.
   design prompt, `[major]` when it makes an existing flow materially harder to
   reason about.
 - **Tests must be able to fail**: always-green tests are noise; data matches
-  types.
+  types. Each new test fails when the behaviour it covers breaks, and the
+  review says how. No mocks of internal code: mock only external boundaries
+  (network, database, filesystem, time).
 
 ## Severity
 
@@ -108,6 +110,10 @@ one level.
   on a CORE path is reviewed as STANDARD with no review exception.
 - **History audit before "wrong semantics".** Check whether an apparent
   regression is a deliberate reversal the history already justifies.
+- **Pre-verdict claim check.** Before reporting clean, name one claim the diff
+  alone does not prove and check it in the repository: the title matches the
+  change, a removed surface has no dangling callers, a renamed key or flag has
+  no remaining readers. State the check.
 
 ## Invalid Findings
 

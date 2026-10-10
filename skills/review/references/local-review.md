@@ -68,9 +68,10 @@ the preflight result, the classifier's flags and impact, and acceptance
 criteria from `PROJECT.md` when relevant. It never carries the implementer's
 transcript or any earlier findings. The worker receives its contract inline from
 the route runner. If no cross-provider lane is reachable and the diff is neither
-security-sensitive nor deep-tier, run the toolkit's same-provider reviewer
-agent instead and record `Independent review: same-provider` in the Review
-Record; never skip the lane and never review
+security-sensitive nor deep-tier, run the same boundary on the parent's own
+provider (`bin/aitk model-run review --provider <parent provider> --boundary
+review.independent`) and record `Independent review: same-provider` in the
+Review Record; never skip the lane and never review
 inline. A security-sensitive or deep-tier diff with no cross-provider lane is
 `## Gate: review` `BLOCKED (degraded)` until the other provider is reachable or
 the user passes `--allow-degraded`, recorded as `USER_DECISION`
@@ -79,7 +80,8 @@ the user passes `--allow-degraded`, recorded as `USER_DECISION`
 A clean verdict counts only when the lane's `verification` list covers every
 changed file other than generated files and lockfiles. When it skips files, run
 the same lane once more on the files it skipped and note `Coverage rerun:
-<files>` in the Review Record.
+<files>` in the Review Record. The coverage rule is owned by `rules/gates.md`
+(Independent Judgment); this is how the parent applies it.
 
 ## Second Family (COMPLEX or CORE impact)
 
@@ -92,8 +94,9 @@ lanes merge under the
 convergence rule in `rules/code-review.md`: raised by both → keep the severity;
 raised by one → capped at `[minor]` until the parent's validation names the
 concrete failure. No verifier lane runs when this lane ran; the second family
-already answered. On a Claude parent this lane is the Opus reviewer agent and
-spends Claude quota, while the Codex lane spends none, which is why STANDARD
+already answered. On a Claude parent this lane runs through `bin/aitk model-run
+review --provider claude --boundary review.second-family` (Opus) and spends
+Claude quota, while the Codex lane spends none, which is why STANDARD
 diffs stay at one lane. Skip it and disclose when the second provider is
 unreachable and the diff is not security-sensitive; a security-sensitive diff
 is `BLOCKED (degraded)` as above.
@@ -121,6 +124,8 @@ Collect findings from every lane and dedupe by file, line, and class. For each
 before changing anything: accepted, or rejected with a one-line evidence-based
 reason.
 
+The single-source-major rule is owned by `rules/gates.md` (Independent
+Judgment); this section is how the parent applies it.
 A `[major]` that only one lane raised is never accepted on the parent's reading
 alone, and never **rejected** on it either. The parent accepts it once it
 reproduces the failure on the current code or runs the finding's locking

@@ -31,8 +31,9 @@ classifier flags an architecture change.
 
 - **Independent reviewer**: the specialist contract in
   `agents/specialists/reviewer.md`, run on the `review` route on the other
-  provider when reachable, otherwise the toolkit's same-provider reviewer agent
-  with the disclosure `Independent review: same-provider`.
+  provider when reachable, otherwise the same route on the parent's own
+  provider through `bin/aitk model-run`, with the disclosure
+  `Independent review: same-provider`.
 - **Deep lenses**: at most two per review, on `deep-review`, one lens per
   worker, only on classifier flags or an explicit ask.
 - **Delta reviewer**: the same contract in delta mode, after substantive

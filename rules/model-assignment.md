@@ -22,7 +22,8 @@ and launches specialists with `<toolkit-root>/bin/aitk model-run`.
 
 - Prefer the other provider for independent review and validation: a Claude
   parent asks Codex Sol, a Codex parent asks Claude Opus. Same-provider review
-  through the toolkit's reviewer agent is the fallback and is disclosed as such.
+  through `model-run` on the parent's provider is the fallback and is disclosed
+  as such.
 - Fable plans only COMPLEX work. Sonnet plans STANDARD work inline. Opus stays
   the Claude judgment tier for review, verification, and RCA, so Fable remains
   a distinct escalation rung above them; a COMPLEX plan spends Fable quota
