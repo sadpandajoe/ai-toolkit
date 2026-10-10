@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import re
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -228,6 +232,103 @@ class CostScriptTests(unittest.TestCase):
             ["review-code-adversarial"],
             module.extract_commands("$workflows review-code-adversarial"),
         )
+
+
+def usage_record(message_id, request_id, usage, session="session-1"):
+    return {
+        "timestamp": "2026-09-30T12:00:00Z",
+        "sessionId": session,
+        "requestId": request_id,
+        "message": {"id": message_id, "model": "claude-opus-5-5", "usage": usage},
+    }
+
+
+def write_jsonl(path: Path, records) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(item) + "\n" for item in records))
+
+
+def write_sample_projects(home: Path) -> Path:
+    """One session with a repeated usage record and one subagent transcript.
+
+    Opus 5.5 bills $4/MTok input and $20/MTok output, so by hand:
+    msg-1 $4 (written twice, counted once) + msg-2 $20 + subagent msg-3 $20
+    = $44 over 3 messages. Without dedupe it would be $48 over 4; without the
+    subagent, $24 over 2.
+    """
+    project = home / ".claude" / "projects" / "-work-sample"
+    million_in = {"input_tokens": 1_000_000}
+    write_jsonl(
+        project / "session-1.jsonl",
+        [
+            usage_record("msg-1", "req-1", million_in),
+            usage_record("msg-1", "req-1", million_in),
+            usage_record("msg-2", "req-2", {"output_tokens": 1_000_000}),
+        ],
+    )
+    write_jsonl(
+        project / "session-1" / "subagents" / "agent-1.jsonl",
+        [usage_record("msg-3", "req-3", {"output_tokens": 1_000_000})],
+    )
+    return project.parent
+
+
+class ShowCostCountingTests(unittest.TestCase):
+    def test_repeated_usage_records_are_counted_once(self) -> None:
+        module = load_script("show-cost.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "session.jsonl"
+            million_in = {"input_tokens": 1_000_000}
+            write_jsonl(
+                path,
+                [
+                    usage_record("msg-1", "req-1", million_in),
+                    usage_record("msg-1", "req-1", million_in),
+                    usage_record("msg-1", "req-2", million_in),
+                ],
+            )
+            session = module.parse_one_session(str(path), "project", None)
+        # (msg-1, req-1) twice is one response; (msg-1, req-2) is another.
+        self.assertEqual(2, session["messages"])
+        self.assertEqual(8.0, session["total_cost"])
+
+    def test_subagent_transcripts_count_toward_their_session(self) -> None:
+        module = load_script("show-cost.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            base = write_sample_projects(Path(temporary))
+            sessions = module.parse_sessions(str(base))
+        self.assertEqual(1, len(sessions))
+        self.assertEqual(3, sessions[0]["messages"])
+        self.assertEqual(44.0, sessions[0]["total_cost"])
+
+    def test_documented_invocation_runs_from_root_and_elsewhere(self) -> None:
+        """`python3 scripts/show-cost.py` and an absolute path from another cwd."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary) / "home"
+            elsewhere = Path(temporary) / "elsewhere"
+            elsewhere.mkdir()
+            write_sample_projects(home)
+            env = {**os.environ, "HOME": str(home)}
+            env.pop("PYTHONPATH", None)
+            invocations = (
+                (ROOT, "scripts/show-cost.py"),
+                (elsewhere, str(ROOT / "scripts" / "show-cost.py")),
+            )
+            for cwd, script in invocations:
+                with self.subTest(cwd=str(cwd)):
+                    result = subprocess.run(
+                        [sys.executable, script, "all"],
+                        cwd=cwd,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    output = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+                    self.assertIn("Cost: $44.00", output)
+                    self.assertIn("Messages: 3", output)
+                    self.assertIn("1 sessions", output)
 
 
 if __name__ == "__main__":
