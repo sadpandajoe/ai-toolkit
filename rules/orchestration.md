@@ -21,17 +21,28 @@ fresh worker and comes back as a compact handoff.
 | Native fresh subagent (toolkit roster) | Substantial implementation, noisy investigation, test authoring, COMPLEX planning | The task is tiny or needs the parent's live context |
 | Forked one-shot leaf skill | Verification, impact scan, existing-fix scan: the skill body is the whole task | The step must own durable state |
 | Routed specialist (`model-run`) | Independent review, RCA validation, plan validation: a different model and provider | Mechanical implementation or routine test editing |
-| Full-history fork | Rare side investigation that needs most of the live conversation | Normal phase boundaries |
 
 Workers are the phase boundary. A worker starts fresh, does one bounded phase,
 returns a handoff, and ends; its tool history never enters the parent. Cap
 nesting at the goal skill, one worker layer, and one exceptional specialist
-child. Never review your own work: review and validation always run in a fresh
-context, preferably on the other provider.
+child. Critics (review, validation, the RCA check) run cold under the critic
+profile in `rules/specialist-handoff.md`.
 
 Spawn a worker only when it buys isolation, parallelism, or a different model.
 Every spawn costs orchestrator turns; a sequential, bounded, short-result step
 stays inline.
+
+## Delegation
+
+- Fresh context only where independence matters: review, validation, and the
+  RCA check. A builder gains nothing from forgetting what it learned.
+- Continue the same implementer across its fix and retry loops when the
+  provider can resume it, rather than briefing a new one from scratch.
+- Brief once, precisely, with the builder profile in
+  `rules/specialist-handoff.md`; a worker cannot ask a follow-up question.
+- Never redo a worker's job: check its handoff and evidence, and send it back
+  or escalate rather than repeating the work inline.
+- Launch parallel workers in one message, so they run concurrently.
 
 ## Batch Rules
 

@@ -15,6 +15,9 @@ provider syntax.
   the Claude second family, runs through `model-run`. The spawn prompt carries
   the full contract per `rules/specialist-handoff.md`; the agent returns a
   compact handoff.
+- Full-history fork (Claude only): a forked subagent that carries most of the
+  live conversation, for a rare side investigation that needs it; never for a
+  normal phase boundary, where a fresh worker is the boundary.
 - `parallel_fanout`: several Agent calls in one turn for disjoint units; the
   route and agent controls still apply to each.
 - `isolated_worktree`: the Agent tool's worktree isolation for slices that may

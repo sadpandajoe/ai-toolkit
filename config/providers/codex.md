@@ -15,6 +15,10 @@ provider syntax or the declared fallback.
   enforces the manifest's `minimum_cli`. The spawn prompt carries the full
   contract per `rules/specialist-handoff.md`; the agent returns a compact
   handoff.
+- Codex delegates only when told: it spawns a subagent only where a workflow
+  step says so. Such a step names the native worker by its `agent_type`
+  (`aitk-planner`, `aitk-implementer`, `aitk-debugger`, `aitk-tester`); a
+  routed lane names its `model-run` route instead.
 - `parallel_fanout`: spawn several agents in one turn for disjoint units; the
   route and agent controls still apply to each.
 - `isolated_worktree`: create and enter a fresh Git worktree manually.
