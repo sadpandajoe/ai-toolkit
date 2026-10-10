@@ -1160,7 +1160,7 @@ GUIDANCE_MARKER = "AITK-GUIDANCE-MARKER-7f3a"
 
 
 class InstructionChannelAndRefusalTests(RoutingTestCase):
-    """PY-20 and D15: what reaches a worker, by which channel, and refusals."""
+    """What reaches a worker, by which channel, and how a refusal is recorded (D15)."""
 
     def run_lane(
         self,
