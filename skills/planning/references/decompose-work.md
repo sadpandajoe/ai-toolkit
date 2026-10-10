@@ -26,15 +26,10 @@ known constraints, and any existing architecture notes in `PROJECT.md`.
 - **Risks**: where learning from an early phase is likely to change later ones.
 - **Per-phase exit goal**: one observable outcome per phase, plus its size and
   provisional complexity. No file lists or step lists for later phases.
-- **Delivery order**: one commit per phase is the default, pushed to the feature
-  branch without asking; the roadmap states the order in which they land and
-  what each leaves deployable. Phases that share a branch share one draft PR,
-  opened by the first phase that completes (later phases reuse it; `--no-pr`
-  leaves a phase `pushed — awaiting PR request`). A separate PR per phase
-  exists only when phases live on separate branches (`--deliver-per-phase`
-  means a separate branch and draft PR per phase; otherwise it is a no-op
-  alias). Keep a single PR when a migration cannot ship ahead of its consumer
-  or a contract must flip atomically.
+- **Delivery order**: the order phases land and what each leaves deployable;
+  `bin/aitk deliver` commits and pushes each phase and opens or reuses the
+  branch's one draft PR. Keep a single PR when a migration cannot ship ahead of
+  its consumer or a contract must flip atomically.
 
 Never turn BATCHED work into fake architectural phases; a repeated mechanical
 operation is waves, not phases. Never cut phases as horizontal layers (all

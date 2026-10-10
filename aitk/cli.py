@@ -20,6 +20,7 @@ from .checkpoint import (
     validate as validate_checkpoint,
 )
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
+from .deliver import DeliverOptions, deliver as run_delivery, render as render_delivery
 from .doctor import run_doctor
 from .installer import resolve_paths, run_lifecycle
 from .lane_yield import default_metrics_file, evaluate as evaluate_lane_yield, load_events
@@ -522,6 +523,29 @@ def _project_state(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _deliver(arguments: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    result = run_delivery(
+        DeliverOptions(
+            cwd=cwd,
+            project_file=state_file(arguments.file, cwd),
+            workflow=arguments.workflow,
+            phase=arguments.phase,
+            title=arguments.title,
+            body_file=Path(arguments.body_file).resolve() if arguments.body_file else None,
+            message=arguments.message,
+            base=arguments.base,
+            no_pr=arguments.no_pr,
+            ready=arguments.ready,
+        )
+    )
+    if arguments.json:
+        print(json.dumps(result.as_dict(), indent=2, sort_keys=True))
+    else:
+        print(render_delivery(result))
+    return result.exit_code
+
+
 def _verify(arguments: argparse.Namespace) -> int:
     path = state_file(arguments.file)
     try:
@@ -929,6 +953,34 @@ def parser() -> argparse.ArgumentParser:
                 help="commit or tree SHA the phase ended on; required with --status done, it is the next phase's review base",
             )
         state_action.set_defaults(handler=_project_state)
+
+    delivery = subparsers.add_parser(
+        "deliver",
+        help=(
+            "commit, push and open (or reuse) a draft PR once review PASS and a STRONG "
+            "verification run hold on the current tree"
+        ),
+        description=(
+            "Refuses (exit 1, nothing changed) without a review record, without a passing "
+            "STRONG `verify --run` record, or when the tree changed after them; holds "
+            "(exit 3, `## PR Not Opened`) on an ambiguous push target or a PR conflict."
+        ),
+    )
+    delivery.add_argument("--workflow", help="the owning workflow (chained); omit for a standalone create-pr")
+    delivery.add_argument("--phase", help="the phase being delivered (recorded)")
+    delivery.add_argument("--title", help="PR title (also the commit message when --message is absent)")
+    delivery.add_argument("--body-file", help="file holding the PR body (after the PII scrub)")
+    delivery.add_argument("--message", help="commit message for uncommitted changes")
+    delivery.add_argument("--base", help="base branch (default: the repository's default branch)")
+    delivery.add_argument("--no-pr", action="store_true", help="stop after the push")
+    delivery.add_argument(
+        "--ready",
+        action="store_true",
+        help="open a non-draft PR; only when the user asked for one in words (needs AITK_PR_READY=1)",
+    )
+    delivery.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
+    delivery.add_argument("--json", action="store_true")
+    delivery.set_defaults(handler=_deliver)
 
     verify = subparsers.add_parser(
         "verify",

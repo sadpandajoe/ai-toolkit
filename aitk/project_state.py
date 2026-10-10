@@ -1263,6 +1263,21 @@ def record_operation(path: Path, operation: str) -> ProjectStateResult:
     return _write(path, content, before, after)
 
 
+@_serialized
+def append_section(path: Path, section: str, unless: str | None = None) -> bool:
+    """Append a markdown section to PROJECT.md under the artifact lock.
+
+    Skipped (False) when `unless` already appears in the file, so a re-run
+    after a crash does not write the same record twice.
+    """
+    content, _snapshot = _read(path)
+    if unless is not None and unless in content:
+        return False
+    separator = "" if not content or content.endswith("\n\n") else "\n" if content.endswith("\n") else "\n\n"
+    _atomic_text(path, f"{content}{separator}{section.rstrip()}\n")
+    return True
+
+
 def operation_recorded(path: Path, operation: str) -> str | None:
     """When the operation was recorded, or None when it has not run."""
     if OPERATION_ID.fullmatch(operation) is None:

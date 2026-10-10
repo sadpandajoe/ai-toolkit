@@ -223,6 +223,20 @@ class ProcedureCommandSmokeTests(unittest.TestCase):
         self.assertEqual(3, check.returncode, check.stderr)
         self.assertEqual({"operation", "ran", "recorded"}, set(json.loads(check.stdout)))
 
+    def test_deliver_refuses_without_evidence_and_reports_json(self) -> None:
+        init = self.aitk("project-state", "init", "--workflow", "fix-bug", "--complexity", "STANDARD", "--size", "S")
+        self.assertEqual(0, init.returncode, init.stderr)
+        deliver = self.aitk("deliver", "--workflow", "fix-bug", "--no-pr", "--message", "Fix x", "--json")
+        self.assertEqual(1, deliver.returncode, deliver.stderr)
+        payload = json.loads(deliver.stdout)
+        self.assertEqual("refused", payload["status"])
+        self.assertTrue(
+            {"command", "status", "reason", "branch", "remote", "commit", "pushed", "pr", "steps"} <= set(payload)
+        )
+        rendered = self.aitk("deliver", "--workflow", "fix-bug", "--no-pr", "--message", "Fix x")
+        self.assertEqual(1, rendered.returncode)
+        self.assertTrue(rendered.stdout.startswith("## Delivery Refused"), rendered.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
