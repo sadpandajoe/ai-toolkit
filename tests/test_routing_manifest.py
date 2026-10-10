@@ -268,6 +268,34 @@ class RoutingManifestTests(RoutingTestCase):
             manifest.write_text(pristine)
             self.assertEqual([], validate_model_routing(root))
 
+    def test_every_route_pins_an_explicit_effort(self) -> None:
+        """D16: a route names its effort; a missing, unknown or `max` effort fails."""
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        for route in payload["routes"]:
+            with self.subTest(route=route["name"]):
+                self.assertIn(route.get("effort"), ("low", "medium", "high", "xhigh"))
+        resolved = resolve_route(ROOT, "review", provider="codex", boundary="review.independent")
+        self.assertEqual("high", resolved.effort)
+        cases = (
+            (lambda p: p["routes"][0].pop("effort"), "invalid model route entry"),
+            (lambda p: p["routes"][0].update(effort="max"), "effort must be one of"),
+            (lambda p: p["routes"][0].update(effort="extreme"), "effort must be one of"),
+            (lambda p: p["routes"][0].update(effort="medium"), "invariant mapping mismatch"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            for mutate, expected in cases:
+                with self.subTest(expected=expected):
+                    mutated = json.loads(pristine)
+                    mutate(mutated)
+                    manifest.write_text(json.dumps(mutated))
+                    with self.assertRaisesRegex(ModelRouteError, re.escape(expected)):
+                        load_model_routing(root)
+            manifest.write_text(pristine)
+            self.assertEqual([], validate_model_routing(root))
+
     def test_a_menuless_lane_may_not_inline_a_lens_below_its_route_floor(self) -> None:
         """The floor has to cover the lane that applies the lens itself.
 

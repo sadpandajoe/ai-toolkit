@@ -131,7 +131,7 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             calls.append(argv)
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
             flags = " ".join(
                 (
                     "--ephemeral --strict-config --ignore-user-config --ignore-rules ",
@@ -188,7 +188,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_prerelease_at_minimum_version_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
-                argv, 0, "codex-cli 0.155.0-alpha.1\n", ""
+                argv, 0, "codex-cli 0.159.3-alpha.1\n", ""
             )
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
@@ -212,7 +212,7 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertTrue(payload["dry_run"])
 
     def test_cli_one_release_below_the_provider_floor_fails_closed(self) -> None:
-        """GPT-6 Sol needs Codex 0.155.0 and Opus 5.5 needs Claude Code 2.1.280."""
+        """GPT-6.1 Sol needs Codex 0.159.3 and Sonnet 5.5 needs Claude Code 2.1.284."""
         ALL_FLAGS = " ".join(
             (
                 "--ephemeral --strict-config --ignore-user-config --ignore-rules",
@@ -224,8 +224,8 @@ class RoutingTransportTests(RoutingTestCase):
             )
         )
         cases = (
-            ("codex", "/bin/codex", "codex-cli 0.154.9\n"),
-            ("claude", "/bin/claude", "2.1.279\n"),
+            ("codex", "/bin/codex", "codex-cli 0.159.2\n"),
+            ("claude", "/bin/claude", "2.1.283\n"),
         )
         for provider, executable, version in cases:
             with self.subTest(provider=provider):
@@ -263,7 +263,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_dry_run_emits_exact_claude_controls_without_fallback(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             flags = " ".join(
                 (
                     "--print --no-session-persistence --safe-mode --strict-mcp-config ",
@@ -316,7 +316,7 @@ class RoutingTransportTests(RoutingTestCase):
         ) -> subprocess.CompletedProcess[str]:
             nonlocal worker_input
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -370,7 +370,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_unreadable_codex_final_message_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -406,7 +406,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_codex_success_path_returns_the_structured_result(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -451,7 +451,7 @@ class RoutingTransportTests(RoutingTestCase):
         ) -> Callable[..., subprocess.CompletedProcess[str]]:
             def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
                 if "--version" in argv:
-                    return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
+                    return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                 if "--help" in argv:
                     flags = " ".join(
                         (
@@ -885,7 +885,7 @@ class RoutingTransportTests(RoutingTestCase):
                     argv: list[str], **_: object
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
-                        return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
+                        return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                     if "--help" in argv:
                         flags = " ".join(
                             (
@@ -932,7 +932,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_provider_failure_diagnostic_is_bounded(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -971,7 +971,7 @@ class RoutingTransportTests(RoutingTestCase):
     ) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             if "--help" in argv:
                 flags = " ".join(
                     (
@@ -1083,7 +1083,7 @@ class RoutingTransportTests(RoutingTestCase):
                     argv: list[str], **_: object
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
-                        return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
+                        return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                     if "--help" in argv:
                         flags = " ".join(
                             (

@@ -14,10 +14,10 @@
   },
   "providers": {
     "codex": {
-      "minimum_cli": "0.155.0",
+      "minimum_cli": "0.159.3",
       "models": {
         "sol": {
-          "selector": "gpt-6-sol"
+          "selector": "gpt-6.1-sol"
         },
         "astra": {
           "selector": "gpt-6-astra"
@@ -25,7 +25,7 @@
       }
     },
     "claude": {
-      "minimum_cli": "2.1.280",
+      "minimum_cli": "2.1.284",
       "models": {
         "opus": {
           "selector": "claude-opus-5-5"
@@ -34,7 +34,7 @@
           "selector": "claude-fable-5-1"
         },
         "sonnet": {
-          "selector": "claude-sonnet-5"
+          "selector": "claude-sonnet-5-5"
         }
       }
     }
@@ -43,6 +43,7 @@
     {
       "name": "implementation",
       "reasoning": "standard",
+      "effort": "high",
       "responsibility": "implementation",
       "restrictions": [
         "Implement only the bounded task contract.",
@@ -64,6 +65,7 @@
     {
       "name": "planning",
       "reasoning": "standard",
+      "effort": "high",
       "responsibility": "planning",
       "restrictions": [
         "Produce a bounded plan, decomposition, or phase plan from the supplied context.",
@@ -89,6 +91,7 @@
     {
       "name": "review",
       "reasoning": "standard",
+      "effort": "high",
       "responsibility": "review",
       "restrictions": [
         "Perform an independent read-only review.",
@@ -114,6 +117,7 @@
     {
       "name": "deep-review",
       "reasoning": "deep",
+      "effort": "xhigh",
       "responsibility": "review",
       "restrictions": [
         "Perform an independent read-only architecture, security, adversarial, or cold review.",
@@ -139,6 +143,7 @@
     {
       "name": "rca",
       "reasoning": "standard",
+      "effort": "high",
       "responsibility": "rca",
       "restrictions": [
         "Synthesize root cause from supplied evidence.",
@@ -164,6 +169,7 @@
     {
       "name": "deep-rca",
       "reasoning": "deep",
+      "effort": "xhigh",
       "responsibility": "rca",
       "restrictions": [
         "Synthesize ambiguous, intermittent, history-dependent, or cross-system root cause from supplied evidence.",
@@ -189,6 +195,7 @@
     {
       "name": "operations",
       "reasoning": "standard",
+      "effort": "high",
       "responsibility": "operations",
       "restrictions": [
         "Collect read-only evidence, produce deterministic reports, or prepare already-authored API, ticket, or Playwright steps for parent execution.",

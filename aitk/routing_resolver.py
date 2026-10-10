@@ -124,7 +124,7 @@ def resolve_route(
         provider=provider,
         family=family,
         selector=provider_config["models"][family]["selector"],
-        effort=payload["policy"]["efforts"][item["reasoning"]],
+        effort=item["effort"],
         responsibility=item["responsibility"],
         restrictions=tuple(item["restrictions"]),
         controls=dict(mapping),

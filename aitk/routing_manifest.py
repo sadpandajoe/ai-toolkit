@@ -53,6 +53,10 @@ from aitk.routing_closure import (
     _structural_seeds,
 )
 
+# Efforts a route may pin. `max` runs only on an explicit user ask, recorded in
+# the envelope, so it is never a route default.
+ROUTE_EFFORTS = ("low", "medium", "high", "xhigh")
+
 
 def load_model_routing(root: Path) -> dict[str, object]:
     try:
@@ -464,6 +468,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         if not isinstance(route, dict) or set(route) != {
             "name",
             "reasoning",
+            "effort",
             "responsibility",
             "restrictions",
             "explicit_only",
@@ -486,6 +491,11 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         seen_routes.add(name)
         if reasoning not in REASONING or responsibility not in RESPONSIBILITIES:
             problems.append(f"{name}: invalid reasoning or responsibility")
+        # Every route pins its effort (D16): a provider default differs by model
+        # and surface. `max` is never automatic, so no route may name it.
+        effort = route.get("effort")
+        if effort not in ROUTE_EFFORTS:
+            problems.append(f"{name}: effort must be one of {', '.join(ROUTE_EFFORTS)}")
         if not isinstance(explicit_only, bool):
             problems.append(f"{name}: explicit_only must be boolean")
         if (
@@ -527,6 +537,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             continue
         actual[name] = (
             reasoning,
+            effort,
             responsibility,
             explicit_only,
             codex.get("model"),
@@ -541,6 +552,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         # receives an accepted artifact and a bounded scope.
         "implementation": (
             "standard",
+            "high",
             "implementation",
             False,
             "sol",
@@ -554,6 +566,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         # and RCA so Fable remains a distinct escalation rung above them.
         "planning": (
             "standard",
+            "high",
             "planning",
             False,
             "sol",
@@ -564,6 +577,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "review": (
             "standard",
+            "high",
             "review",
             False,
             "sol",
@@ -574,6 +588,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "deep-review": (
             "deep",
+            "xhigh",
             "review",
             False,
             "astra",
@@ -584,6 +599,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "rca": (
             "standard",
+            "high",
             "rca",
             False,
             "sol",
@@ -594,6 +610,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "deep-rca": (
             "deep",
+            "xhigh",
             "rca",
             False,
             "astra",
@@ -604,6 +621,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "operations": (
             "standard",
+            "high",
             "operations",
             False,
             "sol",
