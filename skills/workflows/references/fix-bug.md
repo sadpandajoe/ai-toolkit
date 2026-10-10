@@ -54,8 +54,9 @@ specialist grades the root cause and the fix plan is validated before code.
    raw logs stay out of the parent. Reproduce when practical
    (`qa/references/triage-bug.md` when the report is weak).
 5. **RCA gate** (`debug/references/review-rca.md`). STANDARD: the parent
-   grades the evidence checklist. COMPLEX, confidence below 8/10, or a prior
-   failed attempt: the independent RCA specialist grades it. `PASS` records the
+   grades the PASS list. COMPLEX, a live alternative, a non-reproduced
+   intermittent failure, or a prior failed attempt: the independent RCA
+   specialist grades it. `PASS` records the
    root cause and regression check in `PROJECT.md`; `REVISE` closes the named
    gaps once; `ESCALATE` moves to `deep-rca` then `USER_DECISION`. Every step
    is one `project-state gate --gate rca --unit rca` record; the runtime climbs

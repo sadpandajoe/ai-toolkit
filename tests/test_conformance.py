@@ -504,6 +504,40 @@ class ConformanceTests(unittest.TestCase):
         rca = (ROOT / "agents/specialists/rca.md").read_text()
         self.assertIn("Verdict: PASS | REVISE | ESCALATE", rca)
 
+    def test_the_rca_pass_list_and_record_have_one_home(self) -> None:
+        """The parent gate and the specialist grade against the same list.
+
+        The record's observables (reproduced, alternatives) replace a
+        confidence number, so neither the gate nor the debugger can pass a
+        story on a score.
+        """
+        rca = (ROOT / "agents/specialists/rca.md").read_text()
+        flat = " ".join(rca.split())
+        for item in (
+            "evidenced, not asserted",
+            "## RCA record",
+            "Reproduced: yes",
+            "Alternatives: ruled out",
+            "Fix point:",
+            "the regression test is the reproduction",
+            "git show <sha>^:<file>",
+            "Never invent a root cause",
+        ):
+            self.assertIn(item, flat)
+        self.assertNotIn("/10", rca)
+        for path in (
+            "skills/debug/references/review-rca.md",
+            "skills/debug/references/investigate-change.md",
+        ):
+            text = (ROOT / path).read_text()
+            with self.subTest(path=path):
+                self.assertIn("agents/specialists/rca.md", text)
+                self.assertNotIn("evidenced, not asserted", text)
+                self.assertNotIn("/10", text)
+        gate = (ROOT / "skills/debug/references/review-rca.md").read_text()
+        self.assertIn("aitk-model-route:debug.rca-specialist", gate)
+        self.assertIn("rabbit-hole guardrail", gate)
+
     def test_planner_returns_the_plan_section_the_parent_writes(self) -> None:
         """One writer for PLAN.md: the planner returns text, the parent pastes it.
 

@@ -22,6 +22,7 @@ from aitk.routing_policy import (
     DISALLOWED_TOOLS,
     DISPATCH_PATTERN,
     EXEMPT_MARKER,
+    GENERATED_HEADER,
     LENS_DOMAINS,
     LENS_DOMAIN_FLOORS,
     LENS_ROUTE_FLOORS,
@@ -954,7 +955,6 @@ def validate_route_bindings(root: Path) -> list[str]:
 
 
 def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[str]:
-    del payload
     paths = [
         path
         for name in ("README.md", "CHANGELOG.md", "pyproject.toml")
@@ -998,10 +998,37 @@ def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[
         except (OSError, UnicodeDecodeError):
             continue
         if CODEX_SELECTOR.search(text) or CLAUDE_SELECTOR.search(text):
+            # A Codex agent pins its route's selector (D17) as `bin/aitk build`
+            # renders it from this manifest. The copy is allowed only in a
+            # generated agent file and only as a current selector on its `model`
+            # line; any other content change is build drift, which `doctor` and
+            # `check` report through `build --check`.
+            if _generated_codex_pin(root, path, text, payload):
+                continue
             problems.append(
                 f"volatile model selector copied outside manifest: {path.relative_to(root)}"
             )
     return problems
+
+
+def _generated_codex_pin(
+    root: Path, path: Path, text: str, payload: dict[str, object]
+) -> bool:
+    if path.parent != root / "agents/codex" or path.suffix != ".toml":
+        return False
+    if GENERATED_HEADER not in text.split("\n\n", 1)[0]:
+        return False
+    current = {
+        str(model.get("selector"))
+        for model in payload["providers"]["codex"]["models"].values()
+        if isinstance(model, dict)
+    }
+    for line in text.splitlines():
+        if CODEX_SELECTOR.search(line) or CLAUDE_SELECTOR.search(line):
+            match = re.fullmatch(r'model = "([^"]+)"', line)
+            if match is None or match.group(1) not in current:
+                return False
+    return True
 
 
 def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list[str]:

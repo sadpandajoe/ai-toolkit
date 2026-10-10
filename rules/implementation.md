@@ -31,7 +31,7 @@ wrong, fix the test and note why when the spec evolved.
 ## Worker Scope
 
 A routed or native implementation worker receives one slice and returns the
-compact handoff in `rules/specialist-handoff.md`. It never commits, never edits
+handoff in `skills/implement-change/SKILL.md`. It never commits, never edits
 `PROJECT.md` or `PLAN.md`, never widens scope, and stops with `blocked` after the
 same approach fails twice. The parent runs acceptance, owns review, and owns
 any authorized git action.
