@@ -96,7 +96,9 @@ Only skills classified `public_router` or `public_direct` in
 `interfaces/skills.json` are linked. Internal skills stay packaged for resolver
 use. The repository root is also a validated Codex plugin
 (`.codex-plugin/plugin.json`); the optional PGM extension remains
-source-linked-only (`interfaces/support.json`).
+source-linked-only (`interfaces/support.json`). A plugin-only install is
+partial: it has no native agents and no `bin/aitk` on PATH; use
+`./install.sh` for the full set.
 
 The Codex agent TOML files pin `model_reasoning_effort` and `sandbox_mode` and
 inherit the parent's model; verify the key set against your Codex CLI's
@@ -106,6 +108,7 @@ custom-agent documentation after upgrades.
 
 ```
 ai-toolkit/
+├── .codex-plugin/          # Codex plugin manifest (plugin.json)
 ├── bin/aitk                # Build, doctor, routing, checkpoint, project-state CLI
 ├── aitk/                   # Standard-library implementation
 ├── agents/
@@ -153,6 +156,8 @@ ai-toolkit/
 │   └── shortcut/ superset-local/ preset-rbac-setup/   # Domain integrations
 ├── evals/                  # Judgment and deterministic eval cases
 ├── hooks/                  # Provider-neutral safety hooks + Codex hook adapter
+├── scripts/                # Cost reports, the Preset host classifier, the QA recorder
+├── statusline/             # Claude Code status line command
 ├── extensions/pgm/         # Optional program-management extension
 └── tests/                  # Deterministic guarantees
 ```
@@ -185,6 +190,7 @@ CLI:
 | `bin/aitk project-state init\|show\|set\|gate\|advance\|phases\|phase` | Read and update the `PROJECT.md` routing snapshot and gate budget |
 | `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Durable phases and idempotent effects; `reserve` refuses a `verification`- or `review`-gated effect unless the snapshot shows that gate `PASS` |
 | `bin/aitk lane-yield [--metrics PATH] [--json]` | Apply the review-lane yield thresholds to `.ai-toolkit/metrics.jsonl` and list demotions |
+| `bin/aitk pgm-preflight --workflow <create-status-report\|create-velocity-report>` | Check the optional PGM configuration before a report collects data |
 | `bin/aitk model-route <route> --provider <p> --boundary <id> [--lens <path>]` | Resolve a pinned specialist dispatch |
 | `bin/aitk model-run <route> --provider <p> --boundary <id> --prompt-file <f>` | Run one fail-closed specialist |
 | `bin/aitk build [--check] [--with-pgm]` | Generate path-resolved guidance |
