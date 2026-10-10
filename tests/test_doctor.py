@@ -32,7 +32,11 @@ class DoctorTests(unittest.TestCase):
         )
         (root / "skills/example/references/details.md").write_text("# Details\n")
         (root / "hooks/prevent-project-commit.sh").write_text(
-            "#!/bin/bash\n# PROJECT.md PROJECT_ARCHIVE.md PLAN.md WATCH.md CHERRY_PICK.md CI_FIX.md\n"
+            "#!/bin/bash\nprintf '%s' \"$INPUT\" | python3 -m aitk.hooks.git_guard\n"
+        )
+        (root / "aitk/hooks").mkdir(parents=True, exist_ok=True)
+        (root / "aitk/hooks/git_guard.py").write_text(
+            "from aitk.project_state import STATE_FILES\n"
         )
         write_build(root)
 
@@ -222,6 +226,27 @@ class DoctorTests(unittest.TestCase):
 
             self.assertEqual("FAIL", finding.status)
             self.assertIn("/PLAN.md", finding.details)
+
+    def test_state_protection_needs_the_git_guard_and_its_state_list(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / "aitk/hooks/git_guard.py").write_text("STATE_FILES = ('PROJECT.md',)\n")
+            (root / "hooks/prevent-project-commit.sh").write_text("#!/bin/bash\nexit 0\n")
+
+            finding = next(
+                item for item in run_doctor(root) if item.check == "state-protection"
+            )
+
+            self.assertEqual("FAIL", finding.status)
+            self.assertIn(
+                "hooks/prevent-project-commit.sh does not run aitk.hooks.git_guard",
+                finding.details,
+            )
+            self.assertIn(
+                "aitk/hooks/git_guard.py does not import project_state.STATE_FILES",
+                finding.details,
+            )
 
     def test_provider_specific_primitives_in_shared_skills_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
