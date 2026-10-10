@@ -23,6 +23,12 @@ review-code-adversarial --allow-degraded   # accept a same-provider lane when th
 
 ## Procedure
 
+Ensure a routing snapshot exists before any gate is recorded: `bin/aitk
+project-state init --workflow review-code-adversarial --complexity
+<classified> --size <S|M|L|XL>` when none exists; an owning workflow's
+snapshot stays as it is (`init` refuses a different workflow without
+`--replace`).
+
 1. Discover changed files as in
    [skills/review/references/local-review.md](../../review/references/local-review.md)
    (recorded base, full file contents, preflight).
@@ -53,9 +59,11 @@ review-code-adversarial --allow-degraded   # accept a same-provider lane when th
    Vulnerable | Critical` (derived from accepted findings: Critical for an
    accepted security `[major]`, Vulnerable for any other accepted `[major]`,
    Adequate for `[minor]` only, Hardened for none), `Reviewers: <lanes as provider/family>`, and the
-   accepted/raised tally. Write `## Adversarial Findings` and
-   `## Adversarial Fix Round N` to `PROJECT.md` before any fixes and after each
-   round.
+   accepted/raised tally. Record it with `bin/aitk project-state gate --gate
+   review --status <...>`; an emitted gate that is not recorded does not
+   count, and `hooks/require-review-gate.sh` refuses `gh pr create` without
+   it. Write `## Adversarial Findings` and `## Adversarial Fix Round N` to
+   `PROJECT.md` before any fixes and after each round.
 
 ## Gates
 
