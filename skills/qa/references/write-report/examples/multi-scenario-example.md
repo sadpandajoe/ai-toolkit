@@ -1,11 +1,11 @@
-# Example — Multi-Scenario QA Report (sc-101082)
+# Example — Multi-Scenario QA Report
 
-Real Preset QA verification posted to https://app.shortcut.com/preset/story/101082#activity-105068. Use as a tone reference for reports covering several distinct viewports / roles / configs: per-scenario block with its own steps + result + inline screenshot, one full-flow video at the end.
+Based on a real Preset QA verification posted as a Shortcut story comment; story, host and PR identifiers are replaced with placeholders. Use as a tone reference for reports covering several distinct viewports / roles / configs: per-scenario block with its own steps + result + inline screenshot, one full-flow video at the end.
 
 ```markdown
 ## QA Verification — PARTIAL ⚠️
 
-**Tested on**: https://0de345d5.us1a.app-stg.preset.io (PR #3903 branch `fix-time-range-zoom`)
+**Tested on**: https://<ws>.us1a.app-stg.preset.io (PR #NNNN branch `fix-time-range-zoom`)
 **Date**: 2026-04-28
 **Tester**: Playwright automation
 
@@ -40,7 +40,7 @@ Real Preset QA verification posted to https://app.shortcut.com/preset/story/1010
 ![Scenario 4 — 1280×500 popover](https://media.app.shortcut.com/.../scenario-4-1280x500.png)
 
 ### Full-flow evidence:
-[sc-101082-time-range-popover.webm](https://media.app.shortcut.com/...) — login → dashboard → all four scenarios in one recording.
+[sc-NNNNN-time-range-popover.webm](https://media.app.shortcut.com/...) — login → dashboard → all four scenarios in one recording.
 ```
 
 Why this works:

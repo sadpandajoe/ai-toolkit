@@ -25,8 +25,8 @@ Skeletons (load only when drafting):
 - [templates/multi-scenario.md](write-report/templates/multi-scenario.md)
 
 Worked examples (load for tone match):
-- [examples/single-flow-sc97462.md](write-report/examples/single-flow-sc97462.md) — bug fix verification on one flow
-- [examples/multi-scenario-sc101082.md](write-report/examples/multi-scenario-sc101082.md) — viewport-bug verification across four sizes
+- [examples/single-flow-example.md](write-report/examples/single-flow-example.md) — bug fix verification on one flow
+- [examples/multi-scenario-example.md](write-report/examples/multi-scenario-example.md) — viewport-bug verification across four sizes
 
 ## Tone — Narrative, Not Technical
 
@@ -56,7 +56,7 @@ Lead the **Result** with a one-sentence verdict (PASS / FAIL / PARTIAL) and the 
 
 - **Video** — record the *full* flow (login → setup → all scenarios). One recording covering everything is more useful than one per scenario.
 - **Screenshots** — one per scenario in multi-scenario reports, embedded inline at the verification point. Skip in single-flow reports unless the video is too long to scrub.
-- **Naming** — use `<destination-id>-<short-label>.<ext>`, e.g. `sc-101082-1280x720-popover.png`, `pr-3903-readonly-role.png`. Makes attachments self-describing in the destination's file rail.
+- **Naming** — use `<destination-id>-<short-label>.<ext>`, e.g. `sc-NNNNN-1280x720-popover.png`, `pr-NNNN-readonly-role.png`. Makes attachments self-describing in the destination's file rail.
 - **Upload mechanism** — see the destination's reporting reference (e.g. `skills/shortcut/references/report.md` for Shortcut's `/files` endpoint). Capture the returned hosted URL and embed inline.
 
 ## Anti-Patterns

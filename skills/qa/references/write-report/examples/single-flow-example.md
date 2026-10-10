@@ -1,13 +1,13 @@
-# Example — Single-Flow QA Report (sc-97462)
+# Example — Single-Flow QA Report
 
-Real Preset QA verification posted to https://app.shortcut.com/preset/story/97462. Use as a tone reference: narrative prose, verdict-first, two related checks labeled inline within one Result block, single video link.
+Based on a real Preset QA verification posted as a Shortcut story comment; story and host identifiers are replaced with placeholders. Use as a tone reference: narrative prose, verdict-first, two related checks labeled inline within one Result block, single video link.
 
 ```markdown
 ## QA Verification — PASS ✅
 
-**Tested on**: https://1656bd0b.us1a.app-stg.preset.io (staging 6.0.0.6rc1)
+**Tested on**: https://<ws>.us1a.app-stg.preset.io (staging 6.0.0.6rc1)
 **Date**: 2026-02-20
-**Tester**: Playwright automation (playwright-bot@testing.com)
+**Tester**: Playwright automation (staging bot account)
 
 ### Repro steps followed:
 1. Opened "World Bank's Data" dashboard → Explore view for "World's Pop Growth" chart
@@ -23,7 +23,7 @@ Real Preset QA verification posted to https://app.shortcut.com/preset/story/9746
 - **Test 2 (type 365):** After typing "3", the field shows "3". After typing "6", it shows "36". After typing "5", it shows "365". All digits appear correctly without disappearing/reappearing.
 
 ### Evidence:
-[sc-97462-relative-date-input-fix.webm](https://media.app.shortcut.com/...)
+[sc-NNNNN-relative-date-input-fix.webm](https://media.app.shortcut.com/...)
 ```
 
 Why this works:
