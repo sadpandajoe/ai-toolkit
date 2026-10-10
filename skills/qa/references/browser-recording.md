@@ -26,10 +26,10 @@ Recordings go in `~/qa-recordings/` (outside any repo, so `git status` stays cle
 ```
 
 Examples:
-- `~/qa-recordings/sc-102410-explore-link-20260505T210000Z.webm`
-- `~/qa-recordings/pr-3760-smoke-20260505T210000Z.webm`
+- `~/qa-recordings/sc-NNNNN-explore-link-20260505T210000Z.webm`
+- `~/qa-recordings/pr-NNNN-smoke-20260505T210000Z.webm`
 
-Playwright writes the file with a hash name; the script should rename it to the canonical name on completion.
+Playwright writes the file with a hash name; the recorder renames it to the canonical name on completion.
 
 ### 2. Set up a runner
 
@@ -43,17 +43,25 @@ ln -sfn <path-to-playwright-project>/node_modules ~/.qa-runner/node_modules
 
 The browser binaries cache at `~/Library/Caches/ms-playwright/` is shared across installs, so no extra download.
 
-### 3. Write the script
+### 3. Write the flow, run the recorder
 
-A standalone ESM script that:
-1. Launches Chromium in headed mode
-2. Creates a context with `recordVideo: { dir, size }`
-3. Calls `context.addInitScript` with the cursor-dot visualizer
-4. Drives auth, navigation, and interactions
-5. Closes the context (which finalizes the video file)
-6. Renames the file to the canonical name
+Do not write a recording script. `<toolkit-root>/scripts/qa/record.mjs` is the recorder; you write only the flow, a module whose default export drives the scenario after login:
 
-Starter template: [browser-recording/record-flow.template.mjs](browser-recording/record-flow.template.mjs). Copy and adapt per run.
+```js
+// ~/.qa-runner/flows/sc-NNNNN-explore-link.mjs
+export default async ({ page, context, url, role }) => {
+  await page.getByRole('link', { name: /dashboards/i }).click();
+  // ... the scenario's steps and checks
+};
+```
+
+The recorder:
+1. Refuses production and unknown hosts (`scripts/preset/hosts.mjs`, per `rules/preset-environments.md`)
+2. Launches Chromium headed (`--headless` to hide it)
+3. Creates a context with `recordVideo: { dir, size }` and the stored login for this host and role
+4. Injects the cursor-dot visualizer with `context.addInitScript`
+5. Logs in when needed, then calls the flow
+6. Closes the context (which finalizes the video file) and renames it to the canonical name
 
 ### 4. Cursor + click visualizer
 
@@ -62,58 +70,53 @@ Inject before any page loads via `context.addInitScript`. The visualizer is a sm
 - Scales up briefly on `mousedown` and resets on `mouseup` (so each click reads as a distinct action)
 - Lives at `z-index: 2147483647` so it stays visible over modals and overlays
 
-The template script bundles this; don't reinvent.
+`<toolkit-root>/scripts/qa/record.mjs` bundles this; don't reinvent.
 
 ### 5. Auth
 
-Per `rules/preset-environments.md`:
-- Stage: read `$PRESET_STG_BOT_LOGIN` / `$PRESET_STG_BOT_PASSWORD`. Abort with a clear message if either is unset.
-- For multi-role / RBAC runs, source role-specific credentials from your team's secrets vault (e.g. `Agor-Test-Vault`) — never hard-code per-role passwords here.
-- Local: try `admin`/`admin` then `admin`/`general`.
-- Production: refuse.
+Per `rules/preset-environments.md`, as the recorder applies it:
+- `QA_LOGIN` / `QA_PASSWORD`, when both are set, win on any allowed host. Use them for multi-role / RBAC runs, with role-specific credentials from your team's secrets vault (e.g. `Agor-Test-Vault`); never hard-code per-role passwords.
+- Stage: `$PRESET_STG_BOT_LOGIN` / `$PRESET_STG_BOT_PASSWORD`. The recorder stops with a clear message if they are unset.
+- Dev: `QA_LOGIN` / `QA_PASSWORD` only; ask the user for credentials.
+- Local: `admin`/`admin`. For a stack with other credentials, set `QA_LOGIN` / `QA_PASSWORD`.
+- Production: refused.
+
+The login itself is email, then *Next*, then password, as the Preset manager IdP asks.
 
 #### Asserting login completion — the `next=` trap
 
 After clicking *Log in*, do **not** assert with `page.waitForURL(new RegExp(workspaceHost))`. The Preset manager IdP redirects to `https://manage.app-stg.preset.io/login/?next=https%3A%2F%2F<workspaceHost>%2Fsuperset%2Fwelcome%2F` — a URL that *contains the workspace host inside the `next=` query parameter*. A naive host-substring regex matches that intermediate URL and the assertion fires while we're still on the login page, so subsequent steps (find chatbot trigger, etc.) fail with confusing timeouts.
 
-Correct pattern:
+The recorder's check, for any flow that logs in again:
 
 ```js
-await page.getByRole('button', { name: /log in/i }).click();
-for (let i = 0; i < 30; i++) {
-  await page.waitForTimeout(1000);
-  const url = page.url();
-  if (url.includes(WORKSPACE_HOST) && !url.includes('/login')) break;
-}
-if (page.url().includes('/login')) throw new Error('login did not complete');
+const loggedIn = () => {
+  const url = new URL(page.url());
+  return url.hostname === WORKSPACE_HOST && !url.pathname.startsWith('/login');
+};
+for (let i = 0; i < 30 && !loggedIn(); i++) await page.waitForTimeout(1000);
+if (!loggedIn()) throw new Error('login did not complete');
 await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
 ```
 
-The two-clause condition (host present **and** `/login` absent) is what disambiguates the IdP redirect from the post-auth landing.
+The two-clause condition (the page's own host is the workspace **and** its path is not `/login`) is what disambiguates the IdP redirect from the post-auth landing.
 
 #### Persisting `storageState`
 
-For repeated runs, persist `storageState` between runs to skip the login leg:
-
-```js
-// First run, after successful login:
-await context.storageState({ path: '~/.qa-runner/storage/<host>-<role>.json' });
-// Subsequent runs:
-const context = await browser.newContext({
-  storageState: '~/.qa-runner/storage/<host>-<role>.json',
-  recordVideo: { dir, size: VIEWPORT },
-});
-```
+The recorder saves the login after a fresh sign-in and reuses it on later runs, at `~/.qa-runner/storage/<host>-<role>.json`. Delete that file to force a fresh login.
 
 **Key the storage path by host AND role**, not by host alone. When the same workspace is exercised under multiple roles in one session (e.g. Dashboard Viewer + Primary Contributor for an RBAC verification), a host-only storage file gets overwritten by the second role's session and then silently reused for the first role's *next* run with the wrong cookies — so login is skipped, requests fire as the wrong user, and the verdict is invalid. Always include the role in the filename.
 
-### 6. Run the script
+### 6. Run the recorder
 
 ```bash
-node ~/.qa-runner/record-sc-NNNNN.mjs
+node <toolkit-root>/scripts/qa/record.mjs \
+  --url https://<ws>.us1a.app-stg.preset.io/ --role viewer \
+  --source-id sc-NNNNN --name explore-link \
+  --flow ~/.qa-runner/flows/sc-NNNNN-explore-link.mjs
 ```
 
-The video is written when `context.close()` resolves. The script should print the final path on exit.
+The video is written when `context.close()` resolves; the recorder prints the final path. It exits 2 on a usage error, a refused host, missing credentials or a missing Playwright, and 1 when the flow or login fails.
 
 ### 7. Optional: transcode
 

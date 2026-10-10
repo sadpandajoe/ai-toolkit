@@ -1,10 +1,12 @@
-"""Skill scripts against real git fixtures (cherry-pick audits and ordering)."""
+"""Skill and toolkit scripts: real git fixtures for the cherry-pick audits, node smoke tests for the QA recorder and the Preset host classifier."""
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -242,6 +244,136 @@ class ScopeAuditTests(ScriptTestCase):
         result = self.audit("deadbeef")
         self.assertEqual(2, result.returncode)
         self.assertRegex(result.stderr, re.compile("not a valid commit"))
+
+
+NODE = shutil.which("node")
+HOSTS = ROOT / "scripts" / "preset" / "hosts.mjs"
+RECORD = ROOT / "scripts" / "qa" / "record.mjs"
+
+# The table in rules/preset-environments.md, as scripts/preset/hosts.mjs reads it.
+HOST_FIXTURE = {
+    "localhost:8088": "local",
+    "http://127.0.0.1:3000/": "local",
+    "0.0.0.0": "local",
+    "https://ws1.us1a.app-stg.preset.io/superset/welcome/": "staging",
+    "manage.app-stg.preset.io": "staging",
+    "https://manage.app-stg.preset.io/login/?next=https%3A%2F%2Fws1.us1a.app.preset.io%2F": "staging",
+    "https://ws1.us1a.app-dev.preset.io": "dev",
+    "manage.app-dev.preset.io": "dev",
+    "https://ws1.us1a.app.preset.io/": "production",
+    "manage.app.preset.io": "production",
+    "app.preset.io": "production",
+    "WS1.US1A.APP.PRESET.IO.": "production",
+    # Old patterns and look-alikes: unknown, which callers treat as production.
+    "ws1.stg.preset.io": "unknown",
+    "manager.stg.preset.io": "unknown",
+    "app-stg.preset.io.example.com": "unknown",
+    "evilapp-stg.preset.io": "unknown",
+    "example.com": "unknown",
+    "": "unknown",
+}
+
+
+def node(*arguments: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [NODE, *arguments],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+
+
+@unittest.skipIf(NODE is None, "node is not installed")
+class NodeScriptTests(unittest.TestCase):
+    def test_scripts_parse(self) -> None:
+        for script in (HOSTS, RECORD):
+            with self.subTest(script=script.name):
+                result = node("--check", str(script))
+                self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_hosts_classify_the_rule_table(self) -> None:
+        result = node(str(HOSTS), *HOST_FIXTURE)
+        self.assertEqual(0, result.returncode, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual(len(HOST_FIXTURE), len(lines), result.stdout)
+        for (value, expected), line in zip(HOST_FIXTURE.items(), lines):
+            with self.subTest(host=value):
+                self.assertEqual(expected, json.loads(line)["environment"])
+
+    def test_the_rule_lists_every_pattern_the_classifier_knows(self) -> None:
+        rule = (ROOT / "rules" / "preset-environments.md").read_text()
+        for pattern in (
+            "*.app-stg.preset.io",
+            "manage.app-stg.preset.io",
+            "*.app-dev.preset.io",
+            "manage.app-dev.preset.io",
+            "*.app.preset.io",
+            "manage.app.preset.io",
+            "scripts/preset/hosts.mjs",
+        ):
+            self.assertIn(f"`{pattern}`", rule)
+
+    def record(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as home:
+            # No credentials and no Playwright reach the script from the caller.
+            env = {"PATH": os.environ.get("PATH", ""), "HOME": home}
+            return node(str(RECORD), *arguments, cwd=Path(home), env=env)
+
+    def test_record_help_and_usage(self) -> None:
+        help_result = self.record("--help")
+        self.assertEqual(0, help_result.returncode, help_result.stderr)
+        self.assertIn("usage: record.mjs --url", help_result.stdout)
+        for arguments in (
+            (),
+            ("--url", "http://localhost:8088", "--role", "admin"),
+            ("--url", "http://localhost:8088", "--role", "admin", "--source-id", "sc-1", "--name", "a b", "--flow", "f.mjs"),
+            ("--bogus",),
+        ):
+            with self.subTest(arguments=arguments):
+                result = self.record(*arguments)
+                self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+                self.assertIn("usage: record.mjs", result.stderr)
+
+    def test_record_refuses_production_and_unknown_hosts(self) -> None:
+        for url in ("https://ws1.us1a.app.preset.io/", "https://manage.app.preset.io", "https://example.com"):
+            with self.subTest(url=url):
+                result = self.record(
+                    "--url", url, "--role", "viewer", "--source-id", "sc-NNNNN", "--name", "smoke", "--flow", "flow.mjs"
+                )
+                self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+                self.assertIn("refusing", result.stderr)
+
+    def test_record_needs_the_flow_file_and_staging_credentials(self) -> None:
+        missing = self.record(
+            "--url", "http://localhost:8088", "--role", "admin", "--source-id", "pr-1", "--name", "smoke",
+            "--flow", "no-such-flow.mjs",
+        )
+        self.assertEqual(2, missing.returncode, missing.stderr)
+        self.assertIn("flow file not found", missing.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            flow = Path(directory) / "flow.mjs"
+            flow.write_text("export default async () => {};\n")
+            staging = self.record(
+                "--url", "https://ws1.us1a.app-stg.preset.io/", "--role", "viewer", "--source-id", "sc-NNNNN",
+                "--name", "smoke", "--flow", str(flow),
+            )
+        self.assertEqual(2, staging.returncode, staging.stderr)
+        self.assertIn("PRESET_STG_BOT_LOGIN", staging.stderr)
+
+    def test_record_keeps_its_safety_properties(self) -> None:
+        source = RECORD.read_text()
+        self.assertIn("from '../preset/hosts.mjs'", source)
+        self.assertIn("`${host}-${options.role}.json`", source)
+        self.assertIn("!url.pathname.startsWith('/login')", source)
+        self.assertIn("url.hostname === host", source)
+        self.assertEqual(1, source.count("--disable-blink-features=AutomationControlled"))
+        self.assertIn("recordVideo", source)
+        self.assertIn("__qa_cursor__", source)
+        self.assertNotRegex(source, r"console\.(log|error)\([^)]*(password|creds|login)\b")
+        self.assertFalse((ROOT / "skills/qa/references/browser-recording/record-flow.template.mjs").exists())
 
 
 if __name__ == "__main__":

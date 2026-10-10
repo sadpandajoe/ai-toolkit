@@ -42,19 +42,24 @@ Public repos (e.g. the toolkit's own) are unaffected; cloud scheduling is fine t
 
 ## Environment Detection
 
-Identify which environment is under test by the app URL:
+Identify which environment is under test by the app URL's host. `*` stands
+for one or more host labels (workspace hosts look like
+`<ws>.us1a.app-stg.preset.io`). `scripts/preset/hosts.mjs` implements this
+table; scripts import it instead of matching hosts themselves.
 
-| URL Pattern | Environment | Credentials |
-|-------------|-------------|-------------|
-| `localhost:*` | Local dev | Try `admin`/`admin`, `admin`/`general` |
-| `*.stg.preset.io` or `stg.` in hostname | Staging | `PRESET_STG_BOT_LOGIN` / `PRESET_STG_BOT_PASSWORD` |
-| `*.preset.io` (no `stg`) | Production | Do not run automated tests |
+| Host pattern | Environment | Credentials |
+|--------------|-------------|-------------|
+| `localhost`, `127.0.0.1`, `0.0.0.0` (any port) | Local dev | Try `admin`/`admin`, `admin`/`general` |
+| `*.app-stg.preset.io`, `manage.app-stg.preset.io` | Staging | `PRESET_STG_BOT_LOGIN` / `PRESET_STG_BOT_PASSWORD` |
+| `*.app-dev.preset.io`, `manage.app-dev.preset.io` | Dev (not production) | Ask the user; never reuse staging or production credentials |
+| `*.app.preset.io`, `manage.app.preset.io`, `app.preset.io` | Production | Do not run automated tests |
+| Anything else | Unknown | Treat as production: stop and ask the user |
 
 **Never run automated browser tests against production.**
 
 ## Preset Products
 
-| Product | Typical local port | Staging URL pattern |
-|---------|-------------------|---------------------|
-| Manager | 3000 | `manager.stg.preset.io` |
-| Superset-shell | 8088 | `*.stg.preset.io` |
+| Product | Typical local port | Staging host | Dev host |
+|---------|-------------------|--------------|----------|
+| Manager | 3000 | `manage.app-stg.preset.io` | `manage.app-dev.preset.io` |
+| Superset-shell | 8088 | `*.app-stg.preset.io` (one host per workspace) | `*.app-dev.preset.io` |
