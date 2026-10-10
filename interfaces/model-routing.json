@@ -327,17 +327,6 @@
       ]
     },
     {
-      "id": "workflows.watch-pr-poll",
-      "path": "skills/workflows/references/watch-pr.md",
-      "count": 1,
-      "routes": [
-        "operations"
-      ],
-      "contracts": [
-        "rules/ci-evidence.md"
-      ]
-    },
-    {
       "id": "workflows.watch-pr-fix",
       "path": "skills/workflows/references/watch-pr.md",
       "count": 1,

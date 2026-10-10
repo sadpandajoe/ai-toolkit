@@ -424,7 +424,6 @@ BOUNDARY_INVARIANTS = {
     "workflows.feedback-fix-wave": ("implementation",),
     "workflows.fix-bug-implementation": ("implementation",),
     "workflows.watch-pr-fix": ("implementation",),
-    "workflows.watch-pr-poll": ("operations",),
 }
 
 
