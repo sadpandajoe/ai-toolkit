@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-from aitk.lane_yield import DEEP_LENSES, LANE_WINDOW, LENS_WINDOW, evaluate, load_events
+from aitk.review_plan import DEEP_LENSES, LANE_WINDOW, LENS_WINDOW, evaluate, load_events
 
 
 ROOT = Path(__file__).resolve().parents[1]

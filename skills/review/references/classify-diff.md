@@ -15,27 +15,38 @@ subjects when available, and any explicit ask (`--adversarial`, "deep review",
 
 ## Steps
 
-1. **Classify files** into domains by path and content: Frontend (`*.tsx`,
-   `*.jsx`, `*.vue`, `*.css`, `components/`), Backend (`*.py` non-test, `*.go`,
-   `*.rs`, `*.java`, `api/`, `server/`), Tests (`*_test.*`, `*.test.*`,
-   `tests/`, `conftest.py`), Infrastructure (`Dockerfile`, CI YAML,
-   `terraform/`), Config (`*.toml`, `*.ini`, `.env*`, `settings.*`).
+`bin/aitk review plan` computes the deterministic parts and prints them in the
+Output shape below; there is no separate classify command. It reports the
+domains, the file and changed-line counts without lockfiles and generated
+files, the refactor heuristic, the escalation phrase match (pass the user's
+words with `--ask`), toolkit-sensitive path hits, and the touch weight per
+lens. The parent adds the semantic flags that paths cannot show
+(`--security-sensitive`, `--architecture`, `--refactor`).
+
+1. **Domains** come from paths: Frontend (`*.tsx`, `*.jsx`, `*.vue`, `*.css`,
+   `components/`), Backend (`*.py` non-test, `*.go`, `*.rs`, `*.java`, `api/`,
+   `server/`), Tests (`*_test.*`, `*.test.*`, `tests/`, `conftest.py`),
+   Infrastructure (`Dockerfile`, CI YAML, `terraform/`), Config (`*.toml`,
+   `*.ini`, `.env*`, `settings.*`).
 
 2. **Set risk flags.**
    - **Security-sensitive**: authentication or authorization, cryptography,
      unsanitized input, dynamic SQL or ORM input, secrets or tokens,
-     permission checks, agent capability configuration (which model, effort,
-     sandbox, permission mode, or tool list a worker runs under:
+     permission checks. When reviewing ai-toolkit itself, also
+     agent capability configuration (which model, effort, sandbox,
+     permission mode, or tool list a worker runs under:
      `interfaces/model-routing.json`, `aitk/model_routing.py`,
      `aitk/routing_*.py`, `agents/`, `aitk/build.py` (renders the native
-     agents' model, tools, and sandbox), hook
-     and MCP config), worker context assembly (`aitk/routing_closure.py`,
+     agents' model, tools, and sandbox), hook and MCP config: `hooks/`,
+     `aitk/hooks/`), worker context assembly (`aitk/routing_closure.py`,
      `aitk/routing_markdown.py`), or trust-boundary changes (publish or push
      authorization, sandbox enforcement, fail-closed checks becoming advisory:
      `aitk/routing_manifest.py`, `aitk/routing_resolver.py`,
-     `aitk/routing_transport.py`, `aitk/installer.py`). Name the
-     implementation files, not only a facade; extend this list in the same
-     commit when a subsystem is decomposed.
+     `aitk/routing_transport.py`, `aitk/installer.py`, `aitk/deliver.py`,
+     `aitk/review_plan.py`). `review plan` flags these paths itself (its
+     `TOOLKIT_SENSITIVE` list). Name the implementation files, not only a
+     facade; extend this list and that one in the same commit when a
+     subsystem is decomposed.
    - **Architecture change**: new module boundaries, changed public contracts,
      new patterns, cross-subsystem data flow.
    - **Refactor-shaped**: title matches `^refactor` or mentions restructure,
@@ -56,9 +67,11 @@ subjects when available, and any explicit ask (`--adversarial`, "deep review",
 | Deep quality | Refactor-shaped, a "deep quality" ask, or deep-tier escalation | review/references/deep-quality.md |
 | Architecture | Architecture change on STANDARD or COMPLEX | plan-review/references/architecture.md |
 
-   When three would fire, drop the one whose domain the diff touches least and
-   report it. There are no separate test-quality, frontend, or backend lanes:
-   the independent reviewer's contract carries the test checks and a one-line
+   When three would fire, the plan drops one and reports it: on a
+   security-sensitive diff never adversarial (deep-quality goes first, then
+   architecture); otherwise the lens whose domain the diff touches least.
+   There are no separate test-quality, frontend, or backend lanes: the
+   independent reviewer's contract carries the test checks and a one-line
    backend and UI hint, and applies them to the domains this classification
    reports.
 

@@ -92,7 +92,9 @@ flags. COMPLEX and CORE-impact diffs add a second cold lane on the other model
 family, merged by convergence; on other diffs a `[major]` only one lane raised
 is confirmed by a fresh verifier on the other model family before it blocks, and a security-sensitive, `--deep`, or
 adversarial review is `BLOCKED (degraded)` rather than downgraded when the
-other provider is unreachable. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
+other provider is unreachable. `bin/aitk review plan` computes which lanes run
+(`aitk/review_plan.py`) and `review merge` dedupes their findings and lists the
+majors to verify; the parent keeps the judgment. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
 REPLAN`; the RCA gate is an evidence checklist the parent grades for STANDARD
 bugs and a specialist grades for COMPLEX or uncertain ones.
 

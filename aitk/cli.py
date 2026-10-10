@@ -23,13 +23,35 @@ from .conformance import contracts_by_name, route_workflow, workflow_dependencie
 from .deliver import DeliverOptions, deliver as run_delivery, render as render_delivery
 from .doctor import run_doctor
 from .installer import resolve_paths, run_lifecycle
-from .lane_yield import default_metrics_file, evaluate as evaluate_lane_yield, load_events
 from .model_routing import (
     ModelRouteError,
     resolve_route,
     run_model,
 )
 from .pgm import preflight as pgm_preflight
+from .review_plan import (
+    PROVIDERS,
+    PlanInputs,
+    ReviewPlanError,
+    default_metrics_file,
+    evaluate as evaluate_lane_yield,
+    excluded_reason,
+    families as routing_families,
+    is_toolkit_repository,
+    load_events,
+    local_changes,
+    merge as merge_review,
+    parent_from_environment,
+    phase_base,
+    plan as plan_review,
+    pr_changes,
+    provider_reachable,
+    read_envelopes,
+    record_demotions,
+    render_merge,
+    render_plan,
+    branch_base as review_branch_base,
+)
 from .project_state import (
     OBSERVATION_KINDS,
     REVIEW_EXCEPTIONS,
@@ -40,6 +62,7 @@ from .project_state import (
     complexity_block,
     ensure_excluded,
     gate_block,
+    git_toplevel,
     initialize as initialize_project_state,
     operation_recorded,
     parse_project_state,
@@ -657,6 +680,11 @@ def _lane_yield(arguments: argparse.Namespace) -> int:
     metrics = Path(arguments.metrics).resolve() if arguments.metrics else default_metrics_file()
     events = load_events(metrics)
     demotions = evaluate_lane_yield(events)
+    try:
+        queued = record_demotions(Path.cwd(), demotions)
+    except (ProjectStateError, OSError) as error:
+        print(f"lane-yield: could not append observations: {error}", file=sys.stderr)
+        queued = []
     if arguments.json:
         print(
             json.dumps(
@@ -664,6 +692,7 @@ def _lane_yield(arguments: argparse.Namespace) -> int:
                     "metrics": str(metrics),
                     "events": len(events),
                     "demotions": [item.as_dict() for item in demotions],
+                    "observations": queued,
                 },
                 indent=2,
                 sort_keys=True,
@@ -678,7 +707,132 @@ def _lane_yield(arguments: argparse.Namespace) -> int:
         observed = ", ".join(f"{key}={value}" for key, value in item.observed.items())
         print(f"{item.lane}: demoted over last {item.runs} runs ({observed})")
         print(f"  -> {item.consequence}")
+    if queued:
+        print(f"low-yield-lane observation queued for: {', '.join(queued)}")
     return 0
+
+
+def _reachable(root: Path, arguments: argparse.Namespace) -> frozenset[str]:
+    unreachable = set(arguments.unreachable or ())
+    return frozenset(
+        provider for provider in PROVIDERS if provider not in unreachable and provider_reachable(root, provider)
+    )
+
+
+def _demoted(arguments: argparse.Namespace) -> frozenset[str]:
+    metrics = Path(arguments.metrics).resolve() if arguments.metrics else default_metrics_file()
+    return frozenset(item.lane for item in evaluate_lane_yield(load_events(metrics)))
+
+
+def _review_plan(arguments: argparse.Namespace, root: Path) -> int:
+    cwd = Path.cwd()
+    parent = arguments.parent or parent_from_environment()
+    if parent is None:
+        raise ReviewPlanError("pass --parent claude|codex (the provider running this session)")
+    repo = git_toplevel(cwd)
+    extra: dict[str, object] = {}
+    if arguments.kind == "pr":
+        if not arguments.pr:
+            raise ReviewPlanError("--kind pr needs --pr <number|url|branch>")
+        files, title, base_branch = pr_changes(cwd, arguments.pr)
+        titles = (arguments.title or title,)
+        base = branch = base_branch
+        extra["pr"] = arguments.pr
+        complexity = arguments.complexity
+        if complexity is None:
+            raise ReviewPlanError("--kind pr needs --complexity (from the PR signals table)")
+    else:
+        if repo is None:
+            raise ReviewPlanError("review plan runs inside a git repository")
+        snapshot = _snapshot_or_none(state_file(arguments.file, cwd))
+        branch = review_branch_base(repo)
+        base = arguments.base or phase_base(snapshot) or branch
+        if base is None:
+            raise ReviewPlanError("no base: pass --base <rev> (no remote default branch or main/master found)")
+        files = local_changes(repo, base)
+        complexity = arguments.complexity or (snapshot or {}).get("complexity")
+        if complexity is None:
+            raise ReviewPlanError("no complexity: pass --complexity or record the Complexity Gate first")
+        subjects = []
+        if arguments.title is None:
+            log = subprocess.run(
+                ["git", "-C", str(repo), "log", "--format=%s", f"{base}..HEAD"],
+                text=True, capture_output=True, check=False,
+            )
+            subjects = log.stdout.splitlines() if log.returncode == 0 else []
+        titles = (arguments.title,) if arguments.title else tuple(subjects)
+    inputs = PlanInputs(
+        parent=parent,
+        complexity=str(complexity),
+        impact=arguments.impact,
+        kind=arguments.kind,
+        files=tuple(files),
+        titles=titles,
+        ask=arguments.ask or "",
+        effort=arguments.effort,
+        security_sensitive=arguments.security_sensitive,
+        architecture=arguments.architecture,
+        refactor=arguments.refactor,
+        toolkit=is_toolkit_repository(repo),
+        deep=arguments.deep,
+        adversarial=arguments.adversarial,
+        reachable=_reachable(root, arguments),
+        demoted=_demoted(arguments),
+        allow_degraded=arguments.allow_degraded,
+        base=base,
+        branch_base=branch,
+        extra=extra,
+    )
+    payload = plan_review(inputs, routing_families(root))
+    print(json.dumps(payload, indent=2, sort_keys=True) if arguments.json else render_plan(payload))
+    return 0 if payload["status"] == "ready" else 3
+
+
+def _review_merge(arguments: argparse.Namespace, root: Path) -> int:
+    lanes = read_envelopes(arguments.result)
+    if arguments.plan:
+        try:
+            planned = json.loads(Path(arguments.plan).read_text(encoding="utf-8"))
+            coverage = list(planned["coverage"]["required"])
+            reachable = frozenset(planned["reachable"])
+            demoted = frozenset(planned["demoted"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+            raise ReviewPlanError(f"cannot read the plan {arguments.plan}: {error}") from error
+    else:
+        repo = git_toplevel(Path.cwd())
+        base = arguments.base or (review_branch_base(repo) if repo else None)
+        coverage = (
+            [
+                item.path
+                for item in local_changes(repo, base)
+                if item.status != "deleted" and excluded_reason(item) is None
+            ]
+            if repo and base
+            else None
+        )
+        reachable = _reachable(root, arguments)
+        demoted = _demoted(arguments)
+    payload = merge_review(
+        lanes,
+        routing_families(root),
+        coverage_required=coverage,
+        reproduced=arguments.reproduced or (),
+        demoted=demoted,
+        reachable=reachable,
+    )
+    print(json.dumps(payload, indent=2, sort_keys=True) if arguments.json else render_merge(payload))
+    return 0
+
+
+def _review(arguments: argparse.Namespace) -> int:
+    root = _root(arguments.root)
+    try:
+        if arguments.review_action == "plan":
+            return _review_plan(arguments, root)
+        return _review_merge(arguments, root)
+    except (ReviewPlanError, ModelRouteError, ProjectStateError) as error:
+        print(f"review {arguments.review_action}: {error}", file=sys.stderr)
+        return 1
 
 
 def _check(arguments: argparse.Namespace) -> int:
@@ -1015,6 +1169,48 @@ def parser() -> argparse.ArgumentParser:
     observe.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
     observe.add_argument("--json", action="store_true")
     observe.set_defaults(handler=_observe)
+
+    review = subparsers.add_parser(
+        "review", help="plan a review's lanes, or merge their findings (local-review.md)"
+    )
+    review_actions = review.add_subparsers(dest="review_action", required=True)
+    review_plan = review_actions.add_parser(
+        "plan",
+        help="classify the diff and list the lanes to launch (exit 3 when BLOCKED)",
+    )
+    review_plan.add_argument("--parent", choices=PROVIDERS, help="the provider running this session (default: claude under Claude Code)")
+    review_plan.add_argument("--kind", choices=("local", "pr"), default="local")
+    review_plan.add_argument("--pr", help="with --kind pr: the PR number, URL or branch")
+    review_plan.add_argument("--base", help="review base (default: the last finished phase's tree, else the branch base)")
+    review_plan.add_argument("--complexity", choices=("TRIVIAL", "STANDARD", "COMPLEX"), help="default: the snapshot's")
+    review_plan.add_argument("--impact", choices=("CORE", "STANDARD", "PERIPHERAL"), default="STANDARD", help="from assess-impact.md")
+    review_plan.add_argument("--security-sensitive", action="store_true", help="classifier flag the paths alone do not show")
+    review_plan.add_argument("--architecture", action="store_true", help="classifier flag: architecture change")
+    review_plan.add_argument("--refactor", action="store_true", help="classifier flag: refactor-shaped")
+    review_plan.add_argument("--title", help="change title (default: the commit subjects since the base)")
+    review_plan.add_argument("--ask", help="the user's words, for escalation phrases and lens asks")
+    review_plan.add_argument("--effort", choices=("max", "ultra"), help="an explicit max or ultra effort ask")
+    review_plan.add_argument("--deep", action="store_true", help="deep-tier escalation (review-pr --deep)")
+    review_plan.add_argument("--adversarial", action="store_true", help="an explicit adversarial ask")
+    review_plan.add_argument("--allow-degraded", action="store_true", help="the user's USER_DECISION to run without the other provider")
+    review_plan.add_argument("--unreachable", action="append", choices=PROVIDERS, help="treat a provider as unreachable")
+    review_plan.add_argument("--metrics", help="metrics file for yield demotions (default: ./.ai-toolkit/metrics.jsonl)")
+    review_plan.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
+    review_plan.add_argument("--json", action="store_true")
+    review_merge = review_actions.add_parser(
+        "merge", help="dedupe lane findings, compute convergence, and list majors to verify"
+    )
+    review_merge.add_argument(
+        "--result", action="append", required=True, metavar="[LANE=]PATH",
+        help="a reviewer lane's saved model-run envelope; label deep lenses, e.g. adversarial=adv.json",
+    )
+    review_merge.add_argument("--plan", help="saved `review plan --json` output (coverage, reachability, demotions)")
+    review_merge.add_argument("--reproduced", action="append", metavar="FILE:LINE", help="a major the parent reproduced, or whose locking assertion failed")
+    review_merge.add_argument("--base", help="without --plan: the base for the coverage check")
+    review_merge.add_argument("--unreachable", action="append", choices=PROVIDERS, help="without --plan: treat a provider as unreachable")
+    review_merge.add_argument("--metrics", help="without --plan: metrics file for yield demotions")
+    review_merge.add_argument("--json", action="store_true")
+    review.set_defaults(handler=_review)
 
     lane_yield = subparsers.add_parser(
         "lane-yield",

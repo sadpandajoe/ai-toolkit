@@ -223,6 +223,42 @@ class ProcedureCommandSmokeTests(unittest.TestCase):
         self.assertEqual(3, check.returncode, check.stderr)
         self.assertEqual({"operation", "ran", "recorded"}, set(json.loads(check.stdout)))
 
+    def test_review_plan_and_merge_report_json(self) -> None:
+        (self.work / "a.py").write_text("x = 1\n")
+        for command in (["add", "a.py"], ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "a"]):
+            subprocess.run(["git", "-C", str(self.work), *command], check=True)
+        (self.work / "a.py").write_text("x = 2\n")
+        planned = self.aitk(
+            "review", "plan", "--parent", "claude", "--complexity", "STANDARD", "--base", "HEAD",
+            "--unreachable", "codex", "--unreachable", "claude", "--json",
+        )
+        self.assertEqual(3, planned.returncode, planned.stderr)
+        payload = json.loads(planned.stdout)
+        self.assertTrue(
+            {"status", "lanes", "classification", "verifier", "delta", "coverage", "deep_lenses", "second_family"}
+            <= set(payload)
+        )
+        plan_file = self.work / ".ai-toolkit-plan.json"
+        plan_file.write_text(planned.stdout)
+        envelope = self.work / ".ai-toolkit-lane.json"
+        envelope.write_text(
+            json.dumps(
+                {
+                    "boundary": "review.independent",
+                    "provider": "codex",
+                    "route": "review",
+                    "dry_run": False,
+                    "request": {"family": "sol"},
+                    "result": {"status": "completed", "summary": "s", "findings": [], "verification": ["a.py"]},
+                }
+            )
+        )
+        merged = self.aitk("review", "merge", "--plan", str(plan_file), "--result", str(envelope), "--json")
+        self.assertEqual(0, merged.returncode, merged.stderr)
+        self.assertEqual(
+            {"command", "lanes", "findings", "verify", "settled", "coverage_rerun"}, set(json.loads(merged.stdout))
+        )
+
     def test_deliver_refuses_without_evidence_and_reports_json(self) -> None:
         init = self.aitk("project-state", "init", "--workflow", "fix-bug", "--complexity", "STANDARD", "--size", "S")
         self.assertEqual(0, init.returncode, init.stderr)

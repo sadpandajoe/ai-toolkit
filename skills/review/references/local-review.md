@@ -39,7 +39,11 @@ in `Scope note`.
 ## Classify
 
 Run [classify-diff.md](classify-diff.md) and `qa/references/assess-impact.md`.
-Record the complexity, impact, and risk flags in the Review Record. TRIVIAL
+`bin/aitk review plan --parent <your provider> --impact <impact>` (plus the
+semantic flags) prints the classification and the lanes the sections below
+call for, with their providers, the verifier family, the delta rule, and
+`BLOCKED (degraded)`; launch what it lists. Record the complexity, impact, and
+risk flags in the Review Record. TRIVIAL
 zero-logic or micro-fix diffs may take the review exception in `rules/gates.md`;
 everything else gets the independent review below, even at TRIVIAL. A TRIVIAL
 diff with CORE impact is reviewed as STANDARD: the exception is unavailable and
@@ -119,7 +123,10 @@ deep lanes. A code-judo ask runs at its own boundary
 
 ## Validate, Then Fix
 
-Collect findings from every lane and dedupe by file, line, and class. For each
+Collect findings from every lane and dedupe by file, line, and class
+(`bin/aitk review merge --result <lane>=<envelope> …` dedupes by file:line,
+counts convergence, applies the coverage rule, and lists the single-source
+majors that need a verifier). For each
 `[major]` and `[minor]`, check the claim against the current repo and diff
 before changing anything: accepted, or rejected with a one-line evidence-based
 reason.
