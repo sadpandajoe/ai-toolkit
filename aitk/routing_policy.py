@@ -280,7 +280,7 @@ LENS_DOMAIN_FLOORS: dict[str, tuple[str, ...]] = {
         "skills/review/references/deep-quality.md",
         "skills/plan-review/references/architecture.md",
     ),
-    # Plan validation is one worker whose contract inlines the plan checklists
+    # Plan validation is one worker whose contract carries its own checks
     # (`agents/specialists/plan-validator.md`); it never fans out over plan
     # lenses, so the plan domain carries no menu floor.
 }
@@ -293,6 +293,34 @@ ROUTE_ERROR = "MODEL_ROUTE_INVALID"
 
 
 UNAVAILABLE_ERROR = "MODEL_ROUTE_UNAVAILABLE"
+
+
+# A provider that declines the task is not an outage (D15): the envelope says
+# `refused`, with the provider's category, instead of `unavailable`.
+REFUSED_ERROR = "MODEL_ROUTE_REFUSED"
+
+
+# The lanes whose refusal may reroute once to the other provider (D15): a
+# dispatch that carries the adversarial lens, whether it is a fan-out lens or
+# the adversarial workflow's own boundary. Any other refusal is `BLOCKED`.
+REROUTABLE_REFUSAL_CONTRACTS = frozenset({"skills/review/references/adversarial.md"})
+
+
+# Provider error codes that mean "declined", not "failed". Codex reports them on
+# an error event; Claude reports a refusal as its result's `stop_reason`.
+REFUSAL_CODES = frozenset(
+    {"refusal", "content_filter", "invalid_prompt", "cyber_policy", "reasoning_extraction"}
+)
+
+
+# The per-worker spend cap passed to Claude as `--max-budget-usd`, by the
+# route's pinned effort. Codex has no equivalent flag.
+CLAUDE_MAX_BUDGET_USD = {"high": "5", "xhigh": "15"}
+
+
+# A Codex worker's contracts travel as one `-c developer_instructions=...`
+# argument, and Linux caps a single argument at 128 KiB.
+CODEX_INSTRUCTIONS_LIMIT = 120_000
 
 
 
@@ -364,6 +392,14 @@ class ModelRouteError(ValueError):
     def __init__(self, message: str, code: str = ROUTE_ERROR) -> None:
         super().__init__(message)
         self.code = code
+
+
+class ModelRouteRefused(ModelRouteError):
+    """The provider declined the task; recorded apart from an outage (D15)."""
+
+    def __init__(self, message: str, category: str) -> None:
+        super().__init__(message, REFUSED_ERROR)
+        self.category = category
 
 
 @dataclass(frozen=True)

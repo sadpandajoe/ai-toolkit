@@ -57,6 +57,7 @@ from aitk.routing_policy import (
     PROMPT_LIMIT,
     PROVIDERS,
     REASONING,
+    REFUSED_ERROR,
     RESPONSIBILITIES,
     ROUTE_ERROR,
     ROUTE_MARKER,
@@ -66,10 +67,12 @@ from aitk.routing_policy import (
     UNAVAILABLE_ERROR,
     WORKER_SCHEMA,
     ModelRouteError,
+    ModelRouteRefused,
     ResolvedRoute,
     _safe_path,
 )
 from aitk.routing_resolver import (
+    refusal_reroute,
     resolve_route,
 )
 from aitk.routing_transport import (
@@ -77,7 +80,9 @@ from aitk.routing_transport import (
     parse_claude_output,
     parse_codex_output,
     run_model,
+    worker_instructions,
     worker_prompt,
+    worker_schema,
 )
 
 
@@ -98,6 +103,7 @@ __all__ = [
     "PROMPT_LIMIT",
     "PROVIDERS",
     "REASONING",
+    "REFUSED_ERROR",
     "RESPONSIBILITIES",
     "ROUTE_ERROR",
     "ROUTE_MARKER",
@@ -107,10 +113,12 @@ __all__ = [
     "UNAVAILABLE_ERROR",
     "WORKER_SCHEMA",
     "ModelRouteError",
+    "ModelRouteRefused",
     "ResolvedRoute",
     "load_model_routing",
     "parse_claude_output",
     "parse_codex_output",
+    "refusal_reroute",
     "resolve_route",
     "run_model",
     "validate_dispatch_boundaries",
@@ -118,7 +126,9 @@ __all__ = [
     "validate_model_routing",
     "validate_route_bindings",
     "validate_selector_ownership",
+    "worker_instructions",
     "worker_prompt",
+    "worker_schema",
     # Underscored, and re-exported deliberately: the routing tests exercise the
     # markdown scanners, the closure traversal, and the worker-result schema
     # directly, because each is a fail-closed rule whose behavior is not

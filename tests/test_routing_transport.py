@@ -10,20 +10,25 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 import json
+import os
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from unittest import mock
 
 from aitk.model_routing import (
     BLOCKED_EXIT,
     ModelRouteError,
+    REFUSED_ERROR,
     _valid_worker,
     parse_claude_output,
     parse_codex_output,
     resolve_route,
     run_model,
+    worker_instructions,
     worker_prompt,
+    worker_schema,
 )
 
 from routing_fixtures import (
@@ -32,27 +37,35 @@ from routing_fixtures import (
     CODEX_HELP,
     MODEL_CATALOG,
     _claude_runner,
+    _codex_runner,
     RESULT,
     RoutingTestCase,
 )
 
 
 class RoutingTransportTests(RoutingTestCase):
-    def test_worker_prompt_carries_route_and_restrictions(self) -> None:
+    def test_instructions_carry_contracts_then_route_and_the_task_stays_apart(self) -> None:
         route = resolve_route(ROOT, "operations", "claude")
         contract_content = "# Read-only evidence contract\n"
-        prompt = worker_prompt(
-            route,
-            "Collect the named evidence.",
-            (("skills/qa/SKILL.md", "digest", contract_content),),
+        instructions = worker_instructions(
+            route, (("skills/qa/SKILL.md", "digest", contract_content),)
         )
-        self.assertIn("AI_TOOLKIT_MODEL_ROUTE_V1", prompt)
+        self.assertTrue(instructions.startswith("AI_TOOLKIT_MODEL_ROUTE_V1\n"))
         selector = MODEL_CATALOG["claude"]["models"]["sonnet"]["selector"]
-        self.assertIn(f"selector={selector}", prompt)
-        self.assertIn("effort=high", prompt)
-        self.assertIn("design tests", prompt)
-        self.assertIn(contract_content, prompt)
-        self.assertTrue(prompt.endswith("TASK_END\n"))
+        self.assertIn(f"selector={selector}", instructions)
+        self.assertIn("effort=high", instructions)
+        self.assertIn("design tests", instructions)
+        self.assertIn(contract_content, instructions)
+        # Stable contracts first, the per-dispatch header after, so lanes that
+        # share a contract list share a cached prefix.
+        self.assertLess(
+            instructions.index(contract_content), instructions.index("route=operations")
+        )
+        # Digests belong to the envelope, not the prompt.
+        self.assertNotIn("digest", instructions)
+        task = worker_prompt("Collect the named evidence.")
+        self.assertEqual("TASK_BEGIN\nCollect the named evidence.\nTASK_END\n", task)
+        self.assertNotIn("Collect the named evidence.", instructions)
 
     def test_provider_output_parsers_require_one_structured_result(self) -> None:
         codex = json.dumps(
@@ -179,6 +192,12 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(str(Path(cwd).resolve()), argv[argv.index("--add-dir") + 1])
         self.assertIn("--output-last-message", argv)
         self.assertNotIn("--fallback-model", argv)
+        # A dry run names the instruction channel without printing the contracts.
+        self.assertIn("developer_instructions=<instructions>", argv)
+        self.assertEqual(
+            ["agents/specialists/reviewer.md", "rules/code-review.md", "rules/severity.md"],
+            [item["path"] for item in payload["contracts"]],
+        )
 
     def test_prerelease_at_minimum_version_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
@@ -303,20 +322,29 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertIn("--restricted", argv)
         self.assertEqual("none", argv[argv.index("--permission-prompts") + 1])
         self.assertNotIn("--fallback-model", argv)
+        self.assertEqual(
+            "<instructions-path>", argv[argv.index("--append-system-prompt-file") + 1]
+        )
+        self.assertEqual("15", argv[argv.index("--max-budget-usd") + 1])
 
     def test_runner_inlines_only_the_derived_contract_closure(self) -> None:
         worker_input = ""
+        instructions = ""
+        instruction_mode = 0
 
         def runner(
             argv: list[str], **kwargs: object
         ) -> subprocess.CompletedProcess[str]:
-            nonlocal worker_input
+            nonlocal worker_input, instructions, instruction_mode
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             if "--help" in argv:
                 flags = CLAUDE_HELP
                 return subprocess.CompletedProcess(argv, 0, flags, "")
             worker_input = str(kwargs["input"])
+            path = Path(argv[argv.index("--append-system-prompt-file") + 1])
+            instructions = path.read_text()
+            instruction_mode = path.stat().st_mode & 0o777
             envelope = {
                 "type": "result",
                 "subtype": "success",
@@ -331,7 +359,7 @@ class RoutingTransportTests(RoutingTestCase):
             with mock.patch(
                 "aitk.routing_transport.shutil.which", return_value="/bin/claude"
             ):
-                code, _ = run_model(
+                code, payload = run_model(
                     ROOT,
                     "deep-review",
                     "claude",
@@ -341,12 +369,13 @@ class RoutingTransportTests(RoutingTestCase):
                     runner=runner,
                 )
         self.assertEqual(0, code)
+        self.assertEqual(0o600, instruction_mode)
         for contract in (
             "agents/specialists/reviewer.md",
             "rules/code-review.md",
             "rules/severity.md",
         ):
-            self.assertIn(f"CONTRACT path={contract} sha256=", worker_input)
+            self.assertIn(f"CONTRACT path={contract}\n", instructions)
         # The parent's files never reach the reviewer.
         for contract in (
             "rules/model-assignment.md",
@@ -354,15 +383,22 @@ class RoutingTransportTests(RoutingTestCase):
             "skills/review/SKILL.md",
             "skills/review/references/local-review.md",
         ):
-            self.assertNotIn(f"CONTRACT path={contract} sha256=", worker_input)
+            self.assertNotIn(f"CONTRACT path={contract}\n", instructions)
         expected_contracts = resolve_route(
             ROOT,
             "deep-review",
             "claude",
             boundary="review.independent",
         ).required_contracts
-        self.assertEqual(len(expected_contracts), worker_input.count("CONTRACT path="))
-        self.assertNotIn("CONTRACT path=README.md", worker_input)
+        self.assertEqual(len(expected_contracts), instructions.count("CONTRACT path="))
+        self.assertNotIn("CONTRACT path=README.md", instructions)
+        # The user message is the task alone; the digests are in the envelope.
+        self.assertEqual("TASK_BEGIN\nReview this change.\nTASK_END\n", worker_input)
+        self.assertEqual(
+            list(expected_contracts), [item["path"] for item in payload["contracts"]]
+        )
+        for item in payload["contracts"]:
+            self.assertRegex(item["sha256"], r"^[0-9a-f]{64}$")
 
     def test_unreadable_codex_final_message_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
@@ -857,7 +893,7 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(BLOCKED_EXIT, code)
         self.assertEqual(worker, payload["result"])
 
-    def test_the_worker_prompt_states_the_vocabulary_it_is_graded_on(self) -> None:
+    def test_the_worker_instructions_state_the_vocabulary_they_are_graded_on(self) -> None:
         # Enforcement without disclosure is a trap: the runner rejects an
         # untagged fan-out result, so the header the worker reads has to name the
         # tags it will be checked against.
@@ -874,19 +910,19 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertIn(
             "grading=every finding must begin with one of "
             "[major]|[minor]|[nitpick]\n",
-            worker_prompt(code_route, "task", ()),
+            worker_instructions(code_route, ()),
         )
         self.assertIn(
             "grading=every finding must begin with one of [High]|[Medium]|[Low]; "
             "summary must contain a `Verdict: APPROVE|CHANGES_REQUIRED|REPLAN` "
             "line of its own\n",
-            worker_prompt(plan_route, "task", ()),
+            worker_instructions(plan_route, ()),
         )
         # The batch lane's summary is checked line by line, so the header names
         # each line rather than only the finding vocabulary. Tightening the check
         # without tightening this text is exactly the trap the comment above
         # describes, one field over.
-        batch_header = worker_prompt(batch, "task", ())
+        batch_header = worker_instructions(batch, ())
         self.assertIn("every finding must begin with one of [major]", batch_header)
         for label in (
             "PR: #<N> <title>",
@@ -897,7 +933,7 @@ class RoutingTransportTests(RoutingTestCase):
             self.assertIn(label, batch_header)
         # Always emitted, `-` included, so a worker never has to tell "no domain"
         # apart from "header field the runner forgot".
-        self.assertIn("grading=-\n", worker_prompt(plain, "task", ()))
+        self.assertIn("grading=-\n", worker_instructions(plain, ()))
 
     def test_provider_timeout_and_nonzero_exit_fail_closed(self) -> None:
         for failure, expected_exit in (("timeout", None), ("nonzero", 17)):
@@ -1117,6 +1153,245 @@ class RoutingTransportTests(RoutingTestCase):
                         )
                 self.assertEqual(expected_exit, code)
                 self.assertEqual(status, payload["result"]["status"])
+
+
+ADVERSARIAL = "skills/review/references/adversarial.md"
+GUIDANCE_MARKER = "AITK-GUIDANCE-MARKER-7f3a"
+
+
+class InstructionChannelAndRefusalTests(RoutingTestCase):
+    """PY-20 and D15: what reaches a worker, by which channel, and refusals."""
+
+    def run_lane(
+        self,
+        runner: Callable[..., subprocess.CompletedProcess[str]],
+        route: str,
+        provider: str,
+        boundary: str,
+        lens: str | None = None,
+        cwd: Path = ROOT,
+    ) -> tuple[int, dict[str, object]]:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+            prompt.write("Review this change.\n")
+            prompt.flush()
+            with mock.patch(
+                "aitk.routing_transport.shutil.which",
+                side_effect=lambda name: f"/bin/{name}",
+            ):
+                return run_model(
+                    ROOT, route, provider, boundary, Path(prompt.name),
+                    cwd=cwd, runner=runner, lens=lens,
+                )
+
+    def test_codex_gets_contracts_as_developer_instructions_in_an_isolated_home(self) -> None:
+        calls: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as home:
+            # The user's Codex home holds the toolkit's installed guidance, a
+            # personal agent and a skill; only the auth file may reach a worker.
+            Path(home, "auth.json").write_text('{"token": "x"}')
+            Path(home, "AGENTS.md").write_text(f"{GUIDANCE_MARKER}: orchestrate.\n")
+            Path(home, "agents").mkdir()
+            Path(home, "agents", "aitk-planner.toml").write_text(f"# {GUIDANCE_MARKER}\n")
+            Path(home, "skills").mkdir()
+            with mock.patch.dict(os.environ, {"CODEX_HOME": home}):
+                code, payload = self.run_lane(
+                    _codex_runner(RESULT, calls), "review", "codex", "review.independent"
+                )
+            self.assertEqual({"token": "x"}, json.loads(Path(home, "auth.json").read_text()))
+        self.assertEqual(0, code, payload)
+        (call,) = calls
+        self.assertEqual({"auth.json": 0o600}, call["codex_home"])
+        self.assertNotEqual(home, call["env"]["CODEX_HOME"])
+        self.assertFalse(Path(call["env"]["CODEX_HOME"]).exists(), "isolated home outlived the run")
+        argv = call["argv"]
+        everything = "\n".join(argv) + str(call["input"])
+        self.assertNotIn(GUIDANCE_MARKER, everything)
+        overrides = [argv[index + 1] for index, item in enumerate(argv) if item == "--config"]
+        (developer,) = [item for item in overrides if item.startswith("developer_instructions=")]
+        for forbidden in ("instructions=", "model_instructions_file="):
+            self.assertFalse(
+                any(item.startswith(forbidden) for item in overrides), forbidden
+            )
+        text = tomllib.loads(developer)["developer_instructions"]
+        self.assertTrue(text.startswith("AI_TOOLKIT_MODEL_ROUTE_V1\n"))
+        self.assertIn("CONTRACT path=agents/specialists/reviewer.md\n", text)
+        self.assertNotIn("Review this change.", text)
+        self.assertEqual("TASK_BEGIN\nReview this change.\nTASK_END\n", call["input"])
+        self.assertEqual(
+            ["agents/specialists/reviewer.md", "rules/code-review.md", "rules/severity.md"],
+            [item["path"] for item in payload["contracts"]],
+        )
+
+    def test_the_codex_instruction_channel_is_bounded(self) -> None:
+        with mock.patch("aitk.routing_transport.CODEX_INSTRUCTIONS_LIMIT", 1000):
+            with self.assertRaisesRegex(ModelRouteError, "instruction channel limit"):
+                self.run_lane(_codex_runner(RESULT), "review", "codex", "review.independent")
+
+    def test_each_lane_gets_its_own_strict_schema(self) -> None:
+        def strict(schema: dict[str, object]) -> None:
+            self.assertFalse(schema["additionalProperties"])
+            self.assertEqual(sorted(schema["properties"]), sorted(schema["required"]))
+            text = json.dumps(schema).lower()
+            for field in ("reasoning", "rationale"):
+                self.assertNotIn(f'"{field}"', text)
+
+        judo = resolve_route(ROOT, "deep-review", "claude", "review.code-judo")
+        lens = resolve_route(
+            ROOT, "deep-review", "claude", "review.deep-lenses", lens=ADVERSARIAL
+        )
+        plan = resolve_route(ROOT, "review", "claude", "planning.validate")
+        for route in (judo, lens, plan):
+            with self.subTest(boundary=route.boundary):
+                strict(worker_schema(route))
+        self.assertEqual(0, worker_schema(judo)["properties"]["findings"]["maxItems"])
+        self.assertNotIn("maxItems", worker_schema(lens)["properties"]["findings"])
+        self.assertIn("[major]", worker_schema(lens)["properties"]["findings"]["description"])
+        self.assertIn("Verdict:", worker_schema(plan)["properties"]["summary"]["description"])
+        # The schema each provider receives is the lane's own.
+        calls: list[dict[str, object]] = []
+        code, _ = self.run_lane(
+            _codex_runner(RESULT, calls), "deep-review", "codex", "review.code-judo"
+        )
+        self.assertEqual(0, code)
+        self.assertEqual(0, calls[0]["schema"]["properties"]["findings"]["maxItems"])
+        claude_calls: list[dict[str, object]] = []
+        code, _ = self.run_lane(
+            _claude_runner(RESULT, claude_calls), "deep-review", "claude", "review.code-judo"
+        )
+        self.assertEqual(0, code)
+        argv = claude_calls[0]["argv"]
+        schema = json.loads(argv[argv.index("--json-schema") + 1])
+        self.assertEqual(0, schema["properties"]["findings"]["maxItems"])
+
+    def test_claude_gets_contracts_as_a_private_system_prompt_file_and_a_budget(self) -> None:
+        calls: list[dict[str, object]] = []
+        code, payload = self.run_lane(
+            _claude_runner(RESULT, calls), "deep-review", "claude", "review.independent"
+        )
+        self.assertEqual(0, code, payload)
+        (call,) = calls
+        self.assertEqual(0o600, call["instructions_mode"])
+        self.assertIn("CONTRACT path=agents/specialists/reviewer.md\n", call["instructions"])
+        self.assertEqual("TASK_BEGIN\nReview this change.\nTASK_END\n", call["input"])
+        argv = call["argv"]
+        self.assertFalse(Path(argv[argv.index("--append-system-prompt-file") + 1]).exists())
+        self.assertEqual("xhigh", argv[argv.index("--effort") + 1])
+        self.assertEqual("15", argv[argv.index("--max-budget-usd") + 1])
+        code, payload = self.run_lane(
+            _claude_runner(RESULT, calls), "review", "claude", "review.independent"
+        )
+        argv = calls[-1]["argv"]
+        self.assertEqual("high", argv[argv.index("--effort") + 1])
+        self.assertEqual("5", argv[argv.index("--max-budget-usd") + 1])
+
+    def test_a_cli_without_a_required_control_fails_closed(self) -> None:
+        for flag in (
+            "--append-system-prompt",
+            "--max-budget-usd",
+            "--restricted",
+            "--permission-prompts",
+        ):
+            def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+                if "--version" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
+                if "--help" in argv:
+                    help_text = " ".join(
+                        item for item in CLAUDE_HELP.split() if item != flag
+                    )
+                    return subprocess.CompletedProcess(argv, 0, help_text, "")
+                raise AssertionError("the worker must not start")
+
+            with self.subTest(flag=flag):
+                code, payload = self.run_lane(runner, "review", "claude", "review.independent")
+                self.assertEqual(3, code)
+                self.assertFalse(payload["transport"]["started"])
+                self.assertIn("lacks required routing flags", payload["error"]["message"])
+
+    def test_a_refusal_is_recorded_apart_from_an_outage(self) -> None:
+        cases = (
+            ("claude", _claude_runner(RESULT, refusal="refusal"), "refusal"),
+            ("codex", _codex_runner(None, refusal="invalid_prompt"), "invalid_prompt"),
+        )
+        for provider, runner, category in cases:
+            with self.subTest(provider=provider):
+                code, payload = self.run_lane(runner, "review", provider, "review.independent")
+                self.assertEqual(3, code)
+                self.assertEqual(REFUSED_ERROR, payload["error"]["code"])
+                self.assertEqual(category, payload["error"]["category"])
+                self.assertIsNone(payload["reroute"], "only the adversarial lens reroutes")
+                self.assertEqual(provider, payload["provider"])
+        # An ordinary failure event is still an outage, not a refusal.
+        def failing(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+            if "--version" in argv or "--help" in argv:
+                return _codex_runner(None)(argv, **options)
+            event = {"type": "error", "error": {"code": "server_error"}}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(event), "")
+
+        code, payload = self.run_lane(failing, "review", "codex", "review.independent")
+        self.assertEqual(3, code)
+        self.assertEqual("MODEL_ROUTE_UNAVAILABLE", payload["error"]["code"])
+        self.assertNotIn("category", payload["error"])
+
+    def test_a_refused_adversarial_lens_reroutes_once_to_the_other_provider(self) -> None:
+        def both(
+            codex: Callable[..., subprocess.CompletedProcess[str]],
+            claude: Callable[..., subprocess.CompletedProcess[str]],
+            started: list[str],
+        ) -> Callable[..., subprocess.CompletedProcess[str]]:
+            def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+                provider = "codex" if argv[0].endswith("codex") else "claude"
+                if "--version" not in argv and "--help" not in argv:
+                    started.append(provider)
+                return (codex if provider == "codex" else claude)(argv, **options)
+
+            return runner
+
+        # Codex declines the adversarial lens; Claude answers it once.
+        started: list[str] = []
+        code, payload = self.run_lane(
+            both(_codex_runner(None, refusal="cyber_policy"), _claude_runner(RESULT), started),
+            "deep-review", "codex", "review.deep-lenses", lens=ADVERSARIAL,
+        )
+        self.assertEqual(0, code, payload)
+        self.assertEqual(["codex", "claude"], started)
+        self.assertEqual("claude", payload["provider"])
+        self.assertEqual(RESULT, payload["result"])
+        self.assertEqual("codex", payload["reroute"]["from"])
+        self.assertEqual("claude", payload["reroute"]["to"])
+        self.assertEqual("cyber_policy", payload["reroute"]["category"])
+        # A reroute that is refused too stands as refused; there is no third try.
+        started = []
+        code, payload = self.run_lane(
+            both(
+                _codex_runner(None, refusal="cyber_policy"),
+                _claude_runner(RESULT, refusal="refusal"),
+                started,
+            ),
+            "deep-review", "codex", "review.deep-lenses", lens=ADVERSARIAL,
+        )
+        self.assertEqual(3, code)
+        self.assertEqual(["codex", "claude"], started)
+        self.assertEqual(REFUSED_ERROR, payload["error"]["code"])
+        self.assertEqual("codex", payload["reroute"]["from"])
+        # Any other lens's refusal is not rerouted.
+        started = []
+        code, payload = self.run_lane(
+            both(_codex_runner(None, refusal="cyber_policy"), _claude_runner(RESULT), started),
+            "deep-review", "codex", "review.deep-lenses",
+            lens="skills/review/references/deep-quality.md",
+        )
+        self.assertEqual(3, code)
+        self.assertEqual(["codex"], started)
+        self.assertIsNone(payload["reroute"])
+        # The adversarial workflow's own boundary carries the lens too.
+        started = []
+        code, payload = self.run_lane(
+            both(_codex_runner(RESULT), _claude_runner(RESULT, refusal="refusal"), started),
+            "deep-review", "claude", "workflows.adversarial-primary",
+        )
+        self.assertEqual(0, code, payload)
+        self.assertEqual(["claude", "codex"], started)
+        self.assertEqual("refusal", payload["reroute"]["category"])
 
 
 if __name__ == "__main__":

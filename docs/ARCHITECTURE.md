@@ -69,10 +69,15 @@ Same-provider workers are native subagents. Independent review, RCA
 validation, and plan validation prefer the other provider and cross the
 source-linked transport: skills name stable routes at inventoried markers,
 `bin/aitk model-route` resolves selector, effort, and permissions, and
-`bin/aitk model-run` inlines the boundary's validated contract closure, pins one
-selector, forbids fallback, and validates the result envelope. Codex targets run
-from a sanitized temporary project root with a scoped `--add-dir` and no user
-config, hooks, MCP servers, or project documents. Provider result formats do
+`bin/aitk model-run` passes the boundary's explicit contract list through the
+provider's instruction channel (Claude `--append-system-prompt-file`, Codex
+`developer_instructions`) with the task alone in the user message, pins one
+selector and effort, forbids fallback, and validates the result against the
+lane's own schema. Codex targets run with an isolated `CODEX_HOME` that holds
+only the auth file, from an empty temporary project root with a scoped
+`--add-dir`, and with no user config, hooks, MCP servers, or project documents.
+A provider refusal is recorded as `refused`, apart from an outage; a refused
+adversarial lens reroutes once to the other provider, recorded in the result. Provider result formats do
 not attest the internal serving model, so backend substitution stays outside
 the toolkit's evidence boundary.
 

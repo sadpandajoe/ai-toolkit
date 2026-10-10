@@ -13,6 +13,7 @@ from pathlib import Path
 from aitk.routing_policy import (
     ModelRouteError,
     PROVIDERS,
+    REROUTABLE_REFUSAL_CONTRACTS,
     ResolvedRoute,
     _boundary_contracts,
     _lens_domain,
@@ -135,3 +136,19 @@ def resolve_route(
         summary_form=summary_form,
         tools=tuple(str(tool) for tool in item["tools"]),
     )
+
+
+def refusal_reroute(root: Path, route: ResolvedRoute) -> ResolvedRoute | None:
+    """The one other-provider dispatch a refused lane may take, or None (D15).
+
+    Only a dispatch carrying the adversarial lens reroutes, and only to the
+    same route, boundary and lens on the other provider: a reroute is not a
+    downgrade, so nothing about the lane changes but who answers it. The caller
+    records it and never reroutes the reroute.
+    """
+    if route.boundary is None or not REROUTABLE_REFUSAL_CONTRACTS & set(
+        route.required_contracts
+    ):
+        return None
+    other = next(provider for provider in PROVIDERS if provider != route.provider)
+    return resolve_route(root, route.name, other, route.boundary, route.lens)
