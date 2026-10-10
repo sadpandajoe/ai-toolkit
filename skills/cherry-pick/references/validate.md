@@ -45,15 +45,16 @@ Run the bundled script:
 <skill-dir>/scripts/scope-audit.sh <source-commit>
 ```
 
-This produces a mechanical comparison (file list, line counts) — no LLM judgment. It outputs:
-- Extra files in cherry-pick result not in source
-- Missing files (may be legitimate exclusions)
-- Line count divergence per shared file
+This compares the exact changed lines of the source commit and the result, file by file — no LLM judgment. Pass `-C <repo>` to audit another checkout and a second commit to audit something other than `HEAD`. It outputs:
+- Extra files and extra lines in the result, each line with the source-side commits that touched it (`git log -S`)
+- Missing files and missing lines (an adaptation or an incomplete pick), with the target-side commits that touched them
+- A moved-code check for files the source commit adds by moving or copying another file: lines the move carries from a neighbouring source commit
 
 **Interpretation:**
-- **Extra files found** → scope leak until proven otherwise. Investigate each in Step 2.
-- **Line count differs by >20% for a shared file** → flag for hunk-level investigation.
-- **Both checks clean** → Step 2 is still mandatory. Mechanical CLEAN does NOT permit skipping the hunk audit — small leaks inside heavily-touched shared files pass under the 20% threshold. The mechanical pre-check only adjusts confidence; it never removes the hunk audit requirement.
+- **Extra files or lines** → scope leak until proven otherwise. Investigate each in Step 2; the origin names the commit to suspect.
+- **Missing lines** → confirm each is a deliberate adaptation recorded in adapt, not a dropped part of the change.
+- **Moved-code candidates** → leak until proven otherwise (see [../gotchas.md](../gotchas.md) #1).
+- **All clean** → Step 2 is still mandatory. The mechanical pre-check only adjusts confidence; it never removes the hunk audit requirement.
 
 ### Step 2: LLM Hunk-Level Audit
 
@@ -77,7 +78,9 @@ This produces a mechanical comparison (file list, line counts) — no LLM judgme
 Files in source: [N] | Files in cherry-pick: [M]
 Extra files: [list or "none"]
 Missing files: [list or "none"]
-Line count divergence: [list of flagged files or "none"]
+Extra lines: [file: line — origin, or "none"]
+Missing lines: [file: line — adaptation or dropped, or "none"]
+Moved code: [file (from file): carried lines, or "none"]
 Mechanical verdict: CLEAN / FLAGGED
 
 ### Hunk-Level Audit
@@ -114,7 +117,7 @@ pre-commit run --files <changed-file-1> <changed-file-2>
 # or, if pre-commit isn't the repo's tool, use the equivalent CI lint/format command
 ```
 
-`$cherry-pick` authorizes local amend of the in-progress cherry-pick commit for validation-only cleanup before any push. Do not amend older commits, rebase, or push unless the calling workflow separately authorizes that boundary.
+The cherry-pick invocation authorizes this local amend of the in-progress cherry-pick commit before it is pushed, and the fast-forward push itself (see the Authorization Boundary in [../SKILL.md](../SKILL.md)). Do not amend older or pushed commits, rebase, or force-push.
 
 **If pre-commit auto-fixes files** (ruff-format, end-of-files, trailing whitespace, etc.):
 ```bash

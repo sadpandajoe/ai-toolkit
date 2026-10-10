@@ -6,13 +6,15 @@ Format per entry: **Symptom** → **Why** → **Do instead**.
 
 ---
 
-## Clean apply silently leaks code from adjacent commits
+## Code from adjacent commits leaks into a cherry-pick
 
-**Symptom:** `git cherry-pick` succeeds with zero conflicts, build passes, tests pass — and an unrelated change from a neighboring commit on the source branch ships with the cherry-pick.
+**Symptom:** the cherry-pick builds and tests pass — and an unrelated change from a neighbouring commit on the source branch ships with it. It happens with and without conflicts.
 
-**Why:** When the source branch's version of a region differs from the target's, git takes the source side wholesale during a clean apply. If neighboring commits on the source branch touched the same region, their changes ride along. No conflict markers, no scrutiny, no escape hatch.
+**Why:** a cherry-pick applies only the source commit's own diff, so leaked lines arrive one of two ways:
+- **A conflict resolved toward the source side.** Where a neighbouring source commit changed the conflicting region, taking the source version of the hunk (or the file) takes the neighbour's change with it.
+- **Code the source commit moves or copies.** When the commit moves a function or file, the moved text is the source branch's version, so any change a neighbouring commit made to it before the move rides along, even on a clean apply with no conflict markers.
 
-**Do instead:** Run the diff audit (`scripts/scope-audit.sh`) on **every** cherry-pick — including clean applies with zero conflicts. Compare source-commit diff vs cherry-pick result diff. Revert any hunks that don't trace to the cherry-picked commit.
+**Do instead:** run `scripts/scope-audit.sh` on **every** cherry-pick, clean applies included. It compares the exact changed lines of the source commit and the result and names the source-side commit behind each extra line, and its moved-code check lists lines a move carried from a neighbour for each file the source commit adds. Revert any line that does not trace to the cherry-picked commit.
 
 ---
 
