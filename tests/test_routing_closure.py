@@ -65,49 +65,34 @@ class RoutingClosureTests(RoutingTestCase):
         # run, and a negative-membership assertion alone stays green.
         expected = {
             # A deep-lens lane carries exactly one lens plus that lens's own
-            # grading contracts, never its two siblings.
+            # grading contracts, never its two siblings, and never the parent's
+            # review procedure or the routing policy.
             ("review.deep-lenses", "skills/review/references/deep-quality.md"): (
                 "rules/code-review.md",
-                "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/specialist-handoff.md",
-                "skills/review/SKILL.md",
                 "skills/review/references/deep-quality.md",
-                "skills/review/references/local-review.md",
             ),
             ("review.pr-deep-lenses", "skills/review/references/adversarial.md"): (
                 "rules/code-review.md",
-                "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/specialist-handoff.md",
-                "skills/review/SKILL.md",
                 "skills/review/references/adversarial.md",
-                "skills/review/references/pr-review.md",
             ),
             # The independent and delta lanes carry the reviewer contract and
             # the grading rules, and nothing about deep lenses or judo.
             ("review.independent", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
-                "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/specialist-handoff.md",
                 "skills/plan-review/references/backend.md",
                 "skills/plan-review/references/frontend.md",
-                "skills/review/SKILL.md",
-                "skills/review/references/local-review.md",
                 "skills/testing/references/review-tests.md",
             ),
             ("review.delta", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
-                "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/specialist-handoff.md",
                 "skills/plan-review/references/backend.md",
                 "skills/plan-review/references/frontend.md",
-                "skills/review/SKILL.md",
-                "skills/review/references/local-review.md",
                 "skills/testing/references/review-tests.md",
             ),
             # The second-family lane is the independent lane's twin: same
@@ -115,13 +100,9 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.second-family", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
-                "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/specialist-handoff.md",
                 "skills/plan-review/references/backend.md",
                 "skills/plan-review/references/frontend.md",
-                "skills/review/SKILL.md",
-                "skills/review/references/local-review.md",
                 "skills/testing/references/review-tests.md",
             ),
             # The single-finding verifier carries its own contract and the
@@ -130,11 +111,7 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.verify-major", None): (
                 "agents/specialists/finding-verifier.md",
                 "rules/code-review.md",
-                "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/specialist-handoff.md",
-                "skills/review/SKILL.md",
-                "skills/review/references/local-review.md",
             ),
             # The batch worker applies the reviewer contract itself and reads
             # its own payload's classification; the floored deep lenses are
@@ -142,14 +119,10 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.pr-batch", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
-                "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/specialist-handoff.md",
                 "skills/plan-review/references/backend.md",
                 "skills/plan-review/references/frontend.md",
-                "skills/review/SKILL.md",
                 "skills/review/references/classify-diff.md",
-                "skills/review/references/pr-batch.md",
                 "skills/testing/references/review-tests.md",
             ),
             # Plan validation is one worker with the validator contract plus
@@ -157,23 +130,11 @@ class RoutingClosureTests(RoutingTestCase):
             # never rides along.
             ("planning.validate", None): (
                 "agents/specialists/plan-validator.md",
-                "rules/model-assignment.md",
                 "rules/severity.md",
-                "rules/specialist-handoff.md",
                 "skills/plan-review/references/implementation.md",
-                "skills/planning/SKILL.md",
-                "skills/planning/references/validate-plan.md",
                 "skills/testing/references/review-testplan.md",
             ),
-            ("debug.rca-specialist", None): (
-                "agents/specialists/rca.md",
-                "rules/model-assignment.md",
-                "rules/specialist-handoff.md",
-                "skills/debug/SKILL.md",
-                "skills/debug/gotchas.md",
-                "skills/debug/lessons.md",
-                "skills/debug/references/review-rca.md",
-            ),
+            ("debug.rca-specialist", None): ("agents/specialists/rca.md",),
         }
         allowed = {b["id"]: b for b in payload["dispatch_boundaries"]}
         for (identifier, lens), contracts in expected.items():
@@ -343,30 +304,79 @@ class RoutingClosureTests(RoutingTestCase):
                         self.assertIn("rules/code-review.md", contracts)
                         self.assertIn("rules/severity.md", contracts)
 
-    def test_boundary_closure_includes_owner_and_responsibility_skills(self) -> None:
+    def test_implementation_closure_is_its_declared_contract_list(self) -> None:
+        """An implementer receives its contract, not the parent's procedure.
+
+        The closure used to start from structural seeds -- the routing policy,
+        the owning workflow skill and the boundary document -- so every worker
+        was handed the orchestration it must never perform. It is now exactly the
+        boundary's `contracts` plus what they declare.
+        """
         resolved = resolve_route(
             ROOT,
             "implementation",
             "claude",
             boundary="workflows.create-feature-implementation",
         )
+        self.assertEqual(
+            ("skills/implement-change/SKILL.md", "rules/implementation.md"),
+            resolved.required_contracts[:2],
+        )
         for contract in (
             "rules/model-assignment.md",
+            "rules/specialist-handoff.md",
             "skills/workflows/SKILL.md",
-            "skills/implement-change/SKILL.md",
             "skills/workflows/references/create-feature.md",
-            "rules/implementation.md",
-            "rules/testing.md",
         ):
-            self.assertIn(contract, resolved.required_contracts)
+            self.assertNotIn(contract, resolved.required_contracts)
 
-    def test_missing_derived_domain_contract_fails_validation(self) -> None:
+    def test_every_listed_contract_exists_and_no_worker_gets_parent_files(self) -> None:
+        """Each lane's list names real files; parent-only files reach no worker.
+
+        The routing policy and the handoff rules are the parent's. A critic --
+        any review-route lane -- is also kept away from the parent's review
+        procedure, the gate rules, and any file that sends it to PROJECT.md,
+        because each carries the parent's view into a lane whose worth is that
+        it has none.
+        """
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        routes = {route["name"]: route for route in payload["routes"]}
+        parent_only = {"rules/model-assignment.md", "rules/specialist-handoff.md"}
+        critic_excluded = parent_only | {
+            "skills/review/references/local-review.md",
+            "rules/gates.md",
+        }
+        for boundary in payload["dispatch_boundaries"]:
+            with self.subTest(boundary=boundary["id"]):
+                self.assertTrue(boundary.get("contracts"), "no contract list")
+                for contract in boundary["contracts"]:
+                    self.assertTrue((ROOT / contract).is_file(), contract)
+            lens = _a_lens_named_at(boundary)
+            for route in _routes_for(boundary, lens):
+                critic = routes[route]["responsibility"] == "review"
+                excluded = critic_excluded if critic else parent_only
+                with self.subTest(boundary=boundary["id"], route=route):
+                    contracts = resolve_route(
+                        ROOT, route, "claude", boundary=boundary["id"], lens=lens
+                    ).required_contracts
+                    self.assertEqual(set(), excluded & set(contracts))
+                    if critic:
+                        for contract in contracts:
+                            self.assertNotIn(
+                                "If PROJECT.md exists", (ROOT / contract).read_text()
+                            )
+
+    def test_missing_listed_contract_fails_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
-            (root / "skills/review/SKILL.md").unlink()
+            (root / "agents/specialists/finding-verifier.md").unlink()
             problems = validate_model_routing(root)
             self.assertTrue(
-                any("missing required boundary contract" in item for item in problems),
+                any(
+                    "missing required boundary contract: review.verify-major" in item
+                    and "agents/specialists/finding-verifier.md" in item
+                    for item in problems
+                ),
                 problems,
             )
 

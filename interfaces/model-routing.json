@@ -44,6 +44,13 @@
       "name": "implementation",
       "reasoning": "standard",
       "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write"
+      ],
       "responsibility": "implementation",
       "restrictions": [
         "Implement only the bounded task contract.",
@@ -66,6 +73,15 @@
       "name": "planning",
       "reasoning": "standard",
       "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "planning",
       "restrictions": [
         "Produce a bounded plan, decomposition, or phase plan from the supplied context.",
@@ -92,6 +108,15 @@
       "name": "review",
       "reasoning": "standard",
       "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "review",
       "restrictions": [
         "Perform an independent read-only review.",
@@ -118,6 +143,15 @@
       "name": "deep-review",
       "reasoning": "deep",
       "effort": "xhigh",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "review",
       "restrictions": [
         "Perform an independent read-only architecture, security, adversarial, or cold review.",
@@ -144,6 +178,15 @@
       "name": "rca",
       "reasoning": "standard",
       "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "rca",
       "restrictions": [
         "Synthesize root cause from supplied evidence.",
@@ -170,6 +213,15 @@
       "name": "deep-rca",
       "reasoning": "deep",
       "effort": "xhigh",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "rca",
       "restrictions": [
         "Synthesize ambiguous, intermittent, history-dependent, or cross-system root cause from supplied evidence.",
@@ -196,6 +248,11 @@
       "name": "operations",
       "reasoning": "standard",
       "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
       "responsibility": "operations",
       "restrictions": [
         "Collect read-only evidence, produce deterministic reports, or prepare already-authored API, ticket, or Playwright steps for parent execution.",
@@ -226,6 +283,10 @@
       "count": 1,
       "routes": [
         "planning"
+      ],
+      "contracts": [
+        "skills/planning/references/decompose-work.md",
+        "skills/planning/references/plan-implementation.md"
       ]
     },
     {
@@ -234,6 +295,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -242,6 +307,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -250,6 +319,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -258,6 +331,9 @@
       "count": 1,
       "routes": [
         "operations"
+      ],
+      "contracts": [
+        "rules/ci-evidence.md"
       ]
     },
     {
@@ -266,6 +342,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -277,7 +357,9 @@
       ],
       "lens_domain": "code",
       "contracts": [
-        "skills/review/references/adversarial.md"
+        "skills/review/references/adversarial.md",
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -289,7 +371,9 @@
       ],
       "lens_domain": "code",
       "contracts": [
-        "skills/review/references/adversarial.md"
+        "skills/review/references/adversarial.md",
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -339,6 +423,9 @@
       "routes": [
         "rca",
         "deep-rca"
+      ],
+      "contracts": [
+        "skills/debug/references/ci-classify-failure.md"
       ]
     },
     {
@@ -352,7 +439,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -366,7 +454,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -383,7 +472,8 @@
         "skills/plan-review/references/architecture.md"
       ],
       "contracts": [
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -397,7 +487,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -411,7 +502,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/finding-verifier.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -425,7 +517,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -439,7 +532,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -456,7 +550,8 @@
         "skills/plan-review/references/architecture.md"
       ],
       "contracts": [
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -471,7 +566,9 @@
       "summary_form": "pr-batch",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md",
+        "skills/review/references/classify-diff.md"
       ]
     },
     {
@@ -528,6 +625,10 @@
       "routes": [
         "rca",
         "deep-rca"
+      ],
+      "contracts": [
+        "skills/cherry-pick/references/investigate.md",
+        "skills/cherry-pick/gotchas.md"
       ]
     },
     {
@@ -536,6 +637,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -545,6 +650,9 @@
       "routes": [
         "review",
         "deep-review"
+      ],
+      "contracts": [
+        "skills/cherry-pick/references/validate.md"
       ]
     },
     {
@@ -554,6 +662,9 @@
       "routes": [
         "review",
         "deep-review"
+      ],
+      "contracts": [
+        "skills/cherry-pick/references/validate.md"
       ]
     },
     {
@@ -562,6 +673,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -570,6 +685,11 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md",
+        "skills/testing/rules.md"
       ]
     },
     {
@@ -590,6 +710,9 @@
       "count": 1,
       "routes": [
         "operations"
+      ],
+      "contracts": [
+        "skills/shortcut/references/fetch.md"
       ]
     }
   ],

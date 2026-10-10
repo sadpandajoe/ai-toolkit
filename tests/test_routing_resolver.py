@@ -28,16 +28,22 @@ class RoutingResolverTests(RoutingTestCase):
             boundary="review.independent",
         )
         self.assertEqual("review.independent", resolved.boundary)
+        # The lane's own list, in order, and none of the parent's files.
+        self.assertEqual(
+            (
+                "agents/specialists/reviewer.md",
+                "rules/code-review.md",
+                "rules/severity.md",
+            ),
+            resolved.required_contracts[:3],
+        )
         for contract in (
             "rules/model-assignment.md",
             "rules/specialist-handoff.md",
             "skills/review/SKILL.md",
             "skills/review/references/local-review.md",
-            "agents/specialists/reviewer.md",
-            "rules/code-review.md",
-            "rules/severity.md",
         ):
-            self.assertIn(contract, resolved.required_contracts)
+            self.assertNotIn(contract, resolved.required_contracts)
         self.assertEqual("code", resolved.lens_domain)
         with self.assertRaisesRegex(ModelRouteError, "not allowed at boundary"):
             resolve_route(
@@ -57,7 +63,12 @@ class RoutingResolverTests(RoutingTestCase):
             ROOT, "planning", "claude", boundary="workflows.create-feature-planning"
         )
         self.assertEqual("fable", planner.family)
-        self.assertIn("skills/planning/SKILL.md", planner.required_contracts)
+        for contract in (
+            "skills/planning/references/decompose-work.md",
+            "skills/planning/references/plan-implementation.md",
+        ):
+            self.assertIn(contract, planner.required_contracts)
+        self.assertNotIn("skills/planning/SKILL.md", planner.required_contracts)
 
     def test_deep_lens_route_boundaries_enforce_tier(self) -> None:
         # Code-judo is pinned to the deep tier: it accepts deep-review, rejects
@@ -67,12 +78,7 @@ class RoutingResolverTests(RoutingTestCase):
         )
         self.assertEqual("review.code-judo", judo.boundary)
         self.assertEqual(
-            (
-                "rules/model-assignment.md",
-                "rules/specialist-handoff.md",
-                "skills/review/SKILL.md",
-                "skills/review/references/code-judo.md",
-            ),
+            ("skills/review/references/code-judo.md",),
             tuple(sorted(judo.required_contracts)),
         )
         self.assertTrue(judo.unscored)

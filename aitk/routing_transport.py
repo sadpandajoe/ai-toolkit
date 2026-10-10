@@ -32,6 +32,7 @@ from aitk.routing_policy import (
     UNAVAILABLE_ERROR,
     VERSION_PATTERN,
     WORKER_SCHEMA,
+    _tool_name,
 )
 from aitk.routing_closure import _contracts
 from aitk.routing_resolver import resolve_route
@@ -293,18 +294,39 @@ def _required_flags(route: ResolvedRoute) -> tuple[str, ...]:
         "--print",
         "--no-session-persistence",
         "--safe-mode",
+        "--restricted",
         "--strict-mcp-config",
         "--mcp-config",
         "--model",
         "--effort",
         "--permission-mode",
+        "--permission-prompts",
         "--json-schema",
         "--output-format",
         "--tools",
     ]
     if route.controls.get("disallowed_tools"):
         flags.append("--disallowedTools")
+    if _claude_tool_rules(route):
+        flags.append("--allowedTools")
     return tuple(flags)
+
+
+def _claude_tool_box(route: ResolvedRoute) -> list[str]:
+    """The bare built-in tools a Claude worker may use, in manifest order.
+
+    `--tools` takes tool names only, so a `Bash(git log *)` entry contributes
+    `Bash` here and its command rule to `--allowedTools`. Under `--restricted` a
+    command-running tool exists only when named here, and with
+    `--permission-prompts none` any Bash call that no rule allows is denied
+    rather than left waiting for an answer nobody can give.
+    """
+    return list(dict.fromkeys(_tool_name(entry) for entry in route.tools))
+
+
+def _claude_tool_rules(route: ResolvedRoute) -> list[str]:
+    """The command-scoped permission rules (`Bash(git log *)`) in the tool box."""
+    return [entry for entry in route.tools if "(" in entry]
 
 
 def _has_flag(help_text: str, flag: str) -> bool:
@@ -422,6 +444,7 @@ def _argv(
         "--print",
         "--no-session-persistence",
         "--safe-mode",
+        "--restricted",
         "--strict-mcp-config",
         "--mcp-config",
         '{"mcpServers": {}}',
@@ -431,16 +454,16 @@ def _argv(
         route.effort,
         "--permission-mode",
         str(route.controls["permission_mode"]),
+        "--permission-prompts",
+        "none",
     ]
-    tools = route.controls.get("disallowed_tools", [])
-    if tools:
-        result.extend(["--disallowedTools", *tools])
-    available_tools = (
-        ["Read", "Grep", "Glob", "Edit", "Write"]
-        if route.responsibility == "implementation"
-        else ["Read", "Grep", "Glob"]
-    )
-    result.extend(["--tools", *available_tools])
+    disallowed = route.controls.get("disallowed_tools", [])
+    if disallowed:
+        result.extend(["--disallowedTools", *disallowed])
+    result.extend(["--tools", *_claude_tool_box(route)])
+    rules = _claude_tool_rules(route)
+    if rules:
+        result.extend(["--allowedTools", *rules])
     result.extend(["--json-schema", schema, "--output-format", "json"])
     return result
 

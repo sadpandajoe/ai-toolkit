@@ -349,6 +349,109 @@ class RoutingManifestTests(RoutingTestCase):
             self.assertEqual([], validate_model_routing(root))
             manifest.write_text(pristine)
 
+    def test_every_lane_declares_a_well_formed_contract_list(self) -> None:
+        """The list is the worker's whole contract, so it must exist and be sane.
+
+        Nothing is inherited from the boundary document any more: a lane with no
+        list would dispatch a worker with no instructions, and a list that names
+        a parent-only file hands the worker the orchestration it must never do.
+        """
+        cases = (
+            (lambda b: b.pop("contracts"), "invalid dispatch boundary contracts: review.independent"),
+            (lambda b: b.update(contracts=[]), "invalid dispatch boundary contracts: review.independent"),
+            (
+                lambda b: b.update(contracts=["rules/severity.md", "rules/severity.md"]),
+                "invalid dispatch boundary contracts: review.independent",
+            ),
+            (lambda b: b.update(contracts=["rules/severity.txt"]), "invalid dispatch boundary contracts: review.independent"),
+            (lambda b: b.update(contracts=["../rules/severity.md"]), "invalid dispatch boundary contracts: review.independent"),
+            (lambda b: b.update(contracts=["README.md"]), "invalid dispatch boundary contracts: review.independent"),
+            (
+                lambda b: b.update(contracts=["rules/no-such-contract.md"]),
+                "missing required boundary contract: review.independent: rules/no-such-contract.md",
+            ),
+            (
+                lambda b: b["contracts"].append("rules/model-assignment.md"),
+                "review.independent hands its worker a parent-only contract: rules/model-assignment.md",
+            ),
+            (
+                lambda b: b["contracts"].append("rules/gates.md"),
+                "review.independent hands its worker a parent-only contract: rules/gates.md",
+            ),
+            (
+                lambda b: b["contracts"].append("skills/review/references/local-review.md"),
+                "review.independent hands its worker a parent-only contract: skills/review/references/local-review.md",
+            ),
+            (
+                lambda b: b["contracts"].append("skills/pm/references/review-feature-brief.md"),
+                "review.independent hands a critic a contract that sends it to PROJECT.md",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            self.assertEqual([], validate_model_routing(root))
+            for mutate, expected in cases:
+                with self.subTest(expected=expected):
+                    payload = json.loads(pristine)
+                    mutate(
+                        next(
+                            item
+                            for item in payload["dispatch_boundaries"]
+                            if item["id"] == "review.independent"
+                        )
+                    )
+                    manifest.write_text(json.dumps(payload))
+                    with self.assertRaisesRegex(ModelRouteError, re.escape(expected)):
+                        load_model_routing(root)
+            # The routing policy is parent-only on an implementation lane too;
+            # the gate rules are refused only to critics.
+            payload = json.loads(pristine)
+            implementation = next(
+                item
+                for item in payload["dispatch_boundaries"]
+                if item["id"] == "workflows.fix-bug-implementation"
+            )
+            implementation["contracts"].append("rules/specialist-handoff.md")
+            manifest.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(
+                ModelRouteError,
+                "fix-bug-implementation hands its worker a parent-only contract",
+            ):
+                load_model_routing(root)
+            implementation["contracts"][-1] = "rules/gates.md"
+            manifest.write_text(json.dumps(payload))
+            self.assertEqual([], validate_model_routing(root))
+            manifest.write_text(pristine)
+
+    def test_route_tool_boxes_are_pinned(self) -> None:
+        """A tool box is widened by an edit to the policy, never by the manifest alone."""
+        def route(payload: dict[str, object], name: str) -> dict[str, object]:
+            return next(item for item in payload["routes"] if item["name"] == name)
+
+        cases = (
+            (lambda p: route(p, "review").pop("tools"), "invalid model route entry"),
+            (lambda p: route(p, "review")["tools"].append("Edit"), "review: tools do not match policy"),
+            (lambda p: route(p, "planning")["tools"].append("Bash(git push *)"), "planning: tools must be"),
+            (lambda p: route(p, "rca")["tools"].append("Bash"), "rca: tools do not match policy"),
+            (lambda p: route(p, "implementation").update(tools=[]), "implementation: tools must be"),
+            (lambda p: route(p, "operations")["tools"].append("Read"), "operations: tools must be"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            for mutate, expected in cases:
+                with self.subTest(expected=expected):
+                    payload = json.loads(pristine)
+                    mutate(payload)
+                    manifest.write_text(json.dumps(payload))
+                    with self.assertRaisesRegex(ModelRouteError, re.escape(expected)):
+                        load_model_routing(root)
+            manifest.write_text(pristine)
+            self.assertEqual([], validate_model_routing(root))
+
     def test_malformed_manifest_is_a_stable_route_error(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)

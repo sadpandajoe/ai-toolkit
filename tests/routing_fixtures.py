@@ -32,6 +32,28 @@ MODEL_ROUTE_FLOORS = {
 }
 
 
+# Every flag the runner's preflight looks for in each provider's help text. One
+# copy, so a test stub cannot drift from the flags `_required_flags` demands.
+CLAUDE_HELP = " ".join(
+    (
+        "--print --no-session-persistence --safe-mode --restricted",
+        "--strict-mcp-config --mcp-config --model --effort",
+        "--permission-mode --permission-prompts --json-schema --output-format",
+        "--disallowedTools --allowedTools --tools --append-system-prompt",
+        "--max-budget-usd",
+    )
+)
+
+
+CODEX_HELP = " ".join(
+    (
+        "--ephemeral --strict-config --ignore-user-config --ignore-rules",
+        "--skip-git-repo-check --disable --model --config --sandbox --cd",
+        "--add-dir --output-schema --output-last-message --json",
+    )
+)
+
+
 def _claude_runner(
     worker: dict[str, object],
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
@@ -41,15 +63,7 @@ def _claude_runner(
         if "--version" in argv:
             return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
         if "--help" in argv:
-            flags = " ".join(
-                (
-                    "--print --no-session-persistence --safe-mode ",
-                    "--strict-mcp-config --mcp-config --model --effort ",
-                    "--permission-mode --json-schema --output-format ",
-                    "--disallowedTools --tools",
-                )
-            )
-            return subprocess.CompletedProcess(argv, 0, flags, "")
+            return subprocess.CompletedProcess(argv, 0, CLAUDE_HELP, "")
         return subprocess.CompletedProcess(
             argv,
             0,
@@ -62,6 +76,42 @@ def _claude_runner(
                 }
             ),
             "",
+        )
+
+    return runner
+
+
+def _codex_runner(
+    worker: dict[str, object] | None,
+    calls: list[dict[str, object]] | None = None,
+) -> Callable[..., subprocess.CompletedProcess[str]]:
+    """A stub `codex` that passes preflight and writes one final worker message.
+
+    `calls` collects each worker invocation's argv, environment and stdin so a
+    test can check what actually reached the worker. A `None` worker writes no
+    final message at all.
+    """
+
+    def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
+        if "--help" in argv:
+            return subprocess.CompletedProcess(argv, 0, CODEX_HELP, "")
+        if calls is not None:
+            calls.append(
+                {
+                    "argv": list(argv),
+                    "env": dict(options.get("env") or {}),
+                    "input": options.get("input"),
+                    "cwd": options.get("cwd"),
+                }
+            )
+        if worker is not None:
+            Path(argv[argv.index("--output-last-message") + 1]).write_text(
+                json.dumps(worker)
+            )
+        return subprocess.CompletedProcess(
+            argv, 0, json.dumps({"type": "turn.completed"}), ""
         )
 
     return runner

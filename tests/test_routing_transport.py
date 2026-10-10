@@ -28,6 +28,8 @@ from aitk.model_routing import (
 
 from routing_fixtures import (
     ROOT,
+    CLAUDE_HELP,
+    CODEX_HELP,
     MODEL_CATALOG,
     _claude_runner,
     RESULT,
@@ -132,14 +134,7 @@ class RoutingTransportTests(RoutingTestCase):
             calls.append(argv)
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
-            flags = " ".join(
-                (
-                    "--ephemeral --strict-config --ignore-user-config --ignore-rules ",
-                    "--skip-git-repo-check ",
-                    "--disable --model --config --sandbox --cd --add-dir --output-schema ",
-                    "--output-last-message --json",
-                )
-            )
+            flags = CODEX_HELP
             return subprocess.CompletedProcess(argv, 0, flags, "")
 
         with tempfile.TemporaryDirectory() as cwd, tempfile.NamedTemporaryFile(
@@ -213,16 +208,7 @@ class RoutingTransportTests(RoutingTestCase):
 
     def test_cli_one_release_below_the_provider_floor_fails_closed(self) -> None:
         """GPT-6.1 Sol needs Codex 0.159.3 and Sonnet 5.5 needs Claude Code 2.1.284."""
-        ALL_FLAGS = " ".join(
-            (
-                "--ephemeral --strict-config --ignore-user-config --ignore-rules",
-                "--skip-git-repo-check --disable --model --config --sandbox --cd",
-                "--add-dir --output-schema --output-last-message --json",
-                "--print --no-session-persistence --safe-mode --strict-mcp-config",
-                "--mcp-config --effort --permission-mode --json-schema",
-                "--output-format --disallowedTools --tools",
-            )
-        )
+        ALL_FLAGS = CODEX_HELP + " " + CLAUDE_HELP
         cases = (
             ("codex", "/bin/codex", "codex-cli 0.159.2\n"),
             ("claude", "/bin/claude", "2.1.283\n"),
@@ -264,13 +250,7 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-            flags = " ".join(
-                (
-                    "--print --no-session-persistence --safe-mode --strict-mcp-config ",
-                    "--mcp-config --model --effort --permission-mode --json-schema ",
-                    "--output-format --disallowedTools --tools",
-                )
-            )
+            flags = CLAUDE_HELP
             return subprocess.CompletedProcess(argv, 0, flags, "")
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
@@ -303,9 +283,25 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(
             '{"mcpServers": {}}', argv[argv.index("--mcp-config") + 1]
         )
+        # The review routes get read-only git: bare `Bash` in the tool box, and
+        # only the git read commands allowed. `--restricted` keeps every other
+        # command-running tool out, and with `--permission-prompts none` any
+        # Bash call no rule allows is denied instead of waiting on a prompt.
         tool_start = argv.index("--tools") + 1
-        tool_end = argv.index("--json-schema")
-        self.assertEqual(["Read", "Grep", "Glob"], argv[tool_start:tool_end])
+        tool_end = argv.index("--allowedTools")
+        self.assertEqual(["Read", "Grep", "Glob", "Bash"], argv[tool_start:tool_end])
+        rules_end = argv.index("--json-schema")
+        self.assertEqual(
+            [
+                "Bash(git log *)",
+                "Bash(git show *)",
+                "Bash(git diff *)",
+                "Bash(git blame *)",
+            ],
+            argv[tool_end + 1 : rules_end],
+        )
+        self.assertIn("--restricted", argv)
+        self.assertEqual("none", argv[argv.index("--permission-prompts") + 1])
         self.assertNotIn("--fallback-model", argv)
 
     def test_runner_inlines_only_the_derived_contract_closure(self) -> None:
@@ -318,14 +314,7 @@ class RoutingTransportTests(RoutingTestCase):
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--print --no-session-persistence --safe-mode ",
-                        "--strict-mcp-config --mcp-config --model --effort ",
-                        "--permission-mode --json-schema --output-format ",
-                        "--disallowedTools --tools",
-                    )
-                )
+                flags = CLAUDE_HELP
                 return subprocess.CompletedProcess(argv, 0, flags, "")
             worker_input = str(kwargs["input"])
             envelope = {
@@ -353,11 +342,19 @@ class RoutingTransportTests(RoutingTestCase):
                 )
         self.assertEqual(0, code)
         for contract in (
-            "rules/model-assignment.md",
-            "skills/review/SKILL.md",
             "agents/specialists/reviewer.md",
+            "rules/code-review.md",
+            "rules/severity.md",
         ):
             self.assertIn(f"CONTRACT path={contract} sha256=", worker_input)
+        # The parent's files never reach the reviewer.
+        for contract in (
+            "rules/model-assignment.md",
+            "rules/specialist-handoff.md",
+            "skills/review/SKILL.md",
+            "skills/review/references/local-review.md",
+        ):
+            self.assertNotIn(f"CONTRACT path={contract} sha256=", worker_input)
         expected_contracts = resolve_route(
             ROOT,
             "deep-review",
@@ -372,13 +369,7 @@ class RoutingTransportTests(RoutingTestCase):
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
             if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--ephemeral --strict-config --ignore-user-config ",
-                        "--ignore-rules --skip-git-repo-check --disable --model --config --sandbox ",
-                        "--cd --add-dir --output-schema --output-last-message --json",
-                    )
-                )
+                flags = CODEX_HELP
                 return subprocess.CompletedProcess(argv, 0, flags, "")
             output_path = Path(argv[argv.index("--output-last-message") + 1])
             output_path.write_bytes(b"\xff")
@@ -408,13 +399,7 @@ class RoutingTransportTests(RoutingTestCase):
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
             if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--ephemeral --strict-config --ignore-user-config ",
-                        "--ignore-rules --skip-git-repo-check --disable --model --config --sandbox ",
-                        "--cd --add-dir --output-schema --output-last-message --json",
-                    )
-                )
+                flags = CODEX_HELP
                 return subprocess.CompletedProcess(argv, 0, flags, "")
             output_path = Path(argv[argv.index("--output-last-message") + 1])
             output_path.write_text(json.dumps(RESULT))
@@ -450,11 +435,7 @@ class RoutingTransportTests(RoutingTestCase):
                 if "--version" in argv:
                     return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
                 if "--help" in argv:
-                    flags = (
-                        "--ephemeral --strict-config --ignore-user-config --ignore-rules "
-                        "--skip-git-repo-check --disable --model --config --sandbox "
-                        "--cd --add-dir --output-schema --output-last-message --json"
-                    )
+                    flags = CODEX_HELP
                     return subprocess.CompletedProcess(argv, 0, flags, "")
                 root = Path(argv[argv.index("--cd") + 1])
                 self.assertEqual(root, Path(str(options["cwd"])))
@@ -501,14 +482,7 @@ class RoutingTransportTests(RoutingTestCase):
                 if "--version" in argv:
                     return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                 if "--help" in argv:
-                    flags = " ".join(
-                        (
-                            "--print --no-session-persistence --safe-mode ",
-                            "--strict-mcp-config --mcp-config --model --effort ",
-                            "--permission-mode --json-schema --output-format ",
-                            "--disallowedTools --tools",
-                        )
-                    )
+                    flags = CLAUDE_HELP
                     return subprocess.CompletedProcess(argv, 0, flags, "")
                 return subprocess.CompletedProcess(
                     argv,
@@ -935,14 +909,7 @@ class RoutingTransportTests(RoutingTestCase):
                     if "--version" in argv:
                         return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                     if "--help" in argv:
-                        flags = " ".join(
-                            (
-                                "--print --no-session-persistence --safe-mode ",
-                                "--strict-mcp-config --mcp-config --model --effort ",
-                                "--permission-mode --json-schema --output-format ",
-                                "--disallowedTools --tools",
-                            )
-                        )
+                        flags = CLAUDE_HELP
                         return subprocess.CompletedProcess(argv, 0, flags, "")
                     if failure == "timeout":
                         raise subprocess.TimeoutExpired(argv, 1)
@@ -982,14 +949,7 @@ class RoutingTransportTests(RoutingTestCase):
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--print --no-session-persistence --safe-mode ",
-                        "--strict-mcp-config --mcp-config --model --effort ",
-                        "--permission-mode --json-schema --output-format ",
-                        "--disallowedTools --tools",
-                    )
-                )
+                flags = CLAUDE_HELP
                 return subprocess.CompletedProcess(argv, 0, flags, "")
             return subprocess.CompletedProcess(argv, 1, "", "x" * 5000)
 
@@ -1021,14 +981,7 @@ class RoutingTransportTests(RoutingTestCase):
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--print --no-session-persistence --safe-mode ",
-                        "--strict-mcp-config --mcp-config --model --effort ",
-                        "--permission-mode --json-schema --output-format ",
-                        "--disallowedTools --tools",
-                    )
-                )
+                flags = CLAUDE_HELP
                 return subprocess.CompletedProcess(argv, 0, flags, "")
             return subprocess.CompletedProcess(
                 argv,
@@ -1133,14 +1086,7 @@ class RoutingTransportTests(RoutingTestCase):
                     if "--version" in argv:
                         return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                     if "--help" in argv:
-                        flags = " ".join(
-                            (
-                                "--print --no-session-persistence --safe-mode ",
-                                "--strict-mcp-config --mcp-config --model --effort ",
-                                "--permission-mode --json-schema --output-format ",
-                                "--disallowedTools --tools",
-                            )
-                        )
+                        flags = CLAUDE_HELP
                         return subprocess.CompletedProcess(argv, 0, flags, "")
                     value = {**RESULT, "status": status}
                     envelope = {

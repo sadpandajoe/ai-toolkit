@@ -89,14 +89,19 @@ class CliTests(unittest.TestCase):
         self.assertEqual("read-only", payload["controls"]["sandbox"])
         self.assertEqual("plan", payload["lens_domain"])
         for contract in (
-            "rules/model-assignment.md",
-            "rules/specialist-handoff.md",
-            "skills/planning/SKILL.md",
-            "skills/planning/references/validate-plan.md",
             "agents/specialists/plan-validator.md",
             "rules/severity.md",
         ):
             self.assertIn(contract, payload["required_contracts"])
+        # The validator is a critic: no routing policy, handoff rules, planning
+        # skill, or the parent's validate-plan procedure.
+        for parent_file in (
+            "rules/model-assignment.md",
+            "rules/specialist-handoff.md",
+            "skills/planning/SKILL.md",
+            "skills/planning/references/validate-plan.md",
+        ):
+            self.assertNotIn(parent_file, payload["required_contracts"])
         # The validator inlines its plan checklists but never the code-review
         # umbrella, the code grading rules, or the floored architecture lens.
         self.assertIn(

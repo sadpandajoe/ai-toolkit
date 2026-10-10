@@ -108,8 +108,6 @@ one level.
   on a CORE path is reviewed as STANDARD with no review exception.
 - **History audit before "wrong semantics".** Check whether an apparent
   regression is a deliberate reversal the history already justifies.
-- **Do not steer the reviewer.** The prompt supplies diff facts, risk flags, and
-  posture; never a finding shape.
 
 ## Invalid Findings
 

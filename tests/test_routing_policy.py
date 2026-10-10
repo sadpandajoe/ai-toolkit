@@ -57,6 +57,23 @@ class RoutingPolicyTests(RoutingTestCase):
         self.assertEqual(
             ["Write", "Edit", "NotebookEdit"], planning.controls["disallowed_tools"]
         )
+        # Read-only git, so the planner can read history; nothing that edits.
+        self.assertEqual(
+            (
+                "Read",
+                "Grep",
+                "Glob",
+                "Bash(git log *)",
+                "Bash(git show *)",
+                "Bash(git diff *)",
+                "Bash(git blame *)",
+            ),
+            planning.tools,
+        )
+        self.assertEqual(
+            ("Read", "Grep", "Glob", "Edit", "Write"),
+            implementation.tools,
+        )
         # Opus is the standard judgment tier, so Fable stays a distinct
         # escalation rung above review and RCA.
         for name in ("review", "rca"):

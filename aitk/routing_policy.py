@@ -79,6 +79,64 @@ ROUTE_RESTRICTIONS = {
 LENS_DOMAINS = ("code", "plan")
 
 
+# The tool box each route's worker gets, pinned like the restrictions so that
+# widening it is an edit here and not one quiet manifest line. Bare names are
+# Claude built-in tools; a `Bash(<command> *)` entry is a permission rule that
+# lets the worker run only that read-only git command. The judgment routes need
+# history (`git log`, `git show`, `git blame`) to check a claim against the code,
+# which the old fixed `Read Grep Glob` box could not do.
+READ_ONLY_GIT_TOOLS = (
+    "Read",
+    "Grep",
+    "Glob",
+    "Bash(git log *)",
+    "Bash(git show *)",
+    "Bash(git diff *)",
+    "Bash(git blame *)",
+)
+
+
+ROUTE_TOOLS: dict[str, tuple[str, ...]] = {
+    "implementation": ("Read", "Grep", "Glob", "Edit", "Write"),
+    "planning": READ_ONLY_GIT_TOOLS,
+    "review": READ_ONLY_GIT_TOOLS,
+    "deep-review": READ_ONLY_GIT_TOOLS,
+    "rca": READ_ONLY_GIT_TOOLS,
+    "deep-rca": READ_ONLY_GIT_TOOLS,
+    "operations": ("Read", "Grep", "Glob"),
+}
+
+
+TOOL_ENTRY = re.compile(r"(?:[A-Z][A-Za-z]+|Bash\(git (?:log|show|diff|blame) \*\))")
+
+
+def _tool_name(entry: str) -> str:
+    """Return the bare tool a tool-box entry enables (`Bash(git log *)` -> `Bash`)."""
+    return entry.split("(", 1)[0]
+
+
+# Files only the parent reads. A worker that receives the routing policy or the
+# handoff rules is being told how to orchestrate, which it must never do, and a
+# critic that receives the parent's review procedure, the gate rules, or a
+# "read PROJECT.md first" instruction is no longer cold. `routing_manifest`
+# rejects a closure that carries any of them.
+PARENT_ONLY_CONTRACTS = frozenset(
+    {
+        "rules/model-assignment.md",
+        "rules/specialist-handoff.md",
+    }
+)
+
+
+CRITIC_EXCLUDED_CONTRACTS = PARENT_ONLY_CONTRACTS | {
+    "skills/review/references/local-review.md",
+    "rules/gates.md",
+}
+
+
+PROJECT_FILE_INSTRUCTION = re.compile(r"\bIf PROJECT\.md exists\b", re.IGNORECASE)
+
+
 
 
 # The output vocabulary each lens domain grades in (`rules/severity.md`), and the
@@ -330,12 +388,16 @@ class ResolvedRoute:
     # Which named summary grammar (`SUMMARY_FORMS`) this lane's result is checked
     # against, or `None` for the lanes whose summary is free prose.
     summary_form: str | None = None
+    # The route's pinned tool box (`ROUTE_TOOLS`); the Claude transport names
+    # these and nothing else.
+    tools: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return {
             "route": self.name,
             "boundary": self.boundary,
             "required_contracts": self.required_contracts,
+            "tools": self.tools,
             "unscored": self.unscored,
             "lens": self.lens,
             "lens_domain": self.lens_domain,
@@ -401,16 +463,14 @@ def _lens_menu(boundary: dict[str, object]) -> tuple[str, ...]:
 def _boundary_contracts(boundary: dict[str, object]) -> tuple[str, ...]:
     """Return the contracts this one dispatch lane declares for itself.
 
-    A document's `## Required Context` is the right channel for what every lane
-    in that document needs, and it stays the primary channel. It cannot express
-    a *per-lane* dependency, because several documents host more than one
-    boundary: `local-review.md` hosts four, `cherry-pick/SKILL.md` three.
-    Declaring one lane's contract at document level pushes it into every sibling
-    lane's closure, which is exactly the defect that handing every plan reviewer
-    all six sibling lenses was. These are per-boundary, so the adversarial lane
-    can require the adversarial lens without the three lanes beside it inheriting
-    it. This field does not suppress `## Required Context`; the closure seeds are
-    the union.
+    This list is the worker's contract. The boundary document is the parent's
+    procedure and is never inlined, and no structural seed (the routing policy,
+    the handoff rules, the owning skill) rides along: a worker receives exactly
+    these files, the one selected lens on a fan-out, and what their own
+    `## Required Context` names. Several documents host more than one boundary
+    (`local-review.md` hosts five, `cherry-pick/SKILL.md` three), so the list is
+    per lane: the adversarial lane can require the adversarial lens without the
+    lanes beside it inheriting it.
     """
     contracts = boundary.get("contracts")
     return tuple(str(item) for item in contracts) if isinstance(contracts, list) else ()

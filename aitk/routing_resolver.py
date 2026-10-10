@@ -1,8 +1,8 @@
 """Resolving one (route, provider, boundary, lens) request to a pinned dispatch.
 
 The narrow waist of the subsystem: it reads a validated manifest, applies the
-lens route floor, and returns the selector, effort, controls, and contract closure a
-worker will run under. It never falls back to another model and never widens a
+lens route floor, and returns the selector, effort, tool box, controls, and contract
+list a worker will run under. It never falls back to another model and never widens a
 closure -- an unroutable request is an error, not a downgrade.
 """
 
@@ -133,4 +133,5 @@ def resolve_route(
         lens=lens,
         lens_domain=lens_domain,
         summary_form=summary_form,
+        tools=tuple(str(tool) for tool in item["tools"]),
     )
