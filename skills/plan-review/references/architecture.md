@@ -1,71 +1,21 @@
----
-name: review-architecture
-description: Review plan from a system design and architecture perspective.
-tier: Heavy
----
-
 # Architecture Review
 
-Evaluate the plan's architectural decisions, component boundaries, and system design.
+A deep code-review lens for diffs the classifier flags as an architecture
+change: new module boundaries, changed public contracts, new patterns, or
+cross-subsystem data flow.
 
 Read before grading: `rules/severity.md`
 
-This lens sits in both a plan-review menu and a code-review menu, and the two want
-different output. The route runner names which in its `lens_domain` header: `plan`
-means the written plan, `code` means the diff. Read that field and use the matching
-Output block below; the code-review grading contract arrives from the code fan-out
-boundary itself, which is what knows its own domain. Neither vocabulary is a
-default; do not guess.
+Evaluate the architecture the change ships: component boundaries and coupling,
+API and interface contracts, data flow and where state lives, separation of
+concerns, consistency with the patterns the codebase already uses (find them in
+the repo rather than assuming), and whether the design still holds as the
+feature grows. Code style, test details, UI specifics, and sequencing belong to
+other lanes.
 
-If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
-
-## Focus Areas
-
-Analyze:
-- System design and component boundaries
-- Coupling between components — are dependencies clean?
-- Scalability — will the design handle growth?
-- Consistency with existing codebase patterns and conventions
-- API contracts and interface design
-- Data flow and state management approach
-- Separation of concerns
-
-## Exclude
-
-Do NOT comment on:
-- Code style or formatting
-- Test implementation details
-- UI/UX specifics
-- Implementation sequencing
-
-## Output
-
-When `lens_domain=plan` (reviewing the written plan):
-
-```markdown
-## Architecture Review
-### Strengths
-- [What the plan does well architecturally]
-### Issues
-- [High/Medium/Low] [Issue + why it matters]
-### Suggestions
-- [Specific, actionable architectural improvement]
-### Missing
-- [What the plan should address from an architecture perspective]
-```
-
-When `lens_domain=code` (reviewing a diff): no score, and findings carry the
-canonical severity tags from `rules/code-review.md` so they merge and dedupe
-with the other code-review lanes.
-
-```markdown
-## Architecture Review
-### Findings
-- [major] [Issue in the shipped architecture change + why it matters]
-- [minor] [Lower-consequence issue]
-- [nitpick] [Optional polish]
-### Strengths
-- [What the change does well architecturally]
-### Suggestions
-- [Specific, actionable architectural improvement]
-```
+Each finding is one string that opens with `[major]`, `[minor]`, or
+`[nitpick]`, cites `file:line`, and says what goes wrong and why it matters.
+Report every architectural finding you see, with your confidence when it is
+less than high; the parent validates and ranks them. Improvements that are not
+defects go in the summary. In `verification`, list exactly what you read or
+ran.

@@ -1,7 +1,3 @@
----
-tier: Standard
----
-
 # PR Review Batch
 
 Use when `review-pr` receives multiple PR numbers or `--all-open`.
@@ -11,25 +7,8 @@ Use when `review-pr` receives multiple PR numbers or `--all-open`.
 - [classify-diff.md](classify-diff.md) — the per-PR worker reads its own
   payload's domains and risk flags so it knows which risks to cover explicitly.
 
-The reviewer contract itself is declared on the `review.pr-batch` boundary in
-`interfaces/model-routing.json`; this section carries only what the document as
-a whole needs.
-
-## What Is Not In The Worker's Closure
-
-The posting contract is deliberately absent from the section above. That section
-*is* the worker's closure, and the worker never posts — it has no `gh`, no
-network, and no comment to render. Declaring a main-thread-only contract there
-inlined it into every batch worker's prompt: wasted context, and a standing
-invitation to a worker that reads it as an instruction. The main thread reads
-this document with ambient loading, so the links under *Post* below reach it
-normally, and the single-PR posting path ([pr-posting.md](pr-posting.md),
-reached from the `review.pr-independent` boundary in `review-pr`) carries the
-posting contract for the lane that actually posts.
-
-The independent reviewer contract the worker applies is declared on the
-`review.pr-batch` boundary in `interfaces/model-routing.json` rather than in
-*Required Context*, because it is this lane's contract and not the document's.
+The reviewer contract the worker applies is declared on the `review.pr-batch`
+boundary in `interfaces/model-routing.json`.
 
 ## Batch Contract
 
@@ -104,29 +83,15 @@ It also carries each worker's `Deferred lenses:` value into the wave table's
 is the main thread's, not the worker's: a review route has no subagent
 capability, so the worker can report the gap but cannot close it.
 
-Batch mode runs the **findings** lenses only — the Code-judo generative pass is
-suppressed here unconditionally, including when `classify-diff` reports
-`Code-judo lane: YES` for a PR in the batch (a `^refactor` title alone sets that
-field, so expect it routinely). Its unscored restructuring *proposals* have no slot in the compact
-per-PR return contract above, and the `deep-review` route is too expensive to fan
-out across a batch. When a specific PR warrants a Code-judo pass, run a single-PR
-deep review ([review-pr](../../workflows/references/review-pr.md)) instead.
+Batch mode never runs the Code-judo pass, even when `classify-diff` reports
+`Code-judo lane: YES` for a PR: proposals have no slot in the compact per-PR
+return contract, and the classifier still reports the field truthfully. When a
+specific PR warrants a Code-judo pass, run a single-PR deep review
+([review-pr](../../workflows/references/review-pr.md)) instead. The main thread
+records the proposals slot of every batch row as `suppressed (batch)`, never
+`none`, which would imply a judo pass ran and found no move.
 
-This is the **one** documented exception to the umbrella rule "dispatch judo on
-`Code-judo lane: YES`" (the `review.code-judo` boundary in
-`interfaces/model-routing.json` and [code-judo.md](code-judo.md)). It holds only
-because the dispatch above passes `Batch mode: Code-judo suppressed` explicitly —
-the exception belongs to the caller, not to the lane classifier, which still
-reports the field truthfully.
-
-The suppression is the main thread's own decision, so the main thread also owns
-recording it: when it writes the per-PR `## PR Review — #N` entry (or folds it
-into the wave block below, whose `Proposals` column exists for exactly this), the
-proposals slot reads `suppressed (batch)`, never `none` — the latter falsely implies a judo pass ran and found no move. The
-compact return contract above needs no proposals slot for this; a batch-mode
-review never produces proposals to report.
-
-Concurrency: run up to 3-5 PR reviews in parallel. Lower concurrency if PRs are unusually large, share code ownership, or the repo is resource constrained.
+Concurrency: run PR reviews in waves of up to three; use smaller waves when PRs are unusually large, share code ownership, or the machine is resource constrained.
 
 ## Per-Wave PROJECT.md Persistence (Hard Gate Before Handoff)
 
@@ -159,15 +124,9 @@ For batches of 4+ PRs, checkpoint after each wave block is written; a fresh sess
 - PR #<N>: deferred <lens> — run a single-PR deep review
 ```
 
-If no PR drew findings, write `All PRs reviewed cleanly`. That is a statement
-about findings, not about coverage: Code-judo is suppressed batch-wide and
-`Deferred` may name a lens this lane could not run, so a clean batch is one that
-found nothing on the axes it *did* review. A non-`none` `Deferred` value
-therefore still earns a *Needs Attention* line even under `All PRs reviewed
-cleanly` — it names a PR whose own classifier asked for an axis the batch has no
-procedure for, which is a gap in coverage rather than an absence of findings.
-Code-judo needs no such line: its suppression is unconditional here and the
-`suppressed (batch)` cell already records it on every row.
+If no PR drew findings, write `All PRs reviewed cleanly`. That describes
+findings, not coverage, so every PR with a non-`none` `Deferred` value still
+gets a *Needs Attention* line.
 
 ## Notes
 

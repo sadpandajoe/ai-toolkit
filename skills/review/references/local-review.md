@@ -76,18 +76,19 @@ inline. A security-sensitive or deep-tier diff with no cross-provider lane is
 the user passes `--allow-degraded`, recorded as `USER_DECISION`
 (`rules/gates.md`, Independent Judgment).
 
-## Second Family (COMPLEX, CORE impact, or a clean verdict on a sizeable diff)
+A clean verdict counts only when the lane's `verification` list covers every
+changed file other than generated files and lockfiles. When it skips files, run
+the same lane once more on the files it skipped and note `Coverage rerun:
+<files>` in the Review Record.
+
+## Second Family (COMPLEX or CORE impact)
 
 <!-- aitk-model-route:review.second-family -->
 Launch one more fresh reviewer worker on `review` (`deep-review` under a
 deep-tier escalation) on the provider the independent lane did not use, with
-the same prompt and nothing from the first lane, when the classifier reports
-COMPLEX or CORE impact, or when the **clean-verdict guard** fires: the
-independent lane returned zero findings on a STANDARD diff above 200 changed
-lines or 5 files (generated files and lockfiles excluded). A clean verdict on
-that much surface is more often a miss than perfection, so the second family
-runs after the fact rather than concurrently, and the Review Record notes
-`Second family: clean-verdict guard`. The two lanes merge under the
+the same prompt and nothing from the first lane, concurrently with the
+independent lane, when the classifier reports COMPLEX or CORE impact. The two
+lanes merge under the
 convergence rule in `rules/code-review.md`: raised by both → keep the severity;
 raised by one → capped at `[minor]` until the parent's validation names the
 concrete failure. No verifier lane runs when this lane ran; the second family
@@ -121,14 +122,16 @@ before changing anything: accepted, or rejected with a one-line evidence-based
 reason.
 
 A `[major]` that only one lane raised is never accepted on the parent's reading
-alone, and never **rejected** on it either: a `[major]` the parent intends to
-reject goes to the same verifier, and the rejection stands only on `REFUTED`
-or `UNVERIFIABLE`; `CONFIRMED` overrides the parent and the finding is
-accepted at the verifier's severity. A finding two lanes raised independently
-needs no verifier, and when the second-family lane ran, its silence is the
-second family's answer (cap at `[minor]` unless validation names the
-failure). The verifier below is for reviews where a single independent lane
-ran, in both directions.
+alone, and never **rejected** on it either. The parent accepts it once it
+reproduces the failure on the current code or runs the finding's locking
+assertion and sees it fail; a reproduced failure is evidence, not a reading. A
+`[major]` the parent intends to reject, or cannot reproduce, goes to the
+verifier below, and the rejection stands only on `REFUTED` or `UNVERIFIABLE`;
+`CONFIRMED` overrides the parent and the finding is accepted at the verifier's
+severity. A finding two lanes raised independently needs no verifier, and when
+the second-family lane ran, its silence is the second family's answer (cap at
+`[minor]` unless validation names the failure). The verifier below is for
+reviews where a single independent lane ran.
 <!-- aitk-model-route:review.verify-major -->
 Launch one fresh verifier worker on `review` (`deep-review` when the review ran
 deep) on the model family that did not raise the finding, with only the finding,
@@ -196,7 +199,7 @@ Review Record in `PROJECT.md` (compact, actionable only):
 **Scope note:** <none | reviewer span wider than the filter: <what it covered>>
 **Preflight:** <pass/fail/skipped — command or reason>
 **Independent review:** <provider/family | same-provider>
-**Second family:** <provider/family — COMPLEX | CORE | clean-verdict guard, or not run — <reason>>
+**Second family:** <provider/family — COMPLEX | CORE, or not run — <reason>>
 **Reclassified:** <none | <flag> on reviewer evidence <file:line>>
 **Lane yields:** <lane: accepted/raised, … | demoted: <lane> (<yield> over <n> runs)>
 **Deep lenses:** <names, or none> — <flags that triggered them>

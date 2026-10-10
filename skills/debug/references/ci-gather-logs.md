@@ -1,7 +1,3 @@
----
-tier: Light
----
-
 # CI Gather Logs
 
 Use at the start of `fix-ci` after input normalization. The goal is to resolve real failing log output before any classification happens.
@@ -78,32 +74,30 @@ If `gh` commands fail or CI is external:
 
 ### Jenkins / External Auth Gate
 
-For Jenkins or any authenticated external CI, resolve evidence before reasoning:
+For Jenkins or any authenticated external CI, resolve evidence before reasoning.
+With `JENKINS_USER` plus `JENKINS_TOKEN` (or equivalent configured credentials),
+fetch the console tail of the exact failing build first. The endpoint is the
+build's classic URL plus `/consoleText`: drop a trailing `/`, `/console`,
+`/consoleFull`, or `/consoleText` from the input, and keep any `/view/<name>/`
+segment. For a matrix or multibranch failure, fetch the failing child build; the
+parent build only tells you which axis or branch failed. A Blue Ocean or
+dashboard URL that does not map to a job or build needs the classic build URL or
+a log artifact from the user.
 
-1. If a Jenkins URL is provided and `JENKINS_USER` plus `JENKINS_TOKEN` or equivalent configured credentials are available, fetch only the failing console tail first.
+```bash
+curl -fsSL -u "$JENKINS_USER:$JENKINS_TOKEN" "<build-url>/consoleText" | tail -200
+```
 
-   Normalize the URL before fetching:
-   - strip trailing `/`, `/console`, `/consoleFull`, or `/consoleText`
-   - if the URL points at an exact numeric build, append `/consoleText`
-   - if the URL points at a job with no build number, append `/lastBuild/consoleText`
-   - if the URL includes `/view/<name>/`, preserve that segment while normalizing the final `/job/<name>/<build>/consoleText` endpoint
-   - if the failure is a matrix or multibranch sub-build, fetch the exact child build URL first; use the parent build only to discover the failing axis/branch when the child URL is missing
-   - if the URL is a Blue Ocean or dashboard URL that cannot be normalized to a job/build endpoint, ask for the classic build URL or log artifact
+Use `lastBuild` only when the input is a Jenkins job URL with no specific build number:
 
-   Use the exact failing build URL when the user supplied one:
+```bash
+curl -fsSL -u "$JENKINS_USER:$JENKINS_TOKEN" "<job-url>/lastBuild/consoleText" | tail -200
+```
 
-   ```bash
-   curl -fsSL -u "$JENKINS_USER:$JENKINS_TOKEN" "<build-url>/consoleText" | tail -200
-   ```
-
-   Use `lastBuild` only when the input is a Jenkins job URL with no specific build number:
-
-   ```bash
-   curl -fsSL -u "$JENKINS_USER:$JENKINS_TOKEN" "<job-url>/lastBuild/consoleText" | tail -200
-   ```
-
-2. If credentials are missing, incomplete, or the request returns auth/permission HTML, stop and ask the user for a log excerpt, local log file, or artifact bundle. Do not keep trying anonymous fetches.
-3. Once a log excerpt or artifact is available, continue with classification.
+If credentials are missing, incomplete, or the request returns auth/permission
+HTML, stop and ask the user for a log excerpt, local log file, or artifact
+bundle. Do not keep trying anonymous fetches. Once a log excerpt or artifact is
+available, continue with classification.
 
 The first CI LLM step must consume actual failing output, not the run page, dashboard status, or an inferred failure name.
 

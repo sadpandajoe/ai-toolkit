@@ -1,9 +1,3 @@
----
-name: feedback-classify
-description: Classify review findings as code-level (fix in review loop) or plan-level (route back to planning).
-tier: Standard
----
-
 # Feedback Classify
 
 Classify each review finding to determine whether it should be fixed in the current review loop or routed back to the planning phase. This routing decision prevents the review loop from trying to fix problems that require re-planning.
@@ -62,4 +56,3 @@ The caller provides:
 ## Notes
 - Severity and classification are independent axes. A `[minor]` finding can be plan-level (e.g., a minor scope creep that indicates a slice boundary issue), and a `[major]` finding can be code-level (e.g., a critical logic bug in one function).
 - When in doubt, classify as code-level. Plan-level classification triggers a rewind, which is expensive. Only classify as plan-level when the evidence is clear.
-- This skill is consumed by `create-feature` step 6 and `fix-bug` step 15, replacing inline classification prose.

@@ -1,7 +1,3 @@
----
-tier: Standard
----
-
 # PR Review Posting
 
 Use after PR review synthesis has produced a recommendation.
@@ -12,7 +8,7 @@ Detail level scales with complexity and findings.
 
 - **TRIVIAL + clean**: return an approve recommendation; post/approve directly only with `--auto` or explicit user authorization.
 - **STANDARD + clean**: approve with compact summary in draft/confirmation mode; post directly only with `--auto`.
-- **COMPLEX + clean**: pause with a one-line confirmation before approving unless `--auto` was passed; the clean verdict has already passed the second-family guard.
+- **COMPLEX + clean**: pause with a one-line confirmation before approving unless `--auto` was passed; both families have already returned clean.
 - **Any findings**: post only user-confirmed findings with adjusted severities.
 - **`--draft`**: show review in conversation only. Do not post.
 - **`--auto`**: skip confirmations and post/approve directly.
@@ -34,7 +30,7 @@ A posted comment is read by a tired engineer. The defaults below keep findings s
 
 - **Default register is a question, not a verdict.** Make the author justify the asymmetry instead of dictating the fix: "I see X here; the sibling does Y — why the difference?" Reserve declarative phrasing for blocking issues.
 - **Strength of ask scales with severity.** Question form for nitpicks ("Did we mean to update this?"), "we should" / "can we" for should-fix items, plain declarative for blockers. Speak to the code, never the author ("you forgot" → "this misses").
-- **Length cap: 1–2 sentences per finding.** Past ~50 words it reads as an essay. Cite `file:line` and name the sibling, helper, or prior pattern so the author doesn't have to hunt — the anchor already carries the location, so don't restate it.
+- **Short enough to read at a glance.** Each finding states the issue and the ask and stops; one that needs a paragraph of explanation is usually two findings or a conversation. Name the sibling, helper, or prior pattern so the author doesn't have to hunt — the inline anchor already carries the `file:line`, so don't restate it.
 - **No code blocks by default.** Add a `suggestion` block only when the fix is non-obvious *and* the severity is should-fix or higher. For a missing test, point at the technique in one sentence; paste a full test only when the mocking/setup is genuinely non-obvious.
 - **Match the author's own posting voice when one is observable.** Before posting, glance at the PR author's (or repo's) recent review comments and mirror their length and register. A house style beats a generic one.
 - **Cut the AI tells:** scaffolding labels ("Result:", "Worth noting:"), walking the author through code they wrote, restating the PR description back at them, over-hedging, double negatives ("would no longer fail"), and stacking nitpicks to pad the review. A review with only nitpicks is an approval dressed up — say "approve" instead.
@@ -56,7 +52,7 @@ TRIVIAL / STANDARD / COMPLEX · size S/M/L/XL · flags: <deep lenses or none>
 | Lane | Family | Raised | Accepted | Notes |
 |------|--------|--------|----------|-------|
 | independent | codex/sol | N | N | always |
-| second-family | claude/opus | N | N | COMPLEX or CORE, or clean-verdict guard |
+| second-family | claude/opus | N | N | COMPLEX or CORE |
 | deep lens: <name> | codex/astra or claude/fable | N | N | on flag |
 | verify-major | <other family> | N | N | CONFIRMED / REFUTED |
 

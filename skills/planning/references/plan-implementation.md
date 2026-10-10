@@ -1,27 +1,17 @@
----
-name: plan-implementation
-description: Produce a compact slice-based implementation plan for STANDARD work or one phase, with scope, entrance/exit/acceptance, and the test-first mode the implementer will use. Internal helper.
-user-invocable: false
-disable-model-invocation: true
----
-
 # Plan Implementation
 
 The compact plan shape for STANDARD work and for individual phases. The parent
 usually writes it inline; the `planning` route returns the same shape for
 COMPLEX phases.
 
-## Steps
+## What the plan settles
 
-1. State the input: the accepted brief, ticket, RCA, or phase exit goal.
-2. Choose the narrowest workable approach; a broader one can follow later.
-3. Split into slices only when there is more than one coherent unit. Each
-   slice: scope (files, boundaries, what it does not touch), depends on,
-   entrance criteria, exit criteria, acceptance (command or assertion).
-4. Name the test-first mode: RED/GREEN regression test for a bug, acceptance
-   test set for a feature, with the first failing test.
-5. Call out data or API implications, risks, and any decision only the user
-   can make.
+Plan from the accepted brief, ticket, RCA, or phase exit goal, and take the
+narrowest approach that meets it; a broader one can follow later. Split into
+slices only when there is more than one coherent unit, and give each slice the
+fields below. Name the test-first mode (RED/GREEN regression test for a bug,
+acceptance test set for a feature) with its first failing test, and raise any
+decision only the user can make.
 
 ## Output
 

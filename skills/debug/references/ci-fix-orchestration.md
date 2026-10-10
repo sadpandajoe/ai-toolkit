@@ -1,7 +1,3 @@
----
-tier: Standard
----
-
 # CI Fix Orchestration
 
 Use after logs have been gathered and failures have been classified. The
@@ -62,7 +58,7 @@ COMPLEX path: update PROJECT.md, run the RCA gate with the specialist when neede
 
 Use RCA validation when:
 - the failure is novel
-- confidence is below auto-proceed threshold
+- the classification confidence is below `HIGH` (8/10)
 - multiple plausible root causes exist
 - the proposed fix changes behavior
 

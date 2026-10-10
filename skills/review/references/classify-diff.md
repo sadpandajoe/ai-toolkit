@@ -1,8 +1,3 @@
----
-name: classify-diff
-description: Analyze a changeset and return its file domains, risk flags, and which conditional deep lenses should run.
----
-
 # Classify Diff
 
 Deterministic risk routing for a review. The classifier reports facts; the

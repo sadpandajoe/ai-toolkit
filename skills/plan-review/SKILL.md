@@ -5,23 +5,19 @@ description: "Use for the focused lenses a plan validator or deep code review ap
 
 # Plan Review Lenses
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
 Focused checklists, not a reviewer roster. The independent plan validator
 (`agents/specialists/plan-validator.md`, run by
 `planning/references/validate-plan.md`) covers architecture, feasibility, and
-test strategy in one pass; these files hold the detailed checklists it and the
-parent draw on. The architecture lens is also a conditional deep lens in code
-review.
+test strategy in one pass and inlines the feasibility checklist; the
+independent code reviewer inlines the backend and frontend checklists; the
+architecture lens runs as a conditional deep lens in code review.
 
 | Lens | Reference | Used by |
 |---|---|---|
-| Architecture | [references/architecture.md](references/architecture.md) | Plan validator focus; `deep-review` code lens on architecture changes |
-| Implementation feasibility | [references/implementation.md](references/implementation.md) | Plan validator focus |
-| Backend | [references/backend.md](references/backend.md) | Plan validator focus when the plan touches API, DB, or migrations |
-| Frontend | [references/frontend.md](references/frontend.md) | Plan validator focus when the plan touches UI |
+| Architecture | [references/architecture.md](references/architecture.md) | `deep-review` code lens on architecture changes |
+| Implementation feasibility | [references/implementation.md](references/implementation.md) | Plan validator, `phase-plan` and `fix-plan` modes |
+| Backend | [references/backend.md](references/backend.md) | Independent code reviewer, for backend files in the diff |
+| Frontend | [references/frontend.md](references/frontend.md) | Independent code reviewer, for frontend files in the diff |
 
 Test-strategy review lives in `testing/references/review-testplan.md`.
 

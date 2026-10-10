@@ -1,7 +1,3 @@
----
-tier: Heavy
----
-
 # Create Tests
 
 Use this phase when the workflow needs to create the first meaningful automated tests for an area that does not already have a real suite.
@@ -10,26 +6,18 @@ Use this phase when the workflow needs to create the first meaningful automated 
 
 Write the smallest set of high-signal tests that establishes real regression protection, follows project conventions, and gives later `update-tests` work something meaningful to improve.
 
-## Core Steps
-
-1. Determine the exact code or behavior under test.
-2. Confirm there is no meaningful existing suite to improve.
-3. Use the sibling [review-tests.md](review-tests.md) to identify the minimum high-signal coverage needed.
-4. Choose the narrowest useful test layer.
-5. Write the first meaningful tests with a bias toward behavioral signal over quantity.
-6. Run the tests, confirm they fail when the behavior breaks, then re-run the sibling [review-tests.md](review-tests.md) if needed.
+Confirm first that there is no meaningful suite to improve. Let the sibling [review-tests.md](review-tests.md) decide which behaviors need coverage, and test each one at the narrowest layer that can prove it. A new test is done when it passes and you have watched it fail with the behavior broken (revert a line or flip the asserted value, then restore); a test that cannot be made to fail is noise, so rewrite it.
 
 ## Output
 
 ```markdown
-## Test Creation Handoff
-
-- Scope: <files, behavior, or function>
-- Test layer: <unit / integration / component / e2e>
-- Tests added or updated:
-  - <file>
-- Checks run:
-  - <command>
-- Remaining gaps:
-  - <gap or none>
+## Handoff: tester
+Status: completed | blocked
+Scope: <behavior and files under test>
+Layer: <unit | integration | component | e2e>
+Tests: <files added or updated>
+Evidence: <runner commands, pass/fail counts, the break-and-catch proof>
+Product code touched: <none, or the seam and why>
+Remaining gaps: <list, or none>
+Next: <what the parent should run or review>
 ```

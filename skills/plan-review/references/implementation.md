@@ -1,48 +1,26 @@
----
-name: review-implementation
-description: Review plan from an implementation feasibility and sequencing perspective.
-tier: Heavy
----
-
 # Implementation Review
 
-Evaluate whether the plan is practically implementable with realistic effort and sequencing.
+The feasibility checklist the plan validator applies in `phase-plan` and
+`fix-plan` modes. It adds what to check; how to grade and report comes from the
+validator contract.
 
 Read before grading: `rules/severity.md`
 
-If PROJECT.md exists, read it first. If it does not exist, use the in-conversation context, plan, or diff as primary source.
+- **Sequencing.** Dependencies between slices or phases are respected, and
+  each phase is small enough to review and safe to deploy on its own.
+- **Dependencies exist.** Every library, API, file, and symbol the plan relies
+  on exists in the repo or is explicitly new.
+- **Migrations.** A migration ships with the code that uses it, not ahead of it
+  in its own PR (if a lone migration has to be reverted, the code that depends
+  on it may already be deployed), and the plan covers backward compatibility,
+  data migration, and rollback.
+- **Vertical slices.** Phases deliver end-to-end slices rather than horizontal
+  layers (all models, then all APIs, then all UI), so each one is testable and
+  leaves the system working.
+- **Risk.** For each step, what is most likely to go wrong, and whether the
+  plan says what happens then.
+- **Consistency.** The approach follows the codebase's existing patterns; find
+  them in the repo rather than assuming.
 
-## Focus Areas
-
-Analyze:
-- Step sequencing — are dependencies between steps respected?
-- Effort realism — are estimates reasonable for each step?
-- Dependency availability — do required libraries/APIs exist?
-- Consistency with existing codebase patterns and conventions
-- Incremental delivery — is each phase a small, independently deployable PR that can be shipped without leaving the system in a broken state?
-- Standalone migration PRs — migrations must be bundled with the code that uses them (if the migration ships alone and needs revert, dependent code may already be deployed in another PR)
-- Vertical slices — prefer end-to-end feature slices over horizontal layers (all models → all APIs → all UI) (each slice is deployable and testable independently; horizontal layers leave the system partially functional between PRs)
-- Migration concerns — backward compatibility, data migration, rollback
-- Risk of each step — what could go wrong?
-
-## Exclude
-
-Do NOT comment on:
-- High-level architecture decisions
-- Test strategy details
-- UI design choices
-- Code style
-
-## Output
-
-```markdown
-## Implementation Review
-### Strengths
-- [What the plan does well for implementability]
-### Issues
-- [High/Medium/Low] [Issue + why it matters]
-### Suggestions
-- [Specific, actionable implementation improvement]
-### Missing
-- [What the plan should address from an implementation perspective]
-```
+Architecture, test-strategy detail, UI design, and code style belong to the
+other parts of the validator's focus.

@@ -1,88 +1,32 @@
----
-name: investigate-change
-description: Investigate or run RCA on broken behavior as an internal phase of a larger workflow. Identifies root cause with evidence and hands a compact summary back. Use the "When Investigating a Bug" section for bug-specific framing fields. Internal helper.
-user-invocable: false
-disable-model-invocation: true
-tier: Heavy
----
-
 # Investigate Change
 
-Use this phase when a workflow needs investigation or root-cause analysis as an internal step rather than as a standalone user-facing command.
+Use this phase when a workflow needs investigation or root-cause analysis as an internal step rather than as a standalone user-facing command: code-level behavior investigation, local root-cause analysis, checking whether a suspected fix already exists, or narrowing failure scope before planning or adaptation. The public action is still `fix-bug`, `create-feature`, or another end-to-end command.
 
 ## Goal
 
-Understand what is broken, identify the most plausible root cause with evidence, and hand the result back to the calling workflow.
+Find what is broken and why, with evidence strong enough for the RCA gate ([review-rca.md](review-rca.md)): the mechanism explained rather than correlated, competing causes ruled out or listed as open, and a regression check that fails before the fix and passes after, or the reason that proof is not practical. Trace the reported symptom to the code path behind it, reproduce it locally when practical, and say what indirect evidence stands in when you cannot.
 
-## Scope
+Three things that are easy to get wrong:
 
-Use this for:
-
-- code-level behavior investigation
-- local root-cause analysis
-- validating whether a suspected fix already exists
-- narrowing failure scope before planning or adaptation
-
-This file is the reusable RCA phase for larger workflows. Use it when the public action is still `fix-bug`, `create-feature`, or another end-to-end command.
-
-## Core Steps
-
-1. Define the problem precisely.
-2. Reproduce if possible.
-3. Use git history early: inspect blame, logs, and recent changes before settling
-   on a cause. Scope git searches to master and the current branch — do not use
-   `git log --all` (unmerged branches may contain experimental or unvetted code).
-4. Identify the most likely introducing change. When restoring removed or commented-out code, trace the removal commit on master and inspect its parent (`git show <sha>^:<file>`) rather than searching other branches.
-5. Check whether an equivalent fix already exists.
-6. Name the regression test that should fail before the fix and pass after it,
-   or record why that proof is not currently practical.
-7. Summarize root cause, evidence, and open uncertainty. Separate the incident
-   root cause from latent bugs or opportunistic hardening so the causal chain
-   remains clear. Preserve that distinction in PROJECT.md and carry it into a
-   later bug-fix PR description: **Incident Root Cause**, **Latent Bugs /
-   Hardening** when present, then **Fix**.
+- Use git history early (blame, log, recent changes), scoped to the main branch and the current branch. Do not use `git log --all`: unmerged branches may contain experimental or unvetted code that never shipped. To restore removed or commented-out code, find the removal commit on the main branch and read its parent (`git show <sha>^:<file>`) rather than searching other branches.
+- Check whether an equivalent fix already exists ([check-existing-fix.md](check-existing-fix.md)).
+- Keep the incident root cause separate from latent bugs or opportunistic hardening so the causal chain stays clear. Preserve that distinction in PROJECT.md and carry it into a later bug-fix PR description: **Incident Root Cause**, **Latent Bugs / Hardening** when present, then **Fix**.
 
 ## Output
 
-Return a compact handoff:
+Return the debugger handoff the RCA gate grades:
 
 ```markdown
-## Investigation Summary
-
-- Problem: <what is broken>
-- Root cause: <most likely cause>
-- Latent bugs / hardening: <separate findings, or none>
-- Evidence: <key proof points>
-- Existing fix: <yes/no and where>
-- Open questions: <remaining uncertainty>
-```
-
-## When Investigating a Bug
-
-A bug investigation is the same process as above, with three extra expectations for how you frame the work:
-
-1. **Restate the reported problem in code-level terms** — trace from the user-visible symptom to the code path responsible.
-2. **Attempt local reproduction when practical** — if reproduction is not possible, explain why and what indirect evidence substitutes.
-3. **Frame findings in terms of user impact** — connect the root cause back to the observable failure the user reported.
-
-And extend the output with these fields:
-
-- **Affected area**: files, services, or flows involved
-- **Introducing change**: commit or PR that introduced the regression, or "unknown"
-- **Existing local safeguards**: tests, guards, or defensive checks that should have caught this (present / absent / partial)
-
-Full extended output:
-
-```markdown
-## Bug Investigation
-
-- Problem: <user-visible symptom, in code-level terms>
-- Affected area: <files, services, flows>
-- Likely root cause: <most plausible cause>
-- Latent bugs / hardening: <separate findings, or none>
-- Evidence: <key proof points>
-- Introducing change: <commit / PR / unknown>
-- Existing local safeguards: <present / absent / partial>
-- Existing fix: <yes/no and where>
-- Open questions: <remaining uncertainty>
+## Handoff: debugger
+Status: completed | blocked
+Problem: <symptom in code-level terms>
+Root cause: <mechanism, or "not established">
+Confidence: <n>/10 — <why>
+Evidence: <key proof points with file:line or command>
+Alternatives ruled out: <cause — evidence>, or "none considered"
+Introducing change: <sha/PR or unknown>
+Regression check: <test or command that fails before and passes after>
+Latent findings: <separate list, or none>
+Existing fix: <none found, or the commit or PR>
+Next: <fix scope suggestion, or the investigation still needed>
 ```

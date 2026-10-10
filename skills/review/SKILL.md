@@ -5,10 +5,6 @@ description: "Use for reviewing implemented code: one independent review of a lo
 
 # Review
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
 Umbrella for review of shipped code. The model is one fresh independent review
 by default, validated by the orchestrator before anything is changed, one
 delta pass after substantive fixes, and deep lenses only where the classifier
@@ -41,6 +37,11 @@ classifier flags an architecture change.
   worker, only on classifier flags or an explicit ask.
 - **Delta reviewer**: the same contract in delta mode, after substantive
   remediation only.
+
+Every review worker works from its prompt and its inlined contracts. It does
+not open `PROJECT.md`, `PLAN.md`, or other workflow state files: they hold
+earlier review rounds, the RCA, and the implementer's notes, which a cold lane
+must not see.
 
 The orchestrator never reviews its own work and never substitutes its judgment
 for the independent lane; it validates findings, applies fixes, and runs the

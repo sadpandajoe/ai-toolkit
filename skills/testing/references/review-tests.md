@@ -1,94 +1,34 @@
----
-name: review-tests
-description: Evaluate test quality, regression signal, production failure scenarios, and recommended safeguards before merge.
-tier: Heavy
----
-
 # Review Tests
 
 ## Required Context
 
-Read before starting: `rules/code-review.md`, `rules/severity.md`,
-`rules/gates.md`.
+Read before starting: `rules/code-review.md`, `rules/severity.md`.
 Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 
 ## Goal
 
-Evaluate the tests related to the current change.
+Judge whether the tests around the current change give real regression
+protection, and whether the change could still fail in production with every
+test green. The independent reviewer applies this when a diff contains tests;
+`create-tests` and `update-tests` use it to decide what to write or change.
 
-If PROJECT.md exists, read it first to understand the issue, root cause, and expected behavior. If it does not exist, use the in-conversation context, plan, or diff as primary source.
+Look at four things:
 
-Focus on whether the test suite provides meaningful regression protection and whether the change could fail in production even if tests pass.
+- **Behavioral coverage.** Which real behaviors, state transitions, and failure
+  scenarios the tests exercise, and which the change introduces without a test.
+  A missing test is a finding when you can name the assertion that fails on
+  today's code and passes once the change is correct (`rules/code-review.md`).
+- **Low-signal tests.** Tests that would pass with the code under test removed:
+  tied to implementation details, mocking internal or fast deterministic code,
+  asserting setup or mock pass-through, brittle for reasons unrelated to the
+  behavior, or redundant with a neighbor. Say whether each should be
+  strengthened, merged, moved to a lower layer, or removed.
+- **Production blind spots.** Realistic failures the suite would not catch:
+  races, unexpected input, partial failures, state inconsistencies, integration
+  and timing problems.
+- **Simplification.** Tests to remove, merge, or replace with fewer
+  higher-signal ones.
 
-## Behavioral Coverage
-
-Identify the real behaviors the tests validate.
-
-Determine:
-- whether tests validate actual system behavior
-- whether important state transitions are exercised
-- whether critical failure scenarios are tested
-
-## Weak or Low-Signal Tests
-
-Identify weak tests such as:
-- tests heavily dependent on implementation details
-- overly mocked tests that bypass real logic
-- brittle tests that fail for irrelevant reasons
-- redundant tests that add little value
-- tests validating setup rather than behavior
-
-For each weak or low-signal test:
-- explain why it provides low regression signal
-- determine whether it should be improved, merged, moved to a lower layer, or removed
-- suggest how to rewrite it into a higher-signal test if possible
-
-## Missing Behavioral Coverage
-
-Identify behaviors that are not tested, such as:
-- edge cases
-- concurrent operations
-- failure paths
-- state inconsistencies
-- integration points
-
-## Production Failure Scenarios
-
-Assume the current change has been deployed to production.
-
-Identify realistic scenarios where the system could fail even if the current tests pass:
-- race conditions
-- unexpected input
-- state inconsistencies
-- partial failures
-- integration failures
-- performance or timing issues
-
-Determine whether existing tests would detect these failures. Identify gaps in regression protection.
-
-## Suite Simplification Opportunities
-
-Identify tests that should be:
-- removed because they provide little value
-- merged because they overlap heavily
-- moved to unit/integration level instead of higher-level tests
-- replaced with a smaller number of higher-signal tests
-
-## Output
-
-This lens grades **shipped tests**, so it reports in the code-review vocabulary
-its Required Context declares — severity tags (`[major]`/`[minor]`/`[nitpick]`), no score.
-
-```markdown
-## Test Review
-### Findings
-- [major] [Weak test, missing coverage, or production blind spot — why it matters]
-- [minor] [Lower-consequence gap]
-- [nitpick] [Optional polish]
-### Strengths
-- [Behavioral coverage, high-signal tests, suite efficiency]
-### Suggestions
-- [Tests to add, simplification opportunities, defensive checks, monitoring]
-### Missing
-- [Untested behaviors, production failure scenarios not covered, safeguards needed]
-```
+Report what you find in the format of the contract you are running under; a
+reviewer worker returns severity-tagged findings and puts recommended
+additions in the summary.

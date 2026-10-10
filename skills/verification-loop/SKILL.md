@@ -7,7 +7,6 @@ description: Use when a goal workflow needs to run its required checks, decide P
 
 ## Before Starting
 
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 Read and apply `rules/gates.md`.
 
 The shared loop every goal workflow chains after an implementation attempt, a
@@ -30,6 +29,8 @@ worker and grade the handoff here.
 ## Loop
 
 1. **Run the required checks.** Quote commands and results in one line each.
+   A syntax-only check, or a check command that failed to start, did not run;
+   grade it as a check that cannot run.
 2. **Grade.**
    - All required checks ran locally and pass → `PASS` at `STRONG`. Record
      it: `bin/aitk project-state gate --gate verification --status PASS`.

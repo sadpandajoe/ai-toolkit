@@ -45,15 +45,14 @@ and disclose it in the report, except under `--deep` or a security-sensitive
 flag: there the review is `BLOCKED (degraded)` until the other provider is
 reachable or the user passes `--allow-degraded`, recorded as `USER_DECISION`
 (`rules/gates.md`, Independent Judgment). Single-source `[major]` findings are
-verified before posting exactly as in `local-review.md`.
+validated before posting exactly as in `local-review.md`.
 
-## Second Family (COMPLEX, CORE impact, or a clean verdict on a sizeable PR)
+## Second Family (COMPLEX or CORE impact)
 
 <!-- aitk-model-route:review.pr-second-family -->
 Launch one more fresh reviewer worker on `review` (`deep-review` under `--deep`)
 on the provider the independent lane did not use, with the same cold prompt,
-when the PR classifies COMPLEX or CORE impact, or when the clean-verdict guard
-fires (zero findings on a STANDARD PR above 200 changed lines or 5 files).
+when the PR classifies COMPLEX or CORE impact.
 Merge under the convergence rule (`rules/code-review.md`); no verifier runs
 when this lane ran. A `[major]` the parent would reject, a reviewer-reported
 missing flag, and lane yields are handled exactly as in `local-review.md`. On a Claude

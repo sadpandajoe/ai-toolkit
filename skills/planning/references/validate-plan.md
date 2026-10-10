@@ -24,7 +24,9 @@ the mode, the plan section verbatim, the accepted decomposition's invariants
 for `phase-plan` mode, the accepted RCA for `fix-plan` mode, and the routing
 snapshot line; never earlier validation rounds unless this is the informed
 revision, in which case include the previous findings and what changed. The
-worker receives its contract inline from the route runner.
+worker receives its contract inline from the route runner and works from that
+prompt alone; it does not open `PROJECT.md` or `PLAN.md`, which carry earlier
+validation rounds.
 
 ## Second Family (XL decomposition)
 

@@ -1,8 +1,3 @@
----
-name: recover-git-state
-description: Recover from a failed Git operation or mistaken repository mutation with the least destructive effective action.
----
-
 # Recover Git State
 
 Use this reference only after something has gone wrong. Recovery does not

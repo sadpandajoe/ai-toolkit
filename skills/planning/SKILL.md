@@ -5,10 +5,6 @@ description: Use for technical planning sized to the work: a compact inline plan
 
 # Planning
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
 Complexity decides the reasoning tier; size and shape decide the planning
 shape. Plan only as much as the next verifiable unit needs.
 
