@@ -89,8 +89,10 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    The PR is a draft only; promotion, reviewers, and merge need the user's
    words.
 9. **Finish.** Append the `Completed` entry to `PROJECT.md` (hard gate),
-   summarize with the shapes in `ci-fix-orchestration.md`, record
-   `metrics-emit` with complexity, gate outcomes, retries, and worker usage.
+   summarize with the shapes in `ci-fix-orchestration.md`, and record
+   metrics with `bin/aitk metrics emit --workflow fix-ci --status <status>
+   --workers <route>=<n> …` (complexity, gates, and retries come from the
+   snapshot).
 
 ## Intervention points
 

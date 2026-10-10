@@ -1,11 +1,11 @@
 # Observations
 
-Append-only, local, high-signal: `.ai-toolkit/observations.jsonl`. One JSON
-object per line, written by the orchestrator at the moment a trigger fires, and
-never read back during normal engineering. Reviewing the queue is a separate,
-deliberate step.
-
 ## Triggers (write exactly these)
+
+The writers are code. `bin/aitk project-state gate` appends `reclassify` and
+`gate-repeat`, and `bin/aitk lane-yield` appends `low-yield-lane`; the
+judgment triggers (`rules/universal.md`) go through `bin/aitk observe --kind
+<kind> --detail "<one sentence>"`.
 
 | Trigger | `kind` | Why it is worth a line |
 |---|---|---|
@@ -15,7 +15,7 @@ deliberate step.
 | Same gate fails twice for the same reason | `gate-repeat` | Shows a missing capability or escalation rule |
 | A specialist invalidates an RCA or plan assumption | `specialist-invalidation` | High-value reasoning failure |
 | A manual workaround repeated in the same or another session | `workaround` | Candidate for a reusable skill |
-| A review lane crossed a yield threshold and was demoted (`rules/code-review.md`, Yield Thresholds) | `low-yield-lane` | Candidate for a durable trigger change or removal; `reflect` restores or retires it |
+| A review lane crossed a yield threshold and was demoted (`aitk/review_plan.py`, the Yield Thresholds) | `low-yield-lane` | Candidate for a durable trigger change or removal; `reflect` restores or retires it |
 
 Do not log routine progress, successful gates, or opinions.
 
@@ -36,7 +36,7 @@ Stop hook `hooks/observation-reminder.sh` prints the same reminder; the review
 itself is always a deliberate, confirmed step.
 
 1. Run `bin/aitk lane-yield` and read its demotions alongside the queue: it
-   applies the yield table in `rules/code-review.md` to `review.lanes` in
+   applies the yield thresholds in `aitk/review_plan.py` to `review.lanes` in
    `.ai-toolkit/metrics.jsonl`, so a lane proposal carries its numbers.
 2. Read the queue; group lines by `kind` and by the skill or rule they
    implicate.

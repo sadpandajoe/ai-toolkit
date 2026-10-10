@@ -246,7 +246,6 @@ class ProviderAdapterTests(unittest.TestCase):
                         "archive-project-file",
                         "skills/archive-project-file/SKILL.md",
                     ),
-                    ("metrics-emit", "skills/metrics-emit/SKILL.md"),
                     (
                         "reflection",
                         "skills/reflection/references/observations.md",
@@ -255,10 +254,6 @@ class ProviderAdapterTests(unittest.TestCase):
                     (
                         "reporting",
                         "skills/reporting/templates/complete-project-final.md",
-                    ),
-                    (
-                        "reporting",
-                        "skills/reporting/templates/complete-project-metrics.md",
                     ),
                     (
                         "reporting",

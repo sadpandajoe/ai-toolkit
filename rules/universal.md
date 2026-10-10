@@ -68,6 +68,10 @@ carry the detail.
   validation run in a fresh context, preferably on the other provider. A routed
   specialist that reports `MODEL_ROUTE_UNAVAILABLE` stays unavailable: no
   generic worker or cheaper model takes its place.
+- **Record what overturned you.** When a user corrects you, a route was wrong,
+  or a specialist overturned a plan or RCA, record it with `bin/aitk observe
+  --kind <user-correction | misroute | specialist-invalidation> --detail
+  "<one sentence>"`.
 
 ## Precedence
 

@@ -74,4 +74,5 @@ PR #<n> — <fixed> fixed, <skipped> skipped, <discussed> discussed
 ### Suggested Next Steps
 ```
 
-Record a `metrics-emit` event with the fields from `reply-resolve.md`.
+Record metrics with `bin/aitk metrics emit --workflow address-feedback --status
+<terminal status>`, adding the fields `reply-resolve.md` names with `--extra`.

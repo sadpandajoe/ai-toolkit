@@ -28,6 +28,16 @@ from .model_routing import (
     resolve_route,
     run_model,
 )
+from .metrics import (
+    REVIEW_LANES_HELP,
+    MetricsError,
+    aggregate as aggregate_metrics,
+    emit as emit_metrics,
+    read_events as read_metrics,
+    render_project as render_project_metrics,
+    render_summary as render_metrics_summary,
+    select as select_metrics,
+)
 from .pgm import preflight as pgm_preflight
 from .review_plan import (
     PROVIDERS,
@@ -824,6 +834,47 @@ def _review_merge(arguments: argparse.Namespace, root: Path) -> int:
     return 0
 
 
+def _metrics(arguments: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    try:
+        if arguments.metrics_action == "emit":
+            path, event = emit_metrics(
+                cwd,
+                arguments.workflow,
+                arguments.status,
+                project_file=state_file(arguments.file, cwd),
+                review_file=Path(arguments.review_json) if arguments.review_json else None,
+                workers=arguments.workers,
+                extra=arguments.extra,
+            )
+            if arguments.json:
+                print(json.dumps({"command": "metrics emit", "file": str(path), "event": event}, indent=2, sort_keys=True))
+            else:
+                print(f"## Metrics Recorded\nEvent: {arguments.workflow} | Status: {arguments.status} | File: {path}")
+            return 0
+        explicit = Path(arguments.metrics).resolve() if arguments.metrics else None
+        path, events = read_metrics(cwd, explicit)
+        summary = aggregate_metrics(
+            select_metrics(events, period=arguments.period, command=arguments.command, since=arguments.since)
+        )
+        if arguments.json:
+            print(
+                json.dumps(
+                    {"command": "metrics", "file": str(path), "period": arguments.period, **summary},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        elif arguments.format == "project":
+            print(render_project_metrics(summary))
+        else:
+            print(render_metrics_summary(summary, arguments.period))
+        return 0
+    except (MetricsError, ProjectStateError, OSError) as error:
+        print(f"metrics: {error} (metrics never gate progress; continue)", file=sys.stderr)
+        return 1
+
+
 def _review(arguments: argparse.Namespace) -> int:
     root = _root(arguments.root)
     try:
@@ -1169,6 +1220,41 @@ def parser() -> argparse.ArgumentParser:
     observe.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
     observe.add_argument("--json", action="store_true")
     observe.set_defaults(handler=_observe)
+
+    metrics = subparsers.add_parser(
+        "metrics",
+        help="summarize .ai-toolkit/metrics.jsonl, or emit one event (metrics never gate progress)",
+        description="Summarize workflow metrics from .ai-toolkit/metrics.jsonl (falling back to the "
+        "legacy .claude/metrics.jsonl only when it is missing). Metrics never gate progress.",
+    )
+    metrics.add_argument("--period", default="all", help="7d, 30d, <N>d, or all (default)")
+    metrics.add_argument("--command", help="only this workflow")
+    metrics.add_argument("--since", help="only events at or after this ISO date or time (a project's start)")
+    metrics.add_argument("--format", choices=("summary", "project"), default="summary")
+    metrics.add_argument("--metrics", help="metrics file (default: .ai-toolkit/metrics.jsonl at the repository top)")
+    metrics.add_argument("--json", action="store_true")
+    metrics_actions = metrics.add_subparsers(dest="metrics_action")
+    metrics_emit = metrics_actions.add_parser(
+        "emit",
+        help="append one event, filled from the PROJECT.md snapshot",
+        description="Append one event to .ai-toolkit/metrics.jsonl at the end of a workflow's summary, "
+        "filling complexity, size, shape, phases, gates, retries and escalations from the PROJECT.md "
+        "snapshot and normalising legacy field names (worker_usage, gate_decisions, ...).",
+        epilog=REVIEW_LANES_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    metrics_emit.add_argument("--workflow", required=True)
+    metrics_emit.add_argument("--status", required=True, help="terminal gate status or the workflow's outcome")
+    metrics_emit.add_argument("--review-json", help="`review merge --json` output, or a review object with `lanes`")
+    metrics_emit.add_argument(
+        "--workers", nargs="+", action="extend", default=[], metavar="ROUTE=N", help="worker invocations by route or agent"
+    )
+    metrics_emit.add_argument(
+        "--extra", action="append", default=[], metavar="KEY=VALUE", help="another field; JSON values are parsed"
+    )
+    metrics_emit.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
+    metrics_emit.add_argument("--json", action="store_true")
+    metrics.set_defaults(handler=_metrics)
 
     review = subparsers.add_parser(
         "review", help="plan a review's lanes, or merge their findings (local-review.md)"

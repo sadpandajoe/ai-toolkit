@@ -121,11 +121,7 @@ PR #[number] - [N] fixed, [N] skipped, [N] discussed
 [request re-review / resolve discussion / rerun after blockers / merge when approved]
 ```
 
-Record metrics with:
-
-- `command`: `address-feedback`
-- `complexity`: `trivial`, `standard`, or `complex`
-- `status`: terminal gate status — `PASS`, `ESCALATE`, `USER_DECISION`, or `BLOCKED` (`skipped` when no comment was actionable)
-- `retries`, `escalations`: gate ladder counts for the fix wave
-- `gates`: classification, triage, review outcomes
-- `worker_usage`: subagent/worker invocation counts when applicable
+Record metrics with `bin/aitk metrics emit --workflow address-feedback
+--status <PASS | ESCALATE | USER_DECISION | BLOCKED | skipped>` (`skipped`
+when no comment was actionable) and `--workers <route>=<n> …`; complexity,
+gates, retries, and escalations come from the snapshot.

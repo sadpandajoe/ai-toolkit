@@ -91,7 +91,8 @@ specialist grades the root cause and the fix plan is validated before code.
     invariants, with its own `## Gate: review (integrated)` block and Review
     Record entry. It is a hard gate before `## Bug Fix Complete`.
 11. **Finish.** Write `## Bug Fix Complete`, emit
-    `reporting/templates/fix-bug-summary.md`, record `metrics-emit`. Default
+    `reporting/templates/fix-bug-summary.md`, record metrics with `bin/aitk
+    metrics emit --workflow fix-bug --status <status>`. Default
     action when verification is `PASS` at `STRONG` strength (the regression
     test and targeted tests ran locally; `PASS (downstream: CI)` is `PARTIAL`
     and pauses), a regression test was added or the gap explicitly accepted,

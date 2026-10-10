@@ -4,12 +4,10 @@ Rules are living documents driven by evidence, not by intuition mid-task.
 
 ## Signal Source
 
-High-signal events go to the observation queue owned by the `reflection` skill
-(`.ai-toolkit/observations.jsonl`): a user correction, a skill misroute or
-manual override, a reclassification, the same gate failing twice, a specialist
-invalidating an RCA or plan assumption, a repeated manual workaround, a
-low-yield review lane. Periodic `reflect` review clusters them; a cluster is the
-evidence a rule change needs.
+The observation queue owned by the `reflection` skill
+(`.ai-toolkit/observations.jsonl`) is the evidence: `rules/universal.md` says
+when to write a line, and `bin/aitk` writes the rest itself. Periodic `reflect`
+review clusters the lines; a cluster is the evidence a rule change needs.
 
 ## When a rule is violated
 

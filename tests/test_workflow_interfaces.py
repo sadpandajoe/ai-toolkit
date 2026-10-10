@@ -394,12 +394,12 @@ class WorkflowInterfaceTests(unittest.TestCase):
             root = self.fixture(temporary)
             reference = root / "skills/workflows/references/complete-project.md"
             linked = (
-                "[skills/reporting/templates/complete-project-metrics.md]"
-                "(../../reporting/templates/complete-project-metrics.md)"
+                "[skills/reporting/templates/complete-project-summary.md]"
+                "(../../reporting/templates/complete-project-summary.md)"
             )
             self.assertIn(linked, reference.read_text())
             reference.write_text(
-                reference.read_text().replace(linked, "metrics template")
+                reference.read_text().replace(linked, "summary template")
             )
             workflow = next(
                 item for item in load_workflows(root) if item.name == "complete-project"
@@ -413,7 +413,7 @@ class WorkflowInterfaceTests(unittest.TestCase):
             self.assertNotIn(
                 (
                     "reporting",
-                    "skills/reporting/templates/complete-project-metrics.md",
+                    "skills/reporting/templates/complete-project-summary.md",
                 ),
                 dependencies,
             )

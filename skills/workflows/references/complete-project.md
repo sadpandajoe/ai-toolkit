@@ -30,10 +30,9 @@ are emitted.
    built or fixed, key decisions, open risks, and branch state (`git log
    --oneline -20`, `git status`, current branch). With no PROJECT.md, stop:
    `No PROJECT.md found. This command requires an active project file.`
-2. **Summarize metrics** for this project with
-   [skills/reporting/templates/complete-project-metrics.md](../../reporting/templates/complete-project-metrics.md),
-   which names the metrics file to read. With no matching events, emit
-   `No metrics recorded for this project` and continue.
+2. **Summarize metrics** for this project with `bin/aitk metrics --since
+   <project start> --format project`; it prints `No metrics recorded for this
+   project` when nothing matches, and the run continues.
 3. **Review the observation queue** (skipped with `--skip-promote`). When
    `.ai-toolkit/observations.jsonl` has unreviewed lines, run the *Review*
    section of [skills/reflection/references/observations.md](../../reflection/references/observations.md)
@@ -92,9 +91,7 @@ are emitted.
 9. **Summarize and record metrics.** Use
    [skills/reporting/templates/complete-project-summary.md](../../reporting/templates/complete-project-summary.md)
    under the structural rules in [skills/reporting/SKILL.md](../../reporting/SKILL.md),
-   then include `metrics-emit` context through the
-   [metrics emitter](../../metrics-emit/SKILL.md) with `command:
-   complete-project`, `complexity: standard`, `status: clean` (or `blocked`
-   when step 6 left services running, and similar), `rounds: 0`,
-   `gate_decisions` with the memory-promotion decisions, and `worker_usage`
-   when workers ran.
+   then record metrics with `bin/aitk metrics emit --workflow
+   complete-project --status <clean | blocked>` (`blocked` when step 6 left
+   services running, and similar), passing the memory-promotion decisions as
+   `--extra 'decisions={…}'` and worker counts as `--workers`.

@@ -200,14 +200,14 @@ Use the format in [examples/final-report.md](examples/final-report.md). Lead wit
 
 The full 13-column execution table format is in [examples/execution-table.md](examples/execution-table.md). The compact table replaces it only in the final report.
 
-**Record metrics**: include `metrics-emit` context with:
-- `command`: `cherry-pick`
-- `complexity`: from gate (`trivial` / `non-trivial`); use `standard` for batch
-- `status`: aggregate result (`clean` if all Applied, `blocked` if any Blocked/Rejected requiring intervention, etc.)
-- `rounds`: total plan-review iterations across all cherries (0 if all clean)
-- `gate_decisions`: `{ verdict: PROCEED | REJECT | FORCE-PROCEED, batch_size: <N> }`
-- `scope_audit`: per-cherry verdicts from the 7a subagent — `{ clean: <N>, leaked_reverted: <N>, escalated: <N> }`. Single cherry: one of `CLEAN | LEAKED-REVERTED | ESCALATED`.
-- `worker_usage`: subagent/worker invocation counts when applicable
+**Record metrics**: `bin/aitk metrics emit --workflow cherry-pick --status
+<clean | blocked | …>` (`clean` if all Applied, `blocked` if any
+Blocked/Rejected needs intervention) with `--extra complexity=<trivial |
+non-trivial>` (`standard` for a batch), `--extra rounds=<plan-review
+iterations>`, `--extra 'decisions={"verdict": "PROCEED | REJECT |
+FORCE-PROCEED", "batch_size": N}'`, `--extra 'scope_audit={"clean": N,
+"leaked_reverted": N, "escalated": N}'` (single cherry: one of `CLEAN |
+LEAKED-REVERTED | ESCALATED`), and `--workers <route>=<n> …`.
 
 ## Continuation Checkpoint
 

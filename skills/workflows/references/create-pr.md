@@ -274,13 +274,9 @@ Base: [base branch] ← [head branch]
 Commits: [N]
 ```
 
-**Record metrics** when available for the workflow:
-- `command`: `create-pr`
-- `complexity`: `standard`
-- `status`: `clean` if the PR was created, `blocked` otherwise
-- `rounds`: 0
-- `gate_decisions`: `{ pr_created: <yes | no>, draft: <yes | no> }`
-- `worker_usage`: subagent/worker invocation counts when applicable
+**Record metrics**: `bin/aitk metrics emit --workflow create-pr --status
+<clean | blocked> --extra 'decisions={"pr_created": "<yes|no>", "draft":
+"<yes|no>"}' [--workers <route>=<n> …]`.
 
 ### 10. Watch Handoff
 

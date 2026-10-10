@@ -129,7 +129,8 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
     per-phase records stay as they are. A finding here is fixed in the phase
     that owns the code, then the integrated delta pass runs once.
 11. **Finish.** Write the `## Feature Complete` entry, emit the summary from
-    `reporting/templates/create-feature-summary.md`, record `metrics-emit`.
+    `reporting/templates/create-feature-summary.md`, record metrics with
+    `bin/aitk metrics emit --workflow create-feature --status <status>`.
     Deliver after the review gate is `PASS` and before any `project-state
     advance`, never from `main`, in this order:
     1. `--no-pr`: commit and push per step 2, then stop, recording

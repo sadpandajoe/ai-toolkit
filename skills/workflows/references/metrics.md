@@ -1,6 +1,6 @@
 # Workflow Metrics Summary
 
-> **When**: You want to understand how your workflows are performing — pass rates, review round counts, worker usage, and trends.
+> **When**: You want to understand how your workflows are performing — pass rates, retries and escalations, worker usage, reviewer yield, and trends.
 > **Produces**: Aggregate summary from `.ai-toolkit/metrics.jsonl`.
 
 ## Effect Boundary
@@ -17,71 +17,16 @@ metrics --command fix-bug  # Filter to a specific command
 
 ## Steps
 
-### 1. Read Metrics File
-
-Read `.ai-toolkit/metrics.jsonl`; only when it does not exist, read the older `.claude/metrics.jsonl` location, and never write new events there. If neither file exists or the selected file is empty:
-```markdown
-No metrics recorded yet. Metrics are emitted automatically when workflows complete.
-Run a workflow (e.g., `create-feature`, `fix-bug`) to start collecting data.
-```
-Stop.
-
-### 2. Filter Events
-
-Apply filters from arguments:
-- `--period <duration>`: filter to events within the specified window (default: `all`)
-  - `7d` = last 7 days, `30d` = last 30 days, `all` = no filter
-- `--command <name>`: filter to events matching the workflow identifier
-
-### 3. Compute Aggregates
-
-From the filtered events, compute:
-
-**Gate outcomes**: percentage of workflows ending in each terminal gate status (`PASS`, `ESCALATE`, `USER_DECISION`, `BLOCKED`), and how many ended on the review exception
-
-**Retries and escalations**: average and max `retries`, `escalations`, and `reclassifications` per workflow; review rounds are `1` (independent) or `2` (plus delta)
-
-**Worker usage**: total subagent/worker invocations by role or reasoning tier when recorded
-
-**Complexity gate accuracy**: ratio of TRIVIAL classifications that ended `PASS` with zero `reclassifications` (indicates the gate is correctly identifying easy work)
-
-**Workflow frequency**: how often each workflow is used
-
-### 4. Emit Summary
-
-```markdown
-## Metrics Summary
-
-Period: [7d / 30d / all]
-Events: [total count]
-
-### Workflow Usage
-| Workflow | Runs | PASS | ESCALATE | USER_DECISION | BLOCKED |
-|---------|------|------|----------|---------------|---------|
-| [name] | [N] | [N] | [N] | [N] | [N] |
-
-### Retries and Escalations
-| Workflow | Avg Retries | Max Retries | Escalations | Reclassifications |
-|---------|-------------|-------------|-------------|-------------------|
-| [name] | [N.N] | [N] | [N] | [N] |
-
-### Worker Usage
-| Worker / Tier | Invocations | % |
-|-------|-------------|---|
-| [name or tier] | [N] | [%] |
-
-### Complexity Gate
-- Trivial workflows: [N] ([%] of total)
-- Trivial → PASS without reclassification: [N] ([accuracy %])
-
-### Trends
-- [Notable patterns: improving/declining PASS rate, a workflow with a high ESCALATE or BLOCKED rate, etc.]
-- [If insufficient data for trends: "Not enough data for trend analysis (need 10+ events)"]
-```
+1. Run `bin/aitk metrics [--period <7d | 30d | all>] [--command <workflow>]`.
+   It reads `.ai-toolkit/metrics.jsonl` (the legacy `.claude/metrics.jsonl`
+   only when that file is missing), filters, and prints the Metrics Summary:
+   workflow usage by terminal status, retries and escalations, worker usage,
+   the complexity gate's trivial accuracy, and a trend note.
+2. Present the output. Add one or two trend observations when there are 10 or
+   more events: a workflow with a high `ESCALATE` or `BLOCKED` rate, or a
+   changing `PASS` rate. With `--json`, the same numbers come back as data.
 
 ## Notes
 - This is a read-only workflow — it never modifies the metrics file
-- Metrics are best-effort: only workflows whose summary step records a `metrics-emit` event appear here
+- Metrics are best-effort: only workflows whose summary step ran `bin/aitk metrics emit` appear here
 - The `.ai-toolkit/metrics.jsonl` file is user-local and not committed to git
-- Events are appended by [`metrics-emit/`](../../metrics-emit/SKILL.md) at each workflow's summary step
-- Trend analysis requires at least 10 events to be meaningful

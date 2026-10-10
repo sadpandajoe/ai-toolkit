@@ -120,10 +120,9 @@ If CI is stable but the PR stays open for human review, suggest the selected
 repository reachability gate; local/manual fallbacks remain eligible for
 VPN-gated repositories.
 
-**Record metrics**:
-- `command`: `watch-pr`
-- `complexity`: `trivial` for a watch that dispatched no fix, otherwise the classification of the dispatched fix (`standard` or `complex`)
-- `status`: terminal status
-- `rounds`: iteration count
-- `gate_decisions`: `{ ci_fixes: <N>, transient_reruns: <N>, comments_fixed: <N>, comments_rebutted: <N>, comments_escalated: <N>, green_target: <N> }`
-- `worker_usage`: subagent/worker invocation counts when applicable
+**Record metrics**: `bin/aitk metrics emit --workflow watch-pr --status
+<terminal status> --extra rounds=<iterations> --extra 'decisions={"ci_fixes":
+N, "transient_reruns": N, "comments_fixed": N, "comments_rebutted": N,
+"comments_escalated": N, "green_target": N}' [--workers <route>=<n> …]`;
+add `--extra complexity=<trivial | standard | complex>` (`trivial` when the
+watch dispatched no fix).
