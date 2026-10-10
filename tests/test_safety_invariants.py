@@ -68,7 +68,10 @@ class SafetyInvariantTests(unittest.TestCase):
         self.assertIn("refuse", lowered)
 
     def test_all_local_workflow_state_is_hook_protected(self) -> None:
-        text = read("hooks/prevent-project-commit.sh")
+        # The wrapper hands every command to aitk.hooks.git_guard, which blocks
+        # commits of the files in project_state.STATE_FILES.
+        from aitk.project_state import STATE_FILES
+
         for stem in (
             "PROJECT",
             "PROJECT_ARCHIVE",
@@ -77,7 +80,9 @@ class SafetyInvariantTests(unittest.TestCase):
             "CHERRY_PICK",
             "CI_FIX",
         ):
-            self.assertIn(stem, text)
+            self.assertIn(f"{stem}.md", STATE_FILES)
+        self.assertIn("python3 -m aitk.hooks.git_guard", read("hooks/prevent-project-commit.sh"))
+        self.assertIn("from aitk.project_state import STATE_FILES", read("aitk/hooks/git_guard.py"))
 
     def test_personal_absolute_paths_do_not_leak_into_authored_source(self) -> None:
         personal_path = re.compile(r"/(?:Users|home)/[^<*`\s/]+/")

@@ -3,6 +3,8 @@
 The hook reads the routing snapshot in the repository's PROJECT.md through the
 same `gate_blockers` check `checkpoint reserve` uses, so each case builds the
 snapshot with the real `project-state` CLI rather than hand-writing the block.
+It also requires `--draft` unless the user set `AITK_PR_READY=1` (N4), so the
+review cases open drafts and `DraftPolicyTests` covers the draft check.
 """
 
 from __future__ import annotations
@@ -11,13 +13,15 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 AITK = str(ROOT / "bin" / "aitk")
-PR_CREATE = 'gh pr create --title "t" --body "b"'
+PR_CREATE = 'gh pr create --draft --title "t" --body "b"'
+READY_PR_CREATE = 'gh pr create --title "t" --body "b"'
 DRAFT_PR_CREATE = "gh pr create --draft --base main --head o:feat/x --title t --body b"
 # The lookup exactly as create-pr.md fences it, env prefix included.
 PR_LOOKUP = (
@@ -307,7 +311,7 @@ class ReviewGateHookTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_blocked(run_hook(command, self.repo), "cannot follow")
         # Without a directory change the starting repo is the target, so a pass holds.
-        self.assertEqual(0, run_hook("gh pr create --title $'it\\'s fixed' --body x", self.repo).returncode)
+        self.assertEqual(0, run_hook("gh pr create --draft --title $'it\\'s fixed' --body x", self.repo).returncode)
 
     def test_blocks_when_project_file_is_unreadable(self) -> None:
         project = self.repo / "PROJECT.md"
@@ -409,6 +413,125 @@ class ReviewGateHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as outside:
             self.assertEqual(0, run_hook(PR_CREATE, Path(outside)).returncode)
 
+
+
+class DraftPolicyTests(unittest.TestCase):
+    """N4: a PR opens as a draft unless the user set AITK_PR_READY=1."""
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.repo = Path(self._temporary.name).resolve()
+        subprocess.run(["git", "-C", str(self.repo), "init", "-q", "-b", "main"], check=True)
+        project_state(
+            self.repo,
+            "init",
+            "--workflow", "create-feature",
+            "--complexity", "STANDARD",
+            "--size", "M",
+            "--phaseability", "none",
+            "--phase", "review",
+        )
+        project_state(self.repo, "gate", "--gate", "review", "--status", "PASS")
+
+    def assert_draft_blocked(self, result: subprocess.CompletedProcess[str]) -> None:
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("BLOCKED", result.stderr)
+        self.assertIn("--draft", result.stderr)
+        self.assertIn("stop and ask the user", result.stderr)
+        # The override is the user's to set; the message never spells it out.
+        self.assertNotIn("AITK_PR_READY", result.stderr)
+
+    def test_pr_create_without_draft_is_blocked_after_review_pass(self) -> None:
+        for command in (
+            READY_PR_CREATE,
+            "gh pr create --fill",
+            "gh pr create --draft=false --fill",
+            "gh pr create -t d --fill",
+            f"git push -u origin HEAD && {READY_PR_CREATE}",
+            "git push -u origin HEAD\ngh pr create --fill",
+            "timeout 60 gh pr create --fill",
+            f"bash -lc '{READY_PR_CREATE}'",
+        ):
+            with self.subTest(command=command):
+                self.assert_draft_blocked(run_hook(command, self.repo))
+
+    def test_draft_spellings_are_allowed_after_review_pass(self) -> None:
+        for command in (
+            PR_CREATE,
+            "gh pr create -d --fill",
+            "gh pr create -fd",
+            "gh pr create --draft=true --fill",
+            "gh --repo o/r pr create --fill --draft",
+        ):
+            with self.subTest(command=command):
+                result = run_hook(command, self.repo)
+                self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_aitk_pr_ready_lifts_the_draft_check_only(self) -> None:
+        self.assertEqual(0, run_hook(f"AITK_PR_READY=1 {READY_PR_CREATE}", self.repo).returncode)
+        self.assertEqual(0, run_hook(f"env AITK_PR_READY=1 {READY_PR_CREATE}", self.repo).returncode)
+        self.assertEqual(0, run_hook(READY_PR_CREATE, self.repo, AITK_PR_READY="1").returncode)
+        self.assert_draft_blocked(run_hook(READY_PR_CREATE, self.repo, AITK_PR_READY="0"))
+        self.assert_draft_blocked(run_hook(f"AITK_PR_READY= {READY_PR_CREATE}", self.repo))
+        # A ready PR still needs the review PASS.
+        project_state(self.repo, "gate", "--gate", "review", "--status", "RETRY")
+        result = run_hook(f"AITK_PR_READY=1 {READY_PR_CREATE}", self.repo)
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("review=RETRY", result.stderr)
+
+    def test_skip_pr_gate_does_not_lift_the_draft_check(self) -> None:
+        project_state(self.repo, "gate", "--gate", "review", "--status", "RETRY")
+        self.assert_draft_blocked(run_hook(f"SKIP_PR_GATE=1 {READY_PR_CREATE}", self.repo))
+        self.assert_draft_blocked(run_hook(READY_PR_CREATE, self.repo, SKIP_PR_GATE="1"))
+        # It still lifts the review check for a draft.
+        self.assertEqual(0, run_hook(f"SKIP_PR_GATE=1 {PR_CREATE}", self.repo).returncode)
+        # Both overrides together open a ready PR without a recorded review.
+        self.assertEqual(
+            0,
+            run_hook(f"SKIP_PR_GATE=1 AITK_PR_READY=1 {READY_PR_CREATE}", self.repo).returncode,
+        )
+
+    def test_ready_delivery_needs_the_same_override(self) -> None:
+        for command in (
+            "bin/aitk deliver --workflow create-feature --ready",
+            "./bin/aitk deliver --ready --workflow fix-bug",
+            "aitk deliver --workflow create-feature --phase one --ready",
+        ):
+            with self.subTest(command=command):
+                self.assert_draft_blocked(run_hook(command, self.repo))
+                self.assertEqual(0, run_hook(f"AITK_PR_READY=1 {command}", self.repo).returncode)
+                self.assert_draft_blocked(run_hook(f"SKIP_PR_GATE=1 {command}", self.repo))
+        # A draft delivery is deliver's own business: the hook lets it through.
+        result = run_hook("bin/aitk deliver --workflow create-feature", self.repo)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_unparseable_creation_needs_a_visible_draft_flag(self) -> None:
+        self.assert_draft_blocked(run_hook("gh pr create --title $'it\\'s fixed' --body x", self.repo))
+        result = run_hook("gh pr create --draft --title $'it\\'s fixed' --body x", self.repo)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_python_missing_fails_closed_on_a_pr_command(self) -> None:
+        with tempfile.TemporaryDirectory() as bindir:
+            for tool in ("bash", "cat", "dirname", "printf"):
+                found = shutil.which(tool)
+                if found:
+                    os.symlink(found, os.path.join(bindir, tool))
+            payload = json.dumps({"cwd": str(self.repo), "tool_input": {"command": PR_CREATE}})
+            blocked = subprocess.run(
+                [os.path.join(bindir, "bash"), str(ROOT / "hooks" / "require-review-gate.sh")],
+                input=payload, capture_output=True, text=True, timeout=30, check=False,
+                env={"PATH": bindir},
+            )
+            self.assertEqual(2, blocked.returncode, blocked.stderr)
+            self.assertIn("python3", blocked.stderr)
+            unrelated = json.dumps({"cwd": str(self.repo), "tool_input": {"command": "ls"}})
+            allowed = subprocess.run(
+                [os.path.join(bindir, "bash"), str(ROOT / "hooks" / "require-review-gate.sh")],
+                input=unrelated, capture_output=True, text=True, timeout=30, check=False,
+                env={"PATH": bindir},
+            )
+            self.assertEqual(0, allowed.returncode, allowed.stderr)
 
 if __name__ == "__main__":
     unittest.main()
