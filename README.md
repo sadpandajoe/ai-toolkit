@@ -74,7 +74,7 @@ instead of running several in parallel when the limit is tight.
 ```bash
 git clone https://github.com/sadpandajoe/ai-toolkit.git ~/opt/code/ai-toolkit
 cd ~/opt/code/ai-toolkit
-./setup.sh          # claude, codex, tmux, node
+./setup.sh          # claude, codex, node (asks before installing Homebrew)
 ./install.sh        # build and link adapters, skills, agents and Claude Code hooks without replacing personal config (--no-hooks skips hooks)
 bin/aitk check
 bin/aitk doctor --installed --strict
