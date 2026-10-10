@@ -50,7 +50,9 @@ review-code-adversarial --allow-degraded   # accept a same-provider lane when th
    finding; verify with `skills/verification-loop/SKILL.md`; one delta pass on
    the fixed files through the adversarial lens when fixes were substantive.
 6. Emit `## Gate: review` with `Adversarial rating: Hardened | Adequate |
-   Vulnerable | Critical`, `Reviewers: <lanes as provider/family>`, and the
+   Vulnerable | Critical` (derived from accepted findings: Critical for an
+   accepted security `[major]`, Vulnerable for any other accepted `[major]`,
+   Adequate for `[minor]` only, Hardened for none), `Reviewers: <lanes as provider/family>`, and the
    accepted/raised tally. Write `## Adversarial Findings` and
    `## Adversarial Fix Round N` to `PROJECT.md` before any fixes and after each
    round.

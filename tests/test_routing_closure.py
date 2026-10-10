@@ -77,7 +77,6 @@ class RoutingClosureTests(RoutingTestCase):
             ),
             ("review.pr-deep-lenses", "skills/review/references/adversarial.md"): (
                 "rules/code-review.md",
-                "rules/gates.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
                 "rules/specialist-handoff.md",
@@ -90,7 +89,6 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.independent", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
-                "rules/gates.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
                 "rules/specialist-handoff.md",
@@ -103,7 +101,6 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.delta", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
-                "rules/gates.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
                 "rules/specialist-handoff.md",
@@ -118,7 +115,6 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.second-family", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
-                "rules/gates.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
                 "rules/specialist-handoff.md",
@@ -146,7 +142,6 @@ class RoutingClosureTests(RoutingTestCase):
             ("review.pr-batch", None): (
                 "agents/specialists/reviewer.md",
                 "rules/code-review.md",
-                "rules/gates.md",
                 "rules/model-assignment.md",
                 "rules/severity.md",
                 "rules/specialist-handoff.md",

@@ -125,7 +125,7 @@ def evaluate(events: list[dict[str, object]]) -> list[Demotion]:
                         LANE_WINDOW,
                         len(window),
                         {"unique_accepted": unique, "refuted": refuted},
-                        "COMPLEX only: drop the CORE trigger; the clean-verdict guard keeps it",
+                        "COMPLEX only: drop the CORE trigger",
                     )
                 )
         elif lane == "verify-major":

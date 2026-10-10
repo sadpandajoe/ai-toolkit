@@ -612,17 +612,17 @@ class ConformanceTests(unittest.TestCase):
         self.assertIn("size XL", validate)
 
     def test_pre_switch_review_controls(self) -> None:
-        """Clean-verdict guard, rejected majors, reviewer-reported flags, yield thresholds."""
+        """Coverage check on clean verdicts, rejected majors, reviewer-reported flags, yield thresholds."""
         local = (ROOT / "skills/review/references/local-review.md").read_text()
-        self.assertIn("clean-verdict guard", local)
-        self.assertIn("above 200 changed\nlines or 5 files", local)
+        self.assertIn("Coverage rerun:", local)
+        self.assertNotIn("clean-verdict guard", local)
         self.assertIn("never **rejected** on it either", local)
         self.assertIn("`CONFIRMED` overrides the parent", local)
         self.assertIn("**Reviewer-reported flags.**", local)
         self.assertIn("Missing flag:", local)
         self.assertIn("Lane demoted:", local)
         pr = (ROOT / "skills/review/references/pr-review.md").read_text()
-        self.assertIn("clean-verdict guard", pr)
+        self.assertNotIn("clean-verdict guard", pr)
         reviewer = (ROOT / "agents/specialists/reviewer.md").read_text()
         self.assertIn("Missing flag:", reviewer)
         self.assertIn("you do not\nreview under it yourself", reviewer)

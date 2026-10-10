@@ -109,14 +109,15 @@ installer) is reviewed as STANDARD.
   only one lane raised is worth investigating but never blocks on the parent's
   reading alone. Before it is accepted past `[minor]`, either a second
   independent lane converged on it (the second-family lane runs by default on
-  COMPLEX and CORE-impact diffs), or one fresh verifier on the other model
-  family confirmed it with a concrete failure scenario
+  COMPLEX and CORE-impact diffs), the parent reproduced the failure or ran the
+  finding's locking assertion and saw it fail, or one fresh verifier on the
+  other model family confirmed it with a concrete failure scenario
   (`review/references/local-review.md`, Validate). A refuted finding is
   recorded as rejected with the verifier's evidence. The same verifier hears a
   `[major]` the parent wants to reject: the rejection stands only on `REFUTED`
-  or `UNVERIFIABLE`, and `CONFIRMED` overrides it. A clean verdict on a
-  STANDARD diff above 200 changed lines or 5 files calls the second family
-  after the fact; size makes silence a claim to check.
+  or `UNVERIFIABLE`, and `CONFIRMED` overrides it. A clean verdict counts
+  only when the lane's verification list covers every changed file other than
+  generated files and lockfiles; skipped files get one coverage rerun.
 - **Degraded lanes block security work.** When the independent or adversarial
   lane cannot run on the other provider, a non-security diff proceeds on the
   same-provider fallback with `Independent review: same-provider` disclosed.

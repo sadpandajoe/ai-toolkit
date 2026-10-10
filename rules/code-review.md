@@ -34,7 +34,6 @@ tier's, and a simpler tier never inherits a deeper one's rounds.
 | TRIVIAL | exception, or one lane when any logic changed | none: fixes are re-verified, not re-reviewed | a fix that adds logic reclassifies to STANDARD |
 | STANDARD | one lane | one, only after a substantive fix | the default for real, contained work |
 | COMPLEX or CORE impact | one lane plus the second family, deep lenses on flags | one | convergence merges the lanes |
-| STANDARD, clean verdict above 200 lines or 5 files | one lane, then the second family after the fact | one | the clean-verdict guard: a clean verdict on that much surface is checked, not trusted |
 | BATCHED | one lane on the first wave; later identical waves are verification-only | one, on the reviewed wave | a wave that deviates from the transformation gets its own lane; the integrated review checks the aggregate |
 | MULTI_PHASE | per phase by that phase's tier, on the phase base | per phase | one integrated review over the branch base before completion |
 
@@ -49,7 +48,7 @@ consequence it prints. The independent lane is never optional and never demoted.
 | Lane | Window | Threshold | Consequence |
 |---|---|---|---|
 | Deep lens (adversarial, deep-quality, architecture) | last 5 runs of that lens | fewer than 1 accepted in 4 raised, or 0 accepted | Demoted to opt-in: runs only on an explicit ask until `reflect` reviews it; the classifier flag is recorded as `deferred (low yield)` |
-| Second family | last 10 runs | 0 findings accepted that the first lane did not raise, and 0 first-lane majors it refuted | Demoted from CORE to COMPLEX-only; the clean-verdict guard keeps it |
+| Second family | last 10 runs | 0 findings accepted that the first lane did not raise, and 0 first-lane majors it refuted | Demoted from CORE to COMPLEX-only |
 | Finding verifier | last 10 runs | `CONFIRMED` on fewer than 3 in 10 of the single-source majors it verified in the window (a window that verified none is not judged) | The raising lane's single-source majors default to `[minor]` and the observation queue gets a `low-yield-lane` line for that lane |
 | Delta review | last 10 runs | 0 `not fixed` and 0 `fixed-but-introduced` | Skip threshold widens: the delta pass runs only after a `[major]` fix |
 
@@ -101,8 +100,9 @@ one level.
   worsened the sibling path.
 - **Convergent beats single-source.** Two independent lanes surfacing the same
   finding unprompted is high confidence; keep its severity. A `[major]` only
-  one lane raised is verified by a fresh lane on the other model family before
-  it blocks (`rules/gates.md`, Independent Judgment); until then it is worth
+  one lane raised is accepted past `[minor]` on convergence, a reproduced
+  failure, or a confirming verifier on the other model family
+  (`rules/gates.md`, Independent Judgment); until then it is worth
   investigating, not worth blocking on.
 - **CORE impact shifts missing-test findings up one level**, and a TRIVIAL diff
   on a CORE path is reviewed as STANDARD with no review exception.
