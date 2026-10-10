@@ -135,6 +135,13 @@ class RoutingClosureTests(RoutingTestCase):
                 "skills/testing/references/review-testplan.md",
             ),
             ("debug.rca-specialist", None): ("agents/specialists/rca.md",),
+            # The planner gets its own contract and the two plan shapes it
+            # returns verbatim; never the planning skill's routing table.
+            ("workflows.create-feature-planning", None): (
+                "agents/specialists/planner.md",
+                "skills/planning/references/decompose-work.md",
+                "skills/planning/references/plan-implementation.md",
+            ),
         }
         allowed = {b["id"]: b for b in payload["dispatch_boundaries"]}
         for (identifier, lens), contracts in expected.items():

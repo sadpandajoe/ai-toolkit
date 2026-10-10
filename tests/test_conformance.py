@@ -504,6 +504,39 @@ class ConformanceTests(unittest.TestCase):
         rca = (ROOT / "agents/specialists/rca.md").read_text()
         self.assertIn("Verdict: PASS | REVISE | ESCALATE", rca)
 
+    def test_planner_returns_the_plan_section_the_parent_writes(self) -> None:
+        """One writer for PLAN.md: the planner returns text, the parent pastes it.
+
+        The planner's contract and the two plan shapes it returns are its whole
+        handoff, and a decomposition carries its phase table as a fenced block
+        the parent records unchanged instead of re-typing it.
+        """
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        by_id = {b["id"]: b for b in payload["dispatch_boundaries"]}
+        self.assertEqual(
+            [
+                "agents/specialists/planner.md",
+                "skills/planning/references/decompose-work.md",
+                "skills/planning/references/plan-implementation.md",
+            ],
+            by_id["workflows.create-feature-planning"]["contracts"],
+        )
+        planner = (ROOT / "agents/specialists/planner.md").read_text()
+        self.assertIn("read-only", planner)
+        for line in ("Status: completed", "Status: blocked", "RECLASSIFY: <"):
+            self.assertIn(line, planner)
+        for heading in ("## Decomposition", "## Phase: <name>", "phases-json"):
+            self.assertIn(heading, planner)
+        decompose = (ROOT / "skills/planning/references/decompose-work.md").read_text()
+        self.assertIn("```phases-json", decompose)
+        self.assertIn("bin/aitk project-state phases --phases-json", decompose)
+        plan = (ROOT / "skills/planning/references/plan-implementation.md").read_text()
+        self.assertIn("Reclassify the phase first", plan)
+        self.assertIn("project-state phase --name <phase> --status active", plan)
+        self.assertIn("### Global invariants touched", plan)
+        feature = (ROOT / "skills/workflows/references/create-feature.md").read_text()
+        self.assertIn("writes the section\n   to `PLAN.md` verbatim", feature)
+
     def test_gates_rule_defines_outcomes_and_the_retry_budget(self) -> None:
         gates = (ROOT / "rules/gates.md").read_text()
         for outcome in ("`PASS`", "`RETRY`", "`ESCALATE`", "`RECLASSIFY`", "`USER_DECISION`", "`BLOCKED`"):

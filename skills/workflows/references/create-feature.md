@@ -65,13 +65,16 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
      `planning/references/validate-plan.md`.
    - MULTI_PHASE: `planning/references/decompose-work.md`, validate the
      decomposition (always, any complexity), then per phase: reclassify the phase,
-     `planning/references/plan-phase.md`, validate only if the phase is
-     COMPLEX.
+     plan it (`planning/references/plan-implementation.md`), validate only if
+     the phase is COMPLEX.
    <!-- aitk-model-route:workflows.create-feature-planning -->
    For COMPLEX plans, launch one fresh planner worker on `planning`
    (the toolkit's planner agent, or the routed `planning` specialist) with the
    brief, the routing snapshot line, accepted invariants, and the mode. The
-   parent writes the returned plan to `PLAN.md`; the planner never edits files.
+   planner never edits files: it returns the `PLAN.md` section, and for a
+   decomposition its fenced `phases-json` block. The parent writes the section
+   to `PLAN.md` verbatim and passes the block unchanged to
+   `bin/aitk project-state phases --phases-json`.
 5. **Implement** the next unit.
    <!-- aitk-model-route:workflows.create-feature-implementation -->
    Launch one fresh implementer worker on `implementation` (the toolkit's

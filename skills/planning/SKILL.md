@@ -11,8 +11,8 @@ shape. Plan only as much as the next verifiable unit needs.
 | Situation | Who plans | Reference |
 |---|---|---|
 | STANDARD, SINGLE_PHASE | Parent, inline | [references/plan-implementation.md](references/plan-implementation.md) |
-| COMPLEX, SINGLE_PHASE | `planning` route (Fable) in `phase-plan` mode | [references/plan-phase.md](references/plan-phase.md) |
-| MULTI_PHASE, any complexity | Decompose first, then one phase at a time | [references/decompose-work.md](references/decompose-work.md), then [references/plan-phase.md](references/plan-phase.md) |
+| COMPLEX, SINGLE_PHASE | Planner (`agents/specialists/planner.md`, `planning` route) in `phase-plan` mode; the parent writes its section verbatim | [references/plan-implementation.md](references/plan-implementation.md) |
+| MULTI_PHASE, any complexity | Decompose first, then one phase at a time | [references/decompose-work.md](references/decompose-work.md), then [references/plan-implementation.md](references/plan-implementation.md) per phase |
 | BATCHED | Parent, inline: one transformation, waves, repeated verification | [references/plan-implementation.md](references/plan-implementation.md) |
 | Any decomposition, any COMPLEX plan, or a STANDARD plan at `LOW` classification confidence | Independent validator | [references/validate-plan.md](references/validate-plan.md) |
 | Review finding looks plan-level | Parent | [references/feedback-classify.md](references/feedback-classify.md) |
@@ -43,5 +43,7 @@ artifact.
 ## Ownership
 
 The parent writes `PLAN.md` and the routing snapshot (`bin/aitk project-state
-phases`). Planners and validators return text. End-to-end sequencing belongs to
+phases`). Planners and validators return text: the planner returns the `PLAN.md`
+section (and, for a decomposition, its `phases-json` block), which the parent
+writes and records verbatim. End-to-end sequencing belongs to
 the goal workflow reference, not here.

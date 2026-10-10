@@ -63,11 +63,14 @@ class RoutingResolverTests(RoutingTestCase):
             ROOT, "planning", "claude", boundary="workflows.create-feature-planning"
         )
         self.assertEqual("fable", planner.family)
-        for contract in (
-            "skills/planning/references/decompose-work.md",
-            "skills/planning/references/plan-implementation.md",
-        ):
-            self.assertIn(contract, planner.required_contracts)
+        self.assertEqual(
+            (
+                "agents/specialists/planner.md",
+                "skills/planning/references/decompose-work.md",
+                "skills/planning/references/plan-implementation.md",
+            ),
+            planner.required_contracts[:3],
+        )
         self.assertNotIn("skills/planning/SKILL.md", planner.required_contracts)
 
     def test_deep_lens_route_boundaries_enforce_tier(self) -> None:

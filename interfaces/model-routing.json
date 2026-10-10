@@ -285,6 +285,7 @@
         "planning"
       ],
       "contracts": [
+        "agents/specialists/planner.md",
         "skills/planning/references/decompose-work.md",
         "skills/planning/references/plan-implementation.md"
       ]

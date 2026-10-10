@@ -43,12 +43,17 @@ the system working if deployed alone.
 
 ## Output
 
-Write the decomposition to `PLAN.md` under `## Decomposition` and record the
-phase table with:
+The decomposition is the `## Decomposition` section of `PLAN.md`: the Produce
+items above, ending with the phase table as a fenced `phases-json` block, one
+object per phase in delivery order:
 
-```bash
-bin/aitk project-state phases --phases-json '[{"name":"<phase>","complexity":"STANDARD","size":"M","status":"pending"}, ...]'
+```phases-json
+[{"name":"<phase>","complexity":"STANDARD","size":"M","status":"pending"}]
 ```
+
+A planner returns that section as text. The parent writes it to `PLAN.md`
+verbatim and records the table by passing the block's content unchanged to
+`bin/aitk project-state phases --phases-json '<block content>'`.
 
 Then run validation in `decomposition` mode
 ([validate-plan.md](validate-plan.md)) before planning the first phase.

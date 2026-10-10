@@ -11,8 +11,8 @@ not improved by a third round of the same reviewers.
 - Every COMPLEX bug-fix plan (`fix-plan` mode) against its accepted RCA.
 - A STANDARD plan only when the snapshot's `classification_confidence` is
   `LOW` or the user asked for a plan review; otherwise the verification loop
-  is its gate. `create-feature`, `fix-bug`, `plan-phase.md`, and
-  `planning/SKILL.md` follow this list and add no case of their own.
+  is its gate. `create-feature`, `fix-bug`, `plan-implementation.md`,
+  and `planning/SKILL.md` follow this list and add no case of their own.
 
 ## Dispatch
 
