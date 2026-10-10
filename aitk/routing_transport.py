@@ -354,6 +354,28 @@ def _preflight(
         )
 
 
+CODEX_RUNNER_FILES = frozenset({"worker-schema.json", "last-message.json"})
+
+
+def _stray_codex_files(route: ResolvedRoute, project_root: Path) -> list[str]:
+    """Paths a workspace-write Codex run left in its temporary `--cd` root.
+
+    The root holds only the runner's schema and last-message files; anything
+    else is an edit that missed the workspace and would be deleted unseen."""
+    if route.controls.get("sandbox") != "workspace-write":
+        return []
+    stray: list[str] = []
+    for path in sorted(project_root.rglob("*")):
+        relative = str(path.relative_to(project_root))
+        if path.is_dir() and not path.is_symlink():
+            if not any(path.iterdir()):
+                stray.append(f"{relative}/")  # an empty directory is still a write
+            continue
+        if relative not in CODEX_RUNNER_FILES:
+            stray.append(relative)
+    return stray
+
+
 def _argv(
     route: ResolvedRoute,
     executable: str,
@@ -612,6 +634,16 @@ def run_model(
                 error=_provider_failure_message(process.stderr, process.stdout),
             )
         try:
+            if provider == "codex" and temporary is not None:
+                stray = _stray_codex_files(route, Path(temporary.name))
+                if stray:
+                    raise ModelRouteError(
+                        "Codex wrote outside the workspace: "
+                        f"{', '.join(stray)} in its temporary project root; "
+                        f"edits belong under {selected_cwd}. The files are discarded "
+                        "with the temporary root, so the run fails rather than "
+                        "reporting work that was not kept"
+                    )
             if provider == "codex":
                 if last_message_path is None or not last_message_path.is_file():
                     raise ModelRouteError(

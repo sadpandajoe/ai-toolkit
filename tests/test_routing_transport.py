@@ -442,6 +442,54 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(RESULT, payload["result"])
         self.assertEqual({"started": True, "exit_code": 0}, payload["transport"])
 
+    def test_a_codex_write_run_that_leaves_files_in_the_temp_root_fails(self) -> None:
+        # The temporary `--cd` root is deleted after the run; an edit that
+        # landed there instead of the workspace would vanish unseen.
+        def codex_runner(stray: str | None):
+            def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+                if "--version" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
+                if "--help" in argv:
+                    flags = (
+                        "--ephemeral --strict-config --ignore-user-config --ignore-rules "
+                        "--skip-git-repo-check --disable --model --config --sandbox "
+                        "--cd --add-dir --output-schema --output-last-message --json"
+                    )
+                    return subprocess.CompletedProcess(argv, 0, flags, "")
+                root = Path(argv[argv.index("--cd") + 1])
+                self.assertEqual(root, Path(str(options["cwd"])))
+                if stray == "src/":
+                    (root / "src").mkdir()
+                elif stray is not None:
+                    target = root / stray
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("edit\n")
+                Path(argv[argv.index("--output-last-message") + 1]).write_text(json.dumps(RESULT))
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"type": "turn.completed"}), "")
+
+            return runner
+
+        def run(route: str, boundary: str, stray: str | None) -> tuple[int, dict[str, object]]:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt, tempfile.TemporaryDirectory() as cwd:
+                prompt.write("Fix the bug.")
+                prompt.flush()
+                with mock.patch("aitk.routing_transport.shutil.which", return_value="/bin/codex"):
+                    return run_model(
+                        ROOT, route, "codex", boundary, Path(prompt.name), cwd=Path(cwd), runner=codex_runner(stray)
+                    )
+
+        for stray in ("app.py", "src/module.py", "src/"):
+            with self.subTest(stray=stray):
+                code, payload = run("implementation", "workflows.fix-bug-implementation", stray)
+                self.assertEqual(3, code, payload)
+                self.assertTrue(payload["transport"]["started"])
+                self.assertIsNone(payload["result"])
+                self.assertIn("Codex wrote outside the workspace", payload["error"]["message"])
+                self.assertIn(stray, payload["error"]["message"])
+        code, payload = run("implementation", "workflows.fix-bug-implementation", None)
+        self.assertEqual(0, code, payload)
+        self.assertEqual(RESULT, payload["result"])
+
     def test_unscored_lane_rejects_a_non_empty_findings_array(self) -> None:
         # code-judo emits unscored proposals. A proposal written into `findings`
         # is read as a severity-graded finding by every downstream consumer, so
