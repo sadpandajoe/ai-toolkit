@@ -35,7 +35,7 @@ Return exactly this shape:
 ```markdown
 ## Handoff: implementer
 Status: completed | blocked | failed
-Result: <two lines at most>
+Result: <what changed, briefly>
 Evidence: <commands run and results>
 Files: <changed files>
 Tests: <added or updated tests>

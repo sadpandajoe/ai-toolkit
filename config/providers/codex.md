@@ -9,11 +9,12 @@ provider syntax or the declared fallback.
   parent writes `PLAN.md`.
 - `fresh_subagent`: Codex custom agents installed in `$CODEX_HOME/agents/`:
   `aitk-planner` (read-only), `aitk-implementer`, `aitk-debugger`,
-  `aitk-tester`. They inherit the parent's Sol model and pin their own effort
-  and sandbox; the deep routes (`deep-review`, `deep-rca`) never run as agents
-  and go through `model-run`, which pins Astra at `xhigh` (Codex CLI 0.155.0 or
-  newer). The spawn prompt carries the full contract per
-  `rules/specialist-handoff.md`; the agent returns a compact handoff.
+  `aitk-tester`. They inherit the parent session's model and pin their own
+  effort and sandbox; the deep routes (`deep-review`, `deep-rca`) never run as
+  agents and go through `model-run`, which pins the deep model and effort and
+  enforces the manifest's `minimum_cli`. The spawn prompt carries the full
+  contract per `rules/specialist-handoff.md`; the agent returns a compact
+  handoff.
 - `parallel_fanout`: spawn several agents in one turn for disjoint units; the
   route and agent controls still apply to each.
 - `isolated_worktree`: create and enter a fresh Git worktree manually.
@@ -32,10 +33,6 @@ provider syntax or the declared fallback.
   same-provider`. Never review inline.
 - `routed_subagent`: `<toolkit-root>/bin/aitk model-route <route> --provider
   <codex|claude> --boundary <marker-id>` then `model-run` with the same
-  arguments. For Codex targets the runner launches from a sanitized temporary
-  project root, exposes the target only as a scoped `--add-dir`, disables user
-  config, hooks, MCP servers, exec-policy rules, and project-document
-  discovery, pins one selector and effort, forbids fallback, and fails closed on
-  a rejected request or result. Codex JSONL does not attest the internal
-  serving model. Never use a generic worker when it reports
-  `MODEL_ROUTE_UNAVAILABLE`.
+  arguments. The runner pins the route's model and effort, runs Codex targets
+  without user config, hooks, or MCP servers, and fails closed; never use a
+  generic worker when it reports `MODEL_ROUTE_UNAVAILABLE`.

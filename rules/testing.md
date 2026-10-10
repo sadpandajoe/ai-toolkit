@@ -7,9 +7,10 @@
 - **Test behavior, not implementation.** Tests survive refactors.
 - **Regression evidence for bugs.** The test fails before the fix and passes
   after when feasible; record why when it is not.
-- **Fixtures, not hard-coded data. Mock only external boundaries**: APIs,
-  databases, filesystem, network, time.
-- **One assertion concept per test. Fix failing tests immediately.**
+- **Mock only external boundaries**: APIs, databases, filesystem, network,
+  time. Follow the project's conventions for fixtures, test data, and
+  assertions.
+- **Fix failing tests immediately.**
 - **Fix the invariant, not the test.** When a test is red or proposed for
   deletion to fit broken-but-current behavior, fix the behavior. Loosen or delete
   only when the test itself is wrong (asserts an unintended side effect, depends
@@ -30,9 +31,3 @@
 Over-mocking signals: setup longer than the test, removing the code under test
 does not break it, the test verifies mock pass-through, mocks of internal
 functions, or mocks of fast deterministic code. Reduce mocks and test real code.
-
-## Common Issues
-
-Flaky means timing: use proper waits. False positives mean over-mocking. Breaks
-on refactor means implementation testing. A slow suite means too much E2E; push
-down a layer.

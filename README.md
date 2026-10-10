@@ -122,8 +122,8 @@ ai-toolkit/
 ├── config/                 # CLAUDE.md / AGENTS.md templates and provider bindings
 ├── rules/
 │   ├── universal.md        # Core principles (always on)
-│   ├── resource-management.md  # Capacity and agent-tree limits (always on)
-│   ├── context-management.md   # Workers as phase boundaries; no manual clear (always on)
+│   ├── resource-management.md  # Capacity checks and where they live
+│   ├── context-management.md   # Workers as phase boundaries; no manual clear
 │   ├── gates.md            # PASS / RETRY / ESCALATE / RECLASSIFY / USER_DECISION / BLOCKED and the retry budget
 │   ├── specialist-handoff.md   # Maximum handoff into and out of a worker
 │   ├── complexity-gate.md  # Complexity, size, and execution shape
@@ -223,8 +223,8 @@ does not exist.
 | File | Owner / direct workflow loaders |
 |------|---------------------------------|
 | `rules/universal.md` | Always-on provider guidance |
-| `rules/resource-management.md` | Always-on provider guidance |
-| `rules/context-management.md` | Always-on provider guidance |
+| `rules/resource-management.md` | Preflight, superset-local, and verify loaders |
+| `rules/context-management.md` | Checkpoint and long-run workflow references |
 | `rules/gates.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `update-tests` |
 | `rules/durable-workflows.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests`, `watch-pr` |
 | `rules/complexity-gate.md` | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` |

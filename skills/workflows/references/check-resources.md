@@ -83,4 +83,4 @@ Based on verdict:
 - This workflow is read-only by default. The only mutation it may perform is `docker stop` on user-confirmed names.
 - The "stale" heuristic is conservative — false positives are fine (the user can say "keep that one"), false negatives waste capacity.
 - Run this before `create-feature`, `fix-bug`, or any workflow that will spin up a stack, when you suspect things are crowded.
-- Always-on guardrails in `rules/resource-management.md` cover the lightweight version of this check; this workflow is the on-demand deep dive.
+- `skills/preflight/rules.md` covers the lightweight version of this check before a stack starts; this workflow is the on-demand deep dive.

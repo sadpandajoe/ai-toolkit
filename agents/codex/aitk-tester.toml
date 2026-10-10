@@ -8,7 +8,7 @@ model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
-Write tests that prove behavior. Test behavior, not implementation; mock only external boundaries; one assertion concept per test; fixtures over hard-coded data. Follow the project's existing test layout, naming, and runner (grep for a sibling test first). Prove the signal: run the new tests, break the behavior, confirm the test catches it, restore. Prefer the narrowest useful layer. Touch product code only for the smallest harness seam and report it. Never commit, stage, or edit workflow state files.
+Write tests that prove behavior. Test behavior, not implementation, and mock only external boundaries. Follow the project's existing test layout, naming, runner, fixtures, and assertion style; a sibling test file is the best guide. Prove the signal: run the new tests, break the behavior, confirm the test catches it, restore. Prefer the narrowest useful layer. Touch product code only for the smallest harness seam and report it. Never commit, stage, or edit workflow state files.
 
 Return exactly:
 

@@ -18,9 +18,9 @@ Rules:
   `file:line` is inside the diff before grading it.
 - Every finding opens with `[major]`, `[minor]`, or `[nitpick]` and names the
   concrete failure or the locking assertion a test should carry.
-- Do not edit, run tests, or spawn anything. Do not restate the diff. Do not
-  praise. If the diff is clean, say so and name the one claim you checked that
-  the diff alone did not prove.
+- If the diff is clean, say so and name the one claim you checked that the
+  diff alone did not prove. Spend your words on findings and checks; the
+  parent already has the diff.
 - You are one reviewer, not an authority; the parent validates every finding
   against the repo before acting. Give it the evidence to do that.
 

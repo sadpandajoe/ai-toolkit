@@ -1,8 +1,8 @@
 # Shortcut REST API
 
-This is the always-on routing hint for Shortcut work. The detailed REST protocol lives in `skills/shortcut/`.
+Routing constraints for Shortcut work. The detailed REST protocol lives in `skills/shortcut/`.
 
-## Always
+## Rules
 
 - When a command receives `sc-12345`, `SC-12345`, or a Shortcut URL, use Shortcut REST first.
 - Read `skills/shortcut/references/fetch.md` before making Shortcut REST calls.

@@ -2,7 +2,6 @@
 
 ## Golden Rules
 
-- Understand the surrounding code before writing; follow its patterns.
 - Implement the accepted artifact (plan slice, RCA, or approved comment), not a
   wider idea of it. Out-of-scope needs go in the handoff as residual risk.
 - Regression evidence first: bugs get a RED/GREEN test, features get the
@@ -10,8 +9,9 @@
   record the gap; never silently switch to test-after.
 - Update existing code before creating new; smallest change that meets the exit
   criteria.
-- Commit only working states (verification and review passed) and never with
-  `git add -A` or `git add .`. Committing and pushing the current feature branch
+- Commit only working states (verification and review passed), staging files
+  by name, never with `git add -A` or `git add .`: those stage `PROJECT.md`,
+  `PLAN.md`, and unrelated work. Committing and pushing the current feature branch
   needs no confirmation, and a workflow opens a draft PR after the push
   (`--no-pr` skips it); marking it ready for review waits for the user.
 - Never rewrite history unless explicitly asked: no force push, no rebase of
@@ -38,8 +38,9 @@ any authorized git action.
 
 ## Standards
 
-Functions about 20 lines, files about 300, nesting two levels with early
-returns, descriptive names, explicit error handling.
+Match the repository's conventions for function size, file size, and nesting.
+Where it has none, prefer small focused units, early returns, descriptive
+names, and explicit error handling.
 
 ## Pre-Flight Before Any Commit
 

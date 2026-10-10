@@ -32,9 +32,10 @@ and launches specialists with `<toolkit-root>/bin/aitk model-run`.
   preference as review: a Claude parent runs them on Astra first, and Fable is
   the second vote, the escalation when Astra stayed uncertain, and the verifier
   fallback on a single-provider machine.
-- `high` is the automatic baseline; `xhigh` is reserved for deep routes and is
-  entered only after the standard route stayed materially uncertain. Never
-  select `max` automatically.
+- Effort comes from the route (`policy.efforts` in the manifest); there is no
+  separate effort choice. Deep effort means a deep route, reached on a
+  classifier flag (the deep lenses) or by escalation after the standard route
+  stayed materially uncertain. Never select `max` automatically.
 - A missing provider, rejected selector, or malformed result makes the route
   unavailable. Never downgrade, never retry on a cheaper family, never use a
   generic worker in place of a routed specialist.

@@ -58,9 +58,10 @@ past that point.
 ### The escalation ladder
 
 An `ESCALATE` hands the unit to the next owner and gives that owner a fresh
-budget; the snapshot records the step in `escalations`. Escalate one dimension
-at a time: more effort when depth is missing, a different model when
-perspective is missing, `xhigh` only when both stayed unresolved. The runtime
+budget; the snapshot records the step in `escalations`. Effort is fixed per
+route, so the next owner is a route choice: a fresh specialist on the other
+model family when perspective is missing, the deep route when depth is
+missing or the standard route stayed uncertain. The runtime
 caps the ladder at three escalations per unit and answers `USER_DECISION`
 after that, so the RCA ladder (parent retry → RCA specialist `REVISE` →
 `deep-rca` → the user) is recorded on one unit without ever overflowing it.

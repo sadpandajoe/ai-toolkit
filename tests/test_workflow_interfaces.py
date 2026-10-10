@@ -275,8 +275,8 @@ class WorkflowInterfaceTests(unittest.TestCase):
             codex = root / "config/AGENTS.md"
             codex.write_text(
                 codex.read_text().replace(
-                    "{{TOOLKIT_DIR}}/rules/context-management.md",
-                    "missing-context-rule",
+                    "{{TOOLKIT_DIR}}/rules/universal.md",
+                    "missing-universal-rule",
                 )
             )
 

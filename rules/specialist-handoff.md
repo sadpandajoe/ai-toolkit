@@ -24,10 +24,14 @@ pre-decides the finding.
 
 ## Out of a worker (compact handoff)
 
+Native agents return this block. Routed workers (`model-run`) return the
+runner's JSON result instead and put the same content in `status`, `summary`,
+`findings`, and `verification`.
+
 ```markdown
 ## Handoff: <worker or specialist>
 Status: completed | blocked | failed
-Result: <two lines at most>
+Result: <what changed or what you found, briefly>
 Evidence: <commands run and results, or "none run">
 Files: <changed or inspected>
 Findings: <severity-tagged list, or none>
@@ -35,9 +39,12 @@ Residual risk: <one line, or none>
 Next: <what the parent should do>
 ```
 
-No logs, no full diffs, no transcript. If the worker is blocked, say what it
-needed. The parent writes durable state; the worker never edits `PROJECT.md`
-or `PLAN.md`.
+Quote the few lines that carry the evidence and give paths for the rest: the
+parent keeps its context small and never reads a worker's logs, full diffs, or
+transcript. Nobody can answer a question while a worker runs, so finish
+everything the contract covers, and return `blocked` only for a fact or
+decision you cannot get yourself, naming it. The parent writes durable state;
+the worker never edits `PROJECT.md` or `PLAN.md`.
 
 ## Consuming a specialist's findings
 

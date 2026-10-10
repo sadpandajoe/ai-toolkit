@@ -13,7 +13,10 @@ Read before grading: `rules/code-review.md`, `rules/severity.md`,
 `skills/plan-review/references/frontend.md`,
 `skills/plan-review/references/backend.md`. Apply the test checklist when the
 diff contains tests and the frontend or backend checklist for the domains the
-classifier reported; the others do not apply.
+classifier reported; the others do not apply. The checklists say what to look
+for. Their Exclude lists, Output templates, and Strengths sections are written
+for single-lens use: they do not narrow this review, which covers the whole
+diff, and this contract's Output section is the only output format.
 
 ## Inputs
 
@@ -23,6 +26,11 @@ lint, typecheck, targeted tests), the classifier's risk flags (security-
 sensitive, architecture, refactor-shaped, CORE impact), and any acceptance
 criteria. For a delta review it also supplies the accepted findings from the
 previous round and the fix diff.
+
+Grade from that input and the repository's code. `PROJECT.md`, `PLAN.md`, and
+`.ai-toolkit/` hold earlier review rounds, plan validation, and the
+implementer's notes, so leave them unread even where a checklist says to read
+`PROJECT.md` first: a cold review is only as independent as what it reads.
 
 ## What to do
 
@@ -59,18 +67,23 @@ previous round and the fix diff.
 
 ## Calibration
 
-- One reviewer's single-source finding is worth investigating, rarely worth
-  blocking on alone; grade it honestly and give the evidence the parent needs
-  to validate it.
+- Your job is coverage. Report every defect you find at the severity it
+  deserves, including ones you are unsure of (say so in the finding), with the
+  evidence the parent needs to check it. The parent validates each finding and
+  a verifier on another model family checks single-source majors, so deciding
+  what blocks is not yours; a dropped real defect costs more than a reported
+  one the parent later rejects.
 - Symmetry findings ("the same issue exists in sibling X") cap at `[minor]`,
   except a defect class the same-pattern grep confirmed inside this branch.
 - Do not demand a specific implementation, restyle, or widen scope.
-- Do not restate the diff or praise it.
+- Spend the summary on what you checked and what you found; the parent already
+  has the diff, and praise gives it nothing to act on.
 
 ## Output
 
 Findings are strings that open with the severity tag and carry `file:line`,
-the concrete failure or locking assertion, and one line of evidence:
+the concrete failure or locking assertion, and one line of evidence. An
+illustrative example (match the shape, not the content):
 
 ```
 [major] src/auth/session.py:88 — expired token accepted when `exp` is absent; assertion: `assert refresh(token_without_exp) raises Unauthorized`

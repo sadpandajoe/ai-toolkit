@@ -1,8 +1,9 @@
 # Context Management
 
-Autonomous workflows never depend on the user clearing context. The parent
-session stays thin and long-lived; fresh workers are the phase boundaries;
-auto-compaction is a safety net; `PROJECT.md` is the authoritative resume state.
+Autonomous workflows never depend on the user clearing context, and a workflow
+never asks for a clear. The parent session stays thin and long-lived; fresh
+workers are the phase boundaries; auto-compaction is a safety net; `PROJECT.md`
+is the authoritative resume state.
 
 ## What Lives Where
 
@@ -23,28 +24,8 @@ incomplete, not the context.
 Reuse a worker only inside the same bounded phase when re-discovery would cost
 more than the resume. Start fresh across phases.
 
-## Compaction and Clearing
-
-- Keep auto-compaction on. Set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` lower (for
-  example `80`) when the parent grows faster than expected; compaction of the
-  parent does not erase worker history.
-- Manual compaction is optional hygiene when the parent gets noisy mid-task.
-- Clearing the conversation is optional hygiene between unrelated tasks or
-  after heavy manual steering. It is never a workflow step, and a workflow never
-  asks for it.
-- Bound nesting with `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`: goal skill, one
-  worker layer, one exceptional child.
-- Codex: the same rules apply with its native custom agents; a fresh session
-  resumes from `PROJECT.md` through the `start` workflow when needed.
-
 ## Resume
 
 `start` reads the routing snapshot and checkpoint, re-runs classification only
 when the snapshot predates the workflow's contract, and continues at the
 recorded gate. Provider task lists mirror state; they never replace files.
-
-## Reference Loading
-
-Load short rules at entry and domain skills at phase entry through
-`interfaces/skills.json`. Provider adapters translate capabilities and never own
-behavior.

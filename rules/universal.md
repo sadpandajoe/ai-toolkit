@@ -1,26 +1,52 @@
 # Universal Principles
 
-## Golden Rules
+These rules load in every session, on Claude and on Codex; workflows and skills
+carry the detail.
 
+- **Multi-step and publishing work enters a workflow first.** A request whose
+  change takes several steps, or that will push or open a PR, loads the
+  `workflows` skill before the first edit or PR action, on intent alone. Emit
+  `Workflow entered: <name>` (or `none — <why>` when no workflow matches) and,
+  once a workflow is entered, persist the routing snapshot before touching
+  files. A contained edit with a passing check runs inline: make it, run the
+  check, report the result (`Workflow entered: none — contained edit`). Small
+  direct answers, read-only work, and fixed-procedure skills that change no
+  repo behavior (commit, archive) are exempt; a domain skill that edits
+  behavior runs inside the workflow, not instead of it.
+- **Read-only work stays read-only.** When the user describes a problem, asks a
+  question, or thinks out loud rather than asking for a change, the deliverable
+  is your assessment: report what you found and stop. Answers, reviews, and
+  diagnostics create or modify no workflow state unless the user asks for a
+  report artifact.
 - **Durable state is files, not chat.** `PROJECT.md` holds current state and the
-  routing snapshot; `PLAN.md` holds the active plan when one was needed. Both are
-  local-only and never committed. Resume from them, never from remembered chat.
-- **Behavior changes enter a workflow first.** Any request to add or change
-  behavior in a repo loads the `workflows` skill before the first edit or PR
-  action, on intent alone. Emit `Workflow entered: <name>` (or `none — <why>`
-  when no workflow matches) and, once a workflow is entered, persist the routing
-  snapshot before touching files. Small direct answers, read-only work, and fixed-procedure skills that
-  change no repo behavior (commit, archive) are exempt; a domain skill that
-  edits behavior runs inside the workflow, not instead of it.
+  routing snapshot; `PLAN.md` holds the active plan when one was needed. Both
+  are local-only, never committed, and written only by the parent session;
+  workers return compact handoffs (`rules/specialist-handoff.md`). Update them
+  before each worker dispatch and after each handoff, so a fresh session can
+  continue from them alone and no workflow needs, or asks for, a cleared
+  context or a new session. Resume from the files, never from remembered chat;
+  task lists only mirror them. To edit one that is a symlink, write to its
+  `readlink -f` target: Claude Code's Write and Edit refuse to write through a
+  symlink.
 - **No PII on public surfaces.** No customer names, ticket IDs (`sc-XXXXX`,
   Linear, Jira), customer URLs, or reporter identity in PR titles, bodies,
   comments, or commit messages. Describe behavior generically. Local files and
   chat summaries may carry the IDs.
-- **Evidence before completion.** A gate passes on a command that ran and its
-  result, never on inspection alone. Use history, tests, and existing fixes.
-- **Resolve uncertainty yourself.** Investigate, read code, run checks. Ask the
-  user only for a genuine product, design, or scope choice, a fact only they
-  hold, or a protected effect. Those are the only `USER_DECISION` cases.
+- **Evidence before completion.** A gate passes on a check that ran and its
+  result, never on inspection alone; a syntax-only check, or a command that
+  failed to start, is not that check. Report results as they happened: a
+  failure with its output, a skipped step as skipped. Never push after a failed
+  verification.
+- **Resolve uncertainty yourself.** Investigate, read code, and run checks
+  rather than asking. Ask the user only for a genuine product, design, or scope
+  choice, a fact only they hold, or a protected effect; those are the only
+  `USER_DECISION` cases. A passing gate moves the workflow to its next step
+  without asking; only `USER_DECISION`, `BLOCKED`, and hard safety gates pause
+  it (`rules/gates.md`).
+- **Deliver the scope that was asked.** Make routine judgment calls yourself.
+  If the request looks mistaken or a better approach exists, say so in a
+  sentence and continue as asked. Cleanup, refactors, and fixes the task did
+  not call for go in the summary as suggestions.
 - **Commit, push, and open a draft PR freely; promote only on request.** Once
   verification and review pass, commit to the current feature branch, push it,
   and open a **draft** PR through `create-pr --draft`, without asking "should I
@@ -28,48 +54,26 @@
   leaves the work `pushed — awaiting PR request`. Marking a PR ready for
   review, requesting reviewers, merging, and opening a non-draft PR need the
   user's explicit words. Amend, rebase, force-push, and pushes to
-  `main`/`master`/protected branches still need explicit authorization.
+  `main`/`master`/protected branches need explicit authorization.
   When the user asks for a PR on a change that never entered a workflow (a
   chore, a config tweak), run `review-code` on the branch first so the review
   gate is recorded, then open the PR; never hand the user an
   override-or-review choice.
-- **Regression evidence over ceremony.** Bug fixes get a test that fails before
-  and passes after when feasible; features get acceptance tests as the spec.
-  Test-first is a strong default, not a universal ritual; when blocked, write
-  the test anyway and record the gap.
-- **Working solution, then optimization.** Small verified steps, narrowest
-  approach first, YAGNI.
-- **Workflows own their loops.** Planning, verification, and review continue
-  automatically through `RETRY` and `ESCALATE`; only `USER_DECISION`,
-  `BLOCKED`, and hard safety gates surface to the user (`rules/gates.md`).
-- **Read-only work stays read-only.** Answers, reviews, and diagnostics never
-  create or modify workflow state unless the user asks for a report artifact.
-- **Only the orchestrator writes state.** Workers return compact handoffs
-  (`rules/specialist-handoff.md`); the parent updates `PROJECT.md` and `PLAN.md`.
-- **Write through symlinks via the real path.** Resolve with `readlink -f` before
-  editing toolkit-managed files.
-- **Rules evolve from usage.** See `rules/rule-maintenance.md`.
+- **Confirm before destructive actions.** Deleting data or branches, discarding
+  uncommitted work, stopping containers, and other irreversible effects outside
+  the change itself wait for the user's confirmation; the commits, pushes, and
+  draft PR above are routine. Before starting Docker stacks, follow
+  `skills/preflight/rules.md`; before large test runs, `skills/testing/rules.md`.
+- **Review is independent.** Never review your own work inline; review and
+  validation run in a fresh context, preferably on the other provider. A routed
+  specialist that reports `MODEL_ROUTE_UNAVAILABLE` stays unavailable: no
+  generic worker or cheaper model takes its place.
 
-## Agent Context Model
+## Precedence
 
-- Rules are short always-on constraints and routing hints.
-- Skills own workflow context and load only at phase entry; descriptions are
-  classifiers with explicit use and do-not-use boundaries.
-- Provider adapters translate capabilities; they never own behavior.
-
-## Communication
-
-- Direct about errors, no apologies. Show commands and outputs.
-- Explain the reasoning behind a choice in one line.
-- Confirm before destructive actions; never before routine ones. Commits,
-  pushes to the current feature branch, and a draft PR from a workflow are
-  routine; promoting a draft out of draft is not.
-
-## Override Hierarchy
-
-1. Universal principles (this file)
-2. Gates and safety contracts (`rules/gates.md`, `interfaces/contracts.json`)
-3. Orchestration and model rules
-4. Domain rules (testing, implementation, review)
-5. Repository guidance (`AGENTS.md`, `CLAUDE.md`)
-6. `PROJECT.md` current state
+When two rules disagree, the earlier source wins: this file; gates and safety
+contracts (`rules/gates.md`, `interfaces/contracts.json`); the repository's own
+guidance (its `AGENTS.md`, `CLAUDE.md`); orchestration and model rules; domain
+rules (testing, implementation, review); `PROJECT.md` current state. Repository
+conventions beat toolkit style and domain rules; toolkit safety and
+authorization never yield to them.

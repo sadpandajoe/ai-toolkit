@@ -19,8 +19,8 @@ severity grades one finding; the gate grades the round.
 | `[Medium]` | Notable gap; address, does not block |
 | `[Low]` | Observation or alternative |
 
-Plan-domain lanes return a verdict line (`Verdict: APPROVE | CHANGES_REQUIRED |
-REPLAN`) instead of a numeric score.
+Plan-domain lanes return a verdict line: `Verdict: APPROVE | CHANGES_REQUIRED |
+REPLAN`.
 
 ## QA Bug
 
