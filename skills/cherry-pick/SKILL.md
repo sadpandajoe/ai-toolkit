@@ -17,9 +17,23 @@ Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present. Ch
 
 **Out of scope:** broad refactors, behavior-changing adaptations without approval, dependency reinstall or environment rebuild, forcing incompatible APIs onto the target.
 
-**Success criteria:** each change is classified `Applied | Partial | Blocked | Rejected | Skipped`; applied changes preserve source intent; validation status recorded; push status recorded; batch state lives in the execution table or `CHERRY_PICK.md`; PROJECT.md is updated by the parent workflow (this skill does not own it).
+**Success criteria:** each change is classified `Applied | Partial | Blocked | Rejected | Skipped`; applied changes preserve source intent; validation status recorded; push status recorded; batch state lives in the execution table or `CHERRY_PICK.md`. This skill owns PROJECT.md and CHERRY_PICK.md for its run.
 
 If the workflow would cross a contract boundary, stop and ask — do not cross first and report after.
+
+## Effect Boundary
+
+Effect: `external_effect`.
+
+## Authorization Boundary
+
+Authorization mode: `invocation`. Invoking cherry-pick authorizes, for the
+duration of the run, the cherry-pick commits on `--target` (including the
+validation-only amend of the in-progress cherry before it is pushed) and a
+fast-forward `git push` of each validated cherry to `--target`. It does not
+authorize force-push, rebase, amending a pushed commit, pushing any other
+branch, or opening or merging a PR. `--no-push` withdraws the push. The phase
+graph and gates are the `cherry-pick` entry in `interfaces/contracts.json`.
 
 Per-cherry push is the default action at step 8 — every successfully validated cherry is pushed to the target branch before the next cherry starts. `--no-push` opts out: validate locally, record `pending-authorization`, and stop before publishing. The per-cherry push boundary (step 8) and its hard-gate confirmation block still run on every cherry regardless; `--no-push` only changes whether the boundary's outcome is `pushed` or `pending-authorization`.
 
@@ -143,9 +157,9 @@ The discovery subagent must **measure** each candidate (`gh pr view --json chang
 
 When the cherry comes from a Shortcut story labeled `release-candidate` and we did **not** land it this pass (`Skipped`, `Blocked`, or `Rejected`), the decision to leave it off / force it / adapt it belongs to the person who added the `release-candidate` label, not to us. Post one comment on the story that mentions that person and hands them a clean decision: why it's blocked, how to unblock it (from 7c), our recommendation, and the options — then let them decide. We recommend; the labeler decides. Do not force-backport or adapt off our own recommendation without their reply.
 
-Find the decider via `stories-get-history` (the entry whose `changes.label_ids.adds` contains label id `78270`), and mention them with the link form `[@handle](shortcutapp://members/<id>)` so the notification actually fires — plain `@handle` text does not notify.
+Find the decider via `stories-get-history` (the action in `actions[]` whose `changes.label_ids.adds` contains the release-candidate label id, read from `cherry_pick.release_candidate_label_id` in the target repo's `.ai-toolkit/config.json`), and mention them with the link form `[@handle](shortcutapp://members/<member-id>)` so the notification actually fires — plain `@handle` text does not notify.
 
-Skip only when there's nothing to decide (merge SHA already on the branch, or no merged apache/superset PR exists).
+Skip only when there's nothing to decide (merge SHA already on the branch, or no merged PR exists in the upstream repository, `cherry_pick.upstream_repo`).
 
 → Five required elements, decider-lookup, mention syntax, comment template: [references/blocked-owner-comment.md](references/blocked-owner-comment.md)
 
@@ -206,7 +220,8 @@ State to checkpoint:
 
 ## Notes
 
-- **PROJECT.md**: branch-movement operations — the parent workflow owns any PROJECT.md update, not this skill.
+- **PROJECT.md and CHERRY_PICK.md**: this skill owns both for its run; CHERRY_PICK.md is the batch manifest.
+- **Org data** (the release-candidate label id, the upstream repository) lives in `.ai-toolkit/config.json` in the target repo under `cherry_pick.*`. When a key is missing, ask the user once and write it there; `.ai-toolkit/` stays out of commits.
 - Always use `cherry-pick -x` to preserve source reference.
 - `--force` overrides the gate's accept/reject only, never downstream phases.
 - If the accept/reject category itself is ambiguous, treat it as reject and surface `--force`. (`Target-affected: UNCLEAR` still proceeds, per [references/gate.md](references/gate.md).)

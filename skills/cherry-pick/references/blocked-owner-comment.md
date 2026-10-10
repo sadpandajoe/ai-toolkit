@@ -10,7 +10,7 @@ Run for any release-candidate story whose PR(s) we did **not** land this pass:
 - `Blocked` / `Rejected` — architecture missing on target, modify/delete, dependency chain, structural divergence.
 - `Skipped` — we judged it shouldn't be backported (e.g. fixes a master-only regression that can't occur on the release branch).
 
-**Skip** only when there is genuinely nothing for an owner to decide — e.g. the PR's merge SHA is already on the branch (already backported), the story has no merged apache/superset PR at all, or the gate returned high-confidence `NOT_AFFECTED` (target not affected — the bug's trigger never reached the branch). A high-confidence not-affected skip is a no-decision skip like already-backported: don't fire an owner comment for it, or a release audit that drops 20 not-affected candidates becomes a notification cannon. Downgrade to an FYI at most. Reserve the owner comment for skips that carry a real judgment call (blocked, force-vs-leave-off, adapt).
+**Skip** only when there is genuinely nothing for an owner to decide — e.g. the PR's merge SHA is already on the branch (already backported), the story has no merged PR in the upstream repository (`cherry_pick.upstream_repo`) at all, or the gate returned high-confidence `NOT_AFFECTED` (target not affected — the bug's trigger never reached the branch). A high-confidence not-affected skip is a no-decision skip like already-backported: don't fire an owner comment for it, or a release audit that drops 20 not-affected candidates becomes a notification cannon. Downgrade to an FYI at most. Reserve the owner comment for skips that carry a real judgment call (blocked, force-vs-leave-off, adapt).
 
 ## The Five Required Elements
 
@@ -22,13 +22,22 @@ Every notification comment must contain all five, in this order:
 4. **Recommendation** — our actual call (leave it off / force it / adapt it), with the reason. Don't stay neutral; we did the investigation, so we owe a recommendation. **Let the difficulty drive it:** if the unblock chain is `easy`, recommending it is reasonable; if it is `heavy` or `risky` (a DB migration on a release branch, or a large feature PR pulled in to land a small fix), lean *away* from "pull in the chain" unless there is active customer impact that justifies the surface — and name that trade-off. Never soft-recommend a migration-bearing chain as if it were a clean backport.
 5. **Let them decide** — present the options as *their* call and close by asking which way to go. We recommend; the labeler decides. Do not action a force-backport or adaptation off our own recommendation without their reply.
 
+## Org Data
+
+Two values differ per organization and live in the target repo's `.ai-toolkit/config.json` (kept out of commits):
+
+- `cherry_pick.release_candidate_label_id` — the Shortcut id of the `release-candidate` label.
+- `cherry_pick.upstream_repo` — the `owner/name` repository whose merged PRs the stories track.
+
+When a key is missing, ask the user once, write the answer there, and reuse it.
+
 ## Finding the Decider (who added the label)
 
-Use the story's history to find who added `release-candidate` (label id **78270**):
+Use the story's history to find who added `release-candidate` (the label id from `cherry_pick.release_candidate_label_id`):
 
 1. `stories-get-history` for the story id.
-2. Scan entries for an action whose `changes.label_ids.adds` array contains `78270`.
-3. That entry's `actor_id` / `member_id` is the decider; its `actor_name` is the display name.
+2. Scan the history entries for one with an action in `actions[]` whose `changes.label_ids.adds` contains that id.
+3. That entry's `member_id` is the decider; its `actor_name` is the display name. There is no `actor_id` field.
 
 If multiple entries add/remove the label, use the **most recent add** — that's who currently wants it on the release.
 
@@ -42,10 +51,10 @@ Plain `@name` text does **not** create a Shortcut notification. Use the member-l
 [@mention_name](shortcutapp://members/<member-id>)
 ```
 
-- `mention_name` is the member's `mention_name` (the @handle), e.g. `eschutho`.
-- `<member-id>` is the member UUID — the same `actor_id` you pulled from history (e.g. `5f6d24bc-d083-4560-855f-365aa41428cd`).
+- `mention_name` is the member's `mention_name` (the @handle), e.g. `<handle>`.
+- `<member-id>` is the member UUID — the same `member_id` you pulled from history (e.g. `<member-uuid>`).
 
-Resolve the handle from the id with `users-list` (or `users-get-current` for self). A comment that uses plain `@eschutho` looks right in the text but sends no notification — the owner never sees it. Always use the link form.
+Resolve the handle from the id with `users-list` (or `users-get-current` for self). A comment that uses plain `@<handle>` looks right in the text but sends no notification — the owner never sees it. Always use the link form.
 
 ## Comment Template
 
