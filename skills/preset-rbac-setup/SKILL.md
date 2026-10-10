@@ -9,7 +9,7 @@ Seeds the canonical seven test users with workspace roles and (where applicable)
 
 ## Inputs
 
-- **Workspace URL or hostname** — e.g. `https://7b412530.us1a.app-stg.preset.io/` → host `7b412530.us1a.app-stg.preset.io`. Take this as the only positional arg.
+- **Workspace URL or hostname** — e.g. `https://<ws>.us1a.app-stg.preset.io/` → host `<ws>.us1a.app-stg.preset.io`. Take this as the only positional arg.
 - **Mode** — dry-run by default. `--apply` authorizes the exact role and DAR
   changes shown in the dry-run plan. `--replace-existing` additionally authorizes
   deletion of toolkit-owned DARs listed in that plan; it is invalid without
@@ -85,7 +85,7 @@ DAR body shape (`type: "data_access_role"`):
   "type": "data_access_role",
   "grantees": [{"type": "USER", "identifier": "<user.username>"}],
   "acl": {
-    "dar:ROLES <random>": { "config": {}, "grants": [ ...GRANTS ] }
+    "dar:AI Toolkit RBAC <user.username>": { "config": {}, "grants": [ ...GRANTS ] }
   }
 }
 ```

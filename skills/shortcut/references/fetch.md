@@ -15,18 +15,23 @@ Global rules only route Shortcut work here; this file owns the detailed REST pro
 
 ## Retry Wrapper
 
-The Shortcut API returns `organization2_missing` (or similar transient errors) on the first call of a session. This is normal. Always use this wrapper:
+The Shortcut API returns `organization2_missing` (or similar transient errors) on the first call of a session. This is normal. Always use this wrapper, and always pass `--fail-with-body` (curl 7.76 or newer): plain `curl -s` exits 0 on an HTTP error, so a failed call would never be retried or noticed.
 
 ```bash
 shortcut_call() {
-  local result
-  result=$("$@") && printf '%s\n' "$result" && return 0
-  # First call often fails with transient error — retry once
-  result=$("$@") && printf '%s\n' "$result" && return 0
+  local result attempt
+  for attempt in 1 2; do
+    # --fail-with-body makes curl exit non-zero on HTTP 4xx/5xx and still
+    # print the error body; organization2_missing is the transient one.
+    if result=$("$@") && [[ $result != *organization2_missing* ]]; then
+      printf '%s\n' "$result"
+      return 0
+    fi
+  done
   printf 'Shortcut API failed after retry: %s\n' "$result" >&2
   return 1
 }
-# Usage: shortcut_call curl -s -H "Shortcut-Token: $SHORTCUT_API_TOKEN" ...
+# Usage: shortcut_call curl -sS --fail-with-body -H "Shortcut-Token: $SHORTCUT_API_TOKEN" ...
 ```
 
 If the retry also fails, surface the gap to the user — do not silently move on with missing data.
@@ -51,7 +56,7 @@ Do not attempt `jq` on fields that contain user-authored text. Use `jq` only for
 | Field | Gotcha |
 |-------|--------|
 | `labels` | Array of objects: `[{"id": ..., "name": "..."}]` — use `.labels[].name`, but **guard for null**: `(.labels // [])[] .name` |
-| `comments` | Not on the story object. Fetch separately: `GET /stories/<id>/comments` |
+| `comments` | On the full story from `GET /stories/<id>`. Search results (`StorySlim`) have no comments, and no `description` unless the search asks for `includes_description: true`. |
 | `external_links` | Array of strings (GitHub PR URLs). Can be empty `[]`. |
 | `owner_ids` | Array of member UUIDs, not names. Cross-reference with `GET /members` to resolve. |
 | `group_id` | Single UUID or `null` if unassigned. Not an array. |
@@ -65,7 +70,8 @@ Do not attempt `jq` on fields that contain user-authored text. Use `jq` only for
 
 | Endpoint | Method | Use |
 |----------|--------|-----|
-| `/stories/search` | POST | Find stories by team, state, dates. Supports pagination. |
+| `/stories/search` | POST | Find stories by team, state, dates. Returns every match as one `StorySlim[]` array, with no `next`. |
+| `/search/stories` | GET | Search-operator query (`?query=...&page_size=25`). Paged with `next`. |
 | `/stories/<id>` | GET | Single story details |
 | `/epics/<id>` | GET | Epic details — progress, state, stories |
 | `/groups` | GET | All teams (groups) — verify UUIDs |
@@ -78,7 +84,7 @@ Do not attempt `jq` on fields that contain user-authored text. Use `jq` only for
 
 **Completed stories by team in a date range:**
 ```bash
-curl -s -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
+shortcut_call curl -sS --fail-with-body -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
   -H "Content-Type: application/json" \
   -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
   -d '{"completed_at_start":"2026-03-01T00:00:00Z","completed_at_end":"2026-03-21T23:59:59Z","group_id":"<team-uuid>"}'
@@ -86,7 +92,7 @@ curl -s -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
 
 **WIP stories by team:**
 ```bash
-curl -s -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
+shortcut_call curl -sS --fail-with-body -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
   -H "Content-Type: application/json" \
   -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
   -d '{"workflow_state_types":["started"],"group_id":"<team-uuid>"}'
@@ -96,7 +102,9 @@ curl -s -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
 
 ## Pagination
 
-Search responses include a `next` token when more results exist. Pass it as `"next": "<token>"` in the next POST body. Loop until no `next` token is returned.
+Only `GET /search/stories` pages. Its response has `data` and `next`; `next` is a path plus query string (`/api/v3/search/stories?...`), or null on the last page. Request `https://api.app.shortcut.com` + `next` until it is null.
+
+`POST /stories/search` does not page: it returns a plain array of every match. Keep its filters narrow (team, state, date range) rather than looking for a `next` field.
 
 ## Workflow States
 
@@ -127,15 +135,19 @@ When REST API is unavailable after retry or for interactive one-off lookups, use
 ```bash
 # 1. Set up wrapper
 shortcut_call() {
-  local result
-  result=$("$@") && printf '%s\n' "$result" && return 0
-  result=$("$@") && printf '%s\n' "$result" && return 0
+  local result attempt
+  for attempt in 1 2; do
+    if result=$("$@") && [[ $result != *organization2_missing* ]]; then
+      printf '%s\n' "$result"
+      return 0
+    fi
+  done
   printf 'Shortcut API failed after retry: %s\n' "$result" >&2
   return 1
 }
 
 # 2. Fetch story
-story=$(shortcut_call curl -s \
+story=$(shortcut_call curl -sS --fail-with-body \
   "https://api.app.shortcut.com/api/v3/stories/12345" \
   -H "Shortcut-Token: $SHORTCUT_API_TOKEN")
 
