@@ -8,6 +8,7 @@ import re
 import tempfile
 import unittest
 
+from aitk import claude_hooks
 from aitk.build import expected_build
 from aitk.conformance import workflow_dependency_resources
 from aitk.interfaces import load_skill_interfaces
@@ -63,15 +64,29 @@ class ProviderAdapterTests(unittest.TestCase):
             "observation-reminder.sh",
             "agent-setup-edit-reminder.sh",
         }
-        codex = (ROOT / "hooks/hooks.json").read_text()
-        claude = (ROOT / "install-hooks.sh").read_text()
+        on_disk = {
+            path.name
+            for path in (ROOT / "hooks").glob("*.sh")
+            if not path.name.startswith("test-")
+        }
+        self.assertEqual(productive, on_disk)
 
-        for script in productive:
-            with self.subTest(script=script):
-                self.assertIn(script, codex)
-                self.assertIn(script, claude)
+        # hooks/hooks.json is the single registration source: Codex reads it
+        # through the plugin, and `bin/aitk install` writes the same entries
+        # into Claude Code settings with the absolute toolkit root.
+        hooks = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
+        registered = {
+            re.search(r"/hooks/([\w.-]+\.sh)", handler["command"]).group(1)
+            for groups in hooks.values()
+            for group in groups
+            for handler in group["hooks"]
+        }
+        self.assertEqual(productive, registered)
+        claude = claude_hooks.desired_hooks(ROOT)
+        self.assertEqual(
+            json.loads(json.dumps(hooks).replace("$PLUGIN_ROOT", str(ROOT))), claude
+        )
 
-        hooks = json.loads(codex)["hooks"]
         posttool_matcher = hooks["PostToolUse"][0]["matcher"]
         for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"):
             self.assertIn(tool, posttool_matcher)

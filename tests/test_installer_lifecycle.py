@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 from aitk.doctor import run_doctor
+from aitk import claude_hooks
 from aitk.installer import (
     FAILPOINT_ENV,
     _legacy_command_targets,
@@ -18,6 +19,7 @@ from aitk.installer import (
     install,
     resolve_paths,
     rollback,
+    run_lifecycle,
     uninstall,
 )
 
@@ -916,6 +918,224 @@ class InstallerLifecycleTests(unittest.TestCase):
                     {"operation", "status", "changed", "conflicts", "ledger"},
                     set(json.loads(lifecycle.stdout)),
                 )
+
+
+class ClaudeHookRegistrationTests(unittest.TestCase):
+    """`install` registers hooks/hooks.json in Claude Code settings by default."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.home = Path(self.temporary.name).resolve() / "home"
+        self.home.mkdir()
+        self.paths = resolve_paths(ROOT, self.home, self.home / ".codex", self.home / ".agents")
+        self.settings = self.home / ".claude/settings.json"
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def run_cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                str(ROOT / "bin/aitk"),
+                *arguments,
+                "--home",
+                str(self.home),
+                "--codex-home",
+                str(self.home / ".codex"),
+                "--agents-dir",
+                str(self.home / ".agents"),
+                "--json",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def toolkit_commands(self) -> list[str]:
+        settings = json.loads(self.settings.read_text())
+        return [
+            handler["command"]
+            for groups in settings.get("hooks", {}).values()
+            for group in groups
+            for handler in group.get("hooks", [])
+            if f"{ROOT}/hooks/" in handler.get("command", "")
+        ]
+
+    def seed(self, settings: dict, indent: int = 2) -> bytes:
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        content = (json.dumps(settings, indent=indent) + "\n").encode()
+        self.settings.write_bytes(content)
+        return content
+
+    def test_install_registers_hooks_json_with_the_absolute_root(self) -> None:
+        result = self.run_cli("install")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(str(self.settings), json.loads(result.stdout)["changed"])
+        settings = json.loads(self.settings.read_text())
+        source = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
+        expected = json.loads(
+            json.dumps(source).replace("$PLUGIN_ROOT", str(ROOT))
+        )
+        self.assertEqual(expected, settings["hooks"])
+        for command in self.toolkit_commands():
+            self.assertNotIn("$PLUGIN_ROOT", command)
+        self.assertEqual(list(claude_hooks.DENY_RULES), settings["permissions"]["deny"])
+        again = self.run_cli("install")
+        self.assertEqual("noop", json.loads(again.stdout)["status"], again.stdout)
+
+    def test_written_command_blocks_with_plugin_root_unset(self) -> None:
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        guard = next(
+            command for command in self.toolkit_commands() if "prevent-project-commit.sh" in command
+        )
+        env = {key: value for key, value in os.environ.items() if key != "PLUGIN_ROOT"}
+        payload = json.dumps(
+            {"tool_input": {"command": "git commit --no-verify -m x"}, "cwd": str(self.home)}
+        )
+        result = subprocess.run(
+            ["bash", "-c", guard], input=payload, text=True, capture_output=True, env=env, check=False
+        )
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("--no-verify", result.stderr)
+
+    def test_install_sh_passes_no_hooks_through(self) -> None:
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"CODEX_HOME", "AGENTS_DIR"}
+        }
+        env["HOME"] = str(self.home)
+        for arguments in (["--no-hooks"], ["--with-pgm", "--no-hooks"]):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    ["/bin/sh", str(ROOT / "install.sh"), *arguments],
+                    cwd=ROOT,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertFalse(self.settings.exists())
+                self.assertTrue(claude_hooks.opted_out(self.paths.state_dir))
+
+    def test_no_hooks_opts_out_and_removes_an_earlier_registration(self) -> None:
+        result = self.run_cli("install", "--no-hooks")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(self.settings.exists())
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        self.assertTrue(self.toolkit_commands())
+        self.assertEqual("ok", run_lifecycle(self.paths, "install", hooks=False).status)
+        self.assertFalse(self.settings.exists())
+        self.assertTrue(claude_hooks.opted_out(self.paths.state_dir))
+        # A rollback that leaves an install active keeps the opt-out.
+        self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+        self.assertEqual("ok", run_lifecycle(self.paths, "rollback").status)
+        self.assertFalse(self.settings.exists())
+
+    def test_install_replaces_entries_an_older_hook_installer_wrote(self) -> None:
+        def entry(name: str, matcher: str | None = "Bash") -> dict:
+            group = {"hooks": [{"type": "command", "command": f'bash "{ROOT}/hooks/{name}"'}]}
+            if matcher:
+                group["matcher"] = matcher
+            return group
+
+        mine = {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-hook.sh"}]}
+        self.seed(
+            {
+                "model": "opus",
+                "hooks": {
+                    "PreToolUse": [
+                        entry("prevent-project-commit.sh"),
+                        entry("check-resources.sh"),
+                        mine,
+                    ],
+                    "PostToolUse": [entry("agent-setup-edit-reminder.sh", "Edit|Write")],
+                    "Stop": [entry("check-plan-drift.sh", None)],
+                },
+                "permissions": {"deny": ["Bash(git push -f *)", "Bash(rm -rf *)"]},
+            }
+        )
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        settings = json.loads(self.settings.read_text())
+        source = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
+        expected = json.loads(json.dumps(source).replace("$PLUGIN_ROOT", str(ROOT)))
+        self.assertEqual([mine, *expected["PreToolUse"]], settings["hooks"]["PreToolUse"])
+        self.assertEqual(expected["PostToolUse"], settings["hooks"]["PostToolUse"])
+        self.assertEqual(expected["Stop"], settings["hooks"]["Stop"])
+        self.assertEqual("opus", settings["model"])
+        deny = settings["permissions"]["deny"]
+        self.assertEqual(1, deny.count("Bash(git push -f *)"))
+        for rule in claude_hooks.DENY_RULES:
+            self.assertIn(rule, deny)
+
+        # Uninstall keeps the user's hook and both deny rules the user had.
+        self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+        settings = json.loads(self.settings.read_text())
+        self.assertEqual({"PreToolUse": [mine]}, settings["hooks"])
+        self.assertEqual(["Bash(git push -f *)", "Bash(rm -rf *)"], settings["permissions"]["deny"])
+
+    def test_uninstall_without_the_ledger_removes_only_toolkit_entries(self) -> None:
+        mine = {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-hook.sh"}]}
+        for remove_record in (False, True):
+            with self.subTest(remove_record=remove_record):
+                original = self.seed({"hooks": {"PreToolUse": [mine]}, "permissions": {"allow": ["Bash(ls *)"]}})
+                self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+                self.paths.ledger.unlink()
+                if remove_record:
+                    claude_hooks.record_path(self.paths.state_dir).unlink()
+                result = run_lifecycle(self.paths, "uninstall")
+                self.assertEqual("ok", result.status, result.conflicts)
+                settings = json.loads(self.settings.read_text())
+                self.assertEqual({"PreToolUse": [mine]}, settings["hooks"])
+                self.assertNotIn("deny", settings["permissions"])
+                if not remove_record:
+                    self.assertEqual(original, self.settings.read_bytes())
+                self.assertEqual("noop", run_lifecycle(self.paths, "uninstall").status)
+                shutil.rmtree(self.home)
+                self.home.mkdir()
+
+    def test_round_trip_restores_the_settings_bytes(self) -> None:
+        for indent in (2, 4):
+            with self.subTest(indent=indent):
+                original = self.seed({"env": {"A": "1"}, "permissions": {"deny": []}}, indent)
+                self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+                self.assertNotEqual(original, self.settings.read_bytes())
+                self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+                self.assertEqual(original, self.settings.read_bytes())
+                shutil.rmtree(self.home)
+                self.home.mkdir()
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+        self.assertFalse(self.settings.exists())
+
+    def test_a_symlinked_settings_file_stays_a_link(self) -> None:
+        dotfiles = self.home / "dotfiles/settings.json"
+        dotfiles.parent.mkdir()
+        dotfiles.write_text("{}\n")
+        self.settings.parent.mkdir()
+        self.settings.symlink_to(dotfiles)
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        self.assertTrue(self.settings.is_symlink())
+        self.assertIn("hooks", json.loads(dotfiles.read_text()))
+
+    def test_invalid_settings_refuse_before_any_change(self) -> None:
+        self.settings.parent.mkdir()
+        self.settings.write_text("{ not json")
+        before = tree_state(self.home)
+        result = run_lifecycle(self.paths, "install")
+        self.assertEqual("refused", result.status)
+        self.assertIn("not valid JSON", " ".join(result.conflicts))
+        self.assertEqual(before, tree_state(self.home))
+
+    def test_rollback_of_uninstall_registers_the_hooks_again(self) -> None:
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        registered = self.settings.read_bytes()
+        self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+        self.assertFalse(self.settings.exists())
+        self.assertEqual("ok", run_lifecycle(self.paths, "rollback").status)
+        self.assertEqual(registered, self.settings.read_bytes())
 
 
 if __name__ == "__main__":

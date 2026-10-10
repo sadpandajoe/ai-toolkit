@@ -21,7 +21,7 @@ from .checkpoint import (
 )
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
 from .doctor import run_doctor
-from .installer import install, resolve_paths, rollback, uninstall
+from .installer import resolve_paths, run_lifecycle
 from .lane_yield import default_metrics_file, evaluate as evaluate_lane_yield, load_events
 from .model_routing import (
     ModelRouteError,
@@ -287,12 +287,12 @@ def _lifecycle(arguments: argparse.Namespace) -> int:
         Path(arguments.codex_home) if arguments.codex_home else None,
         Path(arguments.agents_dir) if arguments.agents_dir else None,
     )
-    if arguments.command == "install":
-        result = install(paths, with_pgm=arguments.with_pgm)
-    elif arguments.command == "uninstall":
-        result = uninstall(paths)
-    else:
-        result = rollback(paths)
+    result = run_lifecycle(
+        paths,
+        arguments.command,
+        with_pgm=arguments.with_pgm,
+        hooks=not arguments.no_hooks,
+    )
     payload = result.as_dict()
     if arguments.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -754,8 +754,13 @@ def parser() -> argparse.ArgumentParser:
             lifecycle.add_argument(
                 "--with-pgm", action="store_true", help="include optional PGM workflows"
             )
+            lifecycle.add_argument(
+                "--no-hooks",
+                action="store_true",
+                help="do not register the toolkit hooks in Claude Code settings",
+            )
         else:
-            lifecycle.set_defaults(with_pgm=False)
+            lifecycle.set_defaults(with_pgm=False, no_hooks=False)
         lifecycle.set_defaults(handler=_lifecycle)
 
     check = subparsers.add_parser(

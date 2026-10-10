@@ -75,7 +75,7 @@ instead of running several in parallel when the limit is tight.
 git clone https://github.com/sadpandajoe/ai-toolkit.git ~/opt/code/ai-toolkit
 cd ~/opt/code/ai-toolkit
 ./setup.sh          # claude, codex, tmux, node
-./install.sh        # build and link adapters, skills, and agents without replacing personal config
+./install.sh        # build and link adapters, skills, agents and Claude Code hooks without replacing personal config (--no-hooks skips hooks)
 bin/aitk check
 bin/aitk doctor --installed --strict
 ```
@@ -189,7 +189,7 @@ CLI:
 | `bin/aitk model-run <route> --provider <p> --boundary <id> --prompt-file <f>` | Run one fail-closed specialist |
 | `bin/aitk build [--check] [--with-pgm]` | Generate path-resolved guidance |
 | `bin/aitk doctor [--strict] [--installed]` | Structured health checks |
-| `bin/aitk install [--with-pgm]` / `uninstall` / `rollback` | Transactional lifecycle |
+| `bin/aitk install [--with-pgm] [--no-hooks]` / `uninstall` / `rollback` | Transactional lifecycle; install also registers the hooks in Claude Code settings |
 | `bin/aitk check` | Build drift, doctor, tests, hook smoke tests |
 
 See [Architecture](docs/ARCHITECTURE.md), [migration guidance](docs/MIGRATION.md),
@@ -242,24 +242,31 @@ does not exist.
 | `rules/shortcut-api.md` | Shortcut skill loader |
 | `rules/rule-maintenance.md` | Reflection skill loader |
 
-## Hooks (optional)
+## Hooks
 
 Hooks enforce toolkit rules at runtime. The shell guards are provider-neutral;
-only their registration is provider-specific.
+only their registration is provider-specific, and `hooks/hooks.json` is the one
+list of them.
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, and commits of local workflow state files |
+| `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, commits of local workflow state files or `.ai-toolkit/`, and `gh pr ready`/`gh pr merge` unless the user set `AITK_PR_READY=1` |
 | `pre-push-validate.sh` | PreToolUse (Bash) | Runs repository-pinned lint and targeted tests before a push |
-| `require-review-gate.sh` | PreToolUse (Bash) | Blocks `gh pr create` unless the `PROJECT.md` snapshot records the review gate as PASS; `SKIP_PR_GATE=1` is the user's override |
+| `require-review-gate.sh` | PreToolUse (Bash) | Blocks `gh pr create` unless the `PROJECT.md` snapshot records the review gate as PASS (`SKIP_PR_GATE=1` is the user's override) and the PR is a `--draft` (`AITK_PR_READY=1` is the user's override) |
 | `check-resources.sh` | PreToolUse (Bash) | Warns when running tests with constrained resources |
 | `check-plan-drift.sh` | Stop | Warns at turn end when PLAN.md outpaces PROJECT.md |
+| `observation-reminder.sh` | Stop | Says when ten or more unreviewed observations wait in `.ai-toolkit/observations.jsonl` |
 | `agent-setup-edit-reminder.sh` | PostToolUse (Edit/Write/MultiEdit/NotebookEdit) | Reminds to load `agent-setup-maintainer` when an agent-setup file is edited |
 
-```bash
-./install-hooks.sh           # Install Claude hooks
-./install-hooks.sh --remove  # Remove Claude hooks
-```
+The git guard and the review gate run `python3 -m aitk.hooks.*`; without
+python3 they block git and `gh` commands rather than let them through.
+
+`./install.sh` (`bin/aitk install`) registers the hooks in
+`~/.claude/settings.json` by default, with this checkout's absolute path, and
+adds `permissions.deny` rules for `git push --force`/`-f` and
+`git commit --no-verify`/`-n`. `--no-hooks` opts out. `bin/aitk uninstall`
+removes only the entries that point into this checkout's `hooks/` and the deny
+rules the install added.
 
 Codex hooks ship in the plugin at `hooks/hooks.json`; trust them through
 `/hooks` after enabling the plugin.
@@ -302,8 +309,9 @@ bin/aitk uninstall
 bin/aitk rollback
 ```
 
-Uninstall removes only ledger-owned links and managed guidance blocks. Rollback
-refuses drift or a corrupt backup and can be applied once.
+Uninstall removes only ledger-owned links and managed guidance blocks, plus the
+Claude Code hook entries and deny rules the install wrote. Rollback refuses
+drift or a corrupt backup and can be applied once.
 
 ## Extensions
 

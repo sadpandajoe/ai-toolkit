@@ -28,7 +28,6 @@ def authored_files() -> list[Path]:
     ]
     files: list[Path] = [
         ROOT / "install.sh",
-        ROOT / "install-hooks.sh",
         ROOT / "setup.sh",
     ]
     for relative in roots:
