@@ -44,8 +44,9 @@ specialist grades the root cause and the fix plan is validated before code.
 1. **Intake.** Normalize input, fetch ticket context, restate the symptom in
    code-level terms with a first look at the code path.
 2. **Classify** complexity, size, and shape (`rules/complexity-gate.md`) and
-   persist: `bin/aitk project-state init --workflow fix-bug ...`. Emit the
-   Complexity Gate. Unknown or competing root causes are COMPLEX.
+   persist: `bin/aitk project-state init --workflow fix-bug ... --format
+   block`, and paste the Complexity Gate it prints. Unknown or competing root
+   causes are COMPLEX.
 3. **Existing fix.** Run `debug/references/check-existing-fix.md` unless the fix
    is TRIVIAL mechanical work. `FIXED_UPSTREAM` routes to `$cherry-pick`;
    `FIX_PENDING_PR` stops with adopt, monitor, or supersede choices.
@@ -74,7 +75,7 @@ specialist grades the root cause and the fix plan is validated before code.
    acceptance command; it returns the compact handoff and never commits.
    TRIVIAL and contained STANDARD fixes are implemented inline.
 8. **Verify** with `skills/verification-loop/SKILL.md`: the regression test
-   plus targeted tests plus repo checks. Two failed implementation attempts, or
+   plus targeted tests plus repo checks, each through `bin/aitk verify --run`. Two failed implementation attempts, or
    an RCA that materially changed, reopen the RCA gate (rabbit-hole guardrail).
 9. **Review** through `review-code` (`review/references/local-review.md`): one
    independent review, validate findings, fix, delta pass if substantive, by
@@ -132,7 +133,8 @@ environment only the user holds, or a safety or effect boundary.
 
 - Classification persisted before investigation or implementation.
 - RCA gate `PASS` before any COMPLEX fix plan; a bug fix is never `PASS` at
-  verification on inspection alone.
+  verification on inspection alone: the verification gate counts only with a
+  `bin/aitk verify --run` record of the regression command exiting 0.
 - No commit without an added or updated regression test unless the gap is
   explicitly accepted by the user; no auto-push below `STRONG` verification.
 - BATCHED or MULTI_PHASE fixes write the `## Phase Complete` block from

@@ -41,34 +41,22 @@ decision; it is a `RETRY` or an `ESCALATE` to a specialist.
 
 Each reasoning unit (an RCA, a plan, a phase plan, an implementation slice, a
 review round) gets one initial attempt plus one informed retry per owner.
-Record every failed attempt with `bin/aitk project-state gate --status RETRY
---unit <unit>`; the runtime turns the request into `ESCALATE` when the unit is
-exhausted or the same failure repeats. Never keep revising the same artifact
-past that point.
+`bin/aitk project-state gate` (and `bin/aitk verify --run`) enforces the
+budget and the escalation ladder: record every failed attempt with `--status
+RETRY --unit <unit>` (`--same-failure` when the reason repeats) and follow
+what it prints. Never keep revising the same artifact past an `ESCALATE`.
+Editorial fixes (a missing path, a wording gap, a rollback note) are recorded
+with `--editorial` and not charged; reasoning failures (invalid architecture,
+disproven assumption, competing designs, incompatible contract) are.
 
-- Same gate fails once for a reason → `RETRY`.
-- Same gate fails twice for the same reason → `ESCALATE`.
-- Editorial fixes (a missing path, a wording gap, a rollback note) do not
-  consume the budget: record them with `--editorial`. Reasoning failures
-  (invalid architecture, disproven assumption, competing designs, incompatible
-  contract) do.
-- `USER_DECISION` and `BLOCKED` are recorded but never charged; waiting is not
-  an attempt.
-
-### The escalation ladder
-
-An `ESCALATE` hands the unit to the next owner and gives that owner a fresh
-budget; the snapshot records the step in `escalations`. Effort is fixed per
-route, so the next owner is a route choice: a fresh specialist on the other
-model family when perspective is missing, the deep route when depth is
-missing or the standard route stayed uncertain. The runtime
-caps the ladder at three escalations per unit and answers `USER_DECISION`
-after that, so the RCA ladder (parent retry → RCA specialist `REVISE` →
-`deep-rca` → the user) is recorded on one unit without ever overflowing it.
-
-`RECLASSIFY` resets the named unit's counters (every unit when none is named)
-because the problem itself changed; then the classification moves upward in the
-snapshot and the loop re-enters.
+An `ESCALATE` hands the unit to the next owner with a fresh budget. Effort is
+fixed per route, so the next owner is a route choice: a fresh specialist on
+the other model family when perspective is missing, the deep route when depth
+is missing or the standard route stayed uncertain. After three escalations the
+command answers `USER_DECISION`, so the RCA ladder (parent retry → RCA
+specialist `REVISE` → `deep-rca` → the user) stays on one unit. `RECLASSIFY`
+means the problem changed: move the classification upward in the snapshot and
+re-enter the loop.
 
 ## Verification Strength
 
@@ -77,14 +65,17 @@ outcome permits, and it is the one vocabulary every workflow uses:
 
 | Strength | What ran | Gate outcome | Permits |
 |---|---|---|---|
-| `STRONG` | The failing or acceptance command itself (or a close equivalent) ran locally and passes | `PASS` | Everything, including an authorized auto-commit and push |
+| `STRONG` | The failing or acceptance command itself (or a close equivalent) ran locally through `bin/aitk verify --run` and passes | `PASS` | Everything, including an authorized auto-commit and push |
 | `PARTIAL` | Related checks that exercise the changed code, not the exact command | `PASS (downstream: <verifier>)` when a downstream verifier such as CI on the PR will run the exact check; otherwise `RETRY` | Continue to review and present the diagnosis; never an auto-push |
 | `WEAK` | Inspection only, no local execution | `PASS (downstream: <verifier>)` only with a downstream verifier and only in `fix-ci` and `watch-pr`; otherwise `BLOCKED` | Present the diagnosis with the gap named; never an auto-push |
 
 `--gate-strict` removes the `WEAK` carve-out: `WEAK` is `BLOCKED` even with a
 downstream verifier. Callers that commit or push on their own authority
 (`fix-bug`, `fix-ci`, `watch-pr`) require `STRONG`; a downstream `PASS` is a
-reason to keep working, not a reason to publish.
+reason to keep working, not a reason to publish. `STRONG` is a `verify --run`
+record: the command, its exit code, the output tail and the tree it ran on.
+`bin/aitk deliver` refuses without one, and refuses a tree that changed after
+the run.
 
 ## Evidence Rule
 
@@ -163,14 +154,11 @@ first, including standalone `review-plan` and `fix-ci`.
 
 ## Block Shape
 
-```markdown
-## Gate: <verification | rca | plan | review | phase-exit>
-Status: PASS | RETRY | ESCALATE | RECLASSIFY | USER_DECISION | BLOCKED
-Attempt: <n>/2 on <unit> (escalation <k>/3 when > 0)
-Strength: STRONG | PARTIAL | WEAK          # verification gates only
-Evidence: <command or check and result, one line>
-Next: <bounded next action, or the decision the user must make>
-```
+Paste the block the CLI prints: `bin/aitk verify --run` prints `## Gate:
+verification`, and `bin/aitk project-state gate --format block` (with
+`--evidence`, `--next`, `--strength`) prints the others. A review PASS counts
+only with its evidence: `--result <model-run envelope>` for the reviewer
+lanes, or `--exception zero-logic|micro-fix` on a passing verification run.
 
 For `USER_DECISION`, add the adjudication package: the two or three options,
 what each costs, the evidence that could not settle it, and a recommendation.

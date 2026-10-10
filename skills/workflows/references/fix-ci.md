@@ -36,7 +36,8 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    ours/pre-existing split, hypothesis each. All pre-existing → exit with
    evidence, no fix cycle.
 3. **Classify complexity** per the CI matrix in `ci-fix-orchestration.md` and
-   persist with `bin/aitk project-state init --workflow fix-ci ...`.
+   persist with `bin/aitk project-state init --workflow fix-ci ... --format
+   block`; paste the Complexity Gate it prints.
 4. **Diagnose.** The parent diagnoses known patterns. The independent RCA
    specialist (`debug/references/review-rca.md`) enters only for CI-only
    failures that do not reproduce locally, flakiness or races, or a failure
@@ -46,15 +47,17 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    `CI_FIX.md` (`debug/templates/ci-fix-manifest.md`) for three or more failed
    jobs or artifact bundles.
 6. **Verify** with `skills/verification-loop/SKILL.md` using the verification
-   strength tiers in `debug/references/ci-verify-fix.md` and record the
-   strength (`STRONG` / `PARTIAL` / `WEAK`) on the gate block per the table in
-   `rules/gates.md`. When the failing check cannot run locally, CI is the
+   strength tiers in `debug/references/ci-verify-fix.md`, and record the
+   strength with `bin/aitk verify --run "<cmd>" --strength <STRONG | PARTIAL |
+   WEAK>` per the table in `rules/gates.md`. When the failing check cannot run locally, CI is the
    downstream verifier: `PASS (downstream: CI)` is legitimate for `PARTIAL`,
    and for `WEAK` unless `--gate-strict`; a push after a locally failed check
    never is.
 7. **Review** changed repo-tracked files through `review-code`; the review
    exception in `rules/gates.md` covers zero-logic and micro fixes. Record the
-   outcome with `bin/aitk project-state gate --gate review`.
+   outcome with `bin/aitk project-state gate --gate review --result
+   <envelope>` (`--exception zero-logic|micro-fix` for an exception) and paste
+   the block it prints.
 8. **Commit action.** `STRONG` verification, review gate `PASS`, and the
    current feature branch on the expected remote (never `main`) → deliver
    before any `project-state advance`. Amend, rebase, force-push, an ambiguous

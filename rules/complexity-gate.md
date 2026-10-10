@@ -63,5 +63,6 @@ Modifiers: <hard signals, or none>
 Reason: <one line>
 ```
 
-Always emit the block; a silent path choice is a defect. Workflow-specific
-signal tables live in the workflow reference, not here.
+Paste the Complexity Gate block that `bin/aitk project-state init` (or
+`set`) `--format block` prints. Workflow-specific signal tables live in the
+workflow reference, not here.

@@ -491,5 +491,298 @@ class ExcludeTests(unittest.TestCase):
         self.assertEqual([], list(outside.iterdir()))
 
 
+def make_repo(base: Path, name: str = "repo") -> Path:
+    repo = base / name
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    (repo / "app.py").write_text("print('one')\n")
+    git(repo, "add", "app.py")
+    git(repo, "commit", "-q", "-m", "init")
+    return repo
+
+
+def envelope(tree: str | None, result: dict[str, object] | None = None, **changes: object) -> dict[str, object]:
+    """A `model-run` envelope as a completed reviewer lane prints it."""
+    from aitk.project_state import result_digest
+
+    result = result or {"status": "completed", "summary": "clean", "findings": [], "verification": ["app.py"]}
+    payload: dict[str, object] = {
+        "command": "model-run",
+        "dry_run": False,
+        "route": "review",
+        "boundary": "review.independent",
+        "provider": "codex",
+        "result": result,
+        "result_digest": result_digest(result),
+        "reviewed_tree": tree,
+        "error": None,
+    }
+    payload.update(changes)
+    return payload
+
+
+class EvidenceRecordTests(unittest.TestCase):
+    """P3: verification runs and reviewer records back the gates (PY-14)."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.base = Path(self.temporary.name).resolve()
+        self.repo = make_repo(self.base)
+        self.path = self.repo / "PROJECT.md"
+        initialize(self.path, "fix-bug", "STANDARD", "S")
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def test_working_tree_sha_matches_the_commit_and_ignores_state(self) -> None:
+        from aitk.project_state import working_tree_sha
+
+        index = (self.repo / ".git" / "index").read_bytes()
+        clean = working_tree_sha(self.repo)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD^{tree}").strip(), clean)
+        # State files and .ai-toolkit never enter the tree.
+        (self.repo / "PLAN.md").write_text("plan\n")
+        (self.repo / ".ai-toolkit").mkdir()
+        (self.repo / ".ai-toolkit" / "metrics.jsonl").write_text("{}\n")
+        self.assertEqual(clean, working_tree_sha(self.repo))
+        # An uncommitted edit changes the tree; committing it gives the same SHA.
+        (self.repo / "app.py").write_text("print('two')\n")
+        (self.repo / "new.py").write_text("x = 1\n")
+        edited = working_tree_sha(self.repo)
+        self.assertNotEqual(clean, edited)
+        self.assertEqual(index, (self.repo / ".git" / "index").read_bytes(), "the real index moved")
+        git(self.repo, "add", "app.py", "new.py")
+        git(self.repo, "commit", "-q", "-m", "two")
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD^{tree}").strip(), edited)
+        self.assertEqual(edited, working_tree_sha(self.repo / ".ai-toolkit"))
+        self.assertIsNone(working_tree_sha(self.base))
+
+    def test_verify_run_records_pass_only_on_exit_zero(self) -> None:
+        from aitk.project_state import gate_blockers, verify_run, working_tree_sha
+
+        failed = verify_run(self.path, "echo boom; exit 3", cwd=self.repo, unit="fix")
+        self.assertEqual("RETRY", failed.status)
+        record = failed.result.snapshot["gates"]["verification"]
+        self.assertEqual(3, record["run"]["exit_code"])
+        self.assertIn("boom", record["run"]["output_tail"])
+        self.assertEqual(working_tree_sha(self.repo), record["run"]["tree"])
+        self.assertEqual(1, failed.result.snapshot["attempts"]["fix"])
+        self.assertTrue(gate_blockers(failed.result.snapshot, ["verification"]))
+        passed = verify_run(self.path, "printf 'line\\n%.0s' $(seq 40); echo done", cwd=self.repo, unit="fix")
+        self.assertEqual("PASS", passed.status)
+        tail = passed.run["output_tail"]
+        self.assertTrue(tail.endswith("done"))
+        self.assertLessEqual(len(tail.splitlines()), 20)
+        self.assertEqual([], gate_blockers(passed.result.snapshot, ["verification"]))
+        self.assertFalse(passed.tree_changed)
+        changed = verify_run(self.path, "echo more >> app.py", cwd=self.repo)
+        self.assertTrue(changed.tree_changed)
+
+    def test_strength_defaults_to_strong_only_for_the_acceptance_command(self) -> None:
+        from aitk.project_state import verify_run
+
+        (self.repo / "PLAN.md").write_text(
+            "## Implementation Plan\n#### Slice 1: x\n- Acceptance: `python3 -c 'pass'`\n"
+        )
+        self.assertEqual("STRONG", verify_run(self.path, "python3  -c 'pass'", cwd=self.repo).run["strength"])
+        self.assertEqual("PARTIAL", verify_run(self.path, "true", cwd=self.repo).run["strength"])
+        self.assertEqual(
+            "STRONG", verify_run(self.path, "true", cwd=self.repo, strength="STRONG").run["strength"]
+        )
+        self.path.write_text(self.path.read_text() + "\nRegression check: `test -f app.py` fails before\n")
+        self.assertEqual("STRONG", verify_run(self.path, "test -f app.py", cwd=self.repo).run["strength"])
+
+    def test_a_pass_without_evidence_does_not_count_and_clears_old_evidence(self) -> None:
+        from aitk.project_state import gate_blockers, verify_run
+
+        bare = record_gate(self.path, "verification", "PASS").snapshot
+        self.assertEqual(["verification=PASS with no recorded run (record it with `bin/aitk verify --run`)"],
+                         gate_blockers(bare, ["verification"]))
+        self.assertEqual([], gate_blockers(bare, ["verification"], require_records=False))
+        verify_run(self.path, "true", cwd=self.repo)
+        again = record_gate(self.path, "verification", "PASS").snapshot
+        self.assertNotIn("run", again["gates"]["verification"])
+        review = record_gate(self.path, "review", "PASS").snapshot
+        self.assertIn("no reviewer record", gate_blockers(review, ["review"])[0])
+
+    def test_review_result_records_digest_and_tree_and_refuses_bad_envelopes(self) -> None:
+        from aitk.project_state import gate_blockers, review_from_envelopes, working_tree_sha
+
+        tree = working_tree_sha(self.repo)
+        review = review_from_envelopes([envelope(tree)])
+        self.assertEqual(tree, review["tree"])
+        self.assertEqual("review.independent", review["results"][0]["boundary"])
+        snapshot = record_gate(self.path, "review", "PASS", review=review).snapshot
+        self.assertEqual([], gate_blockers(snapshot, ["review"]))
+        good = envelope(tree)
+        tampered = dict(good, result={**good["result"], "summary": "edited"})
+        for label, bad, message in (
+            ("tampered", tampered, "does not match its recorded digest"),
+            ("dry run", envelope(tree, dry_run=True), "dry-run"),
+            ("error", envelope(tree, error={"code": "x", "message": "y"}), "records an error"),
+            ("blocked", envelope(tree, {"status": "blocked", "summary": "s", "findings": [], "verification": []}),
+             "did not complete"),
+            ("no tree", envelope(None), "does not name the tree"),
+            ("other command", envelope(tree, command="model-route"), "JSON envelope"),
+        ):
+            with self.subTest(label):
+                with self.assertRaisesRegex(ProjectStateError, message):
+                    review_from_envelopes([bad])
+        with self.assertRaisesRegex(ProjectStateError, "different trees"):
+            review_from_envelopes([envelope(tree), envelope("a" * 40)])
+
+    def test_cli_records_review_results_and_exceptions(self) -> None:
+        from aitk.project_state import working_tree_sha
+
+        envelope_path = self.base / "envelope.json"
+        envelope_path.write_text(json.dumps(envelope(working_tree_sha(self.repo))))
+        aitk = [sys.executable, "-m", "aitk.cli", "--root", str(ROOT)]
+        environment = {"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"}
+
+        def run(*arguments: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run([*aitk, *arguments], cwd=self.repo, text=True, capture_output=True,
+                                  check=False, env=environment)
+
+        recorded = run("project-state", "gate", "--gate", "review", "--status", "PASS",
+                       "--result", str(envelope_path), "--format", "block")
+        self.assertEqual(0, recorded.returncode, recorded.stderr)
+        self.assertIn("## Gate: review", recorded.stdout)
+        self.assertIn("review.independent (codex)", recorded.stdout)
+        misplaced = run("project-state", "gate", "--gate", "verification", "--status", "PASS",
+                        "--result", str(envelope_path))
+        self.assertEqual(1, misplaced.returncode)
+        self.assertIn("use --gate review", misplaced.stderr)
+        refused = run("project-state", "gate", "--gate", "review", "--status", "PASS", "--exception", "micro-fix")
+        self.assertEqual(1, refused.returncode)
+        self.assertIn("passing verification run", refused.stderr)
+        verified = run("verify", "--run", "true")
+        self.assertEqual(0, verified.returncode, verified.stderr)
+        self.assertIn("## Gate: verification", verified.stdout)
+        self.assertIn("Strength: PARTIAL", verified.stdout)
+        allowed = run("project-state", "gate", "--gate", "review", "--status", "PASS",
+                      "--exception", "micro-fix", "--json")
+        self.assertEqual(0, allowed.returncode, allowed.stderr)
+        record = json.loads(allowed.stdout)["snapshot"]["gates"]["review"]["review"]
+        self.assertEqual("micro-fix", record["exception"])
+        failed = run("verify", "--run", "exit 4", "--json")
+        self.assertEqual(1, failed.returncode)
+        self.assertEqual(4, json.loads(failed.stdout)["run"]["exit_code"])
+
+    def test_format_block_prints_the_complexity_and_gate_blocks(self) -> None:
+        from aitk.project_state import complexity_block, gate_block
+
+        snapshot = show(self.path).snapshot
+        block = complexity_block(snapshot, "one handler, known pattern")
+        self.assertEqual(
+            [
+                "## Complexity Gate",
+                "Complexity: STANDARD",
+                "Size: S",
+                "Shape: SINGLE_PHASE — S/M default",
+                "Confidence: HIGH",
+                "Modifiers: none",
+                "Reason: one handler, known pattern",
+            ],
+            block.splitlines(),
+        )
+        after = record_gate(self.path, "rca", "RETRY", "rca").snapshot
+        text = gate_block(snapshot, after, "rca", "rca", evidence="hypothesis disproven")
+        self.assertIn("Status: RETRY", text)
+        self.assertIn("Attempt: 1/2 on rca", text)
+        self.assertIn("Evidence: hypothesis disproven", text)
+        self.assertNotIn("Strength:", text)
+        escalated = record_gate(self.path, "rca", "RETRY", "rca").snapshot
+        text = gate_block(after, escalated, "rca", "rca", next_step="route to the RCA specialist")
+        self.assertIn("Status: ESCALATE", text)
+        self.assertIn("(escalation 1/3)", text)
+        self.assertIn("Next: route to the RCA specialist", text)
+
+    def test_reclassify_and_repeated_failures_append_observations(self) -> None:
+        queue = self.repo / ".ai-toolkit" / "observations.jsonl"
+        record_gate(self.path, "verification", "RETRY", "fix")
+        self.assertFalse(queue.exists(), "a first failure is routine progress")
+        record_gate(self.path, "verification", "RETRY", "fix", same_failure=True, reason="same import error")
+        record_gate(self.path, "phase-exit", "RECLASSIFY", "decomposition")
+        lines = [json.loads(line) for line in queue.read_text().splitlines()]
+        self.assertEqual(["gate-repeat", "reclassify"], [line["kind"] for line in lines])
+        self.assertEqual("same import error", lines[0]["detail"])
+        self.assertEqual("fix-bug", lines[1]["workflow"])
+        self.assertIn("decomposition", lines[1]["detail"])
+        for line in lines:
+            self.assertIn("timestamp", line)
+        self.assertIn(".ai-toolkit/", (self.repo / ".git" / "info" / "exclude").read_text())
+
+    def test_observe_appends_one_whitelisted_line(self) -> None:
+        aitk = [sys.executable, "-m", "aitk.cli", "--root", str(ROOT)]
+        environment = {"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"}
+        written = subprocess.run(
+            [*aitk, "observe", "--kind", "user-correction", "--detail", "the user rejected the plan's scope",
+             "--eval-candidate", "--json"],
+            cwd=self.repo / ".git", text=True, capture_output=True, check=False, env=environment,
+        )
+        self.assertEqual(1, written.returncode, "outside the work tree there is no snapshot to name the workflow")
+        written = subprocess.run(
+            [*aitk, "observe", "--kind", "user-correction", "--detail", "the user rejected the plan's scope",
+             "--eval-candidate", "--json"],
+            cwd=self.repo, text=True, capture_output=True, check=False, env=environment,
+        )
+        self.assertEqual(0, written.returncode, written.stderr)
+        line = json.loads((self.repo / ".ai-toolkit" / "observations.jsonl").read_text())
+        self.assertEqual("fix-bug", line["workflow"])
+        self.assertTrue(line["eval_candidate"])
+        unknown = subprocess.run(
+            [*aitk, "observe", "--kind", "progress", "--detail", "x"],
+            cwd=self.repo, text=True, capture_output=True, check=False, env=environment,
+        )
+        self.assertEqual(2, unknown.returncode)
+
+    def test_operations_are_recorded_once_and_checked_before_a_repeat(self) -> None:
+        from aitk.project_state import operation_recorded, record_operation
+
+        thread = "reply:PRRT_kwDOAbC=12"
+        self.assertIsNone(operation_recorded(self.path, thread))
+        self.assertTrue(record_operation(self.path, thread).changed)
+        self.assertFalse(record_operation(self.path, thread).changed)
+        self.assertIsNotNone(operation_recorded(self.path, thread))
+        with self.assertRaises(ProjectStateError):
+            record_operation(self.path, "reply:has space")
+        aitk = [sys.executable, "-m", "aitk.cli", "--root", str(ROOT), "project-state", "op"]
+        environment = {"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"}
+        fresh = subprocess.run([*aitk, "--check", "push:abc1234"], cwd=self.repo, text=True,
+                               capture_output=True, check=False, env=environment)
+        self.assertEqual(3, fresh.returncode, fresh.stderr)
+        subprocess.run([*aitk, "--id", "push:abc1234"], cwd=self.repo, check=True,
+                       capture_output=True, env=environment)
+        # A resumed session finds the operation and skips it.
+        again = subprocess.run([*aitk, "--check", "push:abc1234"], cwd=self.repo, text=True,
+                               capture_output=True, check=False, env=environment)
+        self.assertEqual(0, again.returncode, again.stderr)
+        self.assertIn("skip it", again.stdout)
+
+    def test_project_file_is_found_in_the_cwd_then_the_git_root(self) -> None:
+        from aitk.project_state import state_file
+
+        nested = self.repo / "pkg" / "src"
+        nested.mkdir(parents=True)
+        self.assertEqual(self.path, state_file(None, nested))
+        local = nested / "PROJECT.md"
+        local.write_text("# local\n")
+        self.assertEqual(local, state_file(None, nested))
+        linked = self.base / "linked"
+        linked.symlink_to(self.repo, target_is_directory=True)
+        self.assertEqual(self.path, state_file(None, linked))
+        outside = self.base / "outside"
+        outside.mkdir()
+        self.assertEqual(outside / "PROJECT.md", state_file(None, outside))
+
+    def test_transport_and_state_agree_on_the_result_digest(self) -> None:
+        from aitk.project_state import result_digest
+        from aitk.routing_transport import _result_digest
+
+        result = {"status": "completed", "summary": "é", "findings": ["[minor] a.py:1 x"], "verification": []}
+        self.assertEqual(result_digest(result), _result_digest(result))
+        self.assertIsNone(_result_digest(None))
+
+
 if __name__ == "__main__":
     unittest.main()

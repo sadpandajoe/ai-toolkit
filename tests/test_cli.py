@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 
@@ -175,6 +176,52 @@ class CliTests(unittest.TestCase):
         error = json.loads(rejected.stdout)["error"]
         self.assertEqual("MODEL_ROUTE_INVALID", error["code"])
         self.assertIn("pass --boundary too", error["message"])
+
+
+
+class ProcedureCommandSmokeTests(unittest.TestCase):
+    """P3 commands: exit codes and JSON keys. Behaviour lives in each module's suite."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.work = Path(self.temporary.name).resolve()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.work)], check=True)
+
+    def aitk(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(ROOT / "bin/aitk"), *arguments],
+            cwd=self.work,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_verify_observe_and_block_format(self) -> None:
+        init = self.aitk(
+            "project-state", "init", "--workflow", "fix-bug", "--complexity", "STANDARD",
+            "--size", "S", "--format", "block",
+        )
+        self.assertEqual(0, init.returncode, init.stderr)
+        self.assertTrue(init.stdout.startswith("## Complexity Gate\n"))
+        verify = self.aitk("verify", "--run", "true", "--json")
+        self.assertEqual(0, verify.returncode, verify.stderr)
+        payload = json.loads(verify.stdout)
+        self.assertEqual("PASS", payload["status"])
+        self.assertTrue({"command", "run", "snapshot", "file", "tree_changed"} <= set(payload))
+        self.assertTrue(
+            {"command", "exit_code", "output_tail", "tree", "time", "strength"} <= set(payload["run"])
+        )
+        self.assertEqual(1, self.aitk("verify", "--run", "false").returncode)
+        gate = self.aitk("project-state", "gate", "--gate", "plan", "--status", "PASS", "--format", "block")
+        self.assertEqual(0, gate.returncode, gate.stderr)
+        self.assertTrue(gate.stdout.startswith("## Gate: plan\n"))
+        observe = self.aitk("observe", "--kind", "misroute", "--detail", "picked fix-ci for a test failure", "--json")
+        self.assertEqual(0, observe.returncode, observe.stderr)
+        self.assertEqual({"command", "file", "kind"}, set(json.loads(observe.stdout)))
+        check = self.aitk("project-state", "op", "--check", "rerun:42", "--json")
+        self.assertEqual(3, check.returncode, check.stderr)
+        self.assertEqual({"operation", "ran", "recorded"}, set(json.loads(check.stdout)))
 
 
 if __name__ == "__main__":

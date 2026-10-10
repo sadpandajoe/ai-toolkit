@@ -7,17 +7,17 @@ the reason on stderr, which the agent sees.
 Two checks apply to every `gh pr create` (or `gh pr new`) the command runs:
 
 - **Review.** The routing snapshot in the repository's PROJECT.md must record
-  the `review` gate as PASS for the current phase. That is the same check
-  `bin/aitk checkpoint reserve` applies before a published_pr effect
-  (`gate_blockers`), so the hook and the workflow runtime cannot disagree. A
-  review exception (zero-logic or micro-fix diff) is still a recorded review
-  PASS (rules/gates.md). A pending `published_pr` reservation from the same
-  workflow also counts: `reserve` already required review PASS when it was
-  written, and a multi-phase run legitimately advances the phase between the
-  reservation and the PR. A missing, unreadable or malformed PROJECT.md or
-  snapshot, and a missing gate, block. `SKIP_PR_GATE=1` (a command prefix or
-  the session env) is the user's override for work outside a workflow and
-  lifts this check only.
+  the `review` gate as PASS for the current phase, and the PASS must carry
+  its evidence: the reviewer results recorded from a `bin/aitk model-run`
+  envelope (`gate --gate review --result`), or a review exception (zero-logic
+  or micro-fix diff, rules/gates.md) backed by this phase's passing
+  verification run. A PASS typed without either does not count. This is the
+  `gate_blockers` check `bin/aitk deliver` applies, so the hook and deliver
+  cannot disagree. A `published_pr` checkpoint reservation no longer stands
+  in for a review: deliver opens the PR in the phase whose review it read. A
+  missing, unreadable or malformed PROJECT.md or snapshot, and a missing
+  gate, block. `SKIP_PR_GATE=1` (a command prefix or the session env) is the
+  user's override for work outside a workflow and lifts this check only.
 - **Draft.** The PR must be opened with `--draft`. `AITK_PR_READY=1` (a command
   prefix or the session env, set only when the user asked for a ready PR in
   words) lifts this check only. `bin/aitk deliver ... --ready` counts as
@@ -31,8 +31,9 @@ repository it runs in. An error inside this module blocks with the error.
 
 Known limits (this is a tripwire against skipping the workflow, not a shell
 sandbox):
-  - The snapshot carries no branch or tree binding, so a review PASS left by
-    an earlier workflow in the same PROJECT.md still satisfies the gate.
+  - The hook checks that the review PASS carries a record, not that the
+    recorded tree is the one the PR opens from; `bin/aitk deliver` compares
+    the trees, a direct `gh pr create` does not.
   - Command matching is static: `cd` inside a conditional or subshell is
     treated as taken, and `gh api` or an alias can open a PR unseen.
   - PROJECT.md is looked up from the working directory to the git top level,
@@ -190,27 +191,6 @@ def find_project_file(start: str, stop: str) -> str | None:
         current = os.path.dirname(current)
 
 
-def pending_publish(content: str, workflow: object) -> bool:
-    """A pending `published_pr` reservation from this workflow."""
-    match = re.search(
-        r"<!-- aitk-checkpoint:v1 -->\n(.*?)\n<!-- /aitk-checkpoint -->", content, re.S
-    )
-    if match is None:
-        return False
-    try:
-        checkpoint = json.loads(match.group(1))
-        effects = checkpoint.get("effects", [])
-        same_workflow = checkpoint.get("workflow") == workflow
-    except (ValueError, AttributeError):
-        return False
-    return same_workflow and any(
-        isinstance(effect, dict)
-        and effect.get("key") == "published_pr"
-        and effect.get("status") == "pending"
-        for effect in effects
-    )
-
-
 def check_review(workdir: str | None) -> None:
     from aitk.project_state import gate_blockers, parse_project_state
 
@@ -242,17 +222,7 @@ def check_review(workdir: str | None) -> None:
     except Exception as error:  # noqa: BLE001
         raise review_block(f"the review gate record in PROJECT.md is unreadable ({error})")
     if blockers:
-        # A reservation stands in for a review PASS that `advance` cleared. It never
-        # overrides a gate recorded non-PASS in the current phase (e.g. a later RETRY),
-        # and only the workflow that made it counts.
-        recorded = snapshot["gates"].get("review")
-        explicit_non_pass = (
-            recorded is not None
-            and recorded["phase"] == snapshot["current_phase"]
-            and recorded["status"] != "PASS"
-        )
-        if explicit_non_pass or not pending_publish(content, snapshot.get("workflow")):
-            raise review_block("the snapshot does not show it passing: " + "; ".join(blockers))
+        raise review_block("the snapshot does not show it passing: " + "; ".join(blockers))
 
 
 def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:

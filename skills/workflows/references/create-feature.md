@@ -50,8 +50,9 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
 1. **Intake.** Normalize input (`rules/input-detection.md`), fetch ticket
    context, and inspect the codebase enough to classify without guessing.
 2. **Classify** complexity, size, and shape (`rules/complexity-gate.md`) and
-   persist it: `bin/aitk project-state init --workflow create-feature ...`.
-   Emit the Complexity Gate block. Existing-pattern features are STANDARD.
+   persist it: `bin/aitk project-state init --workflow create-feature ...
+   --format block`, and paste the Complexity Gate block it prints.
+   Existing-pattern features are STANDARD.
 3. **Scope** only when it is ambiguous: load `pm/references/create-feature-brief.md`
    for a loose request, multiple product surfaces, or unclear acceptance
    criteria. Otherwise the ticket is the brief.
@@ -170,7 +171,7 @@ plan-validation findings and review findings are handled in the loop.
 
 ## Hard Gates
 
-- Emit the Complexity Gate before planning or implementing; persist it.
+- Persist the Complexity Gate before planning or implementing, and paste the block `project-state init --format block` prints.
 - No implementation of a COMPLEX unit before its plan validates `APPROVE`.
 - Verification `PASS` before review; review gate `PASS` before the next unit.
 - `## Phase Complete` in `PROJECT.md`, roadmap check answered, before every

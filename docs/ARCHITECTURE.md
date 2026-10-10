@@ -57,6 +57,10 @@ already exhausted a previous owner). An escalation climbs a bounded per-unit lad
 editorial retries, `USER_DECISION`, and `BLOCKED` are recorded without being
 charged; `RECLASSIFY` resets the counters. Verification gates carry a strength
 (`STRONG` / `PARTIAL` / `WEAK`), and only `STRONG` authorizes an auto-push.
+`STRONG` is backed by a run record: `aitk verify --run` runs the command and
+records its exit code, output tail and tree on the gate, and a review PASS
+carries the reviewer envelopes' digests and the reviewed tree (`gate --result`).
+A PASS without its record does not count for `aitk deliver` or the PR hook.
 
 ## Isolation and Routing
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import hashlib
 import json
 import os
 import subprocess
@@ -457,11 +458,19 @@ class RoutingTransportTests(RoutingTestCase):
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=runner,
+                    reviewed_tree="b" * 40,
                 )
 
         self.assertEqual(0, code)
         self.assertEqual(RESULT, payload["result"])
         self.assertEqual({"started": True, "exit_code": 0}, payload["transport"])
+        # The envelope carries what `gate --gate review --result` records.
+        encoded = json.dumps(RESULT, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        self.assertEqual(
+            "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+            payload["result_digest"],
+        )
+        self.assertEqual("b" * 40, payload["reviewed_tree"])
 
     def test_a_codex_write_run_that_leaves_files_in_the_temp_root_fails(self) -> None:
         # The temporary `--cd` root is deleted after the run; an edit that

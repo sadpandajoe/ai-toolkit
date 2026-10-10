@@ -30,16 +30,29 @@ from .model_routing import (
 )
 from .pgm import preflight as pgm_preflight
 from .project_state import (
+    OBSERVATION_KINDS,
+    REVIEW_EXCEPTIONS,
+    STRENGTHS,
     ProjectStateError,
     advance_phase,
+    append_observation,
+    complexity_block,
     ensure_excluded,
+    gate_block,
     initialize as initialize_project_state,
+    operation_recorded,
+    parse_project_state,
     record_gate,
+    record_operation,
+    review_exception,
+    review_from_envelopes,
     set_fields,
     set_phases,
     show as show_project_state,
     state_file,
     update_phase,
+    verify_run,
+    working_tree_sha,
 )
 from .workflows import load_workflows
 
@@ -252,6 +265,14 @@ def _model_route(arguments: argparse.Namespace) -> int:
 
 def _model_run(arguments: argparse.Namespace) -> int:
     root = _root(arguments.root)
+    worker_cwd = Path(arguments.cwd) if arguments.cwd else None
+    # The tree the worker is handed, taken before it runs; `gate --gate review
+    # --result` records it, and `deliver` compares it with what it pushes.
+    reviewed_tree = (
+        None
+        if arguments.dry_run
+        else working_tree_sha(worker_cwd if worker_cwd is not None else Path.cwd())
+    )
     try:
         exit_code, payload = run_model(
             root,
@@ -259,10 +280,11 @@ def _model_run(arguments: argparse.Namespace) -> int:
             arguments.provider,
             arguments.boundary,
             Path(arguments.prompt_file),
-            Path(arguments.cwd) if arguments.cwd else None,
+            worker_cwd,
             arguments.timeout_seconds,
             arguments.dry_run,
             lens=arguments.lens,
+            reviewed_tree=reviewed_tree,
         )
     except ModelRouteError as error:
         print(
@@ -370,13 +392,42 @@ def _checkpoint(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _read_envelopes(paths: list[str]) -> list[object]:
+    envelopes: list[object] = []
+    for value in paths:
+        try:
+            envelopes.append(json.loads(Path(value).read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ProjectStateError(f"--result {value} is not a readable JSON envelope: {error}") from error
+    return envelopes
+
+
+def _snapshot_or_none(path: Path) -> dict[str, object] | None:
+    try:
+        return show_project_state(path).snapshot
+    except (ProjectStateError, OSError):
+        return None
+
+
 def _project_state(arguments: argparse.Namespace) -> int:
     path = state_file(arguments.file)
     try:
         action = arguments.state_action
+        if action == "op" and arguments.check:
+            when = operation_recorded(path, arguments.check)
+            payload = {"operation": arguments.check, "ran": when is not None, "recorded": when}
+            if arguments.json:
+                print(json.dumps(payload, indent=2, sort_keys=True))
+            elif when is None:
+                print(f"not run: {arguments.check}")
+            else:
+                print(f"ran: {arguments.check} (recorded {when}); skip it")
+            # 0 = already ran (skip it), 3 = not yet (run it, then `op --id`).
+            return 0 if when is not None else 3
         if action != "show":
             # Every write into the target repo keeps the state out of commits.
             ensure_excluded(path.parent)
+        before = _snapshot_or_none(path) if action == "gate" else None
         if action == "init":
             result = initialize_project_state(
                 path,
@@ -403,6 +454,18 @@ def _project_state(arguments: argparse.Namespace) -> int:
                 modifiers=arguments.modifier if arguments.modifier else None,
             )
         elif action == "gate":
+            review = None
+            if arguments.result or arguments.exception:
+                if arguments.gate != "review":
+                    raise ProjectStateError("--result and --exception record review evidence; use --gate review")
+                if arguments.result and arguments.exception:
+                    raise ProjectStateError("pass --result or --exception, not both")
+                if arguments.exception:
+                    if arguments.status != "PASS":
+                        raise ProjectStateError("a review exception is a PASS")
+                    review = review_exception(path, arguments.exception, Path.cwd())
+                else:
+                    review = review_from_envelopes(_read_envelopes(arguments.result))
             result = record_gate(
                 path,
                 arguments.gate,
@@ -410,18 +473,42 @@ def _project_state(arguments: argparse.Namespace) -> int:
                 arguments.unit,
                 same_failure=arguments.same_failure,
                 editorial=arguments.editorial,
+                review=review,
+                reason=arguments.reason,
             )
         elif action == "advance":
             result = advance_phase(path, arguments.to)
         elif action == "phases":
             result = set_phases(path, json.loads(arguments.phases_json))
+        elif action == "op":
+            result = record_operation(path, arguments.id)
         else:
             result = update_phase(path, arguments.name, arguments.status, arguments.sha)
     except (ProjectStateError, OSError, json.JSONDecodeError) as error:
         print(f"aitk project-state: {error}", file=sys.stderr)
         return 1
+    block_format = getattr(arguments, "format", "line") == "block"
     if arguments.json:
         print(json.dumps(result.as_dict(), indent=2, sort_keys=True))
+    elif block_format and action in {"init", "set"}:
+        print(complexity_block(result.snapshot, arguments.evidence))
+    elif block_format and action == "gate":
+        print(
+            gate_block(
+                before,
+                result.snapshot,
+                arguments.gate,
+                arguments.unit,
+                strength=arguments.strength,
+                evidence=arguments.evidence,
+                next_step=arguments.next,
+                reason=arguments.reason,
+                editorial=arguments.editorial,
+            )
+        )
+    elif action == "op":
+        disposition = "recorded" if result.changed else "already recorded"
+        print(f"{arguments.id}: {disposition}")
     else:
         snapshot = result.snapshot
         print(
@@ -432,6 +519,94 @@ def _project_state(arguments: argparse.Namespace) -> int:
             f"escalations={json.dumps(snapshot['escalations'], sort_keys=True)}"
         )
         print(f"  state: {result.file}")
+    return 0
+
+
+def _verify(arguments: argparse.Namespace) -> int:
+    path = state_file(arguments.file)
+    try:
+        ensure_excluded(path.parent)
+        before = _snapshot_or_none(path)
+        outcome = verify_run(
+            path,
+            arguments.run,
+            cwd=Path.cwd(),
+            strength=arguments.strength,
+            unit=arguments.unit,
+            same_failure=arguments.same_failure,
+            timeout_seconds=arguments.timeout_seconds,
+            reason=arguments.reason,
+        )
+    except (ProjectStateError, OSError) as error:
+        print(f"aitk verify: {error}", file=sys.stderr)
+        return 1
+    if arguments.json:
+        print(
+            json.dumps(
+                {
+                    "command": "verify",
+                    "status": outcome.status,
+                    "run": outcome.run,
+                    "tree_changed": outcome.tree_changed,
+                    "file": outcome.result.file,
+                    "snapshot": outcome.result.snapshot,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(
+            gate_block(
+                before,
+                outcome.result.snapshot,
+                "verification",
+                arguments.unit,
+                strength=str(outcome.run["strength"]),
+                evidence=arguments.evidence,
+                next_step=arguments.next,
+                reason=arguments.reason,
+            )
+        )
+        if outcome.run["output_tail"]:
+            print("\nOutput (tail):\n" + str(outcome.run["output_tail"]))
+    if outcome.tree_changed:
+        print(
+            "aitk verify: the command changed the working tree; the run covers the tree "
+            "before it, so deliver will refuse until the check runs again on the new tree",
+            file=sys.stderr,
+        )
+    return 0 if outcome.status == "PASS" else 1
+
+
+def _observe(arguments: argparse.Namespace) -> int:
+    path = state_file(arguments.file)
+    snapshot = None
+    if path.is_file():
+        try:
+            snapshot = parse_project_state(path.read_text(encoding="utf-8"))
+        except (ProjectStateError, OSError):
+            snapshot = None
+    entry: dict[str, object] = {
+        "kind": arguments.kind,
+        "workflow": arguments.workflow or (snapshot or {}).get("workflow"),
+        "phase": arguments.phase or (snapshot or {}).get("current_phase"),
+        "complexity": (snapshot or {}).get("complexity"),
+        "size": (snapshot or {}).get("size"),
+        "shape": (snapshot or {}).get("execution_shape"),
+        "detail": arguments.detail,
+        "evidence": arguments.evidence,
+        "eval_candidate": True if arguments.eval_candidate else None,
+    }
+    try:
+        written = append_observation(path.parent, entry)
+    except (ProjectStateError, OSError) as error:
+        print(f"aitk observe: {error}", file=sys.stderr)
+        return 1
+    if arguments.json:
+        print(json.dumps({"command": "observe", "file": str(written), "kind": arguments.kind}, sort_keys=True))
+    else:
+        print(f"observation recorded: {arguments.kind} -> {written}")
     return 0
 
 
@@ -660,12 +835,49 @@ def parser() -> argparse.ArgumentParser:
         "project-state", help="read or update the PROJECT.md v2 routing snapshot"
     )
     state_actions = project_state.add_subparsers(dest="state_action", required=True)
-    for action in ("init", "show", "set", "gate", "advance", "phases", "phase"):
+    for action in ("init", "show", "set", "gate", "advance", "phases", "phase", "op"):
         state_action = state_actions.add_parser(
-            action, help=f"{action} the routing snapshot"
+            action,
+            help=(
+                "record a provider operation (--id) or check whether it ran (--check; exit 0 ran, 3 not yet)"
+                if action == "op"
+                else f"{action} the routing snapshot"
+            ),
         )
-        state_action.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md)")
+        state_action.add_argument(
+            "--file",
+            help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)",
+        )
         state_action.add_argument("--json", action="store_true")
+        if action in {"init", "set", "gate"}:
+            state_action.add_argument(
+                "--format",
+                choices=("line", "block"),
+                default="line",
+                help="block prints the Complexity Gate (init, set) or Gate (gate) block to paste",
+            )
+            state_action.add_argument("--evidence", help="one line for the block's Evidence (gate) or Reason (init, set)")
+        if action == "gate":
+            state_action.add_argument("--next", help="the block's Next line (default: what the outcome calls for)")
+            state_action.add_argument("--strength", choices=STRENGTHS, help="the block's Strength line")
+            state_action.add_argument(
+                "--reason",
+                help="why: printed in the block and used as the observation detail for RECLASSIFY or a repeated failure",
+            )
+            state_action.add_argument(
+                "--result",
+                action="append",
+                help="review gate: a `bin/aitk model-run` JSON envelope file to record (repeatable)",
+            )
+            state_action.add_argument(
+                "--exception",
+                choices=REVIEW_EXCEPTIONS,
+                help="review gate: a review exception backed by this phase's passing verification run",
+            )
+        if action == "op":
+            which = state_action.add_mutually_exclusive_group(required=True)
+            which.add_argument("--id", help="record that this operation ran (push:<sha>, reply:<thread-id>, ...)")
+            which.add_argument("--check", help="report whether this operation already ran")
         if action == "init":
             state_action.add_argument("--workflow", required=True)
             state_action.add_argument("--complexity", required=True)
@@ -717,6 +929,40 @@ def parser() -> argparse.ArgumentParser:
                 help="commit or tree SHA the phase ended on; required with --status done, it is the next phase's review base",
             )
         state_action.set_defaults(handler=_project_state)
+
+    verify = subparsers.add_parser(
+        "verify",
+        help="run a check and record it on the verification gate (PASS only on exit 0)",
+    )
+    verify.add_argument("--run", required=True, metavar="CMD", help="the command to run (through bash)")
+    verify.add_argument(
+        "--strength",
+        choices=STRENGTHS,
+        help="default: STRONG when CMD is the acceptance command in PLAN.md or the RCA record, else PARTIAL",
+    )
+    verify.add_argument("--unit", help="reasoning unit charged when the run fails")
+    verify.add_argument("--same-failure", action="store_true")
+    verify.add_argument("--timeout-seconds", type=int, default=1800)
+    verify.add_argument("--evidence", help="override the block's Evidence line")
+    verify.add_argument("--next", help="the block's Next line")
+    verify.add_argument("--reason", help="why the run failed, for the block and the observation queue")
+    verify.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
+    verify.add_argument("--json", action="store_true")
+    verify.set_defaults(handler=_verify)
+
+    observe = subparsers.add_parser(
+        "observe",
+        help="append one line to .ai-toolkit/observations.jsonl (the reflection queue)",
+    )
+    observe.add_argument("--kind", required=True, choices=OBSERVATION_KINDS)
+    observe.add_argument("--detail", required=True, help="one sentence, free of PII")
+    observe.add_argument("--workflow", help="default: the routing snapshot's workflow")
+    observe.add_argument("--phase", help="default: the routing snapshot's phase")
+    observe.add_argument("--evidence", help="where the evidence is, e.g. PROJECT.md#gate-review")
+    observe.add_argument("--eval-candidate", action="store_true")
+    observe.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
+    observe.add_argument("--json", action="store_true")
+    observe.set_defaults(handler=_observe)
 
     lane_yield = subparsers.add_parser(
         "lane-yield",

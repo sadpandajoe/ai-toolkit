@@ -9,6 +9,7 @@ result that fails the worker schema.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -578,6 +579,19 @@ def _argv(
     return result
 
 
+def _result_digest(result: dict[str, object] | None) -> str | None:
+    """sha256 over the canonical JSON of the worker result.
+
+    `bin/aitk project-state gate --gate review --result <envelope>` recomputes
+    it (aitk.project_state.result_digest), so a hand-edited result no longer
+    matches the digest the run recorded.
+    """
+    if result is None:
+        return None
+    encoded = json.dumps(result, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _outer(
     route: ResolvedRoute,
     *,
@@ -588,6 +602,7 @@ def _outer(
     result: dict[str, object] | None,
     error: str | ModelRouteError | None,
     contracts: tuple[tuple[str, str, str], ...] = (),
+    reviewed_tree: str | None = None,
 ) -> dict[str, object]:
     if error is None:
         error_value: dict[str, object] | None = None
@@ -618,6 +633,11 @@ def _outer(
         "transport": {"started": started, "exit_code": exit_code},
         "argv": argv,
         "result": result,
+        # What `gate --gate review --result` records: the result by digest and
+        # the tree the worker was handed (the caller's working tree with the
+        # state files left out, taken before the dispatch).
+        "result_digest": _result_digest(result),
+        "reviewed_tree": reviewed_tree,
         "reroute": None,
         "error": error_value,
     }
@@ -651,6 +671,7 @@ def run_model(
     dry_run: bool = False,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     lens: str | None = None,
+    reviewed_tree: str | None = None,
 ) -> tuple[int, dict[str, object]]:
     if not boundary:
         raise ModelRouteError("model-run requires a dispatch boundary")
@@ -683,7 +704,8 @@ def run_model(
     if not selected_cwd.is_dir():
         raise ModelRouteError("cwd must be an existing directory")
     code, payload, refusal = _dispatch(
-        route, contracts, prompt, selected_cwd, timeout_seconds, dry_run, runner
+        route, contracts, prompt, selected_cwd, timeout_seconds, dry_run, runner,
+        reviewed_tree,
     )
     if refusal is None:
         return code, payload
@@ -694,7 +716,8 @@ def run_model(
     if rerouted is None:
         return code, payload
     code, payload, _ = _dispatch(
-        rerouted, contracts, prompt, selected_cwd, timeout_seconds, dry_run, runner
+        rerouted, contracts, prompt, selected_cwd, timeout_seconds, dry_run, runner,
+        reviewed_tree,
     )
     payload["reroute"] = {
         "from": route.provider,
@@ -713,13 +736,16 @@ def _dispatch(
     timeout_seconds: int,
     dry_run: bool,
     runner: Callable[..., subprocess.CompletedProcess[str]],
+    reviewed_tree: str | None = None,
 ) -> tuple[int, dict[str, object], ModelRouteRefused | None]:
     """Run one resolved dispatch; the refusal, if any, is returned for D15."""
 
     provider = route.provider
 
     def outer(**fields: object) -> dict[str, object]:
-        return _outer(route, contracts=contracts, **fields)  # type: ignore[arg-type]
+        return _outer(  # type: ignore[arg-type]
+            route, contracts=contracts, reviewed_tree=reviewed_tree, **fields
+        )
 
     instructions = worker_instructions(route, contracts, selected_cwd)
     if (

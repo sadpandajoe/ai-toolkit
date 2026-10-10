@@ -41,6 +41,13 @@ If you find PII, rewrite it generically and re-check the reply still answers the
 
 ## Posting Rules
 
+Each post, resolution and push is a provider operation that a resumed session
+must not repeat (N14). Before it, run `bin/aitk project-state op --check
+<id>`: exit 0 means it already ran, so skip it; exit 3 means it has not, so
+post it and then record it with `bin/aitk project-state op --id <id>`; any
+other exit stops. The ids are `reply:<comment-id>`, `resolve:<thread-id>` and
+`push:<sha>`.
+
 1. Inline reply for line-anchored review comments with a path, line, and comment id:
 
 ```bash

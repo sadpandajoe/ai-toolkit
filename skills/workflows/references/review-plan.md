@@ -44,8 +44,9 @@ review-plan --pm       # include the feature brief in the validator's input
    third round of the same validator.
 5. **Record.** Append `## Validation: <unit>` with the verdict and blocking
    findings to `PLAN.md`; record the gate with
-   `bin/aitk project-state gate --gate plan --status <...>` (`--editorial`
-   for a wording-only revision); write `## Plan Validated` to `PROJECT.md`.
+   `bin/aitk project-state gate --gate plan --status <...> --format block`
+   (`--editorial` for a wording-only revision) and paste the block it prints;
+   write `## Plan Validated` to `PROJECT.md`.
 
 ## Summary
 

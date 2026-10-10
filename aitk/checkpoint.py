@@ -441,7 +441,9 @@ def _require_snapshot_gates(contract: dict[str, object], content: str, key: str)
             "snapshot, and no snapshot exists; run `aitk project-state init` and "
             "record the gates first"
         )
-    blockers = gate_blockers(snapshot, required)
+    # The record check (run and reviewer records) lives in `deliver` and the
+    # review gate hook; nothing reserves through this runtime any more.
+    blockers = gate_blockers(snapshot, required, require_records=False)
     if blockers:
         raise CheckpointError(
             f"effect {key} requires gates {', '.join(required)} PASS in the routing "

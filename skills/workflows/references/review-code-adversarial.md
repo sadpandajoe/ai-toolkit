@@ -55,14 +55,16 @@ snapshot stays as it is (`init` refuses a different workflow without
 5. Fix, reject with evidence, or surface as `USER_DECISION` for every concrete
    finding; verify with `skills/verification-loop/SKILL.md`; one delta pass on
    the fixed files through the adversarial lens when fixes were substantive.
-6. Emit `## Gate: review` with `Adversarial rating: Hardened | Adequate |
-   Vulnerable | Critical` (derived from accepted findings: Critical for an
-   accepted security `[major]`, Vulnerable for any other accepted `[major]`,
-   Adequate for `[minor]` only, Hardened for none), `Reviewers: <lanes as provider/family>`, and the
-   accepted/raised tally. Record it with `bin/aitk project-state gate --gate
-   review --status <...>`; an emitted gate that is not recorded does not
-   count, and `hooks/require-review-gate.sh` refuses `gh pr create` without
-   it. Write `## Adversarial Findings` and `## Adversarial Fix Round N` to
+6. Record the gate with `bin/aitk project-state gate --gate review --status
+   <...> --result <envelope> --format block` (one `--result` per lane's
+   `model-run` envelope) and paste the `## Gate: review` block it prints, with
+   `Adversarial rating: Hardened | Adequate | Vulnerable | Critical` (derived
+   from accepted findings: Critical for an accepted security `[major]`,
+   Vulnerable for any other accepted `[major]`, Adequate for `[minor]` only,
+   Hardened for none), `Reviewers: <lanes as provider/family>`, and the
+   accepted/raised tally as its `--evidence`. A gate that is not recorded, or
+   a PASS without the envelopes, does not count, and
+   `hooks/require-review-gate.sh` refuses `gh pr create` without it. Write `## Adversarial Findings` and `## Adversarial Fix Round N` to
    `PROJECT.md` before any fixes and after each round.
 
 ## Gates

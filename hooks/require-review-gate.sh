@@ -2,7 +2,7 @@
 #
 # require-review-gate.sh — provider-neutral PreToolUse hook (wrapper)
 #
-# `gh pr create` needs a recorded review PASS and `--draft`; the logic, its
+# `gh pr create` needs a review PASS backed by a reviewer record and `--draft`; the logic, its
 # overrides (SKIP_PR_GATE=1 lifts the review check, AITK_PR_READY=1 the draft
 # check) and its known limits live in aitk/hooks/review_gate.py.
 #

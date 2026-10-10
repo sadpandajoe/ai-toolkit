@@ -1,10 +1,13 @@
 """require-review-gate.sh blocks `gh pr create` until the review gate is PASS.
 
 The hook reads the routing snapshot in the repository's PROJECT.md through the
-same `gate_blockers` check `checkpoint reserve` uses, so each case builds the
+same `gate_blockers` check `bin/aitk deliver` uses, so each case builds the
 snapshot with the real `project-state` CLI rather than hand-writing the block.
-It also requires `--draft` unless the user set `AITK_PR_READY=1` (N4), so the
-review cases open drafts and `DraftPolicyTests` covers the draft check.
+A review PASS counts only with its evidence: a reviewer record from a
+`model-run` envelope (`--result`), or a review exception backed by a passing
+verification run. It also requires `--draft` unless the user set
+`AITK_PR_READY=1` (N4), so the review cases open drafts and `DraftPolicyTests`
+covers the draft check.
 """
 
 from __future__ import annotations
@@ -17,6 +20,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import uuid
+
+from aitk.project_state import result_digest, working_tree_sha
 
 ROOT = Path(__file__).resolve().parents[1]
 AITK = str(ROOT / "bin" / "aitk")
@@ -59,6 +65,41 @@ def project_state(repo: Path, *args: str) -> None:
     )
 
 
+_ENVELOPES = tempfile.TemporaryDirectory(prefix="aitk-review-envelopes-")
+
+
+def review_envelope(repo: Path) -> Path:
+    """A completed `model-run` envelope for the tree in `repo`, as a reviewer lane returns it."""
+    result = {
+        "status": "completed",
+        "summary": "no findings",
+        "findings": [],
+        "verification": ["read the diff"],
+    }
+    envelope = {
+        "command": "model-run",
+        "dry_run": False,
+        "route": "review",
+        "boundary": "review.independent",
+        "provider": "codex",
+        "result": result,
+        "result_digest": result_digest(result),
+        "reviewed_tree": working_tree_sha(repo),
+        "error": None,
+    }
+    path = Path(_ENVELOPES.name) / f"{uuid.uuid4().hex}.json"
+    path.write_text(json.dumps(envelope))
+    return path
+
+
+def pass_review(repo: Path, *args: str) -> None:
+    """Record review PASS the way a workflow does: with the reviewer's envelope."""
+    project_state(
+        repo, "gate", "--gate", "review", "--status", "PASS",
+        "--result", str(review_envelope(repo)), *args,
+    )
+
+
 def checkpoint(
     repo: Path, action: str, *args: str, workflow: str = "create-feature"
 ) -> subprocess.CompletedProcess[str]:
@@ -91,10 +132,11 @@ class ReviewGateHookTests(unittest.TestCase):
         )
 
     def record_review(self, status: str, unit: str | None = None) -> None:
-        args = ["gate", "--gate", "review", "--status", status]
-        if unit:
-            args += ["--unit", unit]
-        project_state(self.repo, *args)
+        unit_args = ["--unit", unit] if unit else []
+        if status == "PASS":
+            pass_review(self.repo, *unit_args)
+            return
+        project_state(self.repo, "gate", "--gate", "review", "--status", status, *unit_args)
 
     def assert_blocked(self, result: subprocess.CompletedProcess[str], *fragments: str) -> None:
         self.assertEqual(2, result.returncode, result.stderr)
@@ -229,7 +271,7 @@ class ReviewGateHookTests(unittest.TestCase):
         self.assertEqual(0, run_hook(PR_CREATE, self.repo).returncode)
         # And the reverse: a gated target repo is allowed from an ungated session repo.
         self.classify(other)
-        project_state(other, "gate", "--gate", "review", "--status", "PASS")
+        pass_review(other)
         with tempfile.TemporaryDirectory() as bare:
             subprocess.run(["git", "-C", bare, "init", "-q", "-b", "main"], check=True)
             self.assertEqual(0, run_hook(f"cd {other} && {PR_CREATE}", Path(bare)).returncode)
@@ -328,15 +370,16 @@ class ReviewGateHookTests(unittest.TestCase):
         )
         self.assert_blocked(run_hook(PR_CREATE, self.repo), "unreadable")
 
-    def test_pending_publish_reservation_survives_a_phase_advance(self) -> None:
+    def test_pending_publish_reservation_no_longer_stands_in_after_a_phase_advance(self) -> None:
+        # deliver opens the PR in the phase whose review it read, so a
+        # reservation no longer stands in for a review `advance` cleared.
         self.classify()
         checkpoint(self.repo, "init")
         project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
         self.record_review("PASS")
         checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase-one")
         project_state(self.repo, "advance", "--to", "next-phase")
-        result = run_hook(PR_CREATE, self.repo)
-        self.assertEqual(0, result.returncode, result.stderr)
+        self.assert_blocked(run_hook(PR_CREATE, self.repo), "review=unrecorded")
 
     def test_pending_reservation_never_overrides_a_later_retry(self) -> None:
         self.classify()
@@ -351,7 +394,7 @@ class ReviewGateHookTests(unittest.TestCase):
         nested = self.repo / "pkg"
         nested.mkdir()
         self.classify(nested)
-        project_state(nested, "gate", "--gate", "review", "--status", "PASS")
+        pass_review(nested)
         self.assertEqual(0, run_hook(PR_CREATE, nested).returncode)
 
     def test_ignores_the_draft_pr_identity_and_lookup_commands(self) -> None:
@@ -390,14 +433,43 @@ class ReviewGateHookTests(unittest.TestCase):
         project_state(self.repo, "advance", "--to", "next-phase")
         self.assert_blocked(run_hook(DRAFT_PR_CREATE, self.repo), "review=unrecorded")
 
-    def test_pending_reservation_covers_a_draft_after_a_phase_advance(self) -> None:
+    def test_pending_reservation_no_longer_covers_a_draft_after_a_phase_advance(self) -> None:
         self.classify()
         checkpoint(self.repo, "init")
         project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
         self.record_review("PASS")
         checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase:single")
         project_state(self.repo, "advance", "--to", "next-phase")
-        result = run_hook(DRAFT_PR_CREATE, self.repo)
+        self.assert_blocked(run_hook(DRAFT_PR_CREATE, self.repo), "review=unrecorded")
+
+    def test_review_pass_without_a_reviewer_record_is_refused(self) -> None:
+        self.classify()
+        project_state(self.repo, "gate", "--gate", "review", "--status", "PASS")
+        self.assert_blocked(run_hook(PR_CREATE, self.repo), "no reviewer record")
+        # The same PASS with the reviewer's envelope counts.
+        self.record_review("PASS")
+        result = run_hook(PR_CREATE, self.repo)
+        self.assertEqual(0, result.returncode, result.stderr)
+        # A later PASS typed without evidence clears the record again.
+        project_state(self.repo, "gate", "--gate", "review", "--status", "PASS")
+        self.assert_blocked(run_hook(PR_CREATE, self.repo), "no reviewer record")
+
+    def test_review_exception_counts_only_on_a_passing_verification_run(self) -> None:
+        self.classify()
+        exception = [
+            AITK, "project-state", "gate", "--gate", "review", "--status", "PASS",
+            "--exception", "micro-fix", "--file", str(self.repo / "PROJECT.md"),
+        ]
+        refused = subprocess.run(exception, cwd=self.repo, capture_output=True, text=True, check=False)
+        self.assertEqual(1, refused.returncode)
+        self.assertIn("passing verification run", refused.stderr)
+        self.assert_blocked(run_hook(PR_CREATE, self.repo), "review=unrecorded")
+        subprocess.run(
+            [AITK, "verify", "--run", "true", "--file", str(self.repo / "PROJECT.md")],
+            cwd=self.repo, capture_output=True, text=True, check=True,
+        )
+        subprocess.run(exception, cwd=self.repo, capture_output=True, text=True, check=True)
+        result = run_hook(PR_CREATE, self.repo)
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_opt_out_leaves_no_effect_and_allows_restarting_the_checkpoint(self) -> None:
@@ -432,7 +504,7 @@ class DraftPolicyTests(unittest.TestCase):
             "--phaseability", "none",
             "--phase", "review",
         )
-        project_state(self.repo, "gate", "--gate", "review", "--status", "PASS")
+        pass_review(self.repo)
 
     def assert_draft_blocked(self, result: subprocess.CompletedProcess[str]) -> None:
         self.assertEqual(2, result.returncode, result.stderr)

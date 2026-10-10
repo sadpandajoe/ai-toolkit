@@ -40,8 +40,10 @@ end to end: gather and record the base, classify with
 `qa/references/assess-impact.md`, preflight, one independent review on the other
 provider, conditional deep lenses on flagged risk, validate every finding before
 fixing, fix accepted findings, verify with `skills/verification-loop/SKILL.md`,
-run one delta review only after substantive remediation, emit the review gate,
-and write the Review Record to `PROJECT.md`.
+run one delta review only after substantive remediation, record the review
+gate with the reviewer envelopes (`project-state gate --gate review --result
+<envelope> --format block`) and paste the block it prints, and write the
+Review Record to `PROJECT.md`.
 
 ## Contract
 

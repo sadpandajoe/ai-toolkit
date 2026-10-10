@@ -41,7 +41,9 @@ implementation session. Load the `feedback` skill phase by phase.
    the Reviewer Inventory table first; then investigate each thread and decide
    fix, skip, or discuss with evidence. Reject incorrect suggestions with
    evidence rather than complying. Persist `## Feedback Triage` (hard gate).
-2. **Classify complexity** of the accepted fixes and persist the snapshot.
+2. **Classify complexity** of the accepted fixes and persist it with
+   `bin/aitk project-state init --workflow address-feedback ... --format
+   block`; paste the Complexity Gate block it prints.
 3. **Fix** with `feedback/references/fix-review.md`.
    <!-- aitk-model-route:workflows.feedback-fix-wave -->
    For large rounds with disjoint ownership, launch fresh implementer workers on
@@ -55,7 +57,10 @@ implementation session. Load the `feedback` skill phase by phase.
    reviewer through one independent lane (`review/references/local-review.md`
    independent review) rather than the parent's opinion.
 6. **Reply and resolve** with `feedback/references/reply-resolve.md` after the
-   PII scrub over every reply, comment, and commit message. Persist
+   PII scrub over every reply, comment, and commit message. Before each reply,
+   resolution and push, `bin/aitk project-state op --check <id>` skips one
+   that already ran; record each with `op --id <id>` after it succeeds
+   (`reply:<comment-id>`, `resolve:<thread-id>`, `push:<sha>`). Persist
    `## Feedback Posted`.
 
 ## Summary

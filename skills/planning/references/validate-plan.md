@@ -59,7 +59,8 @@ decompositions and every phase plan stay at one validator.
   the retry budget in `rules/gates.md`. Do not iterate further.
 
 Record the outcome with `bin/aitk project-state gate --gate plan --status
-<PASS|RETRY|ESCALATE|USER_DECISION> --unit <decomposition|phase-name>`
-(`--editorial` when the revision was wording only, so it is not charged) and
-append the verdict and blocking findings to `PLAN.md` under
-`## Validation: <unit>`. Findings, not scores, are the persistent artifact.
+<PASS|RETRY|ESCALATE|USER_DECISION> --unit <decomposition|phase-name>
+--format block` (`--editorial` when the revision was wording only, so it is
+not charged), paste the gate block it prints, and append the verdict and
+blocking findings to `PLAN.md` under `## Validation: <unit>`. Findings, not
+scores, are the persistent artifact.

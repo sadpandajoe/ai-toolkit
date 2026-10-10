@@ -188,11 +188,15 @@ or comment. A finding class surviving the delta pass is `ESCALATE` under
 
 ## Gate and Record
 
-Emit the gate block from `rules/gates.md` as `## Gate: review` with
-`Independent review: <provider/family | same-provider>`, `Deep lenses: <names
-or none>`, `Findings: <accepted>/<raised> accepted`, and `Delta: <clean |
-reopened N | not required>` on the Evidence line. Record it with
-`bin/aitk project-state gate --gate review --status <...>`.
+Record the gate with `bin/aitk project-state gate --gate review --status
+<...> --result <envelope> --format block`, passing each reviewer lane's
+`model-run` envelope (saved JSON) as a `--result`, and paste the `## Gate:
+review` block it prints with `Independent review: <provider/family |
+same-provider>`, `Deep lenses: <names or none>`, `Findings:
+<accepted>/<raised> accepted`, and `Delta: <clean | reopened N | not
+required>` as its `--evidence`. A PASS without a reviewer envelope (or a
+review exception's `--exception` on a passing `verify --run`) does not count
+for `bin/aitk deliver` or the PR hook.
 
 Review Record in `PROJECT.md` (compact, actionable only):
 
