@@ -5,48 +5,19 @@ description: Run AI Toolkit's goal workflows when the user asks for one of their
 
 # Goal Workflows
 
-The public router. Workflow identity and routing data come only from
-[the core manifest](../../interfaces/workflows.json); this skill keeps no second
-table. The parent (orchestrating) session runs the selected
-workflow as a thin goal loop: classify, persist the routing snapshot, evaluate
-the gate, run the next bounded capability, record the handoff, repeat.
+Pick the workflow whose outcome the user asked for from the summaries in
+[the core manifest](../../interfaces/workflows.json); triggers are sample
+phrasings, not keywords. A question, an explanation, or a problem described
+without asking for a change gets your assessment, not a workflow that edits,
+pushes, or posts; offer the workflow if acting would help. "Review this and
+fix" is `review-code` with remediation; "don't change anything" is
+review-only. Ask when two equally specific triggers tie. State `Workflow
+entered: <name>` (or `none — <why>`) before any edit.
 
-1. Read the manifest and pick the workflow whose outcome the user asked for,
-   by name or from the summaries; triggers are sample phrasings, not
-   keywords. When the user asks a question, asks for an explanation, or
-   describes a problem without asking for a change, the deliverable is your
-   assessment: answer it without starting a workflow that edits, pushes, or
-   posts (a read-only workflow such as `verify` or `show-cost` may answer it),
-   and offer the workflow if acting would help. For example, "how does code
-   review work here" is not `review-code`, and "explain this CI failure" is
-   not `fix-ci`. "Review this and fix" means `review-code` with remediation;
-   "don't change anything" means review-only.
-2. If no workflow fits, handle the request directly. If two workflows fit the
-   asked-for outcome equally well, ask which one. Either way, state the
-   outcome once as `Workflow entered: <name>` or `Workflow entered: none —
-   <why>` before any edit; `none` persists no snapshot.
-3. Confirm the manifest owner is `workflows` and join its `reference_root` with
-   `<workflow.name>.md`. Reject absolute paths or traversal.
-4. Load exactly that reference, its declared rules, and only the domain skills
-   it names when their phase starts. Resolve skills through
-   `interfaces/skills.json` against the toolkit root, never an installed
-   symlink.
-5. Read `interfaces/providers.json` and the current provider's binding document
-   before using any capability (`fresh_subagent`, `independent_review`,
-   `routed_subagent`, and the rest).
-<!-- aitk-model-route-exempt:meta-routing-policy -->
-6. Before dispatching any model worker, read `rules/orchestration.md` and
-   `rules/model-assignment.md`, choose the stable route the reference names at
-   its inventoried marker, and launch it through the provider binding: native
-   toolkit agents for same-provider workers, `<toolkit-root>/bin/aitk
-   model-route --boundary <marker-id>` plus `model-run` for specialists. The
-   runner inlines the boundary's contract closure; routed workers never rely on
-   ambient skills. A binding never authorizes an unpinned generic worker or a
-   model or effort downgrade.
-7. Preserve the workflow's authorization, state, verification, and reporting
-   contract. Durable state is `PROJECT.md` (routing snapshot plus checkpoint)
-   and the artifacts declared in `interfaces/contracts.json`; provider task
-   lists are a disposable mirror. Gates follow `rules/gates.md`; only
-   `USER_DECISION`, `BLOCKED`, and hard safety gates reach the user.
-
-This skill and natural-language routing are the public workflow interface.
+`bin/aitk list --details --json` (add `--with-pgm` when PGM is installed)
+returns each workflow's reference, rules, dependencies, and gates: load
+exactly those, and the domain skills it names when their phase starts. An
+entry that names a command runs that command and presents its output. Gates
+follow `rules/gates.md`; model routes follow `rules/orchestration.md` and
+`rules/model-assignment.md`. A binding never authorizes a model or effort
+downgrade.
