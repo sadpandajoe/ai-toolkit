@@ -11,6 +11,7 @@ import unittest
 
 from aitk.project_state import (
     ATTEMPT_BUDGET,
+    STATE_FILES,
     MAX_ESCALATIONS,
     BEGIN,
     END,
@@ -18,6 +19,8 @@ from aitk.project_state import (
     advance_phase,
     classify_complexity,
     derive_execution_shape,
+    ensure_excluded,
+    exclude_entries,
     initialize,
     next_gate_status,
     normalize_complexity,
@@ -397,6 +400,95 @@ class ProjectStateCliTests(unittest.TestCase):
             )
             self.assertEqual(1, failed.returncode)
             self.assertIn("never silently downgraded", failed.stderr)
+
+
+def git(repo: Path, *arguments: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=test@example.com", "-c", "user.name=Test", *arguments],
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout
+
+
+class ExcludeTests(unittest.TestCase):
+    """Local workflow state never shows up in `git status` of the target repo."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.base = Path(self.temporary.name).resolve()
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def make_repo(self, name: str) -> Path:
+        repo = self.base / name
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        (repo / "README.md").write_text("readme\n")
+        git(repo, "add", "README.md")
+        git(repo, "commit", "-q", "-m", "init")
+        return repo
+
+    def init_state(self, cwd: Path) -> None:
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "aitk.cli", "--root", str(ROOT), "project-state", "init",
+                "--workflow", "fix-bug", "--complexity", "TRIVIAL", "--size", "S",
+            ],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def assert_clean_with_state(self, checkout: Path) -> None:
+        self.assertTrue((checkout / "PROJECT.md").is_file())
+        (checkout / ".ai-toolkit").mkdir(exist_ok=True)
+        (checkout / ".ai-toolkit" / "config.json").write_text("{}\n")
+        for name in STATE_FILES:
+            (checkout / name).write_text("state\n")
+        self.assertEqual("", git(checkout, "status", "--porcelain", "--untracked-files=all"))
+
+    def test_init_excludes_state_in_a_repository(self) -> None:
+        repo = self.make_repo("repo")
+        self.init_state(repo)
+        exclude = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude").strip())
+        lines = exclude.read_text().splitlines()
+        for entry in (*STATE_FILES, ".ai-toolkit/"):
+            self.assertEqual(1, lines.count(entry), entry)
+        self.assert_clean_with_state(repo)
+
+    def test_init_excludes_state_in_a_linked_worktree(self) -> None:
+        repo = self.make_repo("main-checkout")
+        worktree = self.base / "linked"
+        git(repo, "worktree", "add", "-q", "-b", "feature", str(worktree))
+        self.assertTrue((worktree / ".git").is_file())
+        self.init_state(worktree)
+        self.assert_clean_with_state(worktree)
+        self.assertEqual("", git(repo, "status", "--porcelain", "--untracked-files=all"))
+
+    def test_ensure_excluded_is_idempotent_and_keeps_existing_lines(self) -> None:
+        repo = self.make_repo("repo")
+        exclude = Path(git(repo, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude").strip())
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        exclude.write_text("# mine\n*.log\nPLAN.md")
+        self.assertEqual(exclude, ensure_excluded(repo))
+        first = exclude.read_text()
+        self.assertTrue(first.startswith("# mine\n*.log\nPLAN.md\n"))
+        self.assertEqual(1, first.splitlines().count("PLAN.md"))
+        self.assertEqual(exclude, ensure_excluded(repo))
+        self.assertEqual(first, exclude.read_text())
+        for entry in exclude_entries():
+            self.assertEqual(1, first.splitlines().count(entry), entry)
+
+    def test_ensure_excluded_outside_a_repository_writes_nothing(self) -> None:
+        outside = self.base / "plain"
+        outside.mkdir()
+        self.assertIsNone(ensure_excluded(outside))
+        self.assertEqual([], list(outside.iterdir()))
 
 
 if __name__ == "__main__":

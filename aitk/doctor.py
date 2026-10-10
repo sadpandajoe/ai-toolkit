@@ -18,6 +18,7 @@ from .interfaces import (
 )
 from .model_routing import validate_model_routing
 from .installer import LEGACY_COMMAND_NAMES_0_1, InstallPaths, inspect_install
+from .project_state import STATE_FILES
 from .workflows import (
     extension_manifest_path,
     manifest_path,
@@ -44,14 +45,6 @@ IGNORED_TREE_PARTS = {
     "site-packages",
     "venv",
 }
-STATE_FILES = (
-    "PROJECT.md",
-    "PROJECT_ARCHIVE.md",
-    "PLAN.md",
-    "WATCH.md",
-    "CHERRY_PICK.md",
-    "CI_FIX.md",
-)
 PROVIDER_PATTERNS = (
     ("provider template import", re.compile(r"@\{\{TOOLKIT_DIR\}\}")),
     ("EnterPlanMode", re.compile(r"\bEnterPlanMode\b")),

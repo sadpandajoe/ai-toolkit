@@ -28,9 +28,26 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import tempfile
 
 from .artifact_lock import artifact_lock
+
+
+# Local workflow state: written into the target repository, never committed.
+# The git guard (aitk.hooks.git_guard) imports this list, so this module keeps
+# to the standard library and artifact_lock.
+STATE_FILES = (
+    "PROJECT.md",
+    "PROJECT_ARCHIVE.md",
+    "PLAN.md",
+    "WATCH.md",
+    "CHERRY_PICK.md",
+    "CI_FIX.md",
+)
+# Per-repository toolkit data: org config, Codex memory, observations, metrics.
+TOOLKIT_DATA_DIR = ".ai-toolkit/"
+EXCLUDE_HEADER = "# ai-toolkit local workflow state (bin/aitk adds these)"
 
 
 BEGIN = "<!-- aitk-project-state:v2 -->"
@@ -715,6 +732,48 @@ def update_phase(
     after = dict(before)
     after["phases"] = phases
     return _write(path, content, before, after)
+
+
+def exclude_entries() -> tuple[str, ...]:
+    return (*STATE_FILES, TOOLKIT_DATA_DIR)
+
+
+def ensure_excluded(directory: Path) -> Path | None:
+    """Keep local workflow state out of `git status` for the repo at `directory`.
+
+    Appends each STATE_FILES entry and `.ai-toolkit/` to the exclude file that
+    `git rev-parse --git-path info/exclude` names, once. In a linked worktree
+    `.git` is a file, so the literal `.git/info/exclude` would be wrong; git
+    names the shared exclude file instead. Returns the exclude file, or None
+    when `directory` is not inside a git repository.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(directory), "rev-parse", "--git-path", "info/exclude"],
+            text=True,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        return None
+    named = result.stdout.strip()
+    if result.returncode != 0 or not named:
+        return None
+    exclude = Path(named)
+    if not exclude.is_absolute():
+        exclude = Path(directory) / exclude
+    existing = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    present = {line.strip() for line in existing.splitlines()}
+    missing = [entry for entry in exclude_entries() if entry not in present]
+    if not missing:
+        return exclude
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    lines = ([] if EXCLUDE_HEADER in present else [EXCLUDE_HEADER]) + missing
+    separator = "" if not existing or existing.endswith("\n") else "\n"
+    with exclude.open("a", encoding="utf-8") as handle:
+        handle.write(separator + "\n".join(lines) + "\n")
+    return exclude
 
 
 def state_file(explicit: str | None) -> Path:

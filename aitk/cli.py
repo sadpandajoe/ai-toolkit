@@ -32,6 +32,7 @@ from .pgm import preflight as pgm_preflight
 from .project_state import (
     ProjectStateError,
     advance_phase,
+    ensure_excluded,
     initialize as initialize_project_state,
     record_gate,
     set_fields,
@@ -373,6 +374,9 @@ def _project_state(arguments: argparse.Namespace) -> int:
     path = state_file(arguments.file)
     try:
         action = arguments.state_action
+        if action != "show":
+            # Every write into the target repo keeps the state out of commits.
+            ensure_excluded(path.parent)
         if action == "init":
             result = initialize_project_state(
                 path,
