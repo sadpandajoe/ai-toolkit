@@ -19,7 +19,7 @@ metrics --command fix-bug  # Filter to a specific command
 
 ### 1. Read Metrics File
 
-Read `.ai-toolkit/metrics.jsonl`. During migration, read legacy `.claude/metrics.jsonl` only when the canonical file does not exist; never write new events to the legacy path. If neither file exists or the selected file is empty:
+Read `.ai-toolkit/metrics.jsonl`; only when it does not exist, read the older `.claude/metrics.jsonl` location, and never write new events there. If neither file exists or the selected file is empty:
 ```markdown
 No metrics recorded yet. Metrics are emitted automatically when workflows complete.
 Run a workflow (e.g., `create-feature`, `fix-bug`) to start collecting data.
@@ -31,7 +31,7 @@ Stop.
 Apply filters from arguments:
 - `--period <duration>`: filter to events within the specified window (default: `all`)
   - `7d` = last 7 days, `30d` = last 30 days, `all` = no filter
-- `--command <name>`: filter to events matching the workflow identifier (legacy flag name retained for compatibility)
+- `--command <name>`: filter to events matching the workflow identifier
 
 ### 3. Compute Aggregates
 
@@ -81,7 +81,7 @@ Events: [total count]
 
 ## Notes
 - This is a read-only workflow — it never modifies the metrics file
-- Metrics are best-effort: not every workflow emits metrics yet (initial adoption covers `create-feature`, `fix-bug`, `fix-ci`)
+- Metrics are best-effort: only workflows whose summary step records a `metrics-emit` event appear here
 - The `.ai-toolkit/metrics.jsonl` file is user-local and not committed to git
 - Events are appended by [`metrics-emit/`](../../metrics-emit/SKILL.md) at each workflow's summary step
 - Trend analysis requires at least 10 events to be meaningful

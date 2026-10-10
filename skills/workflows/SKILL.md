@@ -1,21 +1,28 @@
 ---
 name: workflows
-description: Run AI Toolkit's goal workflows from plain language — fix a bug, add a feature, review or review-and-fix a branch or PR, fix CI, address PR feedback, test a PR, watch a PR, validate a plan, create or update tests, checkpoint, metrics, or maintenance. Use for end-to-end software work and natural-language requests matching those workflows. Do NOT use for a small direct answer or when a narrower domain skill completely covers the request.
+description: Run AI Toolkit's goal workflows when the user asks for one of their outcomes — fix a bug, add a feature, review a branch (fixing by default) or a PR, fix CI, address PR feedback, test or watch a PR, validate a plan, create or update tests, save or resume workflow state, or report toolkit metrics, cost, and health. Use when the user asks to add or change behavior in a repository (load it before the first edit) or names one of these workflows. Do NOT use for a question or explanation about these topics, a diagnosis the user asked not to act on, a small direct answer, or a request a narrower domain skill fully covers.
 ---
 
 # Goal Workflows
 
 The public router. Workflow identity and routing data come only from
 [the core manifest](../../interfaces/workflows.json); this skill keeps no second
-table. The parent session (Sonnet on Claude, Sol on Codex) runs the selected
+table. The parent (orchestrating) session runs the selected
 workflow as a thin goal loop: classify, persist the routing snapshot, evaluate
 the gate, run the next bounded capability, record the handoff, repeat.
 
-1. Read the manifest and match the explicitly requested workflow name or the
-   highest-specificity natural-language trigger. "Review this and fix" means
-   `review-code` with remediation; "don't change anything" means review-only.
-2. If no workflow matches, handle the request directly. If equally specific
-   triggers name different workflows, ask which one. Either way, state the
+1. Read the manifest and pick the workflow whose outcome the user asked for,
+   by name or from the summaries; triggers are sample phrasings, not
+   keywords. When the user asks a question, asks for an explanation, or
+   describes a problem without asking for a change, the deliverable is your
+   assessment: answer it without starting a workflow that edits, pushes, or
+   posts (a read-only workflow such as `verify` or `show-cost` may answer it),
+   and offer the workflow if acting would help. For example, "how does code
+   review work here" is not `review-code`, and "explain this CI failure" is
+   not `fix-ci`. "Review this and fix" means `review-code` with remediation;
+   "don't change anything" means review-only.
+2. If no workflow fits, handle the request directly. If two workflows fit the
+   asked-for outcome equally well, ask which one. Either way, state the
    outcome once as `Workflow entered: <name>` or `Workflow entered: none —
    <why>` before any edit; `none` persists no snapshot.
 3. Confirm the manifest owner is `workflows` and join its `reference_root` with

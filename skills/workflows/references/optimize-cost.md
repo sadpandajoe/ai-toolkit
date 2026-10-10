@@ -34,7 +34,7 @@ The script handles all formatting. Present its output directly.
 
 After presenting the analysis, offer to:
 - Apply reasoning-effort or worker-routing changes to specific commands (if the concentration finding fires)
-- Adjust checkpoint thresholds in `rules/context-management.md` (if expensive sessions are flagged)
+- Tune auto-compaction or move heavy phases into fresh workers (`rules/context-management.md`) (if expensive sessions are flagged)
 - Review a specific command or project that dominates cost
 
 ## What It Detects

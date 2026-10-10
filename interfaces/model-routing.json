@@ -603,16 +603,6 @@
       "count": 1
     },
     {
-      "path": "skills/workflows/references/start.md",
-      "marker": "preflight-before-later-dispatch",
-      "count": 1
-    },
-    {
-      "path": "skills/workflows/references/watch-pr.md",
-      "marker": "describes-prior-dispatch-payloads",
-      "count": 1
-    },
-    {
       "path": "skills/workflows/SKILL.md",
       "marker": "meta-routing-policy",
       "count": 1

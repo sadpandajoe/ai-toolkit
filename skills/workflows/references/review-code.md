@@ -58,4 +58,4 @@ and write the Review Record to `PROJECT.md`.
   sensitivity and the user did not already ask for it.
 - Internal callers (`create-feature`, `fix-bug`, `fix-ci`, `create-tests`,
   `update-tests`) own the next step after the gate; standalone runs end with
-  the Review-Code Complete summary in the orchestration reference.
+  the Review-Code Complete summary in `review/references/local-review.md`.

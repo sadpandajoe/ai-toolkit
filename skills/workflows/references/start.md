@@ -14,106 +14,60 @@ It restores workflow state from PROJECT.md (routing snapshot plus checkpoint) ra
 
 ## Steps
 
-0. **Model/Advisor Preflight**
+1. **Find and read PROJECT.md**: the working directory first, then the git
+   repo root, then any additional working directories. A symlinked PROJECT.md
+   is normal: read through it, and write to the resolved path (`readlink -f`),
+   as for PLAN.md and every toolkit-managed file. When none exists, create one
+   from `PROJECT_TEMPLATE.md` and say so in the session entry (it is
+   local-only); with `--ask`, ask before creating it.
 
-   Before loading state or resuming any workflow, validate any explicitly configured worker/advisor profile. An invalid profile can fail only after dispatch, where recovery is expensive.
+2. **Resume when PROJECT.md has a `## Continuation Checkpoint`.** Resume at
+   the routing snapshot's `current_phase` and `current_gate`
+   (`bin/aitk project-state show`); the checkpoint names the workflow, active
+   plan, and resume target. If the snapshot is missing or its complexity
+   vocabulary predates v2 (a legacy three-tier value), re-run the Complexity
+   Gate and record it before continuing. Append a session entry:
 
-   - Identify the active main model from the environment.
-   - If an advisor/secondary model is configured (settings, env, or the user's request), verify the model ID exists and the pairing is one the API accepts.
-<!-- aitk-model-route-exempt:preflight-before-later-dispatch -->
-   - If the user requested an alias, ask the provider adapter to resolve it to a concrete available profile **before** dispatching anything that spawns subagents with it.
-   - On any unknown ID or incompatible pairing, emit this hard gate and stop — do not resume a checkpoint or dispatch a workflow on a config that will fail mid-run:
+   ```markdown
+   ### [Timestamp] - Session Resumed
+   - Branch: [current branch]
+   - Resuming from: [checkpoint timestamp]
+   - Command: [top-level workflow from checkpoint]
+   - Phase: [saved phase]
+   - Active plan: [PLAN.md or none]
+   - Resume target: [saved item or iteration]
+   ```
 
-     ```markdown
-     ## Model Preflight Failed
-     Active model: [id]
-     Problem: [unknown model id | incompatible advisor pairing: <a> + <b>]
-     Fix: [exact setting change or valid model id]
-     ```
+   For MULTI_PHASE work, add the remaining phases:
 
-   - Clean config → continue silently. This step produces no output when healthy.
+   ```markdown
+   ### Remaining Phases
+   Done: <phases marked done>
+   Active: <phase> (<complexity>/<size>)
+   Ahead: <pending phases>
+   Next gate: <gate> — <what PASS requires>
+   ```
 
-1. **Find PROJECT.md**
+   Then continue the saved workflow without asking. It loads its own rules,
+   skills, and supporting files, and PLAN.md is read only when the next phase
+   needs it (review iterations or an implementation slice), so status checks
+   stay light. Once the resume succeeds, replace the human `## Continuation
+   Checkpoint` section so the same state is not resumed twice; the machine
+   block changes only through `bin/aitk checkpoint`.
 
-   Search these locations in order (stop at first match):
-   1. Current working directory: `PROJECT.md`
-   2. Git repo root: `$(git rev-parse --show-toplevel)/PROJECT.md`
-   3. Additional working directories from the environment
+3. **Otherwise start a session.** Append:
 
-   The file may be a real file or a **symlink** — both are valid. Read it normally either way.
-
-   - If found: Read completely
-   - If not found anywhere: create one from `PROJECT_TEMPLATE.md`, announce the creation in the session summary, and continue (it's local-only and trivially deletable); `--ask` restores the prompt
-
-   **If PROJECT.md is a symlink, resolve it before writing.** Some provider file tools refuse writes through symlinks. Run `readlink -f <path-to-PROJECT.md>` to get the real target, then edit that resolved path when adding the session entry or any later updates. Reads through the symlink are fine. This same rule applies to PLAN.md and any other toolkit-managed file in the working directory.
-
-2. **Check for Continuation Checkpoint**
-
-   If PROJECT.md contains a `## Continuation Checkpoint` section:
-   - Read the checkpoint state:
-     - top-level workflow
-     - phase
-     - **active plan** (PLAN.md or none)
-     - resume target
-     - completed items
-     - key workflow state
-   - Add a session entry noting this is a continuation:
-     ```markdown
-     ### [Timestamp] - Session Resumed
-     - Branch: [current branch]
-     - Resuming from: [checkpoint timestamp]
-     - Command: [top-level workflow from checkpoint]
-     - Phase: [saved phase]
-     - Active plan: [PLAN.md or none]
-     - Resume target: [saved item or iteration]
-     ```
-   - **Read the routing snapshot** with `bin/aitk project-state show`. Resume at
-     its `current_phase` and `current_gate`. If the snapshot is missing or its
-     complexity vocabulary predates v2 (a legacy three-tier value, or no
-     snapshot at all), re-run the Complexity Gate before continuing and record it. For
-     MULTI_PHASE work, emit the remaining phase table:
-
-     ```markdown
-     ### Remaining Phases
-     Done: <phases marked done>
-     Active: <phase> (<complexity>/<size>)
-     Ahead: <pending phases>
-     Next gate: <gate> — <what PASS requires>
-     ```
-
-     Skip this block for SINGLE_PHASE resumes.
-   - **Defer loading PLAN.md.** Read PROJECT.md alone for orientation. Only load PLAN.md when the next phase actually requires it (entering review iterations or starting an implementation slice). This keeps context lean for resumes that are just status checks or fix-it work.
-   - **Automatically resume the saved top-level workflow** from the checkpoint. Do not prompt the user.
-   - The resumed command loads its own rules, skills, and supporting files on demand.
-   - After the resume succeeds, clear or replace the stale checkpoint so the same state is not resumed twice unintentionally.
-
-3. **Normal Session** (no checkpoint)
-
-   Add session entry:
    ```markdown
    ### [Timestamp] - Session Start
    - Branch: [current branch]
    - Status: [summary from Current Status]
-   - Goal: [ask user]
+   - Goal: [the user's goal, once stated]
    ```
 
-   ```
-   "Session initialized. What would you like to work on?"
-   ```
-
-   Suggest relevant workflows or skills based on context:
-   - New feature or planned refactor → `create-feature`
-   - Bug report, broken behavior, or RCA-first debugging → `fix-bug`
-   - Updating an existing test suite → `update-tests`
-   - Creating the first meaningful tests → `create-tests`
-   - Validating a story, PR, or environment without fixing it → `run-test-plan`
-   - Open PR with pending CI or fresh review comments → `watch-pr`
-   - Cherry-picking → `$cherry-pick`
-   - Ready to open a PR → `create-pr`
-   - Capturing a pattern or reviewing memories → `reflect`
-   - `.ai-toolkit/observations.jsonl` holds 10 or more unreviewed lines → `reflect observations`
-   - Completed phases cluttering PROJECT.md → [`archive-project-file`](../../archive-project-file/SKILL.md)
-   - Want to see all available workflows → `custom-skills-info`
+   Ask what the user wants to work on. When they state a goal, suggest the
+   matching workflow from `<toolkit-root>/bin/aitk list`; suggest
+   `reflect observations` when the observation-reminder hook reports a
+   backlog in `.ai-toolkit/observations.jsonl`.
 
 4. **Recommend Archiving When Useful**
 
@@ -128,12 +82,7 @@ It restores workflow state from PROJECT.md (routing snapshot plus checkpoint) ra
    - Resolved blockers still in active sections
    - Active work becoming hard to find
 
-   If any **concrete signal** fires, surface the nudge prominently — before suggesting next commands — using this format:
-
-   ```
-   📦 Archive suggestion: [N] completed phase(s) detected, [stale PLAN.md present | no stale plan].
-       Run archive-project-file to clean up before the next major phase.
-   ```
+   If any **concrete signal** fires, put the suggestion before any next-command suggestion: name the number of completed phases found, whether a stale PLAN.md is present, and that `archive-project-file` cleans them up before the next major phase.
 
    If only soft signals fire, mention briefly at the end of the session entry.
 

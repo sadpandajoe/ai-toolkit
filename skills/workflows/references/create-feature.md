@@ -44,7 +44,7 @@ the default for real, contained work.
 
 ## Goal Loop
 
-The parent (Sonnet or Sol) runs this loop inline. Each step reads the routing
+The parent (orchestrating) session runs this loop inline. Each step reads the routing
 snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
 
 1. **Intake.** Normalize input (`rules/input-detection.md`), fetch ticket
@@ -114,8 +114,7 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    sequence in step 11, before the phase is marked advanced. Phases on the same
    branch reuse the one draft PR (no new reservation); a phase on a separate
    branch does its own lookup and reservation. With `--no-pr` the phase stays
-   `pushed — awaiting PR request` and the loop continues. Fresh
-   workers are the context boundary; no manual clear is needed.
+   `pushed — awaiting PR request` and the loop continues.
 10. **Integrated review** (MULTI_PHASE and BATCHED only; hard gate before
     `## Feature Complete`). After the last unit's checkpoint, run one more
     `review-code` pass over the full recorded **branch base** to HEAD, and

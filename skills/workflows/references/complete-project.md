@@ -16,108 +16,85 @@ complete-project                    # Full capstone for current project
 complete-project --skip-promote     # Skip the memory promotion step
 ```
 
+## Goal
+
+Close a finished project: summarize what it did, settle its learnings, archive
+its state, release its local services with the user's consent, and hand off
+the next action. The run is complete when the archive holds the completed
+phases, PROJECT.md holds the final status, and the summary and metrics event
+are emitted.
+
 ## Steps
 
-### 1. Read PROJECT.md — Determine What Was Accomplished
+1. **Read the project.** Read PROJECT.md completely for the goal, what was
+   built or fixed, key decisions, open risks, and branch state (`git log
+   --oneline -20`, `git status`, current branch). With no PROJECT.md, stop:
+   `No PROJECT.md found. This command requires an active project file.`
+2. **Summarize metrics** for this project with
+   [skills/reporting/templates/complete-project-metrics.md](../../reporting/templates/complete-project-metrics.md),
+   which names the metrics file to read. With no matching events, emit
+   `No metrics recorded for this project` and continue.
+3. **Review the observation queue** (skipped with `--skip-promote`). When
+   `.ai-toolkit/observations.jsonl` has unreviewed lines, run the *Review*
+   section of [skills/reflection/references/observations.md](../../reflection/references/observations.md)
+   (`reflect observations`): `bin/aitk lane-yield` first, then cluster the
+   lines and present proposals. Apply only on confirmation and move reviewed
+   lines to `.ai-toolkit/observations.reviewed.jsonl`. This is the one point
+   in a project where the queue is guaranteed to be read, so an empty queue is
+   reported as `No unreviewed observations` rather than skipped silently.
+4. **Surface memory promotion candidates** (skipped with `--skip-promote`).
+   From the project memory directory, pick feedback memories that apply
+   across projects, postmortems (`feedback_failure_*`) whose prevention points
+   to a universal rule or skill change, and themes several memories share.
+   Present each:
 
-Read PROJECT.md completely. Extract: goal, what was built or fixed, key decisions, open risks, branch state (`git log --oneline -20`, `git status`, current branch).
+   ```markdown
+   ### Promotion Candidate: {filename}
+   **Pattern**: {one-line summary}
+   **Why promote**: {reasoning}
+   **Suggested action**: Promote to rule / Keep as memory / Prune (outdated)
+   ```
 
-If no PROJECT.md exists, stop: `No PROJECT.md found. This command requires an active project file.`
+   Wait for the user's answer on each. **Promote** runs `reflect promote`
+   with that approval as pre-authorization: it drafts and writes the rule,
+   deletes the source memory, and updates MEMORY.md without re-asking intent
+   (standalone `reflect promote` keeps its own rule-text confirmation).
+   **Prune** deletes the memory file and its MEMORY.md entry. **Keep** does
+   nothing.
+5. **Archive** every completed phase, not just the latest, by running
+   `archive-project-file` as an internal phase through the
+   [archive skill](../../archive-project-file/SKILL.md).
+6. **Tear down branch-local services, with one confirmation.** Collect the
+   candidates: containers whose names or labels match the branch, project
+   name, or working directory
+   (`docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}'`); a running
+   Compose stack when a `docker-compose.yml` or `compose.yml` exists
+   (`docker compose ps`); dev servers rooted in this project directory on the
+   common ports (`lsof -ti :<common-ports>` for 3000, 3001, 5173, 8080, 8088);
+   and project worktrees with no uncommitted changes (`git worktree list`).
+   List them and ask once which to stop or remove; act only on the confirmed
+   set, and report it:
 
-### 2. Read Metrics — Project-Level Summary
+   ```markdown
+   ### Services Torn Down
+   - [service]: [action taken]
+   ```
 
-Read `.ai-toolkit/metrics.jsonl` (falling back to legacy `.claude/metrics.jsonl` only when needed). Filter to events relevant to this project and aggregate using [skills/reporting/templates/complete-project-metrics.md](../../reporting/templates/complete-project-metrics.md).
-
-If the file is missing or no events match, emit `No metrics recorded for this project` and continue.
-
-### 3. Review the Observation Queue
-
-Skip if `--skip-promote` was passed.
-
-If `.ai-toolkit/observations.jsonl` has unreviewed lines, run the *Review*
-section of [skills/reflection/references/observations.md](../../reflection/references/observations.md)
-(`reflect observations`): `bin/aitk lane-yield` first, then cluster the lines
-and present proposals. Apply only on confirmation and move reviewed lines to
-`.ai-toolkit/observations.reviewed.jsonl`. This is the only point in a project
-where the queue is guaranteed to be read, so do not skip it silently: an empty
-queue is reported as `No unreviewed observations`.
-
-### 4. Scan Memories — Surface Promotion Candidates
-
-Skip if `--skip-promote` was passed.
-
-Read all memory files in the project memory directory. Identify promotion candidates:
-- **Feedback memories** describing patterns applicable across projects (not project-specific context)
-- **Postmortem memories** (`feedback_failure_*`) where the prevention recommendation points to a universal rule or skill change
-- **Recurring themes** — multiple memories pointing to the same underlying pattern
-
-For each candidate, present:
-
-```markdown
-### Promotion Candidate: {filename}
-**Pattern**: {one-line summary}
-**Why promote**: {reasoning}
-**Suggested action**: Promote to rule / Keep as memory / Prune (outdated)
-```
-
-Wait for user confirmation per candidate. Then follow the matching `reflect` flow:
-- **Promote**: `reflect promote` with pre-authorization — the candidate approval above already authorizes the promotion, so the sub-flow drafts the rule, writes, deletes the source memory, and updates MEMORY.md without re-confirming intent (standalone `reflect promote` keeps its own rule-text confirmation)
-- **Prune**: delete the memory file and MEMORY.md entry
-- **Keep**: no action
-
-### 5. Archive Completed Phases
-
-Run `archive-project-file` via the [archive skill](../../archive-project-file/SKILL.md) as an internal phase. Hint that this is a full-project archive — all completed phases should move out, not just the most recent one.
-
-### 6. Tear Down Branch-Local Services
-
-Identify and stop services started for this branch:
-
-1. **Docker containers** — `docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}'`. Stop containers whose names/labels match the branch, project name, or working directory.
-2. **Docker Compose stacks** — if a `docker-compose.yml` (or `compose.yml`) exists, run `docker compose ps`; if anything is up, `docker compose down`.
-3. **Dev servers / background processes** — `lsof -ti :<common-ports>` (3000, 3001, 5173, 8080, 8088). For matches rooted in this project directory, ask before killing.
-4. **Worktrees** — `git worktree list`. For project-related worktrees with no uncommitted changes, offer to remove.
-
-Report what was found and stopped:
-
-```markdown
-### Services Torn Down
-- [service]: [action taken]
-```
-
-If nothing is running, skip silently.
-
-### 7. Write Final PROJECT.md Status
-
-Use the template at [skills/reporting/templates/complete-project-final.md](../../reporting/templates/complete-project-final.md). Replaces the prior status section.
-
-### 8. Suggest Final Action
-
-Pick one based on branch state:
-- **Uncommitted changes**: commit, then `create-pr`
-- **Changes committed, no PR**: `create-pr`
-- **PR open**: merge, then deploy
-- **Everything merged**: deploy to staging/production
-- **No code changes (process/learning project)**: archive complete, no further action
-
-### 8. Summary + Record Metrics
-
-Use the summary template at [skills/reporting/templates/complete-project-summary.md](../../reporting/templates/complete-project-summary.md) following the structural rules in [skills/reporting/SKILL.md](../../reporting/SKILL.md).
-
-After emitting the summary, include `metrics-emit` context using the [metrics emitter](../../metrics-emit/SKILL.md) with:
-- `command`: `complete-project`
-- `complexity`: `standard`
-- `status`: `clean` (or `blocked` if step 6 left services running, etc.)
-- `rounds`: 0 (no review loop)
-- `gate_decisions`: include any user decisions made during memory promotion
-- `worker_usage`: subagent/worker invocation counts when applicable
-
-### 9. Suggest Final Clear
-
-The capstone is also a natural context boundary — the project is closed, durable state is archived, and the next thing the user does will be a fresh project or unrelated work. Suggest a clean slate:
-
-```
-Project closed. Start the next task in a fresh session when convenient.
-```
-
-Do not auto-clear. The user may want to stay in-session to push the PR, deploy, or pick up the suggested final action from step 8.
+   When nothing is running, skip this step silently.
+7. **Write the final status** with
+   [skills/reporting/templates/complete-project-final.md](../../reporting/templates/complete-project-final.md),
+   replacing the prior status section.
+8. **Suggest the next action** from the branch state: uncommitted changes →
+   commit, then `create-pr`; committed with no PR → `create-pr`; PR open →
+   review and merge, then deploy; everything merged → deploy to staging or
+   production; no code changes → nothing further. Merging and deploying are
+   the user's actions; suggest them, never run them.
+9. **Summarize and record metrics.** Use
+   [skills/reporting/templates/complete-project-summary.md](../../reporting/templates/complete-project-summary.md)
+   under the structural rules in [skills/reporting/SKILL.md](../../reporting/SKILL.md),
+   then include `metrics-emit` context through the
+   [metrics emitter](../../metrics-emit/SKILL.md) with `command:
+   complete-project`, `complexity: standard`, `status: clean` (or `blocked`
+   when step 6 left services running, and similar), `rounds: 0`,
+   `gate_decisions` with the memory-promotion decisions, and `worker_usage`
+   when workers ran.

@@ -31,14 +31,6 @@ Where `<period>` is the argument from the user (default: `7d`).
 
 The script handles all formatting. Present its output directly — do not reformat or summarize.
 
-### 3. Interpret If Asked
-
-If the user asks "why is this expensive?", look for:
-- **High-cost model output tokens**: long reasoning chains, verbose subagents
-- **Low cache hit rate**: context not being reused efficiently across turns
-- **One project dominating**: a specific workflow is burning tokens
-- **Many messages per session**: long sessions where context compresses and re-expands
-
 ## Notes
 - Costs shown are **API-equivalent estimates**, not actual billing. Subscription users pay a flat rate regardless of token usage. These numbers indicate relative usage weight.
 - Unknown models are shown with token/message counts but excluded from cost totals instead of being priced as a different provider/model.

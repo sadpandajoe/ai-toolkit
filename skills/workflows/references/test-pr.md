@@ -53,19 +53,11 @@ Use the `qa` skill and load only the needed references:
 
 The main thread owns PR identity, app URL, scenario selection, evidence paths, posting decisions, and final summary. Do not load execution/reporting references until setup and scenario selection are complete.
 
-## PROJECT.md Discipline
+## PROJECT.md Record
 
-**Every run** writes at least one entry to PROJECT.md before the chat summary, so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) immediately after `test-pr` does not lose the QA record.
-
-For STANDARD or expensive runs (CORE impact, broad scenario set, repeated re-validation), follow `rules/context-management.md` and write durable state to PROJECT.md at each phase boundary before any checkpoint:
-
-- After scenario selection: `## Test-PR Scenarios` (PR identity, app URL, impact tier, scenario list).
-- After execution: `## Test-PR Results` (per-scenario result, evidence paths, recording path).
-- After posting: `## Test-PR Posted` (Shortcut/PR comment link or "local only").
-
-These writes are **hard gates before any checkpoint** on STANDARD/expensive runs.
-
-For TRIVIAL/STANDARD runs (including `--smoke`), a single `## Test-PR Results` entry at completion is the minimum:
+Every run appends a `## Test-PR Results` entry to PROJECT.md before the chat
+summary, so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md)
+immediately after `test-pr` keeps the QA record:
 
 ```markdown
 ## Test-PR Results — PR #[number]
@@ -76,25 +68,21 @@ Evidence: [recording path or "none"]
 Posted: [link or "local only"]
 ```
 
-Emit before the chat summary:
-
-```markdown
-## PROJECT.md Updated — Test-PR Results
-PR #[number] recorded
-```
+When execution or posting runs in a fresh worker (a CORE-impact PR, a broad
+scenario set, repeated re-validation), first write `## Test-PR Scenarios` (PR
+identity, app URL, impact tier, scenario list): the worker and any later
+session resume only from PROJECT.md.
 
 ## Gates
 
 - Stop if the app URL cannot be resolved.
 - Stop on production URLs.
-- Print the selected scenarios and proceed — invoking the command delegates scenario selection, and execution is non-destructive on local/staging (prod is already gated above). `--step` restores the confirm-before-execution pause.
+- Print the selected scenarios and proceed — invoking the command delegates scenario selection, and execution is non-destructive on local/staging (prod is already gated above). With `--step`, confirm before execution.
 - Run scenarios sequentially; do not parallelize browser evidence gathering.
 - Record by default; skip only with `--no-record`.
-- Stop before posting unless `--post` was passed and evidence paths are available.
+- Stop before posting unless `--post` was passed and evidence paths are available. Before a PR comment, run the PII scrub in `feedback/references/reply-resolve.md` over the posted text and attachment names; a PR comment is public.
 
 ## Summary Contract
-
-Do not emit the chat summary until the `## PROJECT.md Updated — Test-PR Results` confirmation block has been emitted.
 
 End with:
 
