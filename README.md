@@ -217,9 +217,11 @@ CLI:
 | `bin/aitk review plan\|merge` | Compute a review's lanes from the diff, or merge the lanes' findings with coverage gaps |
 | `bin/aitk metrics [--period P] [--format summary\|project]` / `metrics emit --workflow W --status S` | Summarize `.ai-toolkit/metrics.jsonl`, or append one event filled from the snapshot; metrics never gate |
 | `bin/aitk cost [today\|<N>d\|month\|all\|YYYY-MM-DD]` | Token usage and API-equivalent cost from Claude Code sessions; Claude-only, unpriced rather than guessed |
-| `bin/aitk observe --kind <kind> --detail "<one sentence>"` | Append one line to the reflection queue (`.ai-toolkit/observations.jsonl`) |
+| `bin/aitk observe --kind <kind> --detail "<one sentence>" [--rule rules/<file>.md]` | Append one line to the reflection queue (`.ai-toolkit/observations.jsonl`) |
 | `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Durable phases and idempotent effects; `reserve` refuses a `verification`- or `review`-gated effect unless the snapshot shows that gate `PASS` |
 | `bin/aitk lane-yield [--metrics PATH] [--json]` | Apply the review-lane yield thresholds to `.ai-toolkit/metrics.jsonl` and list demotions |
+| `bin/aitk rule-yield [--runs N] [--json]` | List the rule files no observation named over the last N workflow runs (default 20): deletion candidates for `reflect` |
+| `bin/aitk eval --provider <p> [--family F] [--model M] [--effort E] [--dry-run]` | Run the judgment eval cases through `model-run`, grade them with `evals/grader.md`, and append `evals/results/<date>-<provider>.md`; calls a provider and costs money |
 | `bin/aitk pgm-preflight --workflow <create-status-report\|create-velocity-report>` | Check the optional PGM configuration before a report collects data |
 | `bin/aitk model-route <route> --provider <p> --boundary <id> [--lens <path>]` | Resolve a pinned specialist dispatch |
 | `bin/aitk model-run <route> --provider <p> --boundary <id> --prompt-file <f>` | Run one fail-closed specialist |

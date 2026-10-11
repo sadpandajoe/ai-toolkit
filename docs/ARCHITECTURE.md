@@ -181,7 +181,9 @@ gate failures, specialist invalidations, repeated workarounds, low-yield review
 lanes) append to `.ai-toolkit/observations.jsonl`. `reflect` clusters them,
 proposes rule or skill changes for human approval, and writes eval candidates
 under `evals/`. Tests protect invariants and deterministic transitions; evals
-protect model judgment.
+protect model judgment: `bin/aitk eval` runs the judgment cases on one
+provider and grades them (`evals/README.md`), and `bin/aitk rule-yield`
+lists the rule files no observation named recently.
 
 ## Cost and metrics data
 

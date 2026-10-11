@@ -11,6 +11,7 @@ from pathlib import Path
 import unittest
 
 from aitk.conformance import route_workflow
+from aitk.eval import FAMILY_CONTRACTS, NON_FAMILY_DIRS
 from aitk.project_state import (
     ProjectStateError,
     classify_complexity,
@@ -29,10 +30,18 @@ def cases(family: str) -> list[dict[str, object]]:
 
 class EvalCorpusTests(unittest.TestCase):
     def test_every_family_has_cases_with_stable_shape(self) -> None:
-        families = sorted(p.name for p in (ROOT / "evals").iterdir() if p.is_dir())
+        # `bin/aitk eval` writes evals/results/ and the replay set lives in
+        # evals/replay/; neither holds cases.
+        families = sorted(
+            p.name
+            for p in (ROOT / "evals").iterdir()
+            if p.is_dir() and p.name not in NON_FAMILY_DIRS
+        )
         self.assertEqual(
             ["complexity", "gates", "planning", "skill_routing", "workflows"], families
         )
+        # Every family names the contracts its judgment cases run against.
+        self.assertEqual(families, sorted(FAMILY_CONTRACTS))
         for family in families:
             rows = cases(family)
             self.assertTrue(rows, family)

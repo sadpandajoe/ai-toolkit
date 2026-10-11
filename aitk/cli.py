@@ -29,6 +29,14 @@ from .model_routing import (
     resolve_route,
     run_model,
 )
+from .eval import (
+    EvalError,
+    plan as plan_eval,
+    render_plan as render_eval_plan,
+    run_eval,
+    tally as tally_eval,
+    write_results as write_eval_results,
+)
 from .metrics import (
     REVIEW_LANES_HELP,
     RULE_WINDOW,
@@ -45,6 +53,7 @@ from .metrics import (
     select as select_metrics,
 )
 from .pgm import preflight as pgm_preflight
+from .routing_manifest import ROUTE_EFFORTS
 from .review_plan import (
     PROVIDERS,
     PlanInputs,
@@ -762,6 +771,57 @@ def _rule_yield(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _eval_command(arguments: argparse.Namespace) -> str:
+    """The run's command line, as recorded in the results file."""
+    parts = ["bin/aitk", "eval", "--provider", arguments.provider]
+    for flag, values in (("--family", arguments.family), ("--case", arguments.case), ("--model", arguments.model)):
+        for value in values or ():
+            parts += [flag, value]
+    for flag, value in (("--effort", arguments.effort), ("--grader-provider", arguments.grader_provider)):
+        if value:
+            parts += [flag, value]
+    return " ".join(parts)
+
+
+def _eval(arguments: argparse.Namespace) -> int:
+    root = _root(arguments.root)
+    options = {
+        "selected": arguments.family or None,
+        "case_ids": arguments.case or None,
+        "models": arguments.model or (),
+        "effort": arguments.effort,
+        "grader_provider": arguments.grader_provider,
+    }
+    try:
+        if arguments.dry_run:
+            print(render_eval_plan(plan_eval(root, arguments.provider, **options)))
+            return 0
+        run = run_eval(
+            root,
+            arguments.provider,
+            **options,
+            jobs=arguments.jobs,
+            timeout_seconds=arguments.timeout_seconds,
+            command=_eval_command(arguments),
+        )
+        written = write_eval_results(root, run, Path(arguments.output) if arguments.output else None)
+    except (EvalError, ModelRouteError) as error:
+        print(f"eval: {error}", file=sys.stderr)
+        return 2
+    graded = 0
+    for setting in run.settings:
+        counts = tally_eval(outcome for outcome in run.outcomes if outcome.setting == setting)
+        graded += counts["PASS"] + counts["FAIL"]
+        print(
+            f"{setting.label} ({setting.selector}): {counts['PASS']} pass, {counts['FAIL']} fail, "
+            f"{counts['ERROR']} error, {counts['UNGRADED']} ungraded"
+        )
+    print(f"results: {written}")
+    # A run that graded nothing measured nothing: the provider or the grader
+    # was unreachable, and the section written says why.
+    return 0 if graded or not run.outcomes else 3
+
+
 def _reachable(root: Path, arguments: argparse.Namespace) -> frozenset[str]:
     unreachable = set(arguments.unreachable or ())
     return frozenset(
@@ -1371,6 +1431,36 @@ def parser() -> argparse.ArgumentParser:
     rule_yield_parser.add_argument("--metrics", help="metrics file (default: ./.ai-toolkit/metrics.jsonl)")
     rule_yield_parser.add_argument("--json", action="store_true")
     rule_yield_parser.set_defaults(handler=_rule_yield)
+
+    evaluation = subparsers.add_parser(
+        "eval",
+        help="run the judgment eval cases on one provider and append the graded results",
+        description="Run the mode: judgment cases in evals/*/cases.jsonl through the model-run "
+        "transport, grade each answer under evals/grader.md, and append a section to "
+        "evals/results/<date>-<provider>.md. Every case is two provider calls per setting; "
+        "--dry-run lists them without calling a provider.",
+    )
+    evaluation.add_argument("--provider", required=True, choices=sorted(PROVIDERS))
+    evaluation.add_argument("--family", action="append", help="only this case family (repeatable)")
+    evaluation.add_argument("--case", action="append", help="only this case id (repeatable)")
+    evaluation.add_argument(
+        "--model", action="append",
+        help="model family from the provider's catalog (repeatable; default: the family's owner, "
+        "the planning route for planning cases, else the orchestrator)",
+    )
+    evaluation.add_argument(
+        "--effort", choices=ROUTE_EFFORTS,
+        help="effort for every setting (default: the owner's pinned effort)",
+    )
+    evaluation.add_argument(
+        "--grader-provider", choices=sorted(PROVIDERS),
+        help="provider whose review route grades (default: --provider)",
+    )
+    evaluation.add_argument("--jobs", type=int, default=1, help="cases in flight at once (default 1)")
+    evaluation.add_argument("--timeout-seconds", type=int, default=1800)
+    evaluation.add_argument("--output", help="results file (default: evals/results/<date>-<provider>.md)")
+    evaluation.add_argument("--dry-run", action="store_true", help="list the dispatches; call no provider")
+    evaluation.set_defaults(handler=_eval)
 
     pgm = subparsers.add_parser(
         "pgm-preflight", help="validate optional PGM configuration before collection"
