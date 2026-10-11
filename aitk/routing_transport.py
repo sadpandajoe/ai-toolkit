@@ -603,6 +603,7 @@ def _outer(
     error: str | ModelRouteError | None,
     contracts: tuple[tuple[str, str, str], ...] = (),
     reviewed_tree: str | None = None,
+    usage: dict[str, object] | None = None,
 ) -> dict[str, object]:
     if error is None:
         error_value: dict[str, object] | None = None
@@ -639,8 +640,69 @@ def _outer(
         "result_digest": _result_digest(result),
         "reviewed_tree": reviewed_tree,
         "reroute": None,
+        # What the provider reported spending (`_usage`), or null.
+        "usage": usage,
         "error": error_value,
     }
+
+
+def _tokens(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def _usage(provider: str, stdout: str) -> dict[str, object] | None:
+    """The token counts a provider process reported, and Claude's own cost.
+
+    Claude's JSON result carries `usage` and `total_cost_usd`. Codex reports
+    `usage` on each `turn.completed` event, where `input_tokens` includes the
+    `cached_input_tokens`. Counts use Claude's field names, so
+    `aitk.pricing.compute_cost` prices either; `cost_usd` is the provider's
+    figure, or None when it reported none. None when nothing was reported.
+    """
+    totals = {
+        "input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "output_tokens": 0,
+    }
+    cost: float | None = None
+    seen = False
+    if provider == "claude":
+        try:
+            value = json.loads(stdout)
+        except ValueError:
+            return None
+        if not isinstance(value, dict):
+            return None
+        usage = value.get("usage")
+        if isinstance(usage, dict):
+            seen = True
+            for key in totals:
+                totals[key] = _tokens(usage.get(key))
+        reported = value.get("total_cost_usd")
+        if isinstance(reported, (int, float)) and not isinstance(reported, bool) and reported >= 0:
+            seen = True
+            cost = float(reported)
+    else:
+        for line in stdout.splitlines():
+            try:
+                value = json.loads(line)
+            except ValueError:
+                continue
+            if (
+                isinstance(value, dict)
+                and value.get("type") == "turn.completed"
+                and isinstance(value.get("usage"), dict)
+            ):
+                seen = True
+                usage = value["usage"]
+                cached = _tokens(usage.get("cached_input_tokens"))
+                totals["input_tokens"] += max(_tokens(usage.get("input_tokens")) - cached, 0)
+                totals["cache_read_input_tokens"] += cached
+                totals["output_tokens"] += _tokens(usage.get("output_tokens"))
+    if not seen:
+        return None
+    return {**totals, "cost_usd": cost}
 
 
 def _isolated_codex_home(directory: Path) -> dict[str, str]:
@@ -728,6 +790,41 @@ def run_model(
     return code, payload
 
 
+def run_resolved(
+    root: Path,
+    route: ResolvedRoute,
+    prompt: str,
+    cwd: Path,
+    timeout_seconds: int = DEFAULT_TIMEOUT,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> tuple[int, dict[str, object]]:
+    """Run a dispatch its caller resolved itself, for `bin/aitk eval`.
+
+    The preflight, argv, instruction channel, schema and result checks are
+    `run_model`'s; only the route's origin differs. An eval measures a model on
+    a contract list of its own (`aitk/eval.py`), so there is no manifest
+    boundary, no reroute and no reviewed tree, which also means an eval
+    envelope can never back a review gate.
+    """
+    if not route.required_contracts:
+        raise ModelRouteError("dispatch boundary has no required contracts")
+    if timeout_seconds <= 0:
+        raise ModelRouteError("timeout must be positive")
+    if len(prompt.encode("utf-8")) > PROMPT_LIMIT:
+        raise ModelRouteError("prompt must be no larger than 1 MiB")
+    contracts = _contracts(root, route.required_contracts)
+    try:
+        selected_cwd = cwd.resolve()
+    except OSError as error:
+        raise ModelRouteError("cwd could not be resolved") from error
+    if not selected_cwd.is_dir():
+        raise ModelRouteError("cwd must be an existing directory")
+    code, payload, _ = _dispatch(
+        route, contracts, prompt, selected_cwd, timeout_seconds, False, runner
+    )
+    return code, payload
+
+
 def _dispatch(
     route: ResolvedRoute,
     contracts: tuple[tuple[str, str, str], ...],
@@ -741,10 +838,15 @@ def _dispatch(
     """Run one resolved dispatch; the refusal, if any, is returned for D15."""
 
     provider = route.provider
+    reported: dict[str, object] = {"usage": None}
 
     def outer(**fields: object) -> dict[str, object]:
         return _outer(  # type: ignore[arg-type]
-            route, contracts=contracts, reviewed_tree=reviewed_tree, **fields
+            route,
+            contracts=contracts,
+            reviewed_tree=reviewed_tree,
+            usage=reported["usage"],
+            **fields,
         )
 
     instructions = worker_instructions(route, contracts, selected_cwd)
@@ -877,6 +979,7 @@ def _dispatch(
                 result=None,
                 error=str(error),
             ), None
+        reported["usage"] = _usage(provider, process.stdout or "")
         if process.returncode:
             refusal = _process_refusal(provider, process.stdout)
             return 3, outer(

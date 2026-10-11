@@ -1402,6 +1402,75 @@ class InstructionChannelAndRefusalTests(RoutingTestCase):
         self.assertEqual(["claude", "codex"], started)
         self.assertEqual("refusal", payload["reroute"]["category"])
 
+    def test_the_envelope_records_what_the_provider_reported_spending(self) -> None:
+        def claude(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+            if "--version" in argv or "--help" in argv:
+                return _claude_runner(RESULT)(argv, **options)
+            output = {
+                "type": "result", "subtype": "success", "is_error": False,
+                "structured_output": RESULT, "total_cost_usd": 0.42,
+                "usage": {"input_tokens": 12, "cache_read_input_tokens": 30,
+                          "cache_creation_input_tokens": 4, "output_tokens": 7},
+            }
+            return subprocess.CompletedProcess(argv, 0, json.dumps(output), "")
+
+        code, payload = self.run_lane(claude, "review", "claude", "review.independent")
+        self.assertEqual(0, code, payload)
+        self.assertEqual(
+            {"input_tokens": 12, "cache_read_input_tokens": 30, "cache_creation_input_tokens": 4,
+             "output_tokens": 7, "cost_usd": 0.42},
+            payload["usage"],
+        )
+
+        def codex(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+            completed = _codex_runner(RESULT)(argv, **options)
+            if "--version" in argv or "--help" in argv:
+                return completed
+            turns = [
+                {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 60, "output_tokens": 9}},
+                {"type": "turn.completed", "usage": {"input_tokens": 50, "cached_input_tokens": 0, "output_tokens": 1}},
+            ]
+            return subprocess.CompletedProcess(argv, 0, "\n".join(json.dumps(t) for t in turns), "")
+
+        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"CODEX_HOME": home}):
+            code, payload = self.run_lane(codex, "review", "codex", "review.independent")
+        self.assertEqual(0, code, payload)
+        # Codex counts cached input inside input_tokens; the envelope splits it out.
+        self.assertEqual(
+            {"input_tokens": 90, "cache_read_input_tokens": 60, "cache_creation_input_tokens": 0,
+             "output_tokens": 10, "cost_usd": None},
+            payload["usage"],
+        )
+        # A provider that reports nothing leaves the field empty, as does a dry run.
+        code, payload = self.run_lane(_claude_runner(RESULT), "review", "claude", "review.independent")
+        self.assertIsNone(payload["usage"])
+
+    def test_a_caller_resolved_dispatch_runs_through_the_same_checks(self) -> None:
+        import dataclasses
+
+        from aitk.model_routing import run_resolved
+
+        route = resolve_route(ROOT, "review", "claude")
+        with self.assertRaisesRegex(ModelRouteError, "no required contracts"):
+            run_resolved(ROOT, route, "Grade this.", ROOT, runner=_claude_runner(RESULT))
+        route = dataclasses.replace(
+            route, boundary="eval.grade", required_contracts=("rules/severity.md",)
+        )
+        with self.assertRaisesRegex(ModelRouteError, "timeout must be positive"):
+            run_resolved(ROOT, route, "Grade this.", ROOT, 0, _claude_runner(RESULT))
+        calls: list[dict[str, object]] = []
+        with mock.patch(
+            "aitk.routing_transport.shutil.which", side_effect=lambda name: f"/bin/{name}"
+        ):
+            code, payload = run_resolved(ROOT, route, "Grade this.", ROOT, 60, _claude_runner(RESULT, calls))
+        self.assertEqual(0, code, payload)
+        self.assertEqual(RESULT, payload["result"])
+        self.assertIsNone(payload["reviewed_tree"], "a caller-resolved run never backs a review gate")
+        self.assertIsNone(payload["reroute"])
+        (call,) = calls
+        self.assertIn("CONTRACT path=rules/severity.md\n", call["instructions"])
+        self.assertEqual("TASK_BEGIN\nGrade this.\nTASK_END\n", call["input"])
+
 
 if __name__ == "__main__":
     unittest.main()

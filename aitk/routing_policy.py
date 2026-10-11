@@ -249,6 +249,14 @@ SUMMARY_FORMS: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
             ),
         ),
     ),
+    # `bin/aitk eval`'s grader (evals/grader.md): the verdict owns its line;
+    # `aitk/eval.py` reads it from the summary's first line.
+    "eval-verdict": (
+        (
+            "Verdict: PASS | FAIL",
+            re.compile(r"^[ \t]*Verdict:[ \t]*(?:PASS|FAIL)[ \t]*$", re.MULTILINE),
+        ),
+    ),
 }
 
 
@@ -314,8 +322,9 @@ REFUSAL_CODES = frozenset(
 
 
 # The per-worker spend cap passed to Claude as `--max-budget-usd`, by the
-# route's pinned effort. Codex has no equivalent flag.
-CLAUDE_MAX_BUDGET_USD = {"high": "5", "xhigh": "15"}
+# route's pinned effort. Codex has no equivalent flag. A route may pin any
+# effort in ROUTE_EFFORTS (D16), so low and medium share the high cap.
+CLAUDE_MAX_BUDGET_USD = {"low": "5", "medium": "5", "high": "5", "xhigh": "15"}
 
 
 # A Codex worker's contracts travel as one `-c developer_instructions=...`
