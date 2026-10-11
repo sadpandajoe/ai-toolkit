@@ -4,52 +4,32 @@ tier: Light
 
 # Shortcut API Fetch
 
-Use this helper whenever a workflow needs to make Shortcut REST API calls. It wraps the known operational gotchas so callers don't rediscover them each session.
+Use `sc.sh` (below) whenever a workflow needs to make Shortcut REST API calls. It wraps the known operational gotchas so callers don't rediscover them each session.
 
 Global rules only route Shortcut work here; this file owns the detailed REST protocol.
 
 ## Before Making Calls
 
-1. Confirm `$SHORTCUT_API_TOKEN` is set
-2. Source the retry wrapper below — use it for every call in the session
+1. Confirm `$SHORTCUT_API_TOKEN` is set (`sc.sh` refuses with exit 2 when it is not).
+2. Resolve the installed shortcut skill directory as `<skill-dir>` and make every call with `<skill-dir>/scripts/sc.sh`. Do not hand-write curl calls or a retry wrapper.
 
-## Retry Wrapper
-
-The Shortcut API returns `organization2_missing` (or similar transient errors) on the first call of a session. This is normal. Always use this wrapper, and always pass `--fail-with-body` (curl 7.76 or newer): plain `curl -s` exits 0 on an HTTP error, so a failed call would never be retried or noticed.
+## The `sc.sh` Helper
 
 ```bash
-shortcut_call() {
-  local result attempt
-  for attempt in 1 2; do
-    # --fail-with-body makes curl exit non-zero on HTTP 4xx/5xx and still
-    # print the error body; organization2_missing is the transient one.
-    if result=$("$@") && [[ $result != *organization2_missing* ]]; then
-      printf '%s\n' "$result"
-      return 0
-    fi
-  done
-  printf 'Shortcut API failed after retry: %s\n' "$result" >&2
-  return 1
-}
-# Usage: shortcut_call curl -sS --fail-with-body -H "Shortcut-Token: $SHORTCUT_API_TOKEN" ...
+SC=<skill-dir>/scripts/sc.sh
+$SC get /stories/12345                       # GET  /api/v3/stories/12345
+$SC post /stories/search '{"group_id": "<team-uuid>"}'   # POST with a JSON body (or @file.json)
+$SC search 'owner:me is:started'             # GET /search/stories, every page joined
 ```
 
-If the retry also fails, surface the gap to the user — do not silently move on with missing data.
+What it handles, so callers do not rediscover it:
 
-## JSON Parsing
+- **Auth**: every call sends `Shortcut-Token: $SHORTCUT_API_TOKEN`; the token is never printed.
+- **Retry**: the API returns `organization2_missing` (or another transient error) on the first call of a session. `sc.sh` uses `curl --fail-with-body`, so an HTTP 4xx/5xx is a failure too, and retries once. Exit 1 means the retry also failed: surface the gap to the user, do not move on with missing data.
+- **Parsing**: responses carry control characters (newlines, tabs) in `description` and `comments[].text`, which break raw `jq`. `sc.sh` parses with Python `json.loads(..., strict=False)` and prints clean JSON, so its output is safe for `jq` and `python3 -c 'json.load(sys.stdin)'`.
+- **Paging**: `search` follows `next` until it is null and prints one array of every page's `data`.
 
-Shortcut responses contain control characters (newlines, tabs) in text fields like `description` and `comments[].text`. Raw `jq` parsing will fail on these.
-
-**Use Python with `strict=False`:**
-```bash
-python3 -c "
-import json, sys
-data = json.loads(sys.stdin.read(), strict=False)
-# ... process data
-" <<< "$result"
-```
-
-Do not attempt `jq` on fields that contain user-authored text. Use `jq` only for simple structural queries on well-typed fields (IDs, dates, booleans).
+`SHORTCUT_API_BASE` overrides `https://api.app.shortcut.com` (tests use it).
 
 ## Known Field Shape Gotchas
 
@@ -64,7 +44,7 @@ Do not attempt `jq` on fields that contain user-authored text. Use `jq` only for
 | `estimate` | Integer or `null`. Not all story types use estimates. |
 | `workflow_state_id` | Integer. Map to name via `GET /workflows`. Cache the mapping per session. |
 | `custom_fields` | Array of `{"field_id": ..., "value_id": ..., "value": "..."}`. Shape varies by workspace config. |
-| `description` | Markdown string. May contain control chars, emoji, and embedded images. Always parse with `strict=False`. |
+| `description` | Markdown string. May contain control chars, emoji, and embedded images; `sc.sh` output is already parsed with `strict=False`. |
 
 ## Endpoints
 
@@ -84,27 +64,19 @@ Do not attempt `jq` on fields that contain user-authored text. Use `jq` only for
 
 **Completed stories by team in a date range:**
 ```bash
-shortcut_call curl -sS --fail-with-body -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
-  -H "Content-Type: application/json" \
-  -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
-  -d '{"completed_at_start":"2026-03-01T00:00:00Z","completed_at_end":"2026-03-21T23:59:59Z","group_id":"<team-uuid>"}'
+$SC post /stories/search '{"completed_at_start":"2026-03-01T00:00:00Z","completed_at_end":"2026-03-21T23:59:59Z","group_id":"<team-uuid>"}'
 ```
 
 **WIP stories by team:**
 ```bash
-shortcut_call curl -sS --fail-with-body -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
-  -H "Content-Type: application/json" \
-  -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
-  -d '{"workflow_state_types":["started"],"group_id":"<team-uuid>"}'
+$SC post /stories/search '{"workflow_state_types":["started"],"group_id":"<team-uuid>"}'
 ```
 
 **Blocked stories:** Query WIP, then filter client-side for `.blocked == true` or `.blocker == true`.
 
 ## Pagination
 
-Only `GET /search/stories` pages. Its response has `data` and `next`; `next` is a path plus query string (`/api/v3/search/stories?...`), or null on the last page. Request `https://api.app.shortcut.com` + `next` until it is null.
-
-`POST /stories/search` does not page: it returns a plain array of every match. Keep its filters narrow (team, state, date range) rather than looking for a `next` field.
+Only `GET /search/stories` pages (`data` plus `next`, a path and query string or null); `sc.sh search` follows it. `POST /stories/search` does not page: it returns a plain array of every match, so keep its filters narrow (team, state, date range) rather than looking for a `next` field.
 
 ## Workflow States
 
@@ -133,31 +105,6 @@ When REST API is unavailable after retry or for interactive one-off lookups, use
 ## Minimal Fetch Pattern
 
 ```bash
-# 1. Set up wrapper
-shortcut_call() {
-  local result attempt
-  for attempt in 1 2; do
-    if result=$("$@") && [[ $result != *organization2_missing* ]]; then
-      printf '%s\n' "$result"
-      return 0
-    fi
-  done
-  printf 'Shortcut API failed after retry: %s\n' "$result" >&2
-  return 1
-}
-
-# 2. Fetch story
-story=$(shortcut_call curl -sS --fail-with-body \
-  "https://api.app.shortcut.com/api/v3/stories/12345" \
-  -H "Shortcut-Token: $SHORTCUT_API_TOKEN")
-
-# 3. Parse safely
-python3 -c "
-import json, sys
-s = json.loads(sys.stdin.read(), strict=False)
-print(f\"Story: {s['name']}\")
-print(f\"Type: {s['story_type']}\")
-print(f\"Labels: {', '.join(l['name'] for l in (s.get('labels') or []))}\")
-print(f\"Links: {s.get('external_links', [])}\")
-" <<< "$story"
+story=$(<skill-dir>/scripts/sc.sh get /stories/12345) || exit 1
+jq -r '"Story: \(.name)", "Type: \(.story_type)", "Labels: \([(.labels // [])[].name] | join(", "))", "Links: \(.external_links)"' <<<"$story"
 ```

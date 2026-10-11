@@ -18,6 +18,6 @@ Shortcut work splits into two phases:
 
 ## Notes
 
-- REST is preferred for repeatable workflow automation.
+- REST is preferred for repeatable workflow automation. Make every call through `<skill-dir>/scripts/sc.sh` (`get`, `post`, `put`, `upload`, `search`; resolve `<skill-dir>` from the installed shortcut skill): it sends the token header, retries once, and prints JSON that `jq` can read. There is no `aitk shortcut` command.
 - Use `$SHORTCUT_API_TOKEN` by name only; never copy token values into prompts, rules, comments, or generated files.
 - Global rules only route Shortcut work here. The detailed retry, parsing, field-shape, and posting protocols live in the references.

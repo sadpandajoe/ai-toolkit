@@ -459,5 +459,124 @@ class BatchPreflightTests(ScriptTestCase):
         self.assertIn("unknown target branch", missing.stderr)
 
 
+CURL_STUB = """#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+state = Path(os.environ["CURL_STATE"])
+with (state / "calls.jsonl").open("a") as handle:
+    handle.write(json.dumps(sys.argv[1:]) + "\\n")
+queue = sorted(state.glob("response-*.json"))
+if not queue:
+    sys.exit(7)
+response = json.loads(queue[0].read_text())
+queue[0].unlink()
+sys.stdout.write(response["body"])
+sys.exit(response.get("exit", 0))
+"""
+
+
+class ShortcutScriptTests(unittest.TestCase):
+    """NW-22: sc.sh against a stub curl."""
+
+    SCRIPT = ROOT / "skills" / "shortcut" / "scripts" / "sc.sh"
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.state = Path(temporary.name).resolve()
+        bin_dir = self.state / "bin"
+        bin_dir.mkdir()
+        executable(bin_dir / "curl", CURL_STUB)
+        self.env = {
+            **os.environ,
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "CURL_STATE": str(self.state),
+            "SHORTCUT_API_TOKEN": "test-token",
+            "SHORTCUT_API_BASE": "https://shortcut.invalid",
+        }
+        self.count = 0
+
+    def respond(self, body: object, exit_code: int = 0) -> None:
+        self.count += 1
+        text = body if isinstance(body, str) else json.dumps(body)
+        (self.state / f"response-{self.count:03d}.json").write_text(json.dumps({"body": text, "exit": exit_code}))
+
+    def sc(self, *arguments: str, **env: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(self.SCRIPT), *arguments], env={**self.env, **env}, text=True, capture_output=True, check=False, timeout=60,
+        )
+
+    def calls(self) -> list[list[str]]:
+        log = self.state / "calls.jsonl"
+        return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+    def test_get_retries_once_on_organization2_missing_and_parses_loosely(self) -> None:
+        self.respond({"errors": ["organization2_missing"]})
+        self.respond('{"id": 7, "description": "line one\nline two"}')
+        result = self.sc("get", "/stories/7")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"id": 7, "description": "line one\nline two"}, json.loads(result.stdout))
+        calls = self.calls()
+        self.assertEqual(2, len(calls))
+        self.assertIn("--fail-with-body", calls[0])
+        self.assertIn("Shortcut-Token: test-token", calls[0])
+        self.assertEqual("https://shortcut.invalid/api/v3/stories/7", calls[0][-1])
+        self.assertNotIn("test-token", result.stdout + result.stderr)
+
+    def test_an_http_error_is_retried_once_then_reported(self) -> None:
+        self.respond({"message": "Bad Gateway"}, exit_code=22)
+        self.respond({"id": 1})
+        self.assertEqual(0, self.sc("get", "/members").returncode)
+        self.respond({"message": "Bad Gateway"}, exit_code=22)
+        self.respond({"message": "Bad Gateway"}, exit_code=22)
+        self.respond({"id": 2})
+        failed = self.sc("get", "/members")
+        self.assertEqual(1, failed.returncode)
+        self.assertIn("failed after retry", failed.stderr)
+        self.assertEqual(4, len(self.calls()))
+
+    def test_search_follows_next_until_the_last_page(self) -> None:
+        self.respond({"data": [{"id": 1}], "next": "/api/v3/search/stories?query=owner%3Ame&next=abc"})
+        self.respond({"data": [{"id": 2}, {"id": 3}], "next": None})
+        result = self.sc("search", "owner:me is:started")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([{"id": 1}, {"id": 2}, {"id": 3}], json.loads(result.stdout))
+        first, second = self.calls()
+        self.assertEqual(
+            "https://shortcut.invalid/api/v3/search/stories?query=owner%3Ame%20is%3Astarted&page_size=25", first[-1]
+        )
+        self.assertEqual("https://shortcut.invalid/api/v3/search/stories?query=owner%3Ame&next=abc", second[-1])
+
+    def test_post_sends_json_and_usage_errors_exit_2(self) -> None:
+        self.respond({"id": 9})
+        result = self.sc("post", "/stories/9/comments", '{"text": "done"}')
+        self.assertEqual(0, result.returncode, result.stderr)
+        call = self.calls()[0]
+        self.assertEqual("POST", call[call.index("-X") + 1])
+        self.assertEqual('{"text": "done"}', call[call.index("--data-binary") + 1])
+        self.assertIn("Content-Type: application/json", call)
+        for arguments in ((), ("get",), ("delete", "/x"), ("post", "/x")):
+            with self.subTest(arguments=arguments):
+                self.assertEqual(2, self.sc(*arguments).returncode)
+        missing = self.sc("get", "/x", SHORTCUT_API_TOKEN="")
+        self.assertEqual(2, missing.returncode)
+        self.assertIn("SHORTCUT_API_TOKEN is not set", missing.stderr)
+
+    def test_upload_numbers_the_parts_and_attaches_to_a_story(self) -> None:
+        first, second = self.state / "a.png", self.state / "b.webm"
+        first.write_bytes(b"png")
+        second.write_bytes(b"webm")
+        self.respond([{"id": 1, "url": "https://files.invalid/a.png"}])
+        result = self.sc("upload", "--story", "12", str(first), str(second))
+        self.assertEqual(0, result.returncode, result.stderr)
+        call = self.calls()[0]
+        parts = [call[index + 1] for index, value in enumerate(call) if value == "-F"]
+        self.assertEqual(["story_id=12", f"file0=@{first}", f"file1=@{second}"], parts)
+        self.assertEqual("https://shortcut.invalid/api/v3/files", call[-1])
+        for arguments in (("upload",), ("upload", "--story", "x", str(first)), ("upload", str(self.state / "none"))):
+            with self.subTest(arguments=arguments):
+                self.assertEqual(2, self.sc(*arguments).returncode)
+
+
 if __name__ == "__main__":
     unittest.main()

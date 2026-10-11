@@ -16,7 +16,7 @@ Post structured reports (QA results, fix summaries, test findings) to Shortcut s
 
 - `$SHORTCUT_API_TOKEN` must be set
 - Story ID must be known (numeric ID or `sc-NNNNN` format)
-- Follow [fetch.md](fetch.md) patterns for API access and retry logic
+- Make every call with `<skill-dir>/scripts/sc.sh` ([fetch.md](fetch.md)); it handles auth, the retry and parsing
 
 Read `rules/shortcut-api.md` for the global Shortcut routing constraints.
 
@@ -27,7 +27,7 @@ Read `rules/shortcut-api.md` for the global Shortcut routing constraints.
    Extract the numeric ID from `sc-NNNNN`, URL, or raw number.
    Fetch the story to confirm it exists and get current state:
    ```bash
-   shortcut_call curl -s "https://api.app.shortcut.com/api/v3/stories/<id>" -H "Shortcut-Token: $SHORTCUT_API_TOKEN"
+   <skill-dir>/scripts/sc.sh get /stories/<id>
    ```
 
 2. **Upload evidence** (if any)
@@ -37,20 +37,15 @@ Read `rules/shortcut-api.md` for the global Shortcut routing constraints.
 
    **For inline images in the comment body** (screenshots embedded via markdown), upload *without* `story_id`. The returned `url` is workspace-scoped and renders in markdown, but the file does not appear in the story's Files sidebar — keeps the story clean when the image is only meaningful in context of the comment:
    ```bash
-   shortcut_call curl -s -X POST "https://api.app.shortcut.com/api/v3/files" \
-     -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
-     -F "file0=@<path>"
+   <skill-dir>/scripts/sc.sh upload <path>
    ```
 
    **For evidence that should be attached to the story** (videos, logs, anything reviewers should find via the Files panel), include `story_id`:
    ```bash
-   shortcut_call curl -s -X POST "https://api.app.shortcut.com/api/v3/files" \
-     -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
-     -F "file0=@<path>" \
-     -F "story_id=<id>"
+   <skill-dir>/scripts/sc.sh upload --story <id> <path>...
    ```
 
-   Do not pass `description` as a form field — it causes a validation error.
+   `sc.sh upload` sends the parts as `file0`, `file1`, ... (and `story_id` with `--story`). Do not add a `description` form field: it causes a validation error.
    Capture the returned `url` for embedding in the comment (`![alt](<url>)` for images).
    Name video files descriptively: `sc-<id>-<what-was-tested>.webm`.
 
@@ -58,20 +53,15 @@ Read `rules/shortcut-api.md` for the global Shortcut routing constraints.
 
    Use the appropriate template from the Report Templates section below.
    ```bash
-   shortcut_call curl -s -X POST "https://api.app.shortcut.com/api/v3/stories/<id>/comments" \
-     -H "Content-Type: application/json" \
-     -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
-     -d "{\"text\": \"<markdown body>\"}"
+   python3 -c 'import json, sys; print(json.dumps({"text": sys.stdin.read()}))' <report.md >comment.json
+   <skill-dir>/scripts/sc.sh post /stories/<id>/comments @comment.json
    ```
-   Escape the markdown body for JSON. For long reports, build the JSON with Python to handle newlines safely.
+   Build the JSON body with Python (as above) so newlines and quotes in the markdown are escaped.
 
 4. **Link PR** (if applicable)
 
    ```bash
-   shortcut_call curl -s -X PUT "https://api.app.shortcut.com/api/v3/stories/<id>" \
-     -H "Content-Type: application/json" \
-     -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
-     -d "{\"external_links\": [\"<github-pr-url>\"]}"
+   <skill-dir>/scripts/sc.sh put /stories/<id> '{"external_links": ["<existing links>", "<github-pr-url>"]}'
    ```
    Note: this replaces all external links. Fetch existing links first and merge.
 
@@ -79,10 +69,7 @@ Read `rules/shortcut-api.md` for the global Shortcut routing constraints.
 
    Update state, labels, custom fields, or estimate:
    ```bash
-   shortcut_call curl -s -X PUT "https://api.app.shortcut.com/api/v3/stories/<id>" \
-     -H "Content-Type: application/json" \
-     -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
-     -d "{\"workflow_state_id\": <state_id>}"
+   <skill-dir>/scripts/sc.sh put /stories/<id> '{"workflow_state_id": <state_id>}'
    ```
    Fetch workflow states from `/workflows` to map names to IDs. Cache per session.
 
