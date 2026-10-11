@@ -111,7 +111,7 @@ Codex CLI's custom-agent documentation after upgrades.
 ```
 ai-toolkit/
 ├── .codex-plugin/          # Codex plugin manifest (plugin.json)
-├── bin/aitk                # Build, doctor, routing, checkpoint, project-state CLI
+├── bin/aitk                # Build, doctor, routing, state, evidence, delivery, review and metrics CLI
 ├── aitk/                   # Standard-library implementation
 ├── agents/
 │   ├── claude/             # Native Claude subagents (aitk-planner, aitk-implementer, aitk-debugger, aitk-tester)
@@ -158,7 +158,7 @@ ai-toolkit/
 │   └── shortcut/ superset-local/ preset-rbac-setup/   # Domain integrations
 ├── evals/                  # Judgment and deterministic eval cases
 ├── hooks/                  # Provider-neutral safety hooks + Codex hook adapter
-├── scripts/                # Cost reports, the Preset host classifier, the QA recorder
+├── scripts/                # Cost reports, Preset host classifier and RBAC seeding, QA recorder, superset-local start
 ├── statusline/             # Claude Code status line command
 ├── extensions/pgm/         # Optional program-management extension
 └── tests/                  # Deterministic guarantees
@@ -187,9 +187,14 @@ CLI:
 
 | Command | Purpose |
 |---|---|
-| `bin/aitk list [--with-pgm] [--details]` | List workflows and contracts |
+| `bin/aitk list [--with-pgm] [--details] [--json]` | List workflows and contracts; the workflows router reads `--details --json` |
 | `bin/aitk route "<request>"` | Deterministically suggest a workflow |
-| `bin/aitk project-state init\|show\|set\|gate\|advance\|phases\|phase` | Read and update the `PROJECT.md` routing snapshot and gate budget |
+| `bin/aitk project-state init\|show\|set\|gate\|advance\|phases\|phase\|op` | Read and update the `PROJECT.md` routing snapshot and gate budget; `--format block` on `init`, `set` and `gate` prints the block to paste, `gate --gate review --result <envelope>` records a reviewer result, `op --id/--check` records provider operations so a resumed run skips them |
+| `bin/aitk verify --run "<cmd>" [--strength STRONG\|PARTIAL\|WEAK]` | Run a check and record command, exit code, output tail and tree on the verification gate (`PASS` only on exit 0) |
+| `bin/aitk deliver [--title T] [--body-file F] [--no-pr]` | Commit, push and open (or reuse) a draft PR, only when a review record and a passing `STRONG` run hold on the current tree |
+| `bin/aitk review plan\|merge` | Compute a review's lanes from the diff, or merge the lanes' findings with coverage gaps |
+| `bin/aitk metrics [--period P] [--format summary\|project]` / `metrics emit --workflow W --status S` | Summarize `.ai-toolkit/metrics.jsonl`, or append one event filled from the snapshot; metrics never gate |
+| `bin/aitk observe --kind <kind> --detail "<one sentence>"` | Append one line to the reflection queue (`.ai-toolkit/observations.jsonl`) |
 | `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Durable phases and idempotent effects; `reserve` refuses a `verification`- or `review`-gated effect unless the snapshot shows that gate `PASS` |
 | `bin/aitk lane-yield [--metrics PATH] [--json]` | Apply the review-lane yield thresholds to `.ai-toolkit/metrics.jsonl` and list demotions |
 | `bin/aitk pgm-preflight --workflow <create-status-report\|create-velocity-report>` | Check the optional PGM configuration before a report collects data |
@@ -260,7 +265,7 @@ list of them.
 |------|-------|----------|
 | `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, commits of local workflow state files or `.ai-toolkit/`, and `gh pr ready`/`gh pr merge` unless the user set `AITK_PR_READY=1` |
 | `pre-push-validate.sh` | PreToolUse (Bash) | Runs repository-pinned lint and targeted tests before a push |
-| `require-review-gate.sh` | PreToolUse (Bash) | Blocks `gh pr create` unless the `PROJECT.md` snapshot records the review gate as PASS (`SKIP_PR_GATE=1` is the user's override) and the PR is a `--draft` (`AITK_PR_READY=1` is the user's override) |
+| `require-review-gate.sh` | PreToolUse (Bash) | Blocks `gh pr create` unless the `PROJECT.md` snapshot records a review PASS backed by a reviewer record (`SKIP_PR_GATE=1` is the user's override) and the PR is a `--draft` (`AITK_PR_READY=1` is the user's override) |
 | `check-resources.sh` | PreToolUse (Bash) | Warns when running tests with constrained resources |
 | `check-plan-drift.sh` | Stop | Warns at turn end when PLAN.md outpaces PROJECT.md |
 | `observation-reminder.sh` | Stop | Says when ten or more unreviewed observations wait in `.ai-toolkit/observations.jsonl` |
