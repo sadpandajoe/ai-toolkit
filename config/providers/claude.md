@@ -9,7 +9,8 @@ provider syntax.
   parent writes `PLAN.md`.
 - `fresh_subagent`: the Agent tool with an installed toolkit agent in
   `~/.claude/agents/` (`aitk-planner`, `aitk-implementer`, `aitk-debugger`,
-  `aitk-tester`), each pinned to its route's model and effort. The spawn
+  `aitk-tester`; from the plugin, `ai-toolkit:aitk-planner` and so on), each
+  pinned to its route's model and effort. The spawn
   prompt carries the full contract per `rules/specialist-handoff.md`; review
   lanes never run as native agents.
 - Full-history fork (Claude only): a forked subagent that carries most of the

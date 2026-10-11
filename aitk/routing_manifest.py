@@ -956,6 +956,7 @@ def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[
         if (path := root / name).is_file()
     ]
     authored_roots = (
+        ".claude-plugin",
         ".codex-plugin",
         "agents",
         "aitk",

@@ -1,30 +1,41 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/session-start.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "^Bash$",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$PLUGIN_ROOT/hooks/prevent-project-commit.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/prevent-project-commit.sh\"",
             "timeout": 30,
             "statusMessage": "Checking git safety"
           },
           {
             "type": "command",
-            "command": "bash \"$PLUGIN_ROOT/hooks/pre-push-validate.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/pre-push-validate.sh\"",
             "timeout": 300,
             "statusMessage": "Validating push"
           },
           {
             "type": "command",
-            "command": "bash \"$PLUGIN_ROOT/hooks/require-review-gate.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/require-review-gate.sh\"",
             "timeout": 10,
             "statusMessage": "Checking review gate"
           },
           {
             "type": "command",
-            "command": "bash \"$PLUGIN_ROOT/hooks/check-resources.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/check-resources.sh\"",
             "timeout": 10,
             "statusMessage": "Checking local capacity"
           }
@@ -37,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$PLUGIN_ROOT/hooks/agent-setup-edit-reminder.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/agent-setup-edit-reminder.sh\"",
             "timeout": 10
           }
         ]
@@ -48,12 +59,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$PLUGIN_ROOT/hooks/check-plan-drift.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/check-plan-drift.sh\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "bash \"$PLUGIN_ROOT/hooks/observation-reminder.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/observation-reminder.sh\"",
             "timeout": 10
           }
         ]

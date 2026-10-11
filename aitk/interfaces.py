@@ -314,9 +314,9 @@ def validate_support_interface(root: Path) -> list[str]:
         "operating_systems": ["macos-latest", "ubuntu-latest"],
         "shell": "posix-sh",
         "providers": ["claude", "codex"],
-        "distributions": ["source-linked", "codex-plugin"],
+        "distributions": ["source-linked", "codex-plugin", "claude-plugin"],
         "extensions": ["pgm"],
-        "extension_distributions": {"pgm": ["source-linked"]},
+        "extension_distributions": {"pgm": ["source-linked", "codex-plugin", "claude-plugin"]},
         "environment_gated": [
             "live-provider-invocation",
             "authenticated-apis",

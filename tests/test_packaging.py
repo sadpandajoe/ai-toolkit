@@ -21,8 +21,10 @@ class PackagingTests(unittest.TestCase):
     def test_versions_match_across_python_plugin_and_changelog(self) -> None:
         project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
         plugin = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())
+        claude_plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
         self.assertEqual(aitk.__version__, project["version"])
         self.assertEqual(aitk.__version__, plugin["version"])
+        self.assertEqual(aitk.__version__, claude_plugin["version"])
         self.assertIn(f"## {aitk.__version__}", (ROOT / "CHANGELOG.md").read_text())
 
     def test_package_exposes_the_aitk_entrypoint(self) -> None:

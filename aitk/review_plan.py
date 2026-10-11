@@ -304,6 +304,7 @@ TOOLKIT_SENSITIVE = (
     "aitk/claude_hooks.py",
     "hooks/*",
     ".codex-plugin/*",
+    ".claude-plugin/*",
     ".mcp.json",
 )
 DOMAIN_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (

@@ -920,6 +920,16 @@ class InstallerLifecycleTests(unittest.TestCase):
                 )
 
 
+def settings_entries() -> dict:
+    """hooks.json as Claude Code settings carry it: no plugin-only SessionStart
+    hook, and the absolute toolkit root in place of the plugin variables."""
+    source = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
+    source.pop("SessionStart")
+    return json.loads(
+        json.dumps(source).replace("${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}", str(ROOT))
+    )
+
+
 class ClaudeHookRegistrationTests(unittest.TestCase):
     """`install` registers hooks/hooks.json in Claude Code settings by default."""
 
@@ -973,13 +983,10 @@ class ClaudeHookRegistrationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn(str(self.settings), json.loads(result.stdout)["changed"])
         settings = json.loads(self.settings.read_text())
-        source = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
-        expected = json.loads(
-            json.dumps(source).replace("$PLUGIN_ROOT", str(ROOT))
-        )
-        self.assertEqual(expected, settings["hooks"])
+        self.assertEqual(settings_entries(), settings["hooks"])
+        self.assertNotIn("SessionStart", settings["hooks"])
         for command in self.toolkit_commands():
-            self.assertNotIn("$PLUGIN_ROOT", command)
+            self.assertNotIn("PLUGIN_ROOT", command)
         self.assertEqual(list(claude_hooks.DENY_RULES), settings["permissions"]["deny"])
         again = self.run_cli("install")
         self.assertEqual("noop", json.loads(again.stdout)["status"], again.stdout)
@@ -989,7 +996,11 @@ class ClaudeHookRegistrationTests(unittest.TestCase):
         guard = next(
             command for command in self.toolkit_commands() if "prevent-project-commit.sh" in command
         )
-        env = {key: value for key, value in os.environ.items() if key != "PLUGIN_ROOT"}
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT"}
+        }
         payload = json.dumps(
             {"tool_input": {"command": "git commit --no-verify -m x"}, "cwd": str(self.home)}
         )
@@ -1059,8 +1070,7 @@ class ClaudeHookRegistrationTests(unittest.TestCase):
         )
         self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
         settings = json.loads(self.settings.read_text())
-        source = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
-        expected = json.loads(json.dumps(source).replace("$PLUGIN_ROOT", str(ROOT)))
+        expected = settings_entries()
         self.assertEqual([mine, *expected["PreToolUse"]], settings["hooks"]["PreToolUse"])
         self.assertEqual(expected["PostToolUse"], settings["hooks"]["PostToolUse"])
         self.assertEqual(expected["Stop"], settings["hooks"]["Stop"])

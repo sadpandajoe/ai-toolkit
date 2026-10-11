@@ -38,8 +38,8 @@ class ProviderAdapterTests(unittest.TestCase):
         manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())
         self.assertEqual("ai-toolkit", manifest["name"])
         self.assertRegex(manifest["version"], r"^\d+\.\d+\.\d+$")
-        self.assertEqual("./skills/", manifest["skills"])
-        self.assertNotIn("hooks", manifest)
+        self.assertEqual(["./skills/", "./extensions/pgm/skills/"], manifest["skills"])
+        self.assertEqual("./hooks/hooks.json", manifest["hooks"])
 
         hooks = json.loads((ROOT / "hooks/hooks.json").read_text())
         commands = [
@@ -48,7 +48,9 @@ class ProviderAdapterTests(unittest.TestCase):
             for group in groups
             for hook in group["hooks"]
         ]
-        self.assertTrue(all("$PLUGIN_ROOT/" in command for command in commands))
+        self.assertTrue(
+            all('"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/' in command for command in commands)
+        )
         self.assertTrue(
             any("prevent-project-commit.sh" in command for command in commands)
         )
@@ -62,6 +64,7 @@ class ProviderAdapterTests(unittest.TestCase):
             "check-plan-drift.sh",
             "observation-reminder.sh",
             "agent-setup-edit-reminder.sh",
+            "session-start.sh",
         }
         on_disk = {
             path.name
@@ -70,9 +73,10 @@ class ProviderAdapterTests(unittest.TestCase):
         }
         self.assertEqual(productive, on_disk)
 
-        # hooks/hooks.json is the single registration source: Codex reads it
-        # through the plugin, and `bin/aitk install` writes the same entries
-        # into Claude Code settings with the absolute toolkit root.
+        # hooks/hooks.json is the single registration source: both plugins read
+        # it, and `bin/aitk install` writes the same entries, minus the
+        # plugin-only SessionStart hook, into Claude Code settings with the
+        # absolute toolkit root.
         hooks = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
         registered = {
             re.search(r"/hooks/([\w.-]+\.sh)", handler["command"]).group(1)
@@ -81,9 +85,21 @@ class ProviderAdapterTests(unittest.TestCase):
             for handler in group["hooks"]
         }
         self.assertEqual(productive, registered)
+        self.assertEqual(
+            ["session-start.sh"],
+            [
+                re.search(r"/hooks/([\w.-]+\.sh)", handler["command"]).group(1)
+                for group in hooks["SessionStart"]
+                for handler in group["hooks"]
+            ],
+        )
+        settings_hooks = {event: groups for event, groups in hooks.items() if event != "SessionStart"}
         claude = claude_hooks.desired_hooks(ROOT)
         self.assertEqual(
-            json.loads(json.dumps(hooks).replace("$PLUGIN_ROOT", str(ROOT))), claude
+            json.loads(
+                json.dumps(settings_hooks).replace("${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}", str(ROOT))
+            ),
+            claude,
         )
 
         posttool_matcher = hooks["PostToolUse"][0]["matcher"]
@@ -264,7 +280,7 @@ class ProviderAdapterTests(unittest.TestCase):
     def test_plugin_distribution_matches_public_skill_support_scope(self) -> None:
         manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())
         support = json.loads((ROOT / "interfaces/support.json").read_text())
-        plugin_root = ROOT / str(manifest["skills"])
+        skill_dirs = [(ROOT / path).resolve() for path in manifest["skills"]]
         public = [
             entry
             for entry in load_skill_interfaces(ROOT)
@@ -272,15 +288,18 @@ class ProviderAdapterTests(unittest.TestCase):
         ]
 
         self.assertIn("codex-plugin", support["distributions"])
+        self.assertIn("claude-plugin", support["distributions"])
         for entry in public:
-            path = Path(str(entry["path"]))
-            if path.parts[0] == "skills":
-                self.assertTrue(
-                    (plugin_root / path.relative_to("skills") / "SKILL.md").is_file()
-                )
+            skill = (ROOT / str(entry["path"])).resolve()
+            with self.subTest(skill=entry["name"]):
+                self.assertIn(skill.parent, skill_dirs)
+                self.assertTrue((skill / "SKILL.md").is_file())
         pgm = next(entry for entry in public if entry["name"] == "pgm")
         self.assertEqual("extensions", Path(str(pgm["path"])).parts[0])
-        self.assertEqual(["source-linked"], support["extension_distributions"]["pgm"])
+        self.assertEqual(
+            ["source-linked", "codex-plugin", "claude-plugin"],
+            support["extension_distributions"]["pgm"],
+        )
 
     def test_ci_matrix_exactly_covers_the_declared_support_window(self) -> None:
         support = json.loads((ROOT / "interfaces/support.json").read_text())

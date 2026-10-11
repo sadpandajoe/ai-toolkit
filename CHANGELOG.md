@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Plugin preview: the repository root is also a Claude Code plugin
+  (`.claude-plugin/plugin.json`, served with the Codex plugin by the one-plugin
+  marketplace in `.claude-plugin/marketplace.json`), and the Codex plugin now
+  ships the PGM skill and declares `hooks/hooks.json`. Hook commands resolve
+  the toolkit as `${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}`; `bin/aitk install`
+  still writes the absolute toolkit root into Claude Code settings, so
+  installed commands do not change. The plugin-only `hooks/session-start.sh`
+  loads the always-on rules and the provider binding pointer, and warns when a
+  `bin/aitk install` is still in place. `./install.sh` stays the supported
+  install until `scripts/plugin-proof.sh` passes on both providers
+  (docs/MIGRATION.md).
+
 - The statusline effort label shows the live session effort (`/effort`,
   `--effort`) instead of the `effortLevel` saved in `settings.json`, which made
   it read the saved default no matter what the session ran. It is omitted when

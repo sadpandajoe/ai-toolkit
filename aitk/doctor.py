@@ -495,7 +495,9 @@ def _provider_package(root: Path) -> Finding:
         r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", str(manifest.get("version", ""))
     ):
         problems.append("plugin version must be semantic")
-    if manifest.get("skills") != "./skills/":
+    skills = manifest.get("skills")
+    skill_paths = [skills] if isinstance(skills, str) else skills
+    if not isinstance(skill_paths, list) or "./skills/" not in skill_paths:
         problems.append("plugin must package ./skills/")
     hooks_path = root / "hooks/hooks.json"
     if not hooks_path.is_file():
@@ -510,10 +512,11 @@ def _provider_package(root: Path) -> Finding:
                 for hook in group.get("hooks", [])
             ]
             if not commands or any(
-                "$PLUGIN_ROOT/" not in command for command in commands
+                '"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/' not in command
+                for command in commands
             ):
                 problems.append(
-                    "plugin hooks must resolve scripts through $PLUGIN_ROOT"
+                    "plugin hooks must resolve scripts through ${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"
                 )
         except (AttributeError, TypeError, json.JSONDecodeError) as error:
             problems.append(f"invalid hooks JSON: {error}")

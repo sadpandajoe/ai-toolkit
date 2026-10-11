@@ -1,5 +1,28 @@
 # Migration
 
+## Unreleased: moving to the plugin (preview)
+
+The repository is also a Claude Code and a Codex plugin (README, "Plugin
+install (preview)"). `./install.sh` stays the supported install until the
+plugin proof passes; this is the move for when you switch.
+
+1. From the checkout you installed from, before pulling, run
+   `bin/aitk uninstall`. It removes what the plugin never touches: the skill
+   and agent links, the managed blocks in `~/.claude/CLAUDE.md` and
+   `$CODEX_HOME/AGENTS.md`, and the hook entries and deny rules in
+   `~/.claude/settings.json`.
+2. Pull, then add the marketplace and install the plugin on each provider
+   (README). While any of those old pieces remain, the plugin's session-start
+   hook warns at the start of each session, because the toolkit would load
+   twice.
+3. On Codex, link `agents/codex/*.toml` into `$CODEX_HOME/agents/` (plugins
+   cannot ship agents) and trust the ai-toolkit hooks in `/hooks`. Until you
+   do, the git guard and the PR gate do not run on Codex; trust them again
+   after any update that changes a hook command.
+4. The install's `permissions.deny` rules for `git push --force`/`-f` and
+   `git commit --no-verify`/`-n` cannot ship in a plugin; README "Recommended
+   Settings" lists them for `~/.claude/settings.json`.
+
 ## 0.3.0: the Sonnet control plane
 
 Version 0.3.0 keeps the natural-language interface, the durable contracts, and

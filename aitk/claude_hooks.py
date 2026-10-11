@@ -2,11 +2,13 @@
 
 `bin/aitk install` writes the toolkit's hooks into `~/.claude/settings.json` by
 default (`--no-hooks` opts out), and `bin/aitk uninstall` removes them.
-hooks/hooks.json is the single registration source: Codex reads it through the
-plugin, where `$PLUGIN_ROOT` is set; Claude Code settings get the absolute
-toolkit root in its place, because an unset variable turns
-`bash "$PLUGIN_ROOT/hooks/..."` into `bash "/hooks/..."`, which exits 127 and
-lets the command through.
+hooks/hooks.json is the single registration source. Its commands resolve the
+toolkit as `${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}`, which the Claude Code and
+Codex plugins set; Claude Code settings get the absolute toolkit root in its
+place, because with both unset `bash "${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/..."`
+becomes `bash "/hooks/..."`, which exits 127 and lets the command through.
+SessionStart is plugin-only: it prints the always-on rules, which an install
+already loads through the managed CLAUDE.md block, so it is not written here.
 
 Ownership is by content, so a later uninstall finds the entries without any
 ledger: a hook handler belongs to the toolkit when its command points into
@@ -33,7 +35,8 @@ import tempfile
 
 RECORD_NAME = "claude-hooks.json"
 RECORD_VERSION = 1
-PLUGIN_ROOT = "$PLUGIN_ROOT"
+ROOT_EXPRESSION = "${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"
+PLUGIN_ONLY_EVENTS = ("SessionStart",)
 DENY_RULES = (
     "Bash(git push --force *)",
     "Bash(git push -f *)",
@@ -64,7 +67,8 @@ def hooks_dir(root: Path) -> str:
 
 
 def desired_hooks(root: Path) -> dict[str, list[dict]]:
-    """hooks.json's entries with the absolute toolkit root for `$PLUGIN_ROOT`."""
+    """hooks.json's entries, minus the plugin-only events, with the absolute
+    toolkit root for `${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}`."""
     source = json.loads((root / "hooks/hooks.json").read_text(encoding="utf-8"))
     hooks = source.get("hooks")
     if not isinstance(hooks, dict):
@@ -72,14 +76,21 @@ def desired_hooks(root: Path) -> dict[str, list[dict]]:
     quoted_root = _double_quoted(str(root))
     result: dict[str, list[dict]] = {}
     for event, groups in hooks.items():
+        if event in PLUGIN_ONLY_EVENTS:
+            continue
         result[event] = []
         for group in groups:
             entry = json.loads(json.dumps(group))
             for handler in entry.get("hooks", []):
                 command = handler.get("command", "")
-                if PLUGIN_ROOT not in command:
-                    raise HookSettingsError(f"hooks/hooks.json command does not use {PLUGIN_ROOT}: {command}")
-                handler["command"] = command.replace(PLUGIN_ROOT, quoted_root)
+                if (
+                    ROOT_EXPRESSION not in command
+                    or "PLUGIN_ROOT" in command.replace(ROOT_EXPRESSION, "")
+                ):
+                    raise HookSettingsError(
+                        f"hooks/hooks.json command must resolve the root only as {ROOT_EXPRESSION}: {command}"
+                    )
+                handler["command"] = command.replace(ROOT_EXPRESSION, quoted_root)
             result[event].append(entry)
     return result
 
