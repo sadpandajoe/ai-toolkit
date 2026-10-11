@@ -204,8 +204,7 @@ CLI:
 
 See [Architecture](docs/ARCHITECTURE.md) (including
 [cost and metrics data](docs/ARCHITECTURE.md#cost-and-metrics-data)),
-[migration guidance](docs/MIGRATION.md), the
-[completion audit](docs/COMPLETION_AUDIT.md), and the [changelog](CHANGELOG.md).
+[migration guidance](docs/MIGRATION.md), and the [changelog](CHANGELOG.md).
 
 ## Migrating from Slash Commands
 
