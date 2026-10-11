@@ -31,12 +31,17 @@ from .model_routing import (
 )
 from .metrics import (
     REVIEW_LANES_HELP,
+    RULE_WINDOW,
     MetricsError,
     aggregate as aggregate_metrics,
     emit as emit_metrics,
     read_events as read_metrics,
+    read_observations,
     render_project as render_project_metrics,
+    render_rule_yield,
     render_summary as render_metrics_summary,
+    rule_files,
+    rule_yield,
     select as select_metrics,
 )
 from .pgm import preflight as pgm_preflight
@@ -81,6 +86,7 @@ from .project_state import (
     record_operation,
     review_exception,
     review_from_envelopes,
+    rule_reference,
     set_fields,
     set_phases,
     show as show_project_state,
@@ -662,6 +668,12 @@ def _observe(arguments: argparse.Namespace) -> int:
         "evidence": arguments.evidence,
         "eval_candidate": True if arguments.eval_candidate else None,
     }
+    if arguments.rule:
+        try:
+            entry["rule"] = rule_reference(_root(arguments.root), arguments.rule)
+        except ProjectStateError as error:
+            print(f"aitk observe: {error}", file=sys.stderr)
+            return 2
     try:
         written = append_observation(path.parent, entry)
     except (ProjectStateError, OSError) as error:
@@ -730,6 +742,23 @@ def _lane_yield(arguments: argparse.Namespace) -> int:
         print(f"  -> {item.consequence}")
     if queued:
         print(f"low-yield-lane observation queued for: {', '.join(queued)}")
+    return 0
+
+
+def _rule_yield(arguments: argparse.Namespace) -> int:
+    root = _root(arguments.root)
+    cwd = Path.cwd()
+    explicit = Path(arguments.metrics).resolve() if arguments.metrics else None
+    try:
+        path, events = read_metrics(cwd, explicit)
+        result = rule_yield(events, read_observations(cwd), rule_files(root), arguments.runs)
+    except (MetricsError, ProjectStateError, OSError) as error:
+        print(f"rule-yield: {error}", file=sys.stderr)
+        return 2 if isinstance(error, MetricsError) else 1
+    if arguments.json:
+        print(json.dumps({"command": "rule-yield", "metrics": str(path), **result}, indent=2, sort_keys=True))
+    else:
+        print(render_rule_yield(path, result))
     return 0
 
 
@@ -1228,6 +1257,9 @@ def parser() -> argparse.ArgumentParser:
     observe.add_argument("--phase", help="default: the routing snapshot's phase")
     observe.add_argument("--evidence", help="where the evidence is, e.g. PROJECT.md#gate-review")
     observe.add_argument("--eval-candidate", action="store_true")
+    observe.add_argument(
+        "--rule", help="the toolkit rule file the observation concerns, e.g. rules/gates.md (read by rule-yield)"
+    )
     observe.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
     observe.add_argument("--json", action="store_true")
     observe.set_defaults(handler=_observe)
@@ -1328,6 +1360,17 @@ def parser() -> argparse.ArgumentParser:
     lane_yield.add_argument("--metrics", help="metrics file (default: ./.ai-toolkit/metrics.jsonl)")
     lane_yield.add_argument("--json", action="store_true")
     lane_yield.set_defaults(handler=_lane_yield)
+
+    rule_yield_parser = subparsers.add_parser(
+        "rule-yield",
+        help="list the rule files no observation named over the last N workflow runs (deletion candidates)",
+    )
+    rule_yield_parser.add_argument(
+        "--runs", type=int, default=RULE_WINDOW, help=f"window in workflow runs (default {RULE_WINDOW})"
+    )
+    rule_yield_parser.add_argument("--metrics", help="metrics file (default: ./.ai-toolkit/metrics.jsonl)")
+    rule_yield_parser.add_argument("--json", action="store_true")
+    rule_yield_parser.set_defaults(handler=_rule_yield)
 
     pgm = subparsers.add_parser(
         "pgm-preflight", help="validate optional PGM configuration before collection"

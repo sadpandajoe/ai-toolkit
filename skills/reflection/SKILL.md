@@ -35,6 +35,7 @@ high-signal triggers in `references/observations.md` write anything.
   `complete-project`'s approved candidates, already authorizes promotion.
 - `reflect observations` runs `bin/aitk lane-yield` first: a lane below its
   yield threshold is a demotion proposal with the numbers attached, not a
-  hunch.
+  hunch. `bin/aitk rule-yield [--runs N]` lists the rule files no observation
+  named in the last 20 workflow runs as deletion candidates.
 - `reflect failure` works best right after the failure, while the context is
   fresh.

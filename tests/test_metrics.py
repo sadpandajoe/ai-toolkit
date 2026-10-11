@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -185,6 +186,83 @@ class SummaryTests(unittest.TestCase):
             canonical.write_text(json.dumps(event("new", "PASS")) + "\n")
             path, events = read_events(work)
             self.assertEqual((canonical, ["new"]), (path, [item["command"] for item in events]))
+
+
+class RuleYieldTests(unittest.TestCase):
+    """`bin/aitk rule-yield` (RF-09): rule files no observation named in the window."""
+
+    RULES = ["rules/a.md", "rules/b.md", "rules/c.md"]
+
+    @staticmethod
+    def runs(count: int) -> list[dict[str, object]]:
+        return [
+            {"timestamp": f"2026-10-{day:02d}T12:00:00Z", "command": "fix-bug", "status": "PASS"}
+            for day in range(1, count + 1)
+        ]
+
+    def test_a_window_short_of_its_runs_is_not_judged(self) -> None:
+        from aitk.metrics import rule_yield
+
+        result = rule_yield(self.runs(19), [], self.RULES)
+        self.assertFalse(result["judged"])
+        self.assertEqual([], result["candidates"])
+        self.assertTrue(rule_yield(self.runs(19), [], self.RULES, runs=19)["judged"])
+        with self.assertRaises(MetricsError):
+            rule_yield(self.runs(3), [], self.RULES, runs=0)
+
+    def test_only_observations_after_the_run_before_the_window_count(self) -> None:
+        from aitk.metrics import rule_yield
+
+        events = self.runs(25)  # the window is days 6-25; day 5's run ends before it
+        observations = [
+            {"timestamp": "2026-10-05T11:00:00Z", "kind": "misroute", "rule": "rules/a.md"},
+            {"timestamp": "2026-10-05T13:00:00Z", "kind": "misroute", "rule": "rules/b.md"},
+            {"timestamp": "2026-10-20T09:00:00Z", "kind": "user-correction", "rule": "rules/b.md"},
+            {"timestamp": "2026-10-21T09:00:00Z", "kind": "workaround"},
+            {"kind": "misroute", "rule": "rules/c.md"},
+        ]
+        result = rule_yield(events, observations, self.RULES)
+        self.assertTrue(result["judged"])
+        self.assertEqual("2026-10-05T12:00:00+00:00", result["since"])
+        self.assertEqual({"rules/b.md": 2}, result["observed"])
+        self.assertEqual(["rules/a.md", "rules/c.md"], result["candidates"])
+        # Every observation counts when the file holds no run before the window.
+        whole = rule_yield(self.runs(20), observations, self.RULES)
+        self.assertEqual([], whole["candidates"])
+
+    def test_the_cli_reads_both_queues_and_the_toolkit_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory).resolve()
+            data = work / ".ai-toolkit"
+            data.mkdir()
+            (data / "metrics.jsonl").write_text(
+                "".join(json.dumps(item) + "\n" for item in self.runs(3))
+            )
+            (data / "observations.jsonl").write_text(
+                json.dumps({"timestamp": "2026-10-02T09:00:00Z", "kind": "misroute",
+                            "workflow": "fix-bug", "detail": "x", "rule": "rules/gates.md"}) + "\n"
+            )
+            (data / "observations.reviewed.jsonl").write_text(
+                json.dumps({"timestamp": "2026-10-03T09:00:00Z", "kind": "workaround",
+                            "workflow": "fix-bug", "detail": "x", "rule": "rules/severity.md"}) + "\n"
+            )
+            command = [sys.executable, "-m", "aitk.cli", "--root", str(ROOT), "rule-yield"]
+            environment = {**ENVIRONMENT, "PYTHONPATH": str(ROOT)}
+            result = subprocess.run([*command, "--runs", "3", "--json"], cwd=work, text=True,
+                                    capture_output=True, check=False, env=environment)
+            self.assertEqual(0, result.returncode, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual({"rules/gates.md": 1, "rules/severity.md": 1}, payload["observed"])
+            self.assertIn("rules/universal.md", payload["candidates"])
+            self.assertIn("extensions/pgm/rules/pgm.md", payload["candidates"])
+            self.assertNotIn("rules/gates.md", payload["candidates"])
+            text = subprocess.run(command, cwd=work, text=True, capture_output=True, check=False,
+                                  env=environment)
+            self.assertEqual(0, text.returncode, text.stderr)
+            self.assertIn("rule yield not judged: 3 workflow run(s) recorded, the window is 20", text.stdout)
+            invalid = subprocess.run([*command, "--runs", "0"], cwd=work, text=True,
+                                     capture_output=True, check=False, env=environment)
+            self.assertEqual(2, invalid.returncode)
 
 
 class MetricsCliTests(unittest.TestCase):

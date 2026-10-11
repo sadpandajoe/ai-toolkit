@@ -1031,6 +1031,28 @@ def append_jsonl(path: Path, entry: dict[str, object]) -> Path:
     return path
 
 
+def rule_reference(root: Path, value: str) -> str:
+    """Validate `observe --rule`: a toolkit rule file, as its repo-relative path.
+
+    A rule lives at `rules/<name>.md`, or `extensions/<name>/rules/<name>.md`
+    for an extension; `reflect` counts observations per rule file (RF-09), so
+    the path has to name one that exists in this toolkit.
+    """
+    path = Path(value)
+    parts = path.parts
+    shaped = path.suffix == ".md" and (
+        (len(parts) == 2 and parts[0] == "rules")
+        or (len(parts) == 4 and parts[0] == "extensions" and parts[2] == "rules")
+    )
+    if path.is_absolute() or ".." in parts or not shaped:
+        raise ProjectStateError(
+            f"--rule names a toolkit rule file such as rules/gates.md, got {value!r}"
+        )
+    if not (root / path).is_file():
+        raise ProjectStateError(f"no rule file {path.as_posix()} in the toolkit at {root}")
+    return path.as_posix()
+
+
 def append_observation(directory: Path, entry: dict[str, object]) -> Path:
     """Append one line to `.ai-toolkit/observations.jsonl` (the reflection queue).
 

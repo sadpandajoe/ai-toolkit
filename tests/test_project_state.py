@@ -736,6 +736,34 @@ class EvidenceRecordTests(unittest.TestCase):
         )
         self.assertEqual(2, unknown.returncode)
 
+    def test_observe_rule_names_an_existing_toolkit_rule_file(self) -> None:
+        from aitk.project_state import rule_reference
+
+        aitk = [sys.executable, "-m", "aitk.cli", "--root", str(ROOT)]
+        environment = {"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"}
+        queue = self.repo / ".ai-toolkit" / "observations.jsonl"
+        written = subprocess.run(
+            [*aitk, "observe", "--kind", "user-correction", "--detail", "the gate rule let a guess pass",
+             "--rule", "rules/gates.md"],
+            cwd=self.repo, text=True, capture_output=True, check=False, env=environment,
+        )
+        self.assertEqual(0, written.returncode, written.stderr)
+        line = json.loads(queue.read_text())
+        self.assertEqual("rules/gates.md", line["rule"])
+        self.assertEqual("extensions/pgm/rules/pgm.md", rule_reference(ROOT, "extensions/pgm/rules/pgm.md"))
+        for bad in ("/etc/passwd", "rules/../README.md", "skills/review/SKILL.md", "rules/no-such-rule.md",
+                    "rules/gates.txt", "rules"):
+            with self.subTest(rule=bad):
+                with self.assertRaises(ProjectStateError):
+                    rule_reference(ROOT, bad)
+                refused = subprocess.run(
+                    [*aitk, "observe", "--kind", "misroute", "--detail", "x", "--rule", bad],
+                    cwd=self.repo, text=True, capture_output=True, check=False, env=environment,
+                )
+                self.assertEqual(2, refused.returncode)
+                self.assertIn("rule", refused.stderr)
+        self.assertEqual(1, len(queue.read_text().splitlines()), "a refused --rule writes nothing")
+
     def test_operations_are_recorded_once_and_checked_before_a_repeat(self) -> None:
         from aitk.project_state import operation_recorded, record_operation
 

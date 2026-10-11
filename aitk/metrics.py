@@ -264,6 +264,98 @@ def _time(value: object) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
+RULE_WINDOW = 20
+OBSERVATION_FILES = ("observations.jsonl", "observations.reviewed.jsonl")
+
+
+def rule_files(root: Path) -> list[str]:
+    """The toolkit's rule files, repo-relative: `rules/` and each extension's."""
+    found = sorted(root.glob("rules/*.md")) + sorted(root.glob("extensions/*/rules/*.md"))
+    return [path.relative_to(root).as_posix() for path in found]
+
+
+def read_observations(cwd: Path) -> list[dict[str, object]]:
+    """The reflection queue, unreviewed and reviewed lines together."""
+    directory = toolkit_data_root(cwd) / CANONICAL.parent
+    lines: list[dict[str, object]] = []
+    for name in OBSERVATION_FILES:
+        path = directory / name
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                lines.append(payload)
+    return lines
+
+
+def rule_yield(
+    events: list[dict[str, object]],
+    observations: Iterable[Mapping[str, object]],
+    rules: Iterable[str],
+    runs: int = RULE_WINDOW,
+) -> dict[str, object]:
+    """Rule files no observation named over the last `runs` workflow runs (RF-09).
+
+    A run is one metrics event, written when its workflow ends, so the window's
+    observations are those after the event before the window (all of them when
+    the file holds no earlier event). With fewer than `runs` events the window
+    is not judged, as a review lane short of its window is not.
+    """
+    if runs < 1:
+        raise MetricsError("--runs must be at least 1")
+    window = events[-runs:]
+    names = list(rules)
+    if len(window) < runs:
+        return {"judged": False, "window": runs, "runs": len(window), "since": None,
+                "observed": {}, "candidates": []}
+    before = events[-runs - 1] if len(events) > runs else None
+    since = _time(before.get("timestamp")) if before is not None else None
+    counts: Counter[str] = Counter()
+    for item in observations:
+        rule = item.get("rule")
+        if not isinstance(rule, str):
+            continue
+        when = _time(item.get("timestamp"))
+        if since is not None and (when is None or when <= since):
+            continue
+        counts[rule] += 1
+    return {
+        "judged": True,
+        "window": runs,
+        "runs": len(window),
+        "since": since.isoformat() if since else None,
+        "observed": {rule: counts[rule] for rule in names if counts[rule]},
+        "candidates": [rule for rule in names if not counts[rule]],
+    }
+
+
+def render_rule_yield(path: Path, result: Mapping[str, object]) -> str:
+    lines = [f"metrics: {path} ({result['runs']} of the last {result['window']} runs read)"]
+    if not result["judged"]:
+        lines.append(
+            f"rule yield not judged: {result['runs']} workflow run(s) recorded, "
+            f"the window is {result['window']}"
+        )
+        return "\n".join(lines)
+    observed = result["observed"]
+    assert isinstance(observed, dict)
+    lines.append(
+        "observed: "
+        + (", ".join(f"{rule} ({count})" for rule, count in observed.items()) or "none")
+    )
+    candidates = result["candidates"]
+    assert isinstance(candidates, list)
+    lines.append(
+        f"deletion candidates (no observation in the last {result['window']} runs): "
+        + (", ".join(candidates) or "none")
+    )
+    return "\n".join(lines)
+
+
 def select(
     events: Iterable[dict[str, object]],
     *,

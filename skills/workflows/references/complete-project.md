@@ -34,9 +34,10 @@ are emitted.
 3. **Review the observation queue** (skipped with `--skip-promote`). When
    `.ai-toolkit/observations.jsonl` has unreviewed lines, run the *Review*
    section of [skills/reflection/references/observations.md](../../reflection/references/observations.md)
-   (`reflect observations`): `bin/aitk lane-yield` first, then cluster the
-   lines and present proposals. Apply only on confirmation and move reviewed
-   lines to `.ai-toolkit/observations.reviewed.jsonl`. This is the one point
+   (`reflect observations`): `bin/aitk lane-yield` and `bin/aitk rule-yield`
+   first, then cluster the lines and present proposals. Apply only on
+   confirmation and move reviewed lines to
+   `.ai-toolkit/observations.reviewed.jsonl`. This is the one point
    in a project where the queue is guaranteed to be read, so an empty queue is
    reported as `No unreviewed observations` rather than skipped silently.
 4. **Surface memory promotion candidates** (skipped with `--skip-promote`).

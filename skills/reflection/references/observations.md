@@ -5,7 +5,9 @@
 The writers are code. `bin/aitk project-state gate` appends `reclassify` and
 `gate-repeat`, and `bin/aitk lane-yield` appends `low-yield-lane`; the
 judgment triggers (`rules/universal.md`) go through `bin/aitk observe --kind
-<kind> --detail "<one sentence>"`.
+<kind> --detail "<one sentence>"`. Add `--rule rules/<file>.md` when a rule
+file caused, missed or prevented the event; `bin/aitk rule-yield` counts
+those.
 
 | Trigger | `kind` | Why it is worth a line |
 |---|---|---|
@@ -25,7 +27,8 @@ Do not log routine progress, successful gates, or opinions.
 {"timestamp":"<ISO 8601>","kind":"reclassify","workflow":"fix-bug","phase":"implement","complexity":"STANDARD->COMPLEX","size":"M","shape":"SINGLE_PHASE","detail":"second failed fix attempt exposed a concurrency path","evidence":"PROJECT.md#gate-verification-2","eval_candidate":true}
 ```
 
-Fields other than `timestamp`, `kind`, `workflow`, and `detail` are optional.
+Fields other than `timestamp`, `kind`, `workflow`, and `detail` are optional;
+`rule` names the toolkit rule file the line concerns.
 Keep `detail` to one sentence and free of PII.
 
 ## Review (`reflect observations`)
@@ -37,7 +40,10 @@ itself is always a deliberate, confirmed step.
 
 1. Run `bin/aitk lane-yield` and read its demotions alongside the queue: it
    applies the yield thresholds in `aitk/review_plan.py` to `review.lanes` in
-   `.ai-toolkit/metrics.jsonl`, so a lane proposal carries its numbers.
+   `.ai-toolkit/metrics.jsonl`, so a lane proposal carries its numbers. Then
+   run `bin/aitk rule-yield` (`--runs N` when the user names a window): the
+   rule files no observation named over the last 20 workflow runs are
+   deletion candidates, proposed like any other change.
 2. Read the queue; group lines by `kind` and by the skill or rule they
    implicate.
 3. For each cluster of two or more, propose one change: a rule wording fix, a
