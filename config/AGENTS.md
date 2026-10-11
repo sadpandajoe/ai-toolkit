@@ -2,8 +2,8 @@
 
 AI Toolkit is installed at `{{TOOLKIT_DIR}}`.
 
-- Before acting, read and follow `{{TOOLKIT_DIR}}/rules/universal.md`, the
-  always-on rules declared by `interfaces/guidance.json`.
+- Before acting, read and follow the always-on rules that
+  `interfaces/guidance.json` declares: `{{TOOLKIT_DIR}}/rules/universal.md`.
 - Route multi-step and publishing work through the `$workflows` skill (a
   contained edit with a passing check runs inline): it selects the workflow,
   classifies complexity and size, persists the routing snapshot in

@@ -13,6 +13,9 @@ from aitk.build import (
     compare_build,
     expected_agents,
     expected_build,
+    expected_guidance_imports,
+    expected_readme,
+    expected_skill_metadata,
     write_build,
 )
 from aitk.routing_manifest import validate_selector_ownership
@@ -296,6 +299,110 @@ class GeneratedAgentTests(unittest.TestCase):
             self.assertEqual([leak], validate_selector_ownership(root, payload))
             planner.write_text(generated.split("\n\n", 1)[1])
             self.assertEqual([leak], validate_selector_ownership(root, payload))
+
+class GeneratedMetadataTests(unittest.TestCase):
+    """openai.yaml, the always-on import lines and README tables are build output."""
+
+    def copy_repo(self, temporary: str) -> Path:
+        root = Path(temporary) / "repo"
+        shutil.copytree(
+            ROOT, root, ignore=shutil.ignore_patterns(".git", "build", "__pycache__")
+        )
+        return root
+
+    def test_tracked_metadata_equals_the_build(self) -> None:
+        for generated in (
+            expected_skill_metadata(ROOT),
+            expected_guidance_imports(ROOT),
+            expected_readme(ROOT),
+        ):
+            for relative, content in generated.items():
+                with self.subTest(path=relative.as_posix()):
+                    self.assertEqual(content, (ROOT / relative).read_text())
+
+    def test_every_skill_gets_openai_metadata_from_its_manifest_entry(self) -> None:
+        skills = json.loads((ROOT / "interfaces/skills.json").read_text())["skills"]
+        generated = expected_skill_metadata(ROOT)
+        self.assertEqual(
+            {Path(entry["path"]) / "agents/openai.yaml" for entry in skills}, set(generated)
+        )
+        for entry in skills:
+            text = generated[Path(entry["path"]) / "agents/openai.yaml"]
+            with self.subTest(skill=entry["name"]):
+                internal = entry["classification"] == "internal_support"
+                self.assertEqual(internal, "allow_implicit_invocation: false" in text)
+                self.assertEqual(not internal, f"${entry['name']}" in text)
+        self.assertIn(
+            'display_name: "PM"', generated[Path("skills/pm/agents/openai.yaml")]
+        )
+        self.assertIn(
+            'short_description: "Investigating a bug or failure"',
+            generated[Path("skills/debug/agents/openai.yaml")],
+        )
+
+    def test_guidance_imports_follow_interfaces_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repo(temporary)
+            guidance = root / "interfaces/guidance.json"
+            payload = json.loads(guidance.read_text())
+            payload["always_on_rules"].append("rules/severity.md")
+            guidance.write_text(json.dumps(payload))
+            self.assertIn("different: config/CLAUDE.md", compare_build(root))
+            self.assertIn("different: config/AGENTS.md", compare_build(root))
+            write_build(root)
+            claude = (root / "config/CLAUDE.md").read_text()
+            self.assertTrue(
+                claude.startswith(
+                    "@{{TOOLKIT_DIR}}/rules/universal.md\n"
+                    "@{{TOOLKIT_DIR}}/rules/severity.md\n\n"
+                )
+            )
+            self.assertIn("Claude capability bindings", claude)
+            agents = (root / "config/AGENTS.md").read_text()
+            self.assertIn("`{{TOOLKIT_DIR}}/rules/severity.md`", agents)
+            self.assertIn(
+                f"@{root}/rules/severity.md", (root / "build/config/CLAUDE.md").read_text()
+            )
+            self.assertEqual([], compare_build(root))
+
+    def test_readme_tables_follow_their_manifests(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repo(temporary)
+            write_build(root)
+            readme_path = root / "README.md"
+            generated = readme_path.read_text()
+            payload = json.loads((root / "interfaces/model-routing.json").read_text())
+            for route in payload["routes"]:
+                with self.subTest(route=route["name"]):
+                    self.assertIn(
+                        f"| `{route['name']}` | "
+                        f"{route['providers']['claude']['model'].capitalize()} | "
+                        f"{route['providers']['codex']['model'].capitalize()} | "
+                        f"{route['effort']} |",
+                        generated,
+                    )
+            readme_path.write_text(generated.replace("| xhigh |", "| high |"))
+            self.assertEqual(["different: README.md"], compare_build(root))
+
+            workflows = root / "interfaces/workflows.json"
+            manifest = json.loads(workflows.read_text())
+            next(item for item in manifest["workflows"] if item["name"] == "verify")[
+                "rules"
+            ] = ["rules/severity.md"]
+            workflows.write_text(json.dumps(manifest))
+            readme = expected_readme(root)[Path("README.md")]
+            self.assertRegex(readme, r"(?m)^\| `rules/severity.md` \| Severity \| `verify` \|")
+
+    def test_a_hand_edit_to_generated_metadata_is_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repo(temporary)
+            write_build(root)
+            metadata = root / "skills/review/agents/openai.yaml"
+            metadata.write_text(metadata.read_text().replace("false", "true"))
+            self.assertEqual(
+                ["different: skills/review/agents/openai.yaml"], compare_build(root)
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

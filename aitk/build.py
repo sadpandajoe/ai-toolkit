@@ -21,6 +21,12 @@ from .workflows import (
 PLACEHOLDER = "{{TOOLKIT_DIR}}"
 MODEL_ROUTING = Path("interfaces/model-routing.json")
 TESTER_SOURCE = Path("agents/claude/aitk-tester.md")
+SKILLS = Path("interfaces/skills.json")
+GUIDANCE = Path("interfaces/guidance.json")
+WORKFLOWS = Path("interfaces/workflows.json")
+README = Path("README.md")
+# Words a generated display name keeps upper-case.
+ACRONYMS = {"ai", "pgm", "pm", "pr", "qa", "rbac"}
 
 
 @dataclass(frozen=True)
@@ -146,15 +152,182 @@ def expected_build(root: Path, include_pgm: bool = False) -> dict[Path, str]:
             problems.extend(validate_extension_workflows(root, "pgm"))
         if problems:
             raise ValueError("invalid workflow interface: " + "; ".join(problems))
-    expected: dict[Path, str] = {}
+    expected: dict[Path, str] = dict(expected_guidance_imports(root))
     for config_name in ("CLAUDE.md", "AGENTS.md"):
         source = root / "config" / config_name
         if source.is_file():
-            expected[Path("build/config") / config_name] = source.read_text().replace(
+            # Render the entry file as the build regenerates it, not as it is.
+            text = expected.get(Path("config") / config_name, source.read_text())
+            expected[Path("build/config") / config_name] = text.replace(
                 PLACEHOLDER, str(root)
             )
     expected.update(expected_agents(root))
+    expected.update(expected_skill_metadata(root))
+    expected.update(expected_readme(root))
     return expected
+
+
+def _first_clause(description: str) -> str:
+    """The description up to its first sentence, colon, semicolon or dash."""
+    clause = re.split(r"\.\s|\.$|:\s|;\s|\s[—–]\s", description.strip(), maxsplit=1)[0]
+    clause = re.sub(r"^Use (?:for|when|to)\s+", "", clause).strip()
+    return clause[:1].upper() + clause[1:]
+
+
+def _yaml_string(value: str) -> str:
+    # A JSON string is a valid YAML double-quoted scalar.
+    return json.dumps(value, ensure_ascii=False)
+
+
+def expected_skill_metadata(root: Path) -> dict[Path, str]:
+    """Render each skill's `agents/openai.yaml` from interfaces/skills.json.
+
+    The display name comes from the skill name, the short description from the
+    first clause of its SKILL.md description, and an internal skill disables
+    implicit Codex invocation (the only enforcement of that policy once the
+    interface validator goes).
+    """
+    if not (root / SKILLS).is_file():
+        return {}
+    expected: dict[Path, str] = {}
+    for entry in json.loads((root / SKILLS).read_text())["skills"]:
+        skill = root / entry["path"] / "SKILL.md"
+        if not skill.is_file():
+            continue
+        description = _frontmatter_value(skill.read_text(), "description").strip('"')
+        clause = _first_clause(description)
+        name = entry["name"]
+        display = " ".join(
+            word.upper() if word in ACRONYMS else word.capitalize()
+            for word in name.split("-")
+        )
+        lines = [
+            f"# {GENERATED_HEADER} Sources: {SKILLS.as_posix()}, {entry['path']}/SKILL.md.",
+            "interface:",
+            f"  display_name: {_yaml_string(display)}",
+            f"  short_description: {_yaml_string(clause)}",
+        ]
+        if entry["classification"] == "internal_support":
+            lines += ["", "policy:", "  allow_implicit_invocation: false"]
+        else:
+            lead = clause if clause[1:2].isupper() else clause[:1].lower() + clause[1:]
+            lines.append(f"  default_prompt: {_yaml_string(f'Use ${name}: {lead}.')}")
+        expected[Path(entry["path"]) / "agents/openai.yaml"] = "\n".join(lines) + "\n"
+    return expected
+
+
+def expected_guidance_imports(root: Path) -> dict[Path, str]:
+    """Own the always-on import lines in the two provider entry files.
+
+    `config/CLAUDE.md` starts with one `@{{TOOLKIT_DIR}}/<rule>` line per rule
+    in interfaces/guidance.json; `config/AGENTS.md` names the same rules in its
+    "Before acting" bullet. The rest of each file stays hand-written.
+    """
+    if not (root / GUIDANCE).is_file():
+        return {}
+    rules = json.loads((root / GUIDANCE).read_text())["always_on_rules"]
+    expected: dict[Path, str] = {}
+    claude = root / "config/CLAUDE.md"
+    if claude.is_file():
+        body = re.sub(r"\A(?:@\{\{TOOLKIT_DIR\}\}/\S+\n)*\n*", "", claude.read_text())
+        imports = "".join(f"@{PLACEHOLDER}/{rule}\n" for rule in rules)
+        expected[Path("config/CLAUDE.md")] = imports + "\n" + body
+    codex = root / "config/AGENTS.md"
+    if codex.is_file():
+        named = ", ".join(f"`{PLACEHOLDER}/{rule}`" for rule in rules)
+        bullet = (
+            "- Before acting, read and follow the always-on rules that\n"
+            f"  `{GUIDANCE.as_posix()}` declares: {named}.\n"
+        )
+        text = codex.read_text()
+        expected[Path("config/AGENTS.md")] = re.sub(
+            r"(?ms)^- Before acting, read and follow .*?(?=^- |\Z)", lambda _: bullet, text, count=1
+        )
+    return expected
+
+
+def _generated_block(text: str, name: str, body: str) -> str | None:
+    start = f"<!-- aitk-generated:{name} -->"
+    end = f"<!-- /aitk-generated:{name} -->"
+    pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
+    if pattern.search(text) is None:
+        return None
+    note = f"<!-- {GENERATED_HEADER} -->"
+    return pattern.sub(lambda _: f"{start}\n{note}\n{body}{end}", text, count=1)
+
+
+def _model_table(root: Path) -> str:
+    routing = json.loads((root / MODEL_ROUTING).read_text())
+    providers = routing["providers"]
+
+    def family(provider: str, model: str) -> str:
+        return model.capitalize() if model in providers[provider]["models"] else model
+
+    orchestrator = routing["policy"]["orchestrator"]
+    rows = [
+        "| Route | Claude | Codex | Effort | Contract |",
+        "|---|---|---|---|---|",
+        f"| Orchestrator (parent session) | {family('claude', orchestrator['claude'])} "
+        f"| {family('codex', orchestrator['codex'])} | {routing['policy']['efforts']['standard']} | "
+        "Classification, the goal loop, TRIVIAL and STANDARD work |",
+    ]
+    for route in routing["routes"]:
+        models = route["providers"]
+        rows.append(
+            f"| `{route['name']}` | {family('claude', models['claude']['model'])} "
+            f"| {family('codex', models['codex']['model'])} | {route['effort']} "
+            f"| {route['restrictions'][0]} |"
+        )
+    return "\n".join(rows) + "\n"
+
+
+def _rule_table(root: Path) -> str:
+    workflows = json.loads((root / WORKFLOWS).read_text())["workflows"]
+    always_on = set(json.loads((root / GUIDANCE).read_text())["always_on_rules"])
+    skills = json.loads((root / SKILLS).read_text())["skills"]
+    routing = json.loads((root / MODEL_ROUTING).read_text())
+    rows = ["| Rule | Covers | Workflows that declare it | Also read by |", "|---|---|---|---|"]
+    for path in sorted((root / "rules").glob("*.md")):
+        rule = path.relative_to(root).as_posix()
+        title = path.read_text().split("\n", 1)[0].lstrip("# ").strip()
+        declared = sorted(item["name"] for item in workflows if rule in item.get("rules", []))
+        readers = sorted(
+            entry["name"]
+            for entry in skills
+            if any(
+                rule in source.read_text()
+                for source in sorted((root / entry["path"]).rglob("*.md"))
+            )
+        )
+        boundaries = sum(
+            rule in boundary.get("contracts", []) for boundary in routing["dispatch_boundaries"]
+        )
+        also = []
+        if rule in always_on:
+            also.append("always on")
+        if readers:
+            also.append("skills: " + ", ".join(readers))
+        if boundaries:
+            also.append(f"{boundaries} routed worker contract list" + ("s" if boundaries > 1 else ""))
+        rows.append(
+            f"| `{rule}` | {title} | "
+            + (", ".join(f"`{name}`" for name in declared) or "none")
+            + f" | {'; '.join(also) or 'none'} |"
+        )
+    return "\n".join(rows) + "\n"
+
+
+def expected_readme(root: Path) -> dict[Path, str]:
+    """Regenerate README's model and rule tables between their markers."""
+    sources = (README, MODEL_ROUTING, WORKFLOWS, GUIDANCE, SKILLS)
+    if not all((root / source).is_file() for source in sources):
+        return {}
+    text = (root / README).read_text()
+    for name, render in (("models", _model_table), ("rules", _rule_table)):
+        replaced = _generated_block(text, name, render(root))
+        if replaced is not None:
+            text = replaced
+    return {README: text}
 
 
 def _strip_frontmatter(text: str) -> str:
