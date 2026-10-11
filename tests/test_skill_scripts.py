@@ -663,5 +663,155 @@ class SupersetUpTests(unittest.TestCase):
         self.assertIn("not ready after 0s (last phase: init)", result.stderr)
 
 
+RBAC = ROOT / "scripts" / "preset" / "setup-rbac.mjs"
+
+RBAC_FIXTURE = {
+    "workspace": {"id": 42, "name": "rbac-ws", "hostname": "ws1.us1a.app-stg.preset.io"},
+    "memberships": [
+        {"user": {"email": "Test-Primary-Contributor@preset.zone", "id": 1, "username": "primary"},
+         "workspaces": [{"workspace_id": 42, "role_identifier": "PresetAlpha"}]},
+        {"user": {"email": "test-limited-contributor@preset.zone", "id": 2, "username": "limited"},
+         "workspaces": [{"workspace_id": 42, "role_identifier": "PresetAlpha"}]},
+        {"email": "test-limited-contributor-no-access@preset.zone", "user_id": 3, "username": "limited-none"},
+        {"user": {"email": "test-dashboard-viewer@preset.zone", "id": 4, "username": "dash"}},
+        {"user": {"email": "test-viewer@preset.zone", "id": 6, "username": "viewer"}},
+        {"user": {"email": "test-no-access@preset.zone", "id": 7, "username": "none"}},
+    ],
+    "permissions": {
+        "primary": [{"name": "AI Toolkit RBAC primary", "acl": {"dar:AI Toolkit RBAC primary": {"config": {}, "grants": "DEFAULT"}}}],
+        "limited": [{"name": "AI Toolkit RBAC limited", "acl": {"dar:AI Toolkit RBAC limited": {"config": {}, "grants": []}}},
+                    {"name": "Customer analysts"}],
+        "limited-none": [{"name": "AI Toolkit RBAC limited-none"}],
+        "dash": [{"name": "AI Toolkit RBAC old-dash"}],
+    },
+}
+
+RBAC_PLAN = [
+    {"email": "test-primary-contributor@preset.zone", "role": ["none", "PresetAlpha"], "dar": ["none", "AI Toolkit RBAC primary"], "delete": [], "kept": []},
+    {"email": "test-limited-contributor@preset.zone", "role": ["PUT", "PresetGamma"], "dar": ["PUT", "AI Toolkit RBAC limited"], "delete": [], "kept": ["Customer analysts"]},
+    {"email": "test-limited-contributor-no-access@preset.zone", "role": ["PUT", "PresetGamma"], "dar": ["none", None], "delete": ["AI Toolkit RBAC limited-none"], "kept": []},
+    {"email": "test-dashboard-viewer@preset.zone", "role": ["PUT", "PresetDashboardsOnly"], "dar": ["POST", "AI Toolkit RBAC dash"], "delete": ["AI Toolkit RBAC old-dash"], "kept": []},
+    {"email": "test-dashboard-viewer-no-access@preset.zone", "status": "NOT_A_MEMBER"},
+    {"email": "test-viewer@preset.zone", "role": ["PUT", "PresetReportsOnly"], "dar": ["POST", "AI Toolkit RBAC viewer"], "delete": [], "kept": []},
+    {"email": "test-no-access@preset.zone", "role": ["PUT", "PresetNoAccess"], "dar": ["none", None], "delete": [], "kept": []},
+]
+
+RBAC_DRIVER = """
+import * as rbac from %(module)s;
+const fixture = %(fixture)s;
+for (const list of Object.values(fixture.permissions)) {
+  for (const permission of list) {
+    for (const entry of Object.values(permission.acl ?? {})) if (entry.grants === 'DEFAULT') entry.grants = rbac.DEFAULT_GRANTS;
+  }
+}
+const plan = rbac.planChanges(fixture);
+const calls = [];
+const states = {};
+const api = {
+  get: async (path) => {
+    calls.push(['GET', path]);
+    const name = decodeURIComponent(path.split('/permissions/')[1] ?? '');
+    states[name] = (states[name] ?? 0) + 1;
+    return { status: name.endsWith('viewer') ? 'FAILED' : states[name] > 1 ? 'APPLIED' : 'SYNCING' };
+  },
+  put: async (path, body) => { calls.push(['PUT', path, body]); return {}; },
+  post: async (path, body) => { calls.push(['POST', path, body]); return {}; },
+  delete: async (path) => { calls.push(['DELETE', path]); return {}; },
+};
+const discovery = { slug: 'qa-team', workspace: fixture.workspace };
+const poll = { delay: 0, sleep: async () => {} };
+const kept = await rbac.applyPlan(api, discovery, plan, { poll });
+const keptCalls = calls.splice(0);
+const replaced = await rbac.applyPlan(api, discovery, plan, { replaceExisting: true, poll });
+const sent = [];
+const client = rbac.managerApi({ managerUrl: 'https://manage.app-stg.preset.io', token: 't0k', referer: 'https://ws1.us1a.app-stg.preset.io/',
+  send: async (method, url, request) => { sent.push({ method, url, headers: request.headers, body: request.body }); return { status: 200, json: {} }; } });
+await client.get('/api/v1/teams/');
+await client.put('/api/v1/teams/qa-team/permissions/x', { a: 1 });
+console.log(JSON.stringify({ plan, table: rbac.formatPlan(plan), kept, keptCalls, replaced, deletes: calls.filter((call) => call[0] === 'DELETE'), sent }));
+"""
+
+
+@unittest.skipIf(NODE is None, "node is not installed")
+class RbacScriptTests(unittest.TestCase):
+    """NW-19: the plan-diff fixture, the apply rules, and the refusals."""
+
+    def drive(self) -> dict[str, object]:
+        source = RBAC_DRIVER % {"module": json.dumps(RBAC.as_uri()), "fixture": json.dumps(RBAC_FIXTURE)}
+        result = node("--input-type=module", "-e", source)
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_script_parses(self) -> None:
+        result = node("--check", str(RBAC))
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_the_plan_matches_the_fixture(self) -> None:
+        plan = self.drive()["plan"]
+        summary = []
+        for row in plan:
+            if row["status"] == "NOT_A_MEMBER":
+                summary.append({"email": row["email"], "status": "NOT_A_MEMBER"})
+                continue
+            summary.append(
+                {
+                    "email": row["email"],
+                    "role": [row["role"]["action"], row["role"]["proposed"]],
+                    "dar": [row["dar"]["action"], row["dar"]["name"]],
+                    "delete": row["delete"],
+                    "kept": row["kept"],
+                }
+            )
+        self.assertEqual(RBAC_PLAN, summary)
+
+    def test_apply_writes_only_the_plan_and_deletes_only_on_request(self) -> None:
+        outcome = self.drive()
+        kept = {row["email"]: row["status"] for row in outcome["kept"]["results"]}
+        self.assertEqual("UNCHANGED", kept["test-primary-contributor@preset.zone"])
+        self.assertEqual("NOT_A_MEMBER", kept["test-dashboard-viewer-no-access@preset.zone"])
+        self.assertEqual("DAR_FAILED", kept["test-viewer@preset.zone"])
+        self.assertEqual("UPDATED", kept["test-dashboard-viewer@preset.zone"])
+        self.assertFalse([call for call in outcome["keptCalls"] if call[0] == "DELETE"])
+        membership = next(call for call in outcome["keptCalls"] if call[1].endswith("/workspaces/42/membership"))
+        self.assertEqual({"role_identifier": "PresetGamma", "user_id": 2}, membership[2])
+        post = next(call for call in outcome["keptCalls"] if call[0] == "POST")
+        self.assertEqual("/api/v1/teams/qa-team/permissions/", post[1])
+        self.assertEqual(
+            {"workspace_name": "rbac-ws", "type": "data_access_role", "grantees": [{"type": "USER", "identifier": "dash"}]},
+            {key: post[2][key] for key in ("workspace_name", "type", "grantees")},
+        )
+        self.assertEqual(["dar:AI Toolkit RBAC dash"], list(post[2]["acl"]))
+        self.assertEqual(
+            sorted(["/api/v1/teams/qa-team/permissions/AI%20Toolkit%20RBAC%20limited-none",
+                    "/api/v1/teams/qa-team/permissions/AI%20Toolkit%20RBAC%20old-dash"]),
+            sorted(call[1] for call in outcome["deletes"]),
+        )
+        self.assertGreater(outcome["replaced"]["mutations"], outcome["kept"]["mutations"])
+
+    def test_the_token_rides_in_bearer_and_csrf_with_a_referer_on_writes(self) -> None:
+        read, write = self.drive()["sent"]
+        self.assertEqual("Bearer t0k", read["headers"]["Authorization"])
+        self.assertNotIn("X-CSRF-Token", read["headers"])
+        self.assertEqual(("t0k", "https://ws1.us1a.app-stg.preset.io/"), (write["headers"]["X-CSRF-Token"], write["headers"]["Referer"]))
+        self.assertEqual('{"a":1}', write["body"])
+
+    def test_refuses_hosts_and_flags_before_any_browser(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            env = {"PATH": os.environ.get("PATH", ""), "HOME": home}
+            for arguments, message in (
+                (("--host", "https://ws1.us1a.app.preset.io/"), "refusing"),
+                (("--host", "manage.app-stg.preset.io"), "not a staging or dev workspace host"),
+                (("--host", "example.com"), "refusing"),
+                (("--host", "localhost:8088"), "not a staging or dev workspace host"),
+                (("--host", "ws1.us1a.app-stg.preset.io", "--replace-existing"), "--replace-existing needs --apply"),
+                (("--host", "ws1.us1a.app-stg.preset.io"), "PRESET_STG_BOT_LOGIN"),
+                ((), "missing --host"),
+            ):
+                with self.subTest(arguments=arguments):
+                    result = node(str(RBAC), *arguments, cwd=Path(home), env=env)
+                    self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+                    self.assertIn(message, result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
