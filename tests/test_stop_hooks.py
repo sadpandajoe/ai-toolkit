@@ -74,6 +74,7 @@ class StopHookTests(unittest.TestCase):
             message = system_message(stale)
             self.assertIsNotNone(message)
             self.assertIn("[plan-drift]", message)
+            self.assertIn("PROJECT.md may be stale", message)
             self.assertIn("60 minutes newer", message)
 
     def test_hooks_fail_open_without_state(self) -> None:
