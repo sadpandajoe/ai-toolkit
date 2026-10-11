@@ -304,7 +304,9 @@ class GeneratedMetadataTests(unittest.TestCase):
     """openai.yaml, the always-on import lines and README tables are build output."""
 
     def copy_repo(self, temporary: str) -> Path:
-        root = Path(temporary) / "repo"
+        # Resolved like the other build tests: on macOS the temp dir is under
+        # /var, a symlink to /private/var, and the build writes resolved paths.
+        root = Path(temporary).resolve() / "repo"
         shutil.copytree(
             ROOT, root, ignore=shutil.ignore_patterns(".git", "build", "__pycache__")
         )
