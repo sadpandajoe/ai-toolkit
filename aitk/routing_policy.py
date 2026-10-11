@@ -509,9 +509,9 @@ def _boundary_contracts(boundary: dict[str, object]) -> tuple[str, ...]:
     the handoff rules, the owning skill) rides along: a worker receives exactly
     these files, the one selected lens on a fan-out, and what their own
     `## Required Context` names. Several documents host more than one boundary
-    (`local-review.md` hosts five, `cherry-pick/SKILL.md` three), so the list is
-    per lane: the adversarial lane can require the adversarial lens without the
-    lanes beside it inheriting it.
+    (`local-review.md` hosts five), so the list is per lane: the adversarial
+    lane can require the adversarial lens without the lanes beside it
+    inheriting it.
     """
     contracts = boundary.get("contracts")
     return tuple(str(item) for item in contracts) if isinstance(contracts, list) else ()

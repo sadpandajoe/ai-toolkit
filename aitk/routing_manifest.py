@@ -392,10 +392,6 @@ def _seed_only_problems(
 # `review.code-judo`, say) and still pass, silently defeating the fail-closed
 # route pinning the skills advertise.
 BOUNDARY_INVARIANTS = {
-    "cherry-pick.batch-investigation": ("rca", "deep-rca"),
-    "cherry-pick.headless-implementation": ("implementation",),
-    "cherry-pick.scope-leak-rereview": ("review", "deep-review"),
-    "cherry-pick.scope-leak-review": ("review", "deep-review"),
     "cherry-pick.unblock-discovery": ("review",),
     "cherry-pick.validate-scope-leak": ("review", "deep-review"),
     "cherry-pick.validate-scope-leak-rerun": ("review", "deep-review"),

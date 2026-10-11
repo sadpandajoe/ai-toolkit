@@ -1,14 +1,13 @@
 # Cherry-Pick Gotchas
 
-Empirical failure modes observed in past sessions. Read at decision points; update when a new failure surfaces.
-
-Format per entry: **Symptom** → **Why** → **Do instead**.
+Failure modes seen in past runs. Read at decision points; add an entry when a
+new failure surfaces. Format: **Symptom** → **Why** → **Do instead**.
 
 ---
 
-## Code from adjacent commits leaks into a cherry-pick
+## 1. Code from adjacent commits leaks into a cherry-pick
 
-**Symptom:** the cherry-pick builds and tests pass — and an unrelated change from a neighbouring commit on the source branch ships with it. It happens with and without conflicts.
+**Symptom:** the pick builds and tests pass, and an unrelated change from a neighbouring source commit ships with it, with or without conflicts.
 
 **Why:** a cherry-pick applies only the source commit's own diff, so leaked lines arrive one of two ways:
 - **A conflict resolved toward the source side.** Where a neighbouring source commit changed the conflicting region, taking the source version of the hunk (or the file) takes the neighbour's change with it.
@@ -18,101 +17,56 @@ Format per entry: **Symptom** → **Why** → **Do instead**.
 
 ---
 
-## `git checkout --theirs` / `--ours` silently discards changes
+## 2. CHERRY_PICK_HEAD missing after modify/delete-only conflicts
 
-**Symptom:** Conflicts "resolved" instantly with `git checkout --theirs <file>` or `--ours <file>`. The result looks plausible but is missing the other side's changes entirely.
+**Symptom:** `git cherry-pick --continue` errors with "no cherry-pick or revert in progress" after resolving modify/delete conflicts with `git rm`.
 
-**Why:** In cherry-pick context, `--theirs` takes the source branch's full file (not a merge), `--ours` takes the target's. Both throw away the other side wholesale.
+**Why:** some git versions drop `CHERRY_PICK_HEAD` when every remaining conflict is modify/delete; it also disappears after an abort not followed by a fresh pick.
 
-**Do instead:** Always read conflict markers and edit surgically. If the file is too large to resolve by hand, abort and split the cherry-pick into smaller pieces.
-
----
-
-## CHERRY_PICK_HEAD missing after modify/delete-only conflicts
-
-**Symptom:** `git cherry-pick --continue` errors with "no cherry-pick or revert in progress" after resolving a set of modify/delete conflicts with `git rm`.
-
-**Why:** Some git versions drop `CHERRY_PICK_HEAD` when all remaining conflicts are modify/delete and no content conflicts exist. It can also disappear after an abort that wasn't followed by a fresh cherry-pick.
-
-**Do instead:** Verify `.git/CHERRY_PICK_HEAD` exists before `--continue`. If missing after re-running the cherry-pick produces the same modify/delete-only state, resolve with `git rm` + `git commit` (manually writing the cherry-pick message with the `(cherry picked from commit <sha>)` reference). Do not fall back to `git apply` for ≤5 excluded files.
+**Do instead:** check `.git/CHERRY_PICK_HEAD` before `--continue`. If a re-run reproduces the state, use the manual-commit step of the [apply.md](references/apply.md) ladder, not `git apply`.
 
 ---
 
-## Re-running `check-existing-fix` after the gate already consumed it
+## 3. Bug-fix dropped due to architecture mismatch, underlying bug forgotten
 
-**Symptom:** Duplicate work — the investigate phase ran `debug/references/check-existing-fix.md`, then the gate re-ran it, then the plan phase considered re-running it.
+**Symptom:** a cherry-pick is rejected or heavily trimmed because the target lacks required architecture. The user is told "Rejected", and the underlying bug, which still affects the target through a different code path, is never surfaced.
 
-**Why:** Investigation already runs the existing-fix check. The gate consumes the result; it does not re-check. Downstream phases must trust the gate's decision.
+**Why:** adaptation notes bury the residual risk, and "Rejected" sounds final.
 
-**Do instead:** Investigate runs the check once. Gate consumes the output. Plan and apply do not re-litigate.
-
----
-
-## Bug-fix dropped due to architecture mismatch — underlying bug forgotten
-
-**Symptom:** Cherry-pick rejected or significantly trimmed because target lacks required architecture. Adaptation notes capture the trim. The user is told "Rejected" — and the underlying bug, which still affects the target via a different code path, is never surfaced.
-
-**Why:** Adaptation severity buries the residual risk. "Rejected" sounds final; users assume the bug was someone else's problem.
-
-**Do instead:** When a bug-fix cherry-pick is rejected or trimmed, assess whether the underlying bug exists on the target via a different code path. If yes, surface it as an actionable residual item in the final report's "What to do next" — not buried in adaptation notes.
+**Do instead:** when a bug-fix pick is rejected or trimmed, assess whether the bug exists on the target through another path. If yes, put it in the final report's "What to do next" as an actionable item, not in adaptation notes.
 
 ---
 
-## Conflict resolution adds indent levels and trips line-length lint
+## 4. Conflict resolution adds indent levels and trips line-length lint
 
-**Symptom:** Cherry-pick applies and tests pass locally, but pre-commit / CI fails with `E501 Line too long` on lines that were fine on the source branch.
+**Symptom:** the pick applies and tests pass locally, but pre-commit or CI fails with `E501 Line too long` on lines that were fine on the source branch.
 
-**Why:** When the target nests the affected code one level deeper than the source (e.g., target wraps `sync_wrapper` in an `else:` block that source doesn't have), the cherry-picked lines arrive with extra indentation. Comments and string literals near the 88/100-char limit on source go over on target. `git cherry-pick` doesn't reformat, and a clean `pytest` says nothing about lint.
+**Why:** when the target nests the code one level deeper, picked lines arrive with extra indentation and go over the limit; `git cherry-pick` does not reformat, and passing tests say nothing about lint.
 
-**Do instead:** Run pre-commit on the changed files as part of step 7b validation, **before push**. Fix any failures (auto-fixers via `git add` + `--amend`, manual fixes via edit + `--amend`). Don't push first and force-push later — amend pre-push when CI hasn't run yet.
-
----
-
-## Push batched at end instead of per-cherry
-
-**Symptom:** All cherry-picks in a multi-PR batch get committed locally and pushed in a single `git push` at the end. CI runs once against the bundle. If a later cherry breaks something, the failure can't be attributed without bisecting the bundled push.
-
-**Why:** `git push` happening once per batch is the natural rhythm when you're orchestrating a tight loop ("apply, validate, next, …, done, push"). Even with per-cherry push as the default, the per-cherry directive is easy to skim past because it sits as a trailing step after the validate references rather than as a numbered phase, and the Batch Flow section doesn't restate it.
-
-**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must fill the row's Push cell (see SKILL.md step 8) before any subsequent work runs. Default behavior: push runs **per cherry, before starting the next dependent one**, and the cell reads `pushed <sha>`. Under `--no-push`, stop with `pending-authorization` instead. Batch pushes only when the user asks for it (e.g., to reduce CI cost); the request is the authorization.
+**Do instead:** run pre-commit on the changed files during validation, **before push**, and amend the fixes into the in-progress cherry ([validate.md](references/validate.md)). Never push first and force-push later.
 
 ---
 
-## Validation status overstated as "Tested" when only build ran
+## 5. Push batched at the end instead of per cherry
 
-**Symptom:** Execution table says `Tested` for a cherry-pick where only the build passed; targeted tests existed but weren't executed.
-
-**Why:** Easy to conflate "validation passed" with "tested." Tests existed and were runnable; they just weren't run.
-
-**Do instead:** Use the validation status table strictly:
-- `Tested` = build + targeted tests passed
-- `Checked` = lint/type only
-- `Build-only` = just build/pre-commit
-- `Structural` = parse + no markers
-- `Not run` = nothing
-
-If tests existed and weren't run, flag the gap explicitly with what was available, why skipped, and recommended follow-up.
+**Symptom:** every cherry is committed locally and pushed once at the end, so CI cannot attribute a failure without bisecting.
+**Why:** "apply, validate, next, …, done, push" is the natural loop rhythm.
+**Do instead:** fill each row's Push cell before any later work (SKILL.md, Per-Cherry Push); batch only when the user asks.
 
 ---
 
-## Orchestrator prescribes `git apply` for partial cherry-picks
+## 6. Orchestrator prescribes `git apply` for partial cherry-picks
 
-**Symptom:** A partial cherry-pick lands with the wrong author (the local user instead of the source PR author) and a hand-written commit message that doesn't match `cherry-pick -x` convention. Detected post-push when reviewing `git log` author/subject.
+**Symptom:** a partial cherry-pick lands with the local user as author and a hand-written message that breaks the `cherry-pick -x` convention, found after the push.
 
-**Why:** When the orchestrator builds a subagent prompt for a partial cherry-pick (some files inapplicable on target), it's tempting to prescribe `git format-patch -1 <sha> -- <subset> | git apply --3way` because it cleanly limits the file set without modify/delete conflicts. But `git apply` discards source author and forces a manual `git commit`, which defaults the author to the local user and requires writing the message by hand — both of which break `cherry-pick -x` convention. The subagent dutifully follows the prompt, the apply.md escalation ladder is bypassed, and the bug only surfaces when a human reads the commit log.
+**Why:** for a partial pick, `git format-patch -1 <sha> -- <subset> | git apply --3way` looks clean because it avoids modify/delete conflicts, but `git apply` drops the source author and forces a manual commit with a hand-written message. A worker follows the prompt and bypasses the apply.md ladder.
 
-**Do instead:** Even for partials, prescribe `git cherry-pick -x <sha>` in the subagent prompt. Modify/delete conflicts on inapplicable files resolve cleanly with `git rm <inapplicable-files>`. The resulting `git cherry-pick --continue` preserves source author and produces the standard subject + `(cherry picked from commit ...)` trailer automatically. The fact that some files were excluded shows up only in the diff — never in the message, never in the author.
+**Do instead:** prescribe `git cherry-pick -x <sha>` even for partials; modify/delete conflicts on inapplicable files resolve with `git rm <files>`, and `git cherry-pick --continue` keeps the author and the `(cherry picked from commit ...)` trailer. When a manual commit is unavoidable, `git commit -C <sha>` preserves author and message; then amend in the `(cherry picked from commit <sha>)` line. Excluded files show only in the diff, never in the message or the author.
 
-**Remediation if already pushed:** Reset to before the bad commit, re-run `git cherry-pick -x` properly, then re-cherry-pick (or `rebase --onto`) any subsequent commits onto the corrected base, then `git push --force-with-lease`. Do not just amend the message — that leaves the wrong author.
+**Remediation if already pushed:** reset to before the bad commit, re-run `git cherry-pick -x` properly, re-pick any later commits onto the corrected base, then `git push --force-with-lease` (this needs the user's explicit approval; the run's grant covers fast-forward pushes only). Amending only the message leaves the wrong author.
 
 ---
 
-## Blocked cherry reported with no path to unstick
+## 7. Blocked cherry reported with no path to unstick
 
-**Symptom:** Cherry terminates `Blocked` (modify/delete because target lacks the touched file, or a prerequisite commit isn't on target) or `Rejected` (architecture missing). The final report says "skipped because file X doesn't exist on target" and stops there. The user has to manually go figure out which upstream PRs would make the cherry applicable.
-
-**Why:** The investigation phase notes prerequisite commits and missing target-side modules in its raw signals, but nothing in the flow turns that into "you need PRs A, B, C to unstick this." The skill terminates the row and moves on. The orchestrator-as-thin-thing pattern bakes in early termination on `Blocked`/`Rejected` without giving the user a forward path.
-
-**Do instead:** Step 7c (Unblock Discovery) runs for every `Blocked`/`Rejected` row whose blocker looks like "target is missing something" — modify/delete, missing prereq, missing architecture. A discovery subagent (Standard tier by default) maps the missing files/symbols/prereqs to upstream PRs that introduced them, filters to those merged on source but not on target, and returns an ordered "apply these first" list. Result lands in `CHERRY_PICK.md` under the row's Subagent Handoff `Unblock candidates` field and in the Final Report under "What to do next" as "Could cherry if we first apply: #X, #Y, #Z." Inform-only for now — auto-prepending the candidates to the active wave is a future `--auto-unblock` extension. See [references/unblock-discovery.md](references/unblock-discovery.md).
-
-**Skip 7c** when the rejection is intrinsic (reject-category API rewrite, dependency bump, build-system change). Record "no unblock path" with the one-line reason and move on.
+A `Blocked` or `Rejected` row that stops at "file X doesn't exist on target" leaves the user to find the prerequisites; run unblock discovery ([unblock-discovery.md](references/unblock-discovery.md)) unless the rejection is intrinsic.

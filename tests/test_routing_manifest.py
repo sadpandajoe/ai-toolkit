@@ -197,7 +197,7 @@ class RoutingManifestTests(RoutingTestCase):
                 ("review.pr-deep-lenses", {"lenses": []}),
                 # A well-formed menu on a lane that declares no domain.
                 (
-                    "cherry-pick.scope-leak-review",
+                    "cherry-pick.validate-scope-leak",
                     {
                         "lenses": [
                             "skills/review/references/adversarial.md",

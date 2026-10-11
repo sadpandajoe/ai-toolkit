@@ -914,7 +914,7 @@ class RoutingTransportTests(RoutingTestCase):
             lens="skills/review/references/deep-quality.md",
         )
         plan_route = resolve_route(ROOT, "review", "claude", "planning.validate")
-        plain = resolve_route(ROOT, "review", "claude", "cherry-pick.scope-leak-review")
+        plain = resolve_route(ROOT, "review", "claude", "cherry-pick.validate-scope-leak")
         batch = resolve_route(ROOT, "review", "claude", "review.pr-batch")
         self.assertIn(
             "grading=every finding must begin with one of "

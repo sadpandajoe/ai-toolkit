@@ -574,30 +574,6 @@
       ]
     },
     {
-      "id": "cherry-pick.scope-leak-review",
-      "path": "skills/cherry-pick/SKILL.md",
-      "count": 1,
-      "routes": [
-        "review",
-        "deep-review"
-      ],
-      "contracts": [
-        "skills/cherry-pick/references/validate.md"
-      ]
-    },
-    {
-      "id": "cherry-pick.scope-leak-rereview",
-      "path": "skills/cherry-pick/SKILL.md",
-      "count": 1,
-      "routes": [
-        "review",
-        "deep-review"
-      ],
-      "contracts": [
-        "skills/cherry-pick/references/validate.md"
-      ]
-    },
-    {
       "id": "cherry-pick.unblock-discovery",
       "path": "skills/cherry-pick/SKILL.md",
       "count": 1,
@@ -606,31 +582,6 @@
       ],
       "contracts": [
         "skills/cherry-pick/references/unblock-discovery.md"
-      ]
-    },
-    {
-      "id": "cherry-pick.batch-investigation",
-      "path": "skills/cherry-pick/references/batch-sequence.md",
-      "count": 1,
-      "routes": [
-        "rca",
-        "deep-rca"
-      ],
-      "contracts": [
-        "skills/cherry-pick/references/investigate.md",
-        "skills/cherry-pick/gotchas.md"
-      ]
-    },
-    {
-      "id": "cherry-pick.headless-implementation",
-      "path": "skills/cherry-pick/references/headless-trivial.md",
-      "count": 1,
-      "routes": [
-        "implementation"
-      ],
-      "contracts": [
-        "skills/implement-change/SKILL.md",
-        "rules/implementation.md"
       ]
     },
     {

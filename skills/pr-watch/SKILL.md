@@ -5,11 +5,9 @@ description: Babysit an open PR by monitoring CI and review comments, routing bo
 
 # PR Watch
 
-## Before Starting
-
-Read sibling rules, lessons, and gotchas when present. The `watch-pr` canonical
-workflow is the public entry point. This skill owns the iteration contract;
-debug and feedback skills own fix procedures.
+The `watch-pr` canonical workflow is the public entry point. This skill is
+the one home of the watch's authorization, iteration contract, stops and
+recurrence; debug and feedback skills own fix procedures.
 
 ## Iteration
 
@@ -74,7 +72,9 @@ and again on resume.
 Stop and persist `Status: escalated` when a failure group survives two fixes, a
 history rewrite/conflict is needed, a human decision is required, three
 distinct flaky resets occur, unrelated dirty work exists, or twelve cumulative
-iterations complete without stability.
+iterations complete without stability. Repeated flaky failures go to
+infrastructure, not to more test hardening
+([skills/debug/lessons.md](../debug/lessons.md)).
 
 The watch is `stable` only when the green streak reaches its target, no comments
 remain past the cursor, and no escalation remains. An iteration is green only
