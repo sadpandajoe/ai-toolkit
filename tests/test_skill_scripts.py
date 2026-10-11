@@ -459,6 +459,100 @@ class BatchPreflightTests(ScriptTestCase):
         self.assertIn("unknown target branch", missing.stderr)
 
 
+
+GH_MEASURE_STUB = """#!/usr/bin/env python3
+import json, os, sys
+prs = json.loads(os.environ["GH_PRS"])
+args = sys.argv[1:]
+if args[:2] != ["pr", "view"] or args[2] not in prs or args[3:5] != ["--repo", os.environ["GH_REPO_EXPECTED"]]:
+    sys.exit(1)
+print(json.dumps(prs[args[2]]))
+"""
+
+
+class UnblockMeasureTests(unittest.TestCase):
+    """NW-26: per-candidate size, the migration flag and the easy / heavy / risky rating, from a stub gh."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.base = Path(self.temporary.name).resolve()
+        self.bin = executable(self.base / "gh", GH_MEASURE_STUB).parent
+
+        def files(count: int, *extra: str) -> list[dict[str, object]]:
+            paths = [f"src/module_{index}.py" for index in range(count)] + list(extra)
+            return [{"path": path, "additions": 1, "deletions": 0} for path in paths]
+
+        self.prs = {
+            "11": {"number": 11, "title": "Small fix", "changedFiles": 3, "additions": 20,
+                   "deletions": 4, "files": files(3)},
+            "12": {"number": 12, "title": "Big\tfeature\nwork", "changedFiles": 40, "additions": 900,
+                   "deletions": 100, "files": files(40)},
+            "13": {"number": 13, "title": "Add a column", "changedFiles": 2, "additions": 30,
+                   "deletions": 0, "files": files(1, "superset/migrations/versions/2024_add_column.py")},
+            "14": {"number": 14, "title": "Huge refactor", "changedFiles": 120, "additions": 5000,
+                   "deletions": 4000, "files": files(100)},
+        }
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def measure(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        env = {
+            **os.environ,
+            "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+            "GH_PRS": json.dumps(self.prs),
+            "GH_REPO_EXPECTED": "octo/widgets",
+        }
+        return subprocess.run(
+            ["bash", str(SCRIPTS / "unblock-measure.sh"), *arguments],
+            cwd=self.base, env=env, text=True, capture_output=True, check=False, timeout=60,
+        )
+
+    def rows(self, result: subprocess.CompletedProcess[str]) -> list[list[str]]:
+        self.assertEqual(0, result.returncode, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual("pr\tfiles\tadded\tremoved\tmigration\trating\ttitle", lines[0])
+        return [line.split("\t") for line in lines[1:]]
+
+    def test_each_candidate_is_measured_and_rated(self) -> None:
+        self.assertEqual(
+            [
+                ["#11", "3", "20", "4", "no", "easy", "Small fix"],
+                ["#12", "40", "900", "100", "no", "heavy", "Big feature work"],
+                ["#13", "2", "30", "0", "yes", "risky", "Add a column"],
+                ["#14", "120", "5000", "4000", "unknown", "heavy", "Huge refactor"],
+                ["chain", "165", "5950", "4104", "yes", "risky", "4 PRs"],
+            ],
+            self.rows(self.measure("octo/widgets", "11", "#12", "13", "14")),
+        )
+
+    def test_a_chain_is_only_as_easy_as_its_worst_link(self) -> None:
+        self.assertEqual(
+            ["chain", "3", "20", "4", "no", "easy", "1 PRs"],
+            self.rows(self.measure("octo/widgets", "11"))[-1],
+        )
+        self.assertEqual(
+            ["chain", "43", "920", "104", "no", "heavy", "2 PRs"],
+            self.rows(self.measure("octo/widgets", "11", "12"))[-1],
+        )
+
+    def test_an_unreadable_pr_makes_the_chain_unmeasured(self) -> None:
+        rows = self.rows(self.measure("octo/widgets", "11", "#999"))
+        self.assertEqual(["#999", "-", "-", "-", "-", "unmeasured", "gh pr view failed"], rows[1])
+        self.assertEqual(["chain", "3", "20", "4", "no", "unmeasured", "2 PRs"], rows[2])
+        # The repository is passed through: the stub refuses any other one.
+        other = self.rows(self.measure("octo/other", "11"))
+        self.assertEqual("unmeasured", other[0][5])
+
+    def test_usage_errors_exit_2(self) -> None:
+        for arguments in ((), ("octo/widgets",), ("widgets", "11"), ("octo/widgets", "abc")):
+            with self.subTest(arguments=arguments):
+                result = self.measure(*arguments)
+                self.assertEqual(2, result.returncode)
+                self.assertIn("usage:", result.stderr)
+                self.assertEqual("", result.stdout)
+
+
 CURL_STUB = """#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
