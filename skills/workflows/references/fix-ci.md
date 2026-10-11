@@ -9,10 +9,8 @@ Effect: `git_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `fix-ci` entry in
-`interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`fix-ci` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 
@@ -29,7 +27,12 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    (`rules/ci-evidence.md`). Stop after the first auth failure on external CI
    and ask for a log excerpt. No resolvable log output or artifact source is
    `BLOCKED`: never reason from a dashboard, a run title, or a check name.
-   Large logs go to the toolkit's debugger agent, not the parent.
+   Large logs go to the toolkit's debugger agent, which extracts the failing
+   lines, never to the parent.
+   <!-- aitk-model-route:debug.ci-triage -->
+   Launch a triage worker on `rca` (or `deep-rca`) only when a novel failure
+   pattern needs isolated diagnosis or independent failures need parallel
+   analysis; it returns the compact classification record.
 2. **Classify and group** with `debug/references/ci-classify-failure.md` and
    `debug/references/ci-fix-orchestration.md`. Write the initial triage to
    `PROJECT.md` before branching (hard gate): failing run, failures,
@@ -46,8 +49,9 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
 5. **Fix** the selected path only, scoped to the failing surface. Use
    `CI_FIX.md` (`debug/templates/ci-fix-manifest.md`) for three or more failed
    jobs or artifact bundles.
-6. **Verify** with `skills/verification-loop/SKILL.md` using the verification
-   strength tiers in `debug/references/ci-verify-fix.md`, and record the
+6. **Verify** with `skills/verification-loop/SKILL.md`, starting with the
+   command closest to the failing CI step, using the verification strength
+   tiers in `debug/references/ci-verify-fix.md`, and record the
    strength with `bin/aitk verify --run "<cmd>" --strength <STRONG | PARTIAL |
    WEAK>` per the table in `rules/gates.md`. When the failing check cannot run locally, CI is the
    downstream verifier: `PASS (downstream: CI)` is legitimate for `PARTIAL`,

@@ -4,6 +4,8 @@
 
 Effect: `read_only`.
 
+## Steps
+
 Use the canonical interface manifest through the CLI; do not maintain a second static command list.
 
 ```bash

@@ -6,11 +6,8 @@ routing, safe-fix scope, and commit recommendation strategy.
 
 ## Classify and Group
 
-<!-- aitk-model-route:debug.ci-triage -->
-The orchestrator classifies failures inline by default. Spawn a triage subagent on `rca` or `deep-rca` only when:
-- multiple independent failures need parallel analysis
-- logs are very large (>500 lines) and need focused extraction
-- the failure pattern is novel and benefits from isolated reasoning
+The orchestrator classifies failures inline by default; `fix-ci` step 1 owns
+the large-log and triage routing.
 
 For large CI runs, classify failures in parallel by job/log chunk. Each subagent receives only the relevant log path or excerpt plus the classification shape below. It returns a compact record; the main thread writes that record to `CI_FIX.md` and groups failures by root cause before any fix is attempted.
 

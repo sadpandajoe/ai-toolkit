@@ -32,3 +32,11 @@ high-signal triggers in `references/observations.md` write anything.
 - A pattern seen once is a memory; a cluster across projects is a rule
   candidate; a repeated manual workaround is a skill candidate.
 - The provider adapter resolves the memory directory; never hard-code it.
+- Promotion asks about the drafted rule text, not intent: an explicit
+  `reflect promote <filename>`, or a caller's pre-authorization such as
+  `complete-project`'s approved candidates, already authorizes promotion.
+- `reflect observations` runs `bin/aitk lane-yield` first: a lane below its
+  yield threshold is a demotion proposal with the numbers attached, not a
+  hunch.
+- `reflect failure` works best right after the failure, while the context is
+  fresh.

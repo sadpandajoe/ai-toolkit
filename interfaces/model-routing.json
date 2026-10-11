@@ -408,7 +408,7 @@
     },
     {
       "id": "debug.ci-triage",
-      "path": "skills/debug/references/ci-fix-orchestration.md",
+      "path": "skills/workflows/references/fix-ci.md",
       "count": 1,
       "routes": [
         "rca",

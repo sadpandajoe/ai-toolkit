@@ -1,6 +1,5 @@
 # Manual PR Testing via Browser
 
-
 > **When**: You want to manually verify a PR's user-visible behavior in a running local or staging app.
 > **Produces**: Scenario-by-scenario pass/fail results with screenshot and optional video evidence.
 
@@ -10,10 +9,8 @@ Effect: `external_effect`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `test-pr` entry in
-`interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`test-pr` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 
@@ -55,9 +52,8 @@ The main thread owns PR identity, app URL, scenario selection, evidence paths, p
 
 ## PROJECT.md Record
 
-Every run appends a `## Test-PR Results` entry to PROJECT.md before the chat
-summary, so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md)
-immediately after `test-pr` keeps the QA record:
+Every run appends this entry to PROJECT.md before the chat summary; across
+workers, PROJECT.md follows the durable-state rule in `rules/universal.md`.
 
 ```markdown
 ## Test-PR Results — PR #[number]
@@ -68,11 +64,6 @@ Evidence: [recording path or "none"]
 Posted: [link or "local only"]
 ```
 
-When execution or posting runs in a fresh worker (a CORE-impact PR, a broad
-scenario set, repeated re-validation), first write `## Test-PR Scenarios` (PR
-identity, app URL, impact tier, scenario list): the worker and any later
-session resume only from PROJECT.md.
-
 ## Gates
 
 - Stop if the app URL cannot be resolved.
@@ -80,31 +71,12 @@ session resume only from PROJECT.md.
 - Print the selected scenarios and proceed — invoking the command delegates scenario selection, and execution is non-destructive on local/staging (prod is already gated above). With `--step`, confirm before execution.
 - Run scenarios sequentially; do not parallelize browser evidence gathering.
 - Record by default; skip only with `--no-record`.
-- Stop before posting unless `--post` was passed and evidence paths are available. Before a PR comment, run the PII scrub in `feedback/references/reply-resolve.md` over the posted text and attachment names; a PR comment is public.
+- Stop before posting unless `--post` was passed and evidence paths are available. Before a PR comment, scrub the posted text and attachment names per `rules/pii-scrub.md`; a PR comment is public.
 
-## Summary Contract
+## Summary
 
-End with:
-
-```markdown
-## Test-PR Complete
-
-PR: #<number> - <title>
-Branch: <head-branch>
-App: <url>
-Impact: CORE / STANDARD / PERIPHERAL
-
-### Results
-| # | Scenario | Tag | Result | Notes |
-|---|----------|-----|--------|-------|
-
-### Evidence
-- Recording: ...
-- Screenshots: ...
-
-### Next Steps
-- ...
-```
+End with the `## Test-PR Complete` summary in
+[skills/qa/references/test-pr/report.md](../../qa/references/test-pr/report.md).
 
 ## Notes
 

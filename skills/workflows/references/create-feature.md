@@ -9,11 +9,9 @@ Effect: `git_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `create-feature`
-entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
-durable transition and effect record, and `bin/aitk project-state` for the
-routing snapshot and gates.
+`create-feature` in `interfaces/contracts.json`; transitions and effects go
+through `bin/aitk checkpoint`, the routing snapshot and gates through
+`bin/aitk project-state`.
 
 ## Usage
 
@@ -27,13 +25,13 @@ create-feature <request> --deliver-per-phase  # separate branch + draft PR per p
 
 ## Feature Complexity Signals
 
-Workflow-specific signals for `rules/complexity-gate.md`; any hard signal there
-still forces COMPLEX.
+Workflow-specific signals for `rules/complexity-gate.md`, the one complexity
+definition; any hard signal there still forces COMPLEX.
 
 | Signal | TRIVIAL | STANDARD | COMPLEX |
 |--------|---------|----------|---------|
 | Design decision | None; an existing pattern applied | One known pattern, bounded choices | Several plausible designs, or a new pattern |
-| Files touched | 1-3 | 4-8, one subsystem | 9+ across subsystems, or unclear ownership |
+| Ownership | One clear owner | One subsystem, clear owner | Unclear ownership, or crosses a public contract |
 | Behavioral change | Cosmetic: theme, copy, spacing, a button type or variant | Contained new behavior | Cross-cutting behavior or a contract change |
 | Risk | Local, reversible | Contained functional risk | Data, auth, migration, compatibility, or cross-service risk |
 
@@ -105,13 +103,10 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    with evidence, learned constraints, invariant changes, evidence pointer,
    roadmap check, `Tree:`, next phase) and mark the phase `done` in the
    snapshot with `bin/aitk project-state phase --name <phase> --status done
-   --sha <tree>`; that SHA is the next phase's review base. The
-   **roadmap check** asks two questions: does the decomposition still hold,
-   and is the next phase's exit goal still right given what this phase
-   learned? `holds` advances to step 4 for the next phase. `no` is
-   `bin/aitk project-state gate --gate phase-exit --status RECLASSIFY --unit
-   decomposition`, an update to `## Decomposition` in `PLAN.md`, and one
-   revalidation in `decomposition` mode before the next phase is planned.
+   --sha <tree>`; that SHA is the next phase's review base. The template owns
+   the roadmap check: `holds` advances to step 4 for the next phase, and
+   anything else records `--gate phase-exit --status RECLASSIFY` and
+   revalidates the decomposition before the next phase is planned.
    For MULTI_PHASE work the phase is then **prepared** as its own commit in
    the roadmap's delivery order (`decompose-work.md`). The commit is pushed to
    the feature branch without asking and opened as a draft PR by the delivery
@@ -121,13 +116,9 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    `pushed — awaiting PR request` and the loop continues.
 10. **Integrated review** (MULTI_PHASE and BATCHED only; hard gate before
     `## Feature Complete`). After the last unit's checkpoint, run one more
-    `review-code` pass over the full recorded **branch base** to HEAD, and
-    validate end to end against the decomposition's per-phase exit goals and
-    global invariants (`qa/references/validate-feature.md` on the whole
-    feature when the app runs). It has its own `## Gate: review (integrated)`
-    block and its own Review Record entry, marked `Scope: integrated`; the
-    per-phase records stay as they are. A finding here is fixed in the phase
-    that owns the code, then the integrated delta pass runs once.
+    `review-code` pass over the recorded **branch base** to HEAD, with its own
+    `## Gate: review (integrated)` block, as `review/references/local-review.md`
+    (Integrated Review) defines it.
 11. **Finish.** Write the `## Feature Complete` entry, emit the summary from
     `reporting/templates/create-feature-summary.md`, record metrics with
     `bin/aitk metrics emit --workflow create-feature --status <status>`.
@@ -172,31 +163,25 @@ plan-validation findings and review findings are handled in the loop.
 
 ## Hard Gates
 
-- Persist the Complexity Gate before planning or implementing, and paste the block `project-state init --format block` prints.
 - No implementation of a COMPLEX unit before its plan validates `APPROVE`.
-- Verification `PASS` before review; review gate `PASS` before the next unit.
-- `## Phase Complete` in `PROJECT.md`, roadmap check answered, before every
-  phase or wave transition; `## Feature Complete` before the chat summary.
 - MULTI_PHASE and BATCHED work: integrated review gate `PASS` over the branch
-  base, with its own Review Record entry, before `## Feature Complete`.
-- Commit, push, or open a draft PR only with STRONG verification and a `PASS`
-  review gate; no confirmation is needed. Promoting a draft needs the user's
-  request. The draft PR is the contract's `publish-explicit` gate satisfied by
-  the covered workflow's `create-pr --draft` step. Each is its own
-  `published_pr` record with operation ID `phase:<name>` (`phase:single` for
-  SINGLE_PHASE), reserved before creation and applied after.
+  base before `## Feature Complete`.
+
+Delivery is the contract's `publish-explicit` gate, satisfied by the
+`create-pr --draft` step: each draft PR is its own `published_pr` record with
+operation ID `phase:<name>` (`phase:single` for SINGLE_PHASE), reserved
+before creation and applied after.
+
+`## Feature Complete` in `PROJECT.md` carries the fields the summary
+(`reporting/templates/create-feature-summary.md`) does not:
 
 ```markdown
 ## Feature Complete
 Feature: <one line or ticket>
 Complexity/Size/Shape: <from snapshot>
 Phases delivered: <count or single-shot>
-Files changed: <summary>
 Tests: <added/updated>
 Verification: <PASS evidence>
-Review: <lane, accepted/raised findings>
 Behavior validation: <pass | fail | skipped — reason>
 Integrated review: <gate, lane, accepted/raised | not applicable (SINGLE_PHASE)>
-Residual risk: <one line or none>
-Delivery: <draft PR #n | draft PR per phase branch, in roadmap order: #a, #b, #c | no PR (--no-pr) | pushed — awaiting PR request>
 ```

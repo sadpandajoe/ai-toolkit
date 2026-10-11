@@ -253,10 +253,6 @@ class ProviderAdapterTests(unittest.TestCase):
                     ("reporting", "skills/reporting/SKILL.md"),
                     (
                         "reporting",
-                        "skills/reporting/templates/complete-project-final.md",
-                    ),
-                    (
-                        "reporting",
                         "skills/reporting/templates/complete-project-summary.md",
                     ),
                 },

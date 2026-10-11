@@ -4,7 +4,7 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with project nam
 
 ```markdown
 ## Complete-Project Done
-[One line: project nameprovider goal state and final status]
+[One line: project name, goal, and final status]
 
 ### Accomplished
 - [Key deliverables — 3-5 bullets]

@@ -7,30 +7,23 @@
 
 Effect: `external_effect`.
 
+Authorization mode: `invocation`.
+
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `address-feedback`
-entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
-durable transition and effect record.
+`address-feedback` in `interfaces/contracts.json`; transitions and effects go
+through `bin/aitk checkpoint`.
 
-## Usage
+## Authorization Boundary
 
 ```bash
 address-feedback <pr-number-or-url> [--draft] [--step]
 ```
 
-The default runs unattended for bot and posting work: new commits, pushes to
-the current PR branch, replies to bot threads, resolution of eligible bot
-threads once fixes are verified. Invariant pauses on every path: human-thread
-reply wording, amend/rebase/force-push, ambiguous push target, failed
-verification, approve or request-changes. `--step` restores confirmations.
-
-## Authorization Boundary
-
-Authorization mode: `invocation`. The invocation grants only the documented
-default commit, current-branch push, bot reply, and eligible thread resolution
-scope; every invariant pause still requires explicit input.
+The invocation grants the push and post defaults in
+`feedback/references/reply-resolve.md`, and nothing more. Its invariant pauses,
+human-thread reply wording first, still need explicit input on every path;
+`--step` restores the per-step confirmations.
 
 ## Goal Loop
 

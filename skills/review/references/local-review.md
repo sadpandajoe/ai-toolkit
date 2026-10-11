@@ -36,6 +36,17 @@ the reviewer always gets the full recorded base to HEAD (branch or phase). When
 the reviewer's span is wider than the user's filter, the Review Record says so
 in `Scope note`.
 
+## Integrated Review
+
+MULTI_PHASE and BATCHED work ends with one integrated review after the last
+unit's checkpoint: one more pass over the recorded branch base to HEAD,
+validated end to end against the decomposition's per-phase exit goals and
+global invariants, with the whole feature exercised when the app runs. It has
+its own `## Gate: review (integrated)` block and its own Review Record entry,
+marked `Scope: integrated`; the per-phase records stay as they are. A finding
+is fixed in the phase that owns the code, then the integrated delta pass runs
+once.
+
 ## Classify
 
 Run [classify-diff.md](classify-diff.md) and `qa/references/assess-impact.md`.

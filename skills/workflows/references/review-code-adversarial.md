@@ -9,10 +9,8 @@ Effect: `git_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the
-`review-code-adversarial` entry in `interfaces/contracts.json`; use `bin/aitk
-checkpoint` for every durable transition and effect record.
+`review-code-adversarial` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 

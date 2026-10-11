@@ -7,8 +7,6 @@
 
 Effect: `local_mutation`.
 
-This is the bookend to `start` — it closes what `start` opens.
-
 ## Usage
 
 ```
@@ -42,7 +40,7 @@ are emitted.
    in a project where the queue is guaranteed to be read, so an empty queue is
    reported as `No unreviewed observations` rather than skipped silently.
 4. **Surface memory promotion candidates** (skipped with `--skip-promote`).
-   From the project memory directory, pick feedback memories that apply
+   From the `memory_store` directory, pick feedback memories that apply
    across projects, postmortems (`feedback_failure_*`) whose prevention points
    to a universal rule or skill change, and themes several memories share.
    Present each:
@@ -80,9 +78,25 @@ are emitted.
    ```
 
    When nothing is running, skip this step silently.
-7. **Write the final status** with
-   [skills/reporting/templates/complete-project-final.md](../../reporting/templates/complete-project-final.md),
-   replacing the prior status section.
+7. **Write the final status** to PROJECT.md, replacing the prior status
+   section; the stats come from step 2 and the memory counts from step 4:
+
+   ```markdown
+   ## Project Complete — [date]
+
+   [One paragraph: what was accomplished, key decisions, and the outcome]
+
+   ### Final Stats
+   - Commands run: [N] | Pass rate: [N%]
+   - Review rounds (avg): [N.N]
+   - Memories created: [N] | Promoted to rules: [N]
+
+   ### Residual Items
+   - [Open risks, untested areas, or follow-up work, or "None — project is fully validated"]
+
+   See PROJECT_ARCHIVE.md for full history.
+   ```
+
 8. **Suggest the next action** from the branch state: uncommitted changes →
    commit, then `create-pr`; committed with no PR → `create-pr`; PR open →
    review and merge, then deploy; everything merged → deploy to staging or

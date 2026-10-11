@@ -109,6 +109,13 @@ majors to verify; the parent keeps the judgment. Plan validation is one worker r
 REPLAN`; the RCA gate is an evidence checklist the parent grades for STANDARD
 bugs and a specialist grades for COMPLEX or uncertain ones.
 
+A watch keeps the same isolation: a fix runs in an `implementation` worker
+that returns a compact handoff, classification and diagnosis stay with the
+parent or an `rca`/`deep-rca` worker, and check JSON, CI logs, diffs, and
+review rounds stay out of the parent, so an idle iteration costs only a
+heartbeat. `WATCH.md` and the checkpoint are current after every iteration,
+so a session that ends for any reason resumes from them through `start`.
+
 ## Source-of-truth flow
 
 ```text

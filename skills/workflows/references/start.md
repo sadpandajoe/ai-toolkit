@@ -1,41 +1,32 @@
 # Initialize Session
 
-Use the repository-root [PROJECT_TEMPLATE.md](../../../PROJECT_TEMPLATE.md) when a new durable state file is required.
-
-> **When**: Beginning any work session.
-> **Produces**: Loaded PROJECT.md context and session entry.
+> **When**: Beginning any work session; the only entrypoint for resuming work in a fresh session.
+> **Produces**: Loaded PROJECT.md context and a session entry.
 
 ## Effect Boundary
 
 Effect: `local_mutation`.
 
-This command is the only supported entrypoint for resuming work in a fresh session.
-It restores workflow state from PROJECT.md (routing snapshot plus checkpoint) rather than relying on chat memory.
-
 ## Steps
 
-1. **Find and read PROJECT.md**: the working directory first, then the git
-   repo root, then any additional working directories. A symlinked PROJECT.md
-   is normal: read through it, and write to the resolved path (`readlink -f`),
-   as for PLAN.md and every toolkit-managed file. When none exists, create one
-   from `PROJECT_TEMPLATE.md` and say so in the session entry (it is
-   local-only); with `--ask`, ask before creating it.
+1. **Read the state.** `bin/aitk project-state show` finds PROJECT.md (the
+   working directory, then the git repository root, symlinks resolved) and
+   prints the routing snapshot. Read PROJECT.md through a symlink, but write
+   to its `readlink -f` target, as for PLAN.md: an editor tool may refuse to
+   write through the link. When none exists, create one from the
+   repository-root [PROJECT_TEMPLATE.md](../../../PROJECT_TEMPLATE.md) and say
+   so in the session entry (it is local-only); with `--ask`, ask first.
 
-2. **Resume when PROJECT.md has a `## Continuation Checkpoint`.** Resume at
-   the routing snapshot's `current_phase` and `current_gate`
-   (`bin/aitk project-state show`); the checkpoint names the workflow, active
-   plan, and resume target. If the snapshot is missing or its complexity
-   vocabulary predates v2 (a legacy three-tier value), re-run the Complexity
-   Gate and record it before continuing. Append a session entry:
+2. **Resume an unfinished workflow** from the snapshot, at its
+   `current_phase` and `current_gate`, without asking. If the snapshot's
+   complexity predates v2 (a legacy three-tier value), re-run the Complexity
+   Gate and record it first. Append:
 
    ```markdown
    ### [Timestamp] - Session Resumed
    - Branch: [current branch]
-   - Resuming from: [checkpoint timestamp]
-   - Command: [top-level workflow from checkpoint]
-   - Phase: [saved phase]
-   - Active plan: [PLAN.md or none]
-   - Resume target: [saved item or iteration]
+   - Workflow: [workflow] at [phase] / [gate]
+   - Resume target: [Next from Current Status]
    ```
 
    For MULTI_PHASE work, add the remaining phases:
@@ -48,12 +39,9 @@ It restores workflow state from PROJECT.md (routing snapshot plus checkpoint) ra
    Next gate: <gate> — <what PASS requires>
    ```
 
-   Then continue the saved workflow without asking. It loads its own rules,
-   skills, and supporting files, and PLAN.md is read only when the next phase
-   needs it (review iterations or an implementation slice), so status checks
-   stay light. Once the resume succeeds, replace the human `## Continuation
-   Checkpoint` section so the same state is not resumed twice; the machine
-   block changes only through `bin/aitk checkpoint`.
+   The resumed workflow loads its own rules and skills. PLAN.md is read only
+   when the next phase needs it (review iterations or an implementation
+   slice), so status checks stay light.
 
 3. **Otherwise start a session.** Append:
 
@@ -64,26 +52,15 @@ It restores workflow state from PROJECT.md (routing snapshot plus checkpoint) ra
    - Goal: [the user's goal, once stated]
    ```
 
-   Ask what the user wants to work on. When they state a goal, suggest the
-   matching workflow from `<toolkit-root>/bin/aitk list`; suggest
-   `reflect observations` when the observation-reminder hook reports a
-   backlog in `.ai-toolkit/observations.jsonl`.
+   Ask what the user wants to work on, and suggest the matching workflow from
+   `<toolkit-root>/bin/aitk list`; suggest `reflect observations` when the
+   observation-reminder hook reports a backlog.
 
-4. **Recommend Archiving When Useful**
-
-   Run these checks against PROJECT.md and the repo root:
-
-   **Concrete signals** (high-confidence — surface the suggestion explicitly):
-   - PROJECT.md contains one or more `Completed: <date> — <feature>` entries (workflow finished, content not yet archived)
-   - A stale `PLAN.md` exists at the repo root with no Continuation Checkpoint pointing to it (workflow finished but the plan file still sits there)
-
-   **Soft signals** (lower-confidence — mention only if a concrete signal already fired):
-   - Long Development Log sections for work already complete
-   - Resolved blockers still in active sections
-   - Active work becoming hard to find
-
-   If any **concrete signal** fires, put the suggestion before any next-command suggestion: name the number of completed phases found, whether a stale PLAN.md is present, and that `archive-project-file` cleans them up before the next major phase.
-
-   If only soft signals fire, mention briefly at the end of the session entry.
-
-   Always recommend, never auto-run. `archive-project-file` is the only deletion path; workflows do not auto-delete.
+4. **Nudge toward archiving.** When PROJECT.md holds `Completed: <date> —
+   <feature>` entries, or a `PLAN.md` sits at the repository root with no
+   unfinished workflow in the snapshot, say so before any workflow
+   suggestion: how many completed phases, whether a stale PLAN.md is present,
+   and that `archive-project-file` cleans them up. Long logs of finished work
+   or resolved blockers in active sections earn a brief mention only next to
+   one of those signals. Recommend, never auto-run: `archive-project-file` is
+   the only deletion path.

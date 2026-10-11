@@ -176,18 +176,9 @@ public PR, so name what it stood for.
 
 ### 5. PII Scrub
 
-Before showing the PR to the user, re-read the drafted title and body and remove anything that should not appear on a public surface. The PR text is permanent — edits after the fact don't remove it from git history, mirrors, or search indexes.
-
-Strip or paraphrase:
-- **Customer or workspace names** — say "a customer" or describe the configuration ("dashboards with `hideTab: true`") instead.
-- **Internal ticket IDs** — Shortcut (`sc-XXXXX`), Linear, Jira, internal issue tracker IDs. These belong in PROJECT.md, the local commit footer, or an internal channel, not in the public PR body.
-- **Internal URLs** — links to Shortcut/Linear/Jira tickets, internal dashboards, staging workspaces, customer-specific Superset/Preset instances.
-- **Reporter identity** — never name the customer, support engineer, or internal user who reported the bug.
-- **Credentials and connection strings** — even in test plans (use placeholders).
-
-Public repo PR bodies, PR titles, and commit messages are all in scope. If the repo is a private/internal monorepo, the rule still applies for customer-identifying data — assume the audience is broader than the current team.
-
-If you find PII, rewrite it generically and recheck the result against steps 3-4 before continuing.
+Scrub the drafted title and body per `rules/pii-scrub.md` before showing them.
+If the scrub rewrote anything, recheck the result against steps 3-4 before
+continuing.
 
 ### 6. Present for Review
 
