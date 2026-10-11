@@ -29,6 +29,13 @@ the control plane in the cheapest capable model.
 5. `aitk/` and `bin/aitk` build, route, validate, install transactionally,
    serialize checkpoints, and own the `PROJECT.md` routing snapshot.
 
+Context model: rules are short always-on constraints and routing hints; skills
+own workflow context and load only at phase entry, and their descriptions are
+classifiers with explicit use and do-not-use boundaries; provider adapters
+translate capabilities and never own behavior. Work moves in small verified
+steps, narrowest approach first (YAGNI): a working solution, then
+optimization.
+
 ## Control Plane
 
 The parent session runs on the workhorse family named in
