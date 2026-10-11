@@ -94,4 +94,4 @@ skill, or command changes; omit the field when there are none.
 
 This command does not resume. `start` handles that — it reads the Continuation Checkpoint and auto-continues the saved workflow.
 
-Callers checkpoint at every phase boundary after durable artifacts are current, then hand the next phase to a fresh worker. Fresh workers, not manual clears, are the context boundary (`rules/context-management.md`).
+Callers checkpoint at every phase boundary after durable artifacts are current, then hand the next phase to a fresh worker. Fresh workers, not manual clears, are the context boundary.

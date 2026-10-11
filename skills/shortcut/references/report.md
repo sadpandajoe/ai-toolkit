@@ -18,8 +18,6 @@ Post structured reports (QA results, fix summaries, test findings) to Shortcut s
 - Story ID must be known (numeric ID or `sc-NNNNN` format)
 - Make every call with `<skill-dir>/scripts/sc.sh` ([fetch.md](fetch.md)); it handles auth, the retry and parsing
 
-Read `rules/shortcut-api.md` for the global Shortcut routing constraints.
-
 ## Core Steps
 
 1. **Resolve the story**

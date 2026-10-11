@@ -67,7 +67,11 @@ A PASS without its record does not count for `aitk deliver` or the PR hook.
 Fresh workers are the phase boundary. The parent keeps only intent, the active
 skill, the snapshot, gate results, and short handoffs; large logs, diffs, and
 implementation detail live in workers that return the compact handoff in
-`rules/specialist-handoff.md`. No workflow depends on a manual context clear.
+`rules/specialist-handoff.md`. No workflow depends on a manual context clear;
+auto-compaction is only a safety net. A worker is reused only inside the same
+bounded phase, when re-discovery would cost more than the resume; across
+phases it starts fresh. Provider task lists mirror state and never replace the
+files.
 
 Same-provider workers are native subagents. Independent review, RCA
 validation, and plan validation prefer the other provider and cross the
@@ -118,7 +122,32 @@ Long-running workflows write human state plus two machine blocks in
 transitions, the generation counter, and pending/applied effect records with
 stable operation IDs. Focused manifests (`PLAN.md`, `WATCH.md`, `CI_FIX.md`,
 `CHERRY_PICK.md`) supplement it. All local workflow-state files are ignored by
-git and blocked by the safety hook. Resume uses durable files, never chat.
+git and blocked by the safety hook. Resume uses durable files, never chat:
+`start` reads the routing snapshot and checkpoint, re-runs classification only
+when the snapshot predates the workflow's contract, and continues at the
+recorded gate.
+
+### Two Records, One Truth
+
+The routing snapshot (`bin/aitk project-state gate`) records every gate
+outcome and owns the attempt budget and ladder. The checkpoint machine block
+(`bin/aitk checkpoint`) records phase edges and effect reservations for
+durable workflows and lists `verification` and `review` as preconditions for
+effects. They never disagree by construction: a workflow records the outcome
+in the snapshot first, and an effect that `interfaces/contracts.json` gates on
+`verification` or `review` may be reserved only while the snapshot shows that
+gate `PASS`. `bin/aitk checkpoint reserve` enforces this: it reads the
+snapshot's per-gate record (`gates`) from the same `PROJECT.md` and refuses
+the reservation, with the gate and its recorded status named, when either
+required gate is not `PASS` or no snapshot exists. The record is scoped: each
+gate entry carries the phase it was recorded in and the latest outcome per
+reasoning unit, `advance` clears `verification` and `review`, and a `PASS`
+recorded in another phase or alongside an open `RETRY` on another unit does
+not count. Both runtimes rewrite the same file under one lock per path, so a
+gate record and a reservation cannot overwrite each other and the check inside
+`reserve` is atomic with its write. A workflow without a snapshot has no gate
+history, so every workflow that records a gate runs `project-state init`
+first, including standalone `review-plan` and `fix-ci`.
 
 ## Learning loop
 

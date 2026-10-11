@@ -425,7 +425,8 @@ SNAPSHOT_GATES = ("verification", "review")
 def _require_snapshot_gates(contract: dict[str, object], content: str, key: str) -> None:
     """Two records, one truth: an effect gated on verification or review is
     reserved only while the routing snapshot in the same artifact shows that
-    gate PASS. Without this check the rule in ``rules/gates.md`` is prose."""
+    gate PASS. Without this check the rule in ``docs/ARCHITECTURE.md`` (Two
+    Records, One Truth) is prose."""
     authorization = contract.get("authorization")
     gates = authorization.get("gates", []) if isinstance(authorization, dict) else []
     required = [gate for gate in SNAPSHOT_GATES if gate in gates]

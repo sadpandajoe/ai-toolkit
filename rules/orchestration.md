@@ -2,9 +2,8 @@
 
 ## Goal Loop
 
-The parent session is the orchestrator and runs on the workhorse family named in
-`interfaces/model-routing.json` (`policy.orchestrator`: Sonnet on Claude, Sol on
-Codex). A goal workflow is a thin state machine: read the routing snapshot in
+The parent session is the orchestrator and runs on the orchestrator model in
+`interfaces/model-routing.json` (`policy.orchestrator`). A goal workflow is a thin state machine: read the routing snapshot in
 `PROJECT.md`, evaluate the current gate, choose the next bounded capability,
 record the handoff, repeat until every required gate is `PASS`.
 

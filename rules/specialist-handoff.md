@@ -10,6 +10,10 @@ the worker never carries its own transcript back.
 
 ## Critic profile
 
+This is the one home of cold review. The parent never reviews its own work
+inline, because the author's context hides the author's mistakes: review,
+validation, and the RCA check always run in a fresh critic.
+
 Critics are the independent reviewer, the second-family lane, the finding
 verifier, the deep lenses, the plan validator and the adversarial lens. A
 critic is worth running because it sees the work cold, so its prompt carries

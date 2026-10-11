@@ -43,7 +43,7 @@ Parse the first argument:
 - Keep `MEMORY.md` in sync with memory files.
 - Ask before deleting memories. For promotion, the ask is scoped to the **drafted rule text**, not promotion intent — when the user explicitly invoked `reflect promote <filename>` (or a caller passes pre-authorization, e.g. `complete-project`'s approved candidates), the intent is already authorized; do not re-ask "promote it?".
 - A pattern seen once is a memory; a pattern seen across projects can become a rule candidate.
-- Rule changes follow `rules/rule-maintenance.md`; the rule-text confirmation above is the single canonical gate for them.
+- Rule changes follow `reflection/references/rule-promotion.md`; the rule-text confirmation above is the single canonical gate for them.
 
 ## Notes
 

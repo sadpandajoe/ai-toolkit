@@ -34,7 +34,7 @@ Read each configured repository's name, local path, team relationship, and colle
 
 ## API Reference
 
-Data-collection workers read `rules/shortcut-api.md` when making Shortcut API calls. See `skills/shortcut/references/fetch.md` for the retry wrapper, JSON parsing, and field shape gotchas. Prefer the Shortcut REST API when its credentials and authorization are available; otherwise use an available connector and report any capability gap.
+Data-collection workers follow `skills/shortcut/references/fetch.md` for the retry wrapper, JSON parsing, and field shape gotchas. Prefer the Shortcut REST API when its credentials and authorization are available; otherwise use an available connector and report any capability gap.
 
 ## Concurrent Collection Pattern
 

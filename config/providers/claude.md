@@ -24,6 +24,10 @@ provider syntax.
   commit independently; the parent merges.
 - `context_reset`: not required. Fresh agents are the phase boundary and
   auto-compaction protects the parent; never ask the user to clear.
+- Session environment: keep auto-compaction on, and set
+  `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` lower (for example `80`) when the parent
+  grows faster than expected; `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2` bounds
+  nesting to the goal skill, one worker layer, and one exceptional child.
 - `recurrence`: Claude Code's recurring workflow facility with explicit stop
   conditions, subject to the repository reachability gate.
 - `independent_review`: the cross-provider specialist by default. Resolve the

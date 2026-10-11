@@ -3,8 +3,7 @@
 ## The Review Model
 
 - **One independent review by default.** A fresh reviewer on the other
-  provider (Codex Sol when Claude orchestrates, Claude Opus when Codex does)
-  reviews the whole recorded diff once. It never sees the implementer's
+  provider reviews the whole recorded diff once. It never sees the implementer's
   transcript. COMPLEX and CORE-impact diffs add one more lane on the other
   family, concurrently and cold; the two merge by convergence. Breadth is
   bounded at two families; depth is never added by another round.
@@ -58,15 +57,8 @@ restored by `reflect` or an explicit user ask, never silently.
 
 ## Core Principles
 
-- **DRY at three levels**: within the repo, against installed packages, against
-  language built-ins. A reimplemented utility is `[minor]`, `[major]` if it
-  drifts from behavior the library already gets right.
 - **Consistency and modeling**: follow neighboring patterns; logic lives where a
   future reader would look; signatures match neighbors.
-- **File-size and spaghetti smells**: a diff pushing a file past roughly 1000
-  lines, or ad-hoc branches inserted into unrelated flows, is a `[minor]`
-  design prompt, `[major]` when it makes an existing flow materially harder to
-  reason about.
 - **Tests must be able to fail**: always-green tests are noise; data matches
   types. Each new test fails when the behaviour it covers breaks, and the
   review says how. No mocks of internal code: mock only external boundaries
@@ -91,31 +83,42 @@ finding, say so) or a structure preference capped at `[nitpick]`.
 CORE impact (login, auth, payment, data loss) shifts missing-test findings up
 one level.
 
-## Finding Calibration
+## Grading Calibration
+
+This section and Severity above are the one home of finding calibration;
+lens contracts point here.
 
 - **Scope is upstream of correctness.** Confirm the `file:line` is in the diff
   before grading. Unchanged code goes to Remaining, not findings.
 - **The diff is the recorded base to HEAD in every round.** Never re-derive
   scope from the last fix delta; a defect the review itself introduced in round
   one must still be reportable in round two.
-- **Symmetry findings cap at `[minor]`** unless the change plausibly covers or
-  worsened the sibling path.
+- **Symmetry findings cap at `[minor]`**, with one exemption: a defect class
+  confirmed inside this branch is graded on its own severity wherever it
+  recurs.
+- **DRY at three levels**: within the repo, against installed packages, against
+  language built-ins. A reimplemented utility is `[minor]`, `[major]` if it
+  drifts from behavior the library already gets right.
+- **File size**: a diff pushing a file past roughly 1000 lines, or ad-hoc
+  branches inserted into unrelated flows, is `[minor]`; it rises to `[major]`
+  when the file was already over the limit and grew materially.
 - **Convergent beats single-source.** Two independent lanes surfacing the same
   finding unprompted is high confidence; keep its severity. A `[major]` only
   one lane raised is accepted past `[minor]` on convergence, a reproduced
   failure, or a confirming verifier on the other model family
   (`rules/gates.md`, Independent Judgment); until then it is worth
   investigating, not worth blocking on.
-- **CORE impact shifts missing-test findings up one level**, and a TRIVIAL diff
-  on a CORE path is reviewed as STANDARD with no review exception.
+- **A TRIVIAL diff on a CORE path** is reviewed as STANDARD with no review
+  exception.
 - **History audit before "wrong semantics".** Check whether an apparent
   regression is a deliberate reversal the history already justifies.
-- **Pre-verdict claim check.** Before reporting clean, name one claim the diff
-  alone does not prove and check it in the repository: the title matches the
-  change, a removed surface has no dangling callers, a renamed key or flag has
-  no remaining readers. State the check.
-
-## Invalid Findings
-
-Formatting nits the formatter owns, personal style, demanding a specific
-implementation, and scope creep.
+- **Pre-verdict claim check.** Before reporting no findings, name one claim the
+  diff alone does not prove, check it in the repository, and state the check
+  and its result. Typical claims: a title or commit type that hides a breaking
+  change; a removed flag, command, endpoint, or UI affordance that docs or
+  callers still reference; a pinned dependency, action SHA, or image digest
+  that the repository uses inconsistently with what the change claims; a
+  deleted symbol something still imports. When the diff is self-contained, say
+  so.
+- **Invalid findings**: formatting nits the formatter owns, personal style,
+  demanding a specific implementation, and scope creep.

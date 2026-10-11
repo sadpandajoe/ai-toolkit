@@ -67,3 +67,14 @@ Before using `recurrence`, verify that the execution environment can reach the
 repository API. Cloud-backed bindings are forbidden for VPN/IP-restricted repos;
 use a VPN-connected local fallback and report that it only runs while the host
 and VPN are available. Provider adapters own concrete scheduling syntax.
+
+The GitHub API for Preset's repos — `superset-shell`, `superset-private`, `manager` — is reachable **only from the corporate VPN**. Jenkins mirrors build status back onto the PRs as commit statuses, but reading any of it still needs VPN-level API access.
+
+Consequence for automation: **anything cloud-executed cannot read these repos.** A
+cloud-backed `recurrence` binding runs off the VPN and cannot authenticate to the
+API. Do not recommend it for workflows that must read a Preset repo (PR
+watching, CI polling, release audits).
+
+Automation that must read these repos runs **locally** on a host connected to the VPN: an in-session recurrence capability or a local scheduler invoking the provider's headless runner. A local runner only fires while the machine is awake and VPN-connected, so scheduled runs must report missed/offline executions rather than silently implying coverage.
+
+Public repos (e.g. the toolkit's own) are unaffected; cloud scheduling is fine there.

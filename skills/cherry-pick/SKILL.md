@@ -37,8 +37,7 @@ graph and gates are the `cherry-pick` entry in `interfaces/contracts.json`.
 
 Per-cherry push is the default action at step 8 — every successfully validated cherry is pushed to the target branch before the next cherry starts. `--no-push` opts out: validate locally, record `pending-authorization`, and stop before publishing. The per-cherry push boundary (step 8) and its Push record still run on every cherry regardless; `--no-push` only changes whether the recorded outcome is `pushed <sha>` or `pending-authorization`.
 
-For non-trivial or expensive cherry-picks, follow
-`rules/context-management.md`: checkpoint after investigate/gate/plan is
+For non-trivial or expensive cherry-picks, checkpoint after investigate/gate/plan is
 recorded and again after apply/adapt/validate, so a fresh worker or session
 resumes from the manifest. Batch runs checkpoint between waves.
 

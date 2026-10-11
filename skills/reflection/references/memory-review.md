@@ -24,7 +24,7 @@ Present findings:
 - `reference_shortcut_api.md` — path changed to `skills/shortcut/references/fetch.md`
 
 ### Prune candidates
-- `feedback_old_pattern.md` — superseded by `rules/context-management.md`
+- `feedback_old_pattern.md` — superseded by `rules/universal.md`
 ```
 
 Ask for confirmation before applying updates or deletions.

@@ -129,7 +129,6 @@ ai-toolkit/
 ├── rules/
 │   ├── universal.md        # Core principles (always on)
 │   ├── resource-management.md  # Capacity checks and where they live
-│   ├── context-management.md   # Workers as phase boundaries; no manual clear
 │   ├── gates.md            # PASS / RETRY / ESCALATE / RECLASSIFY / USER_DECISION / BLOCKED and the retry budget
 │   ├── specialist-handoff.md   # Maximum handoff into and out of a worker
 │   ├── complexity-gate.md  # Complexity, size, and execution shape
@@ -137,14 +136,12 @@ ai-toolkit/
 │   ├── model-assignment.md # Roles and routes
 │   ├── durable-workflows.md    # Snapshot, checkpoint, and effect protocol
 │   ├── code-review.md      # One independent review, validate before fix, delta review
-│   ├── implementation.md   # Worker scope and test-first modes
-│   ├── testing.md          # Evidence before completion
+│   ├── implementation.md   # Test-first modes; fix the invariant, not the test
+│   ├── pii-scrub.md        # What to scrub from public PR text, replies, and commits
 │   ├── severity.md         # Finding severity vocabularies
 │   ├── ci-evidence.md      # CI signals are summaries; open the artifact
-│   ├── rule-maintenance.md # Observation-driven rule changes
 │   ├── input-detection.md  # Ticket, issue, and PR reference detection
-│   ├── shortcut-api.md     # Shortcut REST routing hint
-│   └── preset-environments.md  # Preset staging and VPN reachability
+│   └── preset-environments.md  # Preset hosts and staging credentials
 ├── skills/                 # Canonical Agent Skills (see skills/README.md)
 │   ├── workflows/          # Public router + goal workflow references
 │   ├── verification-loop/  # Shared verify, fix, recheck loop
@@ -238,7 +235,6 @@ does not exist.
 |------|---------------------------------|
 | `rules/universal.md` | Always-on provider guidance |
 | `rules/resource-management.md` | Preflight, superset-local, and verify loaders |
-| `rules/context-management.md` | Checkpoint and long-run workflow references |
 | `rules/gates.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `update-tests` |
 | `rules/durable-workflows.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests`, `watch-pr` |
 | `rules/complexity-gate.md` | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` |
@@ -248,12 +244,10 @@ does not exist.
 | `rules/model-assignment.md` | Routed worker contract |
 | `rules/specialist-handoff.md` | Routed worker contract and agent roster |
 | `rules/code-review.md` | Review skill and reviewer contract loaders |
-| `rules/implementation.md` | Implementation skill loader |
-| `rules/testing.md` | Testing and implementation skill loaders |
+| `rules/implementation.md` | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `update-tests` |
 | `rules/severity.md` | Review, planning, and QA skill loaders |
-| `rules/ci-evidence.md` | Debug and watch skill loaders |
-| `rules/shortcut-api.md` | Shortcut skill loader |
-| `rules/rule-maintenance.md` | Reflection skill loader |
+| `rules/ci-evidence.md` | `fix-ci`, `watch-pr` |
+| `rules/pii-scrub.md` | `address-feedback`, `create-pr`, `review-pr`, `run-test-plan`, `test-pr` |
 
 ## Hooks
 

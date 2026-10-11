@@ -8,7 +8,7 @@ description: "Use for creating, updating, or reviewing automated tests and test-
 ## Before Starting
 
 Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-Read and apply `rules/testing.md`.
+Read and apply `rules/implementation.md` (test-first modes; fix the invariant, not the test).
 
 Umbrella for test-harness craft: writing, updating, and critiquing automated
 tests. The parent or the toolkit's tester agent owns normal test work; a

@@ -12,7 +12,7 @@ snapshot in `PROJECT.md` as the authoritative resume state.
   chat history. The snapshot owns gate outcomes and the retry budget; the
   checkpoint owns phase edges and effects, and an effect the contract gates on
   `verification` or `review` is reserved only while the snapshot shows that
-  gate `PASS` (`rules/gates.md`, Two Records, One Truth).
+  gate `PASS` (`docs/ARCHITECTURE.md`, Two Records, One Truth).
 - Initialize the live artifact with `bin/aitk checkpoint init --workflow
   <name>` and validate it before resuming. Re-running init for the same valid
   workflow is a no-op so it cannot erase progress. Starting a different run
