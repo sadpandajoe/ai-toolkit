@@ -383,12 +383,17 @@ class RoutingManifestTests(RoutingTestCase):
                 "review.independent hands its worker a parent-only contract: skills/review/references/local-review.md",
             ),
             (
-                lambda b: b["contracts"].append("skills/pm/references/review-feature-brief.md"),
+                lambda b: b["contracts"].append("skills/pm/references/project-first.md"),
                 "review.independent hands a critic a contract that sends it to PROJECT.md",
             ),
         )
         with tempfile.TemporaryDirectory() as directory:
             root = self.fixture(directory)
+            # No shipped contract tells its reader to open PROJECT.md first any
+            # more, so the fixture carries one.
+            (root / "skills/pm/references/project-first.md").write_text(
+                "# Brief review\n\nIf PROJECT.md exists, read it first.\n"
+            )
             manifest = root / "interfaces/model-routing.json"
             pristine = manifest.read_text()
             self.assertEqual([], validate_model_routing(root))

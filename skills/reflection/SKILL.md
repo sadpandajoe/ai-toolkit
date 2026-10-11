@@ -5,10 +5,6 @@ description: Use for recording high-signal workflow observations, reviewing and 
 
 # Reflection
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
 Owns the toolkit's learning loop: event-driven observations during real work,
 periodic review that clusters them, and human-approved promotion into rules,
 skills, and regression evals. There is no always-on observer; only the
@@ -31,7 +27,9 @@ high-signal triggers in `references/observations.md` write anything.
   need user confirmation and ship with an eval candidate under `evals/`.
 - A pattern seen once is a memory; a cluster across projects is a rule
   candidate; a repeated manual workaround is a skill candidate.
-- The provider adapter resolves the memory directory; never hard-code it.
+- Memories live in the provider's `memory_store` (`interfaces/providers.json`):
+  Claude's auto-memory directory, or `.ai-toolkit/memory/` on Codex. Never
+  hard-code another path.
 - Promotion asks about the drafted rule text, not intent: an explicit
   `reflect promote <filename>`, or a caller's pre-authorization such as
   `complete-project`'s approved candidates, already authorizes promotion.

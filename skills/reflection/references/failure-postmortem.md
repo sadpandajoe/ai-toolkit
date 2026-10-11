@@ -6,16 +6,9 @@ Record a structured postmortem after a workflow fails or produces a bad outcome.
 
 ## Gather
 
-Ask or infer:
-- which command or workflow failed
-- expected outcome
-- actual outcome
-- whether it was a tooling issue, process gap, or knowledge gap
-
-Investigate current state for evidence:
-- recent git log for commits/reverts
-- PROJECT.md for last recorded status
-- conversation context for gate decisions, review scores, or errors
+From the user, git log, `PROJECT.md` and the session: what failed, what was
+expected and what happened, and whether it was a tooling, process or knowledge
+gap.
 
 ## Memory Shape
 

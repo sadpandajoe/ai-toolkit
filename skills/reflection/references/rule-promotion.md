@@ -37,7 +37,6 @@ Decision criteria:
 Check `rules/` for existing or partial coverage before drafting a new file.
 
 Draft convention:
-- 20-40 lines
 - one concern per file
 - kebab-case filename
 - same heading style as existing rules
@@ -58,8 +57,9 @@ Write this rule?
 
 On confirmation:
 1. Write the rule file.
-2. Remind user to run `./install.sh`.
-3. Suggest commands that should import or reference the new rule.
+2. Write an `evals/<family>/cases.jsonl` candidate that would have caught the pattern.
+3. Remind user to run `./install.sh`.
+4. Suggest commands that should import or reference the new rule.
 
 ## Promote Memory Flow
 
@@ -91,7 +91,8 @@ Promote this memory to a rule?
 
 On confirmation:
 1. Write or update the rule.
-2. Delete the source memory file.
-3. Remove it from `MEMORY.md`.
-4. Remind user to run `./install.sh`.
-5. Suggest commands that should import or reference the rule.
+2. Write an `evals/<family>/cases.jsonl` candidate that would have caught the pattern.
+3. Delete the source memory file.
+4. Remove it from `MEMORY.md`.
+5. Remind user to run `./install.sh`.
+6. Suggest commands that should import or reference the rule.

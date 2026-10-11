@@ -212,4 +212,13 @@ mutation and preserve user conflicts.
 4. Add routing, classification, and gate eval cases under `evals/`.
 5. Run `bin/aitk check`.
 
+A workflow reference keeps its visible gates, path rules, workflow-specific
+complexity signals and final stop conditions, puts a short happy path before
+any dense routing table, and names the owner, route and load or handoff
+condition at each step. Keep ownership and routing in one section so they
+cannot drift; import only short rules in the header, never skills, long
+references, templates or examples; and keep an end-to-end flow in its workflow
+rather than in a domain skill whose boundary disclaims it. When auditing a
+workflow, compare it with `create-feature` before inventing a new structure.
+
 Do not add workflow logic to provider config, hooks, or the manifest.
