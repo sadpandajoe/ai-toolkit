@@ -10,7 +10,7 @@ Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 Find the structural problems this change introduces or grows: what will make
 the code harder to change next time. The independent reviewer already grades
 routine duplication, reuse, placement, and test coverage; this lens goes
-deeper on structure. Grade only in-scope findings, per Finding Calibration in
+deeper on structure. Grade only in-scope findings, per Grading Calibration in
 the code-review rule (scope before correctness, symmetry capped at `[minor]`).
 
 What to look for:
@@ -33,14 +33,12 @@ What to look for:
 - **Orchestration.** Independent work serialized for no reason, or related
   updates that can leave state half-applied, when the cleaner structure is
   obvious (`[minor]`).
-- **File size.** A diff that pushes a file past roughly 1000 lines, or
-  materially grows one already past it, is the `[minor]` design prompt the
-  code-review rule describes, `[major]` when it makes an existing flow
-  materially harder to follow.
+- **File size.** Graded once, in `rules/code-review.md` (Grading
+  Calibration): `[minor]`, rising to `[major]` when the file was already over
+  the limit and grew materially.
 
 Report every structural finding you see, with your confidence when it is less
-than high; the parent validates and ranks them. List structural regressions
-and branching-complexity growth first and legibility last. When a finding
-points at a genuinely simpler design rather than a local fix, say so in one
-line; proposing the restructuring is the code-judo lens's job. In
-`verification`, list exactly what you read or ran.
+than high; the parent validates and ranks them. When a finding points at a
+genuinely simpler design rather than a local fix, say so in one line;
+proposing the restructuring is the code-judo lens's job. In `verification`,
+list exactly what you read or ran.

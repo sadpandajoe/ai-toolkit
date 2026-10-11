@@ -109,10 +109,9 @@ lanes merge under the
 convergence rule in `rules/code-review.md`: raised by both → keep the severity;
 raised by one → capped at `[minor]` until the parent's validation names the
 concrete failure. No verifier lane runs when this lane ran; the second family
-already answered. On a Claude parent this lane runs through `bin/aitk model-run
-review --provider claude --boundary review.second-family` (Opus) and spends
-Claude quota, while the Codex lane spends none, which is why STANDARD
-diffs stay at one lane. Skip it and disclose when the second provider is
+already answered. It runs through `bin/aitk model-run review --provider
+<other provider> --boundary review.second-family` and spends that family's
+quota, which is why STANDARD diffs stay at one lane. Skip it and disclose when the second provider is
 unreachable and the diff is not security-sensitive; a security-sensitive diff
 is `BLOCKED (degraded)` as above.
 
@@ -123,12 +122,11 @@ When the classifier flagged risk, launch at most two additional fresh worker
 lanes on `deep-review`, one per flagged lens, concurrently with the independent
 review: [adversarial.md](adversarial.md) for security-sensitive diffs or a
 red-team ask, [deep-quality.md](deep-quality.md) for refactor-shaped or
-deep-quality asks, and
-[../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
-for architecture changes. Each lane is resolved with `--lens <repo-relative
+deep-quality asks, and [architecture.md](architecture.md) for architecture
+changes. Each lane is resolved with `--lens <repo-relative
 lens path>` so one worker receives exactly one lens, and on the other provider
-when reachable (Astra from a Claude parent, Fable from a Codex parent); the
-same provider's deep family is the fallback and is disclosed. No flags means no
+when reachable; the same provider's `deep-review` family is the fallback and
+is disclosed. No flags means no
 deep lanes. A code-judo ask runs at its own boundary
 ([code-judo.md](code-judo.md)) and returns proposals, not findings.
 
@@ -140,7 +138,9 @@ counts convergence, applies the coverage rule, and lists the single-source
 majors that need a verifier). For each
 `[major]` and `[minor]`, check the claim against the current repo and diff
 before changing anything: accepted, or rejected with a one-line evidence-based
-reason.
+reason. A finding that says the slice boundary, acceptance criterion or RCA is
+wrong is `RECLASSIFY` back to planning, independent of its severity:
+severity and classification are separate axes.
 
 The single-source-major rule is owned by `rules/gates.md` (Independent
 Judgment); this section is how the parent applies it.
@@ -162,10 +162,11 @@ the diff, and the full changed files; it returns `Verdict: CONFIRMED | REFUTED |
 UNVERIFIABLE` with a concrete failure scenario. `CONFIRMED` keeps the severity;
 `REFUTED` records the finding as rejected with the verifier's evidence;
 `UNVERIFIABLE` caps it at `[minor]` until the parent settles the fact the
-verifier named. On a single-provider machine (Codex unreachable) the
-independent lane ran on Opus and the second family was skipped, so a
-`review`-route verifier would be Opus again: run the verifier on `deep-review`
-(Fable) instead, or leave the finding capped at `[minor]` and record
+verifier named. On a single-provider machine (the other provider unreachable)
+the independent lane ran on this provider's `review` family and the second
+family was skipped, so a `review`-route verifier would be the same family
+again: run the verifier on `deep-review` instead, or leave the finding capped
+at `[minor]` and record
 `Verifier: unavailable — single family` in the Review Record. A verifier on the
 family that raised the finding is not a verifier.
 

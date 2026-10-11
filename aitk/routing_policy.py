@@ -267,7 +267,7 @@ SUMMARY_FORMS: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
 # it just costs an edit here, where every boundary's exposure is visible at once.
 LENS_ROUTE_FLOORS: dict[str, tuple[str, ...]] = {
     "skills/review/references/adversarial.md": ("deep-review",),
-    "skills/plan-review/references/architecture.md": ("deep-review",),
+    "skills/review/references/architecture.md": ("deep-review",),
 }
 
 
@@ -278,7 +278,7 @@ LENS_DOMAIN_FLOORS: dict[str, tuple[str, ...]] = {
     "code": (
         "skills/review/references/adversarial.md",
         "skills/review/references/deep-quality.md",
-        "skills/plan-review/references/architecture.md",
+        "skills/review/references/architecture.md",
     ),
     # Plan validation is one worker whose contract carries its own checks
     # (`agents/specialists/plan-validator.md`); it never fans out over plan

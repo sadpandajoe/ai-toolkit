@@ -8,7 +8,7 @@ Detail level scales with complexity and findings.
 
 - **TRIVIAL + clean**: return an approve recommendation; post/approve directly only with `--auto` or explicit user authorization.
 - **STANDARD + clean**: approve with compact summary in draft/confirmation mode; post directly only with `--auto`.
-- **COMPLEX + clean**: pause with a one-line confirmation before approving unless `--auto` was passed; both families have already returned clean.
+- **COMPLEX + clean**: pause with a one-line confirmation before approving unless `--auto` was passed; the second family already ran.
 - **Any findings**: post only user-confirmed findings with adjusted severities.
 - **`--draft`**: show review in conversation only. Do not post.
 - **`--auto`**: skip confirmations and post/approve directly.
@@ -35,11 +35,9 @@ A posted comment is read by a tired engineer. The defaults below keep findings s
 - **Match the author's own posting voice when one is observable.** Before posting, glance at the PR author's (or repo's) recent review comments and mirror their length and register. A house style beats a generic one.
 - **Cut the AI tells:** scaffolding labels ("Result:", "Worth noting:"), walking the author through code they wrote, restating the PR description back at them, over-hedging, double negatives ("would no longer fail"), and stacking nitpicks to pad the review. A review with only nitpicks is an approval dressed up — say "approve" instead.
 
-## Security Suggestion
-
-If `--adversarial` was not used and the diff touches security-sensitive areas (auth, input handling, API endpoints, database queries, file operations, secrets), suggest re-running with `review-pr <ref> --adversarial` or `review-code-adversarial`.
-
 ## Summary Shape
+
+`Family` cells come from the review record.
 
 ```markdown
 ## Review-PR Complete
@@ -51,10 +49,10 @@ TRIVIAL / STANDARD / COMPLEX · size S/M/L/XL · flags: <deep lenses or none>
 ### Lanes
 | Lane | Family | Raised | Accepted | Notes |
 |------|--------|--------|----------|-------|
-| independent | codex/sol | N | N | always |
-| second-family | claude/opus | N | N | COMPLEX or CORE |
-| deep lens: <name> | codex/astra or claude/fable | N | N | on flag |
-| verify-major | <other family> | N | N | CONFIRMED / REFUTED |
+| independent | <provider/family> | N | N | always |
+| second-family | <provider/family> | N | N | COMPLEX or CORE |
+| deep lens: <name> | <provider/family> | N | N | on flag |
+| verify-major | <provider/family> | N | N | CONFIRMED / REFUTED |
 
 ### Findings
 - <N> major, <N> minor, <N> nitpick (after validation; single-source majors carry their verifier verdict)

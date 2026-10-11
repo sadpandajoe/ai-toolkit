@@ -148,7 +148,7 @@ ai-toolkit/
 │   ├── planning/           # Sized planning, decomposition, phase plans, validation
 │   ├── review/             # Independent review, deep lenses, PR review and posting
 │   ├── debug/              # Investigation, RCA gate, CI diagnosis
-│   ├── testing/ qa/ pm/ plan-review/ feedback/ pr-watch/ reflection/
+│   ├── testing/ qa/ pm/ feedback/ pr-watch/ reflection/
 │   ├── implement-change/   # Bounded implementation worker contract
 │   ├── reporting/ metrics-emit/ archive-project-file/
 │   ├── preflight/ cherry-pick/ agent-setup-maintainer/

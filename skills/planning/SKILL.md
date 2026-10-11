@@ -1,6 +1,6 @@
 ---
 name: planning
-description: Use for technical planning sized to the work: a compact inline plan for STANDARD changes, a just-in-time phase plan, an architecture decomposition for MULTI_PHASE work, independent plan validation, or classifying review findings as plan-level. Do NOT use for product scoping (pm/), writing code (implement-change/), or reviewing finished code (review/).
+description: Use for technical planning sized to the work: a compact inline plan for STANDARD changes, a just-in-time phase plan, an architecture decomposition for MULTI_PHASE work, or independent plan validation. Do NOT use for product scoping (pm/), writing code (implement-change/), or reviewing finished code (review/).
 ---
 
 # Planning
@@ -15,15 +15,8 @@ shape. Plan only as much as the next verifiable unit needs.
 | MULTI_PHASE, any complexity | Decompose first, then one phase at a time | [references/decompose-work.md](references/decompose-work.md), then [references/plan-implementation.md](references/plan-implementation.md) per phase |
 | BATCHED | Parent, inline: one transformation, waves, repeated verification | [references/plan-implementation.md](references/plan-implementation.md) |
 | Any decomposition, any COMPLEX plan, or a STANDARD plan at `LOW` classification confidence | Independent validator | [references/validate-plan.md](references/validate-plan.md) |
-| Review finding looks plan-level | Parent | [references/feedback-classify.md](references/feedback-classify.md) |
 
-## Bounded Reasoning
-
-Each reasoning unit (a decomposition, a phase plan, a fix plan) gets one
-attempt and one informed retry under `rules/gates.md`. Editorial fixes do not
-consume the budget; reasoning failures do. After two, escalate only the
-unresolved decision with a compact adjudication package: one dimension at a
-time, more effort, then a different model, `xhigh` last.
+Each plan is a reasoning unit with the retry budget in `rules/gates.md`.
 
 ## Phase-Size Guard
 

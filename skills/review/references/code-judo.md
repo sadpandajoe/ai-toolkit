@@ -1,40 +1,24 @@
 # Code-Judo (Structural Restructuring Proposal)
 
-A **generative** pass, not a findings pass. Where the findings lenses report
-structural problems, this pass proposes a concrete behavior-preserving
-restructuring that makes the change dramatically simpler. It returns unscored
-proposals: do not tag them with severities.
+A **generative** pass, not a findings pass: it proposes a concrete
+behavior-preserving restructuring that makes the change dramatically simpler.
+It returns unscored proposals; do not tag them with severities.
 
 <!-- aitk-model-route:review.code-judo -->
-Dispatch a single code-judo agent on the `deep-review` route; the
-`review.code-judo` boundary allows only `deep-review` and fails closed on any
-other route.
-
-## Input
-
-The diff (uncommitted, committed range, or PR) and, when available, the change
-title or commit subjects.
+Dispatch a single code-judo agent on the `deep-review` route, with the diff
+and, when available, the change title or commit subjects.
 
 ## The Task
 
-For the changeset, answer one question: **is there a "code-judo" move — a
-restructuring that preserves behavior while making the implementation
-dramatically simpler, smaller, and more direct?** A code-judo move *deletes*
-complexity rather than relocating it: whole branches, helpers, modes,
-conditionals, or layers disappear because the change is reframed to use the
-existing architecture more effectively.
-
-Be ambitious. Do not stop at "this could be a bit cleaner." Look for the
-reframing that makes the change feel inevitable in hindsight. If there is a path
-to a much simpler idea — not just a cleaner version of the same messy idea —
-propose it.
-
-Moves that tend to pay off: deleting a layer of indirection rather than
-polishing it; reframing the state model so conditionals disappear instead of
-being centralized; moving an ownership boundary so the feature becomes a
-natural extension of an existing abstraction; making an implicit type
-boundary explicit so casts, optional fields, and the branches around them
-collapse.
+Answer one question: **is there a "code-judo" move — a restructuring that
+preserves behavior while making the implementation dramatically simpler,
+smaller, and more direct?** A code-judo move *deletes* complexity rather than
+relocating it: whole branches, helpers, modes, conditionals, or layers
+disappear because the change is reframed to use the existing architecture
+more effectively. Look for the reframing that makes the change feel
+inevitable in hindsight, not a cleaner version of the same idea: delete a
+layer instead of polishing it, reframe state so conditionals disappear, or
+make an implicit type boundary explicit so casts and branches collapse.
 
 ## Hard Confidence Bar
 
@@ -66,21 +50,15 @@ Behavior preserved because: [argument] — weakest point: [the one risk]
 Effort / blast radius: [rough size of the restructure]
 ```
 
-Frame every proposal as a **recommendation requiring behavior-preserving
-verification**, never an assertion that the current code is wrong. If a proposal
-cannot be shown behavior-preserving from the diff alone, say so and name what
-would need to be checked.
+Frame every proposal as a recommendation requiring behavior-preserving
+verification, never an assertion that the current code is wrong.
 
 ### Routed result mapping
 
-- `summary` — the proposal blocks above, verbatim and in full, concatenated when
-  there are two or more. A clean result puts the "no structural simplification
-  found" sentence here instead.
-- `findings` — **always empty**. Proposals are unscored, and `model-run` rejects
-  a non-empty array on this boundary.
+- `summary` — the proposal blocks above, verbatim, or the "no structural
+  simplification found" sentence. The caller files it under Restructuring
+  Proposals in the Review Record, never in the findings table.
+- `findings` — **always empty**; proposals are unscored and `model-run`
+  rejects a non-empty array on this boundary.
 - `verification` — the behavior-preservation checks a reader must run before
-  acting on a proposal, including the ones this pass could not complete from the
-  diff alone.
-
-The caller files `summary` under Restructuring Proposals in the Review Record,
-never in the findings table.
+  acting on a proposal, including the ones this pass could not complete.

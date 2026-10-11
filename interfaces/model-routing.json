@@ -459,7 +459,7 @@
       "lenses": [
         "skills/review/references/adversarial.md",
         "skills/review/references/deep-quality.md",
-        "skills/plan-review/references/architecture.md"
+        "skills/review/references/architecture.md"
       ],
       "contracts": [
         "rules/code-review.md",
@@ -537,7 +537,7 @@
       "lenses": [
         "skills/review/references/adversarial.md",
         "skills/review/references/deep-quality.md",
-        "skills/plan-review/references/architecture.md"
+        "skills/review/references/architecture.md"
       ],
       "contracts": [
         "rules/code-review.md",
@@ -737,7 +737,7 @@
     "skills/review/references/adversarial.md": [
       "deep-review"
     ],
-    "skills/plan-review/references/architecture.md": [
+    "skills/review/references/architecture.md": [
       "deep-review"
     ]
   },
@@ -745,7 +745,7 @@
     "code": [
       "skills/review/references/adversarial.md",
       "skills/review/references/deep-quality.md",
-      "skills/plan-review/references/architecture.md"
+      "skills/review/references/architecture.md"
     ]
   }
 }

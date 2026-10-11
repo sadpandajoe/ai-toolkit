@@ -109,6 +109,17 @@ majors to verify; the parent keeps the judgment. Plan validation is one worker r
 REPLAN`; the RCA gate is an evidence checklist the parent grades for STANDARD
 bugs and a specialist grades for COMPLEX or uncertain ones.
 
+A boundary's contract list is the worker's whole closure, so it carries only
+what that lane grades with. Posting rules stay out of the batch reviewer's
+list: a review route is read-only and network-less, so the worker could
+neither fetch nor post, and an inlined posting contract would only invite it
+to try. The main thread fetches each PR's payload, posts, and records the
+batch's code-judo suppression itself. Code-judo runs only at its own
+`review.code-judo` boundary, which accepts `deep-review` alone and fails
+closed on any other route; batch review never fans it out, because its
+proposals have no slot in the per-PR result and the deep route is too costly
+to run across a batch.
+
 A watch keeps the same isolation: a fix runs in an `implementation` worker
 that returns a compact handoff, classification and diagnosis stay with the
 parent or an `rca`/`deep-rca` worker, and check JSON, CI logs, diffs, and

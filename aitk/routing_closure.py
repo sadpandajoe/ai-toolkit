@@ -83,7 +83,7 @@ def _structural_seeds(
         # review, and the predicate here is ownership, not discipline: only a
         # boundary the review skill itself owns gets it. That is deliberately
         # blunt. It keeps the reviewer-lens table and Code-judo dispatch rules
-        # away from the QA, PM, plan-review, and cherry-pick scope-leak lanes
+        # away from the QA, PM, plan-validation, and cherry-pick scope-leak lanes
         # that ride the review *route* without grading code -- but it also
         # drops the umbrella from code-review lanes another skill owns
         # (`workflows.review-code-*`, `workflows.review-pr-fresh`,

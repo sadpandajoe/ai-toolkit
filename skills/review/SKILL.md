@@ -17,40 +17,19 @@ flagged risk. See `rules/code-review.md` for the contract and calibration.
 | [references/local-review.md](references/local-review.md) | `review-code` orchestration: scope, classify, independent review, validate, fix, delta |
 | [references/pr-review.md](references/pr-review.md) | Single GitHub PR review procedure |
 | [references/pr-batch.md](references/pr-batch.md) | Batch PR review: one bounded reviewer per PR |
-| [references/pr-posting.md](references/pr-posting.md) | Posting rules, PII scrub, voice |
+| [references/pr-posting.md](references/pr-posting.md) | Posting rules and voice |
 | [references/classify-diff.md](references/classify-diff.md) | Domains, impact, and risk flags that select deep lenses |
 | [references/adversarial.md](references/adversarial.md) | Deep lens: security, edge cases, races, integrity (`deep-review`) |
 | [references/deep-quality.md](references/deep-quality.md) | Deep lens: strict structural findings (`deep-review`) |
+| [references/architecture.md](references/architecture.md) | Deep lens: architecture changes (`deep-review`) |
 | [references/code-judo.md](references/code-judo.md) | Generative restructuring proposals, explicit ask only (`deep-review`) |
 
-The architecture lens for code lives in
-`plan-review/references/architecture.md` and fires as a deep lens when the
-classifier flags an architecture change.
-
-## Who reviews
-
-- **Independent reviewer**: the specialist contract in
-  `agents/specialists/reviewer.md`, run on the `review` route on the other
-  provider when reachable, otherwise the same route on the parent's own
-  provider through `bin/aitk model-run`, with the disclosure
-  `Independent review: same-provider`.
-- **Deep lenses**: at most two per review, on `deep-review`, one lens per
-  worker, only on classifier flags or an explicit ask.
-- **Delta reviewer**: the same contract in delta mode, after substantive
-  remediation only.
-
-Every review worker works from its prompt and its inlined contracts. It does
-not open `PROJECT.md`, `PLAN.md`, or other workflow state files: they hold
-earlier review rounds, the RCA, and the implementer's notes, which a cold lane
-must not see.
-
-The orchestrator never reviews its own work and never substitutes its judgment
-for the independent lane; it validates findings, applies fixes, and runs the
-verification loop.
+The independent reviewer's contract is `agents/specialists/reviewer.md`. Cold
+review and never self-review are owned by `rules/specialist-handoff.md`
+(Critic profile).
 
 ## Sibling umbrellas
 
-`planning/` validates plans; `testing/` owns test authoring and test-suite
-review knowledge; `qa/` owns scenario-level critique. The `review-code`,
-`review-pr`, and `review-code-adversarial` workflows are the public entry
-points.
+`planning/` validates plans; `testing/` owns test authoring; `qa/` owns
+scenario-level critique. The `review-code`, `review-pr`, and
+`review-code-adversarial` workflows are the public entry points.

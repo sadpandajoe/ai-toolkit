@@ -111,7 +111,7 @@ class CliTests(unittest.TestCase):
             "skills/testing/references/review-testplan.md",
             "skills/review/SKILL.md",
             "rules/code-review.md",
-            "skills/plan-review/references/architecture.md",
+            "skills/review/references/architecture.md",
         ):
             self.assertNotIn(leaked, payload["required_contracts"])
 

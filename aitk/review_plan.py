@@ -331,7 +331,7 @@ CODE_JUDO_ASK = re.compile(r"code[- ]judo", re.IGNORECASE)
 LENS_PATHS = {
     "adversarial": "skills/review/references/adversarial.md",
     "deep-quality": "skills/review/references/deep-quality.md",
-    "architecture": "skills/plan-review/references/architecture.md",
+    "architecture": "skills/review/references/architecture.md",
 }
 # The two-lens cap. On a security-sensitive diff adversarial is never dropped:
 # deep-quality goes first, then architecture. Otherwise the lens the diff

@@ -91,7 +91,7 @@ class RoutingResolverTests(RoutingTestCase):
         for lens in (
             "skills/review/references/adversarial.md",
             "skills/review/references/deep-quality.md",
-            "skills/plan-review/references/architecture.md",
+            "skills/review/references/architecture.md",
         ):
             with self.subTest(lens=lens):
                 resolved = resolve_route(
@@ -135,7 +135,7 @@ class RoutingResolverTests(RoutingTestCase):
                 self.assertIn("rules/severity.md", resolved.required_contracts)
                 # No sibling lens files: the validator carries its own focus.
                 self.assertNotIn(
-                    "skills/plan-review/references/architecture.md", resolved.required_contracts
+                    "skills/review/references/architecture.md", resolved.required_contracts
                 )
         with self.assertRaisesRegex(ModelRouteError, "does not fan out"):
             resolve_route(
@@ -143,7 +143,7 @@ class RoutingResolverTests(RoutingTestCase):
                 "review",
                 "codex",
                 "planning.validate",
-                lens="skills/plan-review/references/architecture.md",
+                lens="skills/review/references/architecture.md",
             )
 
 

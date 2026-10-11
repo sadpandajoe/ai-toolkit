@@ -65,7 +65,7 @@ lens. The parent adds the semantic flags that paths cannot show
 |---|---|---|
 | Adversarial | Security-sensitive, or an explicit adversarial ask | review/references/adversarial.md |
 | Deep quality | Refactor-shaped, a "deep quality" ask, or deep-tier escalation | review/references/deep-quality.md |
-| Architecture | Architecture change on STANDARD or COMPLEX | plan-review/references/architecture.md |
+| Architecture | Architecture change on STANDARD or COMPLEX | review/references/architecture.md |
 
    When three would fire, the plan drops one and reports it: on a
    security-sensitive diff never adversarial (deep-quality goes first, then

@@ -125,7 +125,7 @@ class RoutingManifestTests(RoutingTestCase):
             for identifier, dropped in (
                 ("review.pr-deep-lenses", "skills/review/references/adversarial.md"),
                 ("review.deep-lenses", "skills/review/references/deep-quality.md"),
-                ("review.deep-lenses", "skills/plan-review/references/architecture.md"),
+                ("review.deep-lenses", "skills/review/references/architecture.md"),
             ):
                 with self.subTest(boundary=identifier, dropped=dropped):
                     payload = json.loads(pristine)
@@ -321,7 +321,7 @@ class RoutingManifestTests(RoutingTestCase):
             self.assertEqual([], validate_model_routing(root))
             for identifier, lens in (
                 ("review.pr-batch", "skills/review/references/adversarial.md"),
-                ("review.pr-batch", "skills/plan-review/references/architecture.md"),
+                ("review.pr-batch", "skills/review/references/architecture.md"),
             ):
                 with self.subTest(boundary=identifier, lens=lens):
                     payload = json.loads(pristine)

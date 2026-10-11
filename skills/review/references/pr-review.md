@@ -14,15 +14,11 @@ actions; review lanes are read-only and receive the material inline.
 
 ## Classify and Assess
 
-Emit the Complexity Gate (`rules/complexity-gate.md`) using the PR signals
-below, run [classify-diff.md](classify-diff.md), and run
-`qa/references/assess-impact.md`.
-
-| Signal | TRIVIAL | STANDARD | COMPLEX |
-|---|---|---|---|
-| Files changed | 1-3 | 4-8, one subsystem | 9+ or unclear ownership |
-| Behavioral change | None or cosmetic | Contained | Cross-cutting or contract change |
-| Deep lenses | Only on flags | Only on flags | Flags plus premise validation |
+Emit the Complexity Gate (`rules/complexity-gate.md`), run
+[classify-diff.md](classify-diff.md), and run
+`qa/references/assess-impact.md`. The PR signal is the behavioural change:
+none or cosmetic is TRIVIAL, contained is STANDARD, cross-cutting or a
+contract change is COMPLEX. Deep lenses run only on flags at every tier.
 
 `--deep` or a deep-tier phrase pins complexity to at least COMPLEX and routes
 the independent review on `deep-review`.
@@ -54,16 +50,15 @@ the route runner.
 <!-- aitk-model-route:review.pr-second-family -->
 Launch one more fresh reviewer worker on `review` (`deep-review` under
 `--deep`) for the plan's `second-family` lane (COMPLEX or CORE impact), on the
-provider the independent lane did not use. On a Claude parent this lane spends
-Claude quota, which is why STANDARD PRs stay at one lane.
+provider the independent lane did not use, through `bin/aitk model-run`. It
+spends the other family's quota, which is why STANDARD PRs stay at one lane.
 
 <!-- aitk-model-route:review.pr-deep-lenses -->
 For each deep-lens lane, launch one fresh worker on `deep-review` resolved
 with `--lens`: [adversarial.md](adversarial.md) for security sensitivity or
 `--adversarial`, [deep-quality.md](deep-quality.md) for refactor shape or a
 deep-quality ask, or
-[../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
-for architecture changes. A code-judo ask runs at its own boundary
+[architecture.md](architecture.md) for architecture changes. A code-judo ask runs at its own boundary
 ([code-judo.md](code-judo.md)) and its proposals stay in their own section.
 
 ## Synthesize
