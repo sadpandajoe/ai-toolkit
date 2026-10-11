@@ -115,6 +115,26 @@ class WorkflowInterfaceTests(unittest.TestCase):
             problems_after(effectful_contract),
         )
 
+    def test_memory_store_is_bound_on_both_providers(self) -> None:
+        payload = json.loads((ROOT / "interfaces/providers.json").read_text())
+        self.assertIn({"name": "memory_store", "required": True}, payload["capabilities"])
+        claude = payload["providers"]["claude"]["bindings"]["memory_store"]
+        codex = payload["providers"]["codex"]["bindings"]["memory_store"]
+        self.assertEqual("native", claude["mode"])
+        self.assertEqual(
+            ("fallback", "repository_memory_directory"), (codex["mode"], codex["fallback"])
+        )
+        self.assertIn(".ai-toolkit/memory/", (ROOT / codex["document"]).read_text())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.fixture(temporary)
+            path = root / "interfaces/providers.json"
+            payload["providers"]["codex"]["bindings"]["memory_store"]["fallback"] = "anywhere"
+            path.write_text(json.dumps(payload))
+            self.assertIn(
+                "codex/memory_store: unapproved fallback",
+                validate_provider_interfaces(root),
+            )
+
     def test_optional_pgm_manifest_references_canonical_workflows(self) -> None:
         self.assertEqual([], validate_extension_workflows(ROOT, "pgm"))
 

@@ -8,7 +8,8 @@
     {"name": "context_reset", "required": true},
     {"name": "recurrence", "required": true},
     {"name": "independent_review", "required": false},
-    {"name": "routed_subagent", "required": true}
+    {"name": "routed_subagent", "required": true},
+    {"name": "memory_store", "required": true}
   ],
   "providers": {
     "claude": {
@@ -20,7 +21,8 @@
         "context_reset": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
         "recurrence": {"mode": "native", "document": "config/providers/claude.md", "fallback": null},
         "independent_review": {"mode": "fallback", "document": "config/providers/claude.md", "fallback": "source_linked_model_run"},
-        "routed_subagent": {"mode": "fallback", "document": "config/providers/claude.md", "fallback": "source_linked_model_run"}
+        "routed_subagent": {"mode": "fallback", "document": "config/providers/claude.md", "fallback": "source_linked_model_run"},
+        "memory_store": {"mode": "native", "document": "config/providers/claude.md", "fallback": null}
       }
     },
     "codex": {
@@ -32,7 +34,8 @@
         "context_reset": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "manual_fresh_session"},
         "recurrence": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "manual_reinvocation"},
         "independent_review": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "source_linked_model_run"},
-        "routed_subagent": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "source_linked_model_run"}
+        "routed_subagent": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "source_linked_model_run"},
+        "memory_store": {"mode": "fallback", "document": "config/providers/codex.md", "fallback": "repository_memory_directory"}
       }
     }
   }

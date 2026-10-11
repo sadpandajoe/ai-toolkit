@@ -17,6 +17,9 @@ CAPABILITIES = {
     "recurrence": True,
     "independent_review": False,
     "routed_subagent": True,
+    # N8: where reflection memories live (Claude auto memory, or a
+    # repository-local directory on providers without one).
+    "memory_store": True,
 }
 FALLBACKS = {
     "sequential_execution",
@@ -26,6 +29,7 @@ FALLBACKS = {
     "manual_reinvocation",
     "skip_and_report_unavailable",
     "source_linked_model_run",
+    "repository_memory_directory",
 }
 
 
