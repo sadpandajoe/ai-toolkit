@@ -74,7 +74,7 @@ Format per entry: **Symptom** → **Why** → **Do instead**.
 
 **Why:** `git push` happening once per batch is the natural rhythm when you're orchestrating a tight loop ("apply, validate, next, …, done, push"). Even with per-cherry push as the default, the per-cherry directive is easy to skim past because it sits as a trailing step after the validate references rather than as a numbered phase, and the Batch Flow section doesn't restate it.
 
-**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must emit a `## Push Boundary — <pr-or-sha>` confirmation block (see SKILL.md step 8) before any subsequent work runs. Default behavior: push runs **per cherry, before starting the next dependent one**, and the block records `Status: pushed`. Under `--no-push`, stop with `Status: pending-authorization` instead. Batch pushes only when the user asks for it (e.g., to reduce CI cost); the request is the authorization.
+**Do instead:** Step 8 is a numbered push boundary with an inline hard gate — the orchestrator must fill the row's Push cell (see SKILL.md step 8) before any subsequent work runs. Default behavior: push runs **per cherry, before starting the next dependent one**, and the cell reads `pushed <sha>`. Under `--no-push`, stop with `pending-authorization` instead. Batch pushes only when the user asks for it (e.g., to reduce CI cost); the request is the authorization.
 
 ---
 

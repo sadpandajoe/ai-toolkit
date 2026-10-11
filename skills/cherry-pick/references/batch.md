@@ -10,29 +10,36 @@ prevents cherry N from inheriting earlier diffs and decisions.
 
 ## Deterministic Batch Pre-Flight
 
-Before deep investigation, run a deterministic pre-flight over the full list
-and write compact results into `CHERRY_PICK.md`. Put any unavoidable raw
-sidecar under a workspace-local ignored path and reference it from the manifest.
+Before deep investigation, run the pre-flight over the full list and write its
+rows into `CHERRY_PICK.md`:
 
-Gather, when applicable:
+```bash
+<skill-dir>/scripts/batch-preflight.sh <target-branch> <pr-number | #pr | sha>...
+```
 
-- PR title, merge state, merge commit, and base/head refs
-- source SHA(s) resolved from PRs
-- already-applied evidence on the target branch, preferring exact `-x` markers;
-  PR number/title matches are advisory without source-SHA evidence
-- obvious not-merged or missing-merge-commit cases
-- touched files and overlap signals for dependency ordering
+It prints one TSV row per request (`status`, `request`, `pr`, `sha`, `parents`,
+`evidence`, `title`) from `gh pr view --json` and the target's history. PR rows
+need `gh`; SHA rows need only git. Put any unavoidable raw sidecar under a
+workspace-local ignored path and reference it from the manifest.
 
-Sort rows into:
+**The one "already applied" evidence rule:** a request is present on the target
+when the target's first-parent history carries its PR number (not since
+reverted) or a target commit carries its `cherry picked from commit <sha>`
+marker. A matching title is advisory only (`title-match (advisory)`); it never
+skips a row on its own.
 
-- `ALREADY_APPLIED` — skip only with exact source-SHA evidence or an explicit
-  manifest decision
+- `ALREADY_APPLIED` — present by that rule; skip, or record an explicit
+  manifest decision to pick it again
 - `NOT_MERGED` — record `Skipped/NOT_MERGED`, continue independent rows, and
   report it; never auto-pick an unmerged head
 - `NEEDS_INVESTIGATION` — run investigate/gate
-- `PREFLIGHT_BLOCKED` — missing PR, target, auth, or unambiguous source
+- `PREFLIGHT_BLOCKED` — missing PR, unknown SHA, unfetched merge commit, or a
+  `gh`/git failure
 
-Do not spend model work re-discovering facts already in the pre-flight table.
+The `parents` column is the source commit's parent count: 2 or more is a merge
+commit, applied with `-m 1` ([apply.md](apply.md)). Touched files and overlap
+signals for ordering come from `batch-deps.sh` ([batch-sequence.md](batch-sequence.md)). Do not spend
+model work re-discovering facts already in the pre-flight table.
 
 ## Durable Batch Manifest
 

@@ -376,5 +376,88 @@ class NodeScriptTests(unittest.TestCase):
         self.assertFalse((ROOT / "skills/qa/references/browser-recording/record-flow.template.mjs").exists())
 
 
+
+def executable(path: Path, content: str) -> Path:
+    path.write_text(content)
+    path.chmod(0o755)
+    return path
+
+
+GH_PR_STUB = """#!/usr/bin/env python3
+import json, os, sys
+prs = json.loads(os.environ["GH_PRS"])
+args = sys.argv[1:]
+if args[:2] != ["pr", "view"] or args[2] not in prs:
+    sys.exit(1)
+print(json.dumps(prs[args[2]]))
+"""
+
+
+class BatchPreflightTests(ScriptTestCase):
+    """NW-21: one TSV row per request; a PR number or a -x marker on the target counts as applied."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        repo = self.repo
+        repo.commit("base", {"base.txt": "base\n"})
+        repo.git("branch", "release")
+        self.one = repo.commit("Fix one (#101)", {"one.txt": "1\n"})
+        self.two = repo.commit("Fix two (#102)", {"two.txt": "2\n"})
+        repo.git("checkout", "-q", "-b", "side")
+        repo.commit("Side work", {"side.txt": "s\n"})
+        repo.git("checkout", "-q", "main")
+        repo.git("merge", "-q", "--no-ff", "side", "-m", "Merge pull request #103 from someone/side")
+        self.merge = repo.git("rev-parse", "HEAD")
+        self.four = repo.commit("Fix four (#104)", {"four.txt": "4\n"})
+        self.five = repo.commit("Tidy docs", {"docs.txt": "d\n"})
+        repo.git("checkout", "-q", "release")
+        repo.commit("Fix one (#101)", {"one.txt": "1\n"})
+        repo.commit(f"Backport fix two\n\n(cherry picked from commit {self.two})", {"two.txt": "2\n"})
+        repo.commit("Fix four (#104)", {"four.txt": "4\n"})
+        repo.commit('Revert "Fix four (#104)"', {"four.txt": None})
+        repo.commit("Tidy docs", {"docs.txt": "d\n"})
+        repo.git("checkout", "-q", "main")
+        self.bin = executable(self.base / "gh", GH_PR_STUB).parent
+        prs = {
+            "101": {"number": 101, "title": "Fix one", "state": "MERGED", "mergeCommit": {"oid": self.one}},
+            "105": {"number": 105, "title": "Still open", "state": "OPEN", "mergeCommit": None},
+        }
+        self.env = {**os.environ, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}", "GH_PRS": json.dumps(prs)}
+
+    def preflight(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(SCRIPTS / "batch-preflight.sh"), *arguments],
+            cwd=self.repo.path, env=self.env, text=True, capture_output=True, check=False, timeout=60,
+        )
+
+    def test_rows_follow_the_one_evidence_rule(self) -> None:
+        result = self.preflight(
+            "release", "101", self.two, "#105", "#999", self.merge, self.four, self.five, "deadbeefcafe"
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual("status\trequest\tpr\tsha\tparents\tevidence\ttitle", lines[0])
+        rows = [line.split("\t") for line in lines[1:]]
+        self.assertEqual(
+            [
+                ["ALREADY_APPLIED", "101", "101", self.one, "1", "target first-parent has #101", "Fix one"],
+                ["ALREADY_APPLIED", self.two, "102", self.two, "1", "cherry-pick -x marker", "Fix two (#102)"],
+                ["NOT_MERGED", "#105", "105", "-", "-", "state OPEN", "Still open"],
+                ["PREFLIGHT_BLOCKED", "#999", "999", "-", "-", "gh pr view failed", "-"],
+                ["NEEDS_INVESTIGATION", self.merge, "103", self.merge, "2", "-", "Merge pull request #103 from someone/side"],
+                ["NEEDS_INVESTIGATION", self.four, "104", self.four, "1", "title-match (advisory)", "Fix four (#104)"],
+                ["NEEDS_INVESTIGATION", self.five, "-", self.five, "1", "title-match (advisory)", "Tidy docs"],
+                ["PREFLIGHT_BLOCKED", "deadbeefcafe", "-", "-", "-", "unknown commit", "-"],
+            ],
+            rows,
+        )
+
+    def test_usage_and_unknown_target(self) -> None:
+        self.assertEqual(2, self.preflight("release").returncode)
+        missing = self.preflight("no-such-branch", "101")
+        self.assertEqual(2, missing.returncode)
+        self.assertIn("unknown target branch", missing.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

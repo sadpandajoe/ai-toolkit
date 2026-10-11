@@ -35,7 +35,7 @@ authorize force-push, rebase, amending a pushed commit, pushing any other
 branch, or opening or merging a PR. `--no-push` withdraws the push. The phase
 graph and gates are the `cherry-pick` entry in `interfaces/contracts.json`.
 
-Per-cherry push is the default action at step 8 — every successfully validated cherry is pushed to the target branch before the next cherry starts. `--no-push` opts out: validate locally, record `pending-authorization`, and stop before publishing. The per-cherry push boundary (step 8) and its hard-gate confirmation block still run on every cherry regardless; `--no-push` only changes whether the boundary's outcome is `pushed` or `pending-authorization`.
+Per-cherry push is the default action at step 8 — every successfully validated cherry is pushed to the target branch before the next cherry starts. `--no-push` opts out: validate locally, record `pending-authorization`, and stop before publishing. The per-cherry push boundary (step 8) and its Push record still run on every cherry regardless; `--no-push` only changes whether the recorded outcome is `pushed <sha>` or `pending-authorization`.
 
 For non-trivial or expensive cherry-picks, follow
 `rules/context-management.md`: checkpoint after investigate/gate/plan is
@@ -171,21 +171,11 @@ git push
 
 Per-cherry push is the default. Immediately after step 7 passes for *this* cherry, the orchestrator pushes — before starting the next cherry. Do not batch pushes at the end of a multi-cherry run.
 
-`--no-push` opts out: skip the `git push`, record `Push: pending authorization` in the execution table or `CHERRY_PICK.md`, and continue to independent planning/investigation work only if it does not depend on the unpublished cherry being on the remote.
+`--no-push` opts out: skip the `git push`, record `pending-authorization` in the row's Push cell, and continue to independent planning/investigation work only if it does not depend on the unpublished cherry being on the remote.
 
 **Why per-cherry, not batched:** CI can attribute each cherry independently only when each push is per cherry. Batching defeats per-cherry attribution and forces bisection later. The user may explicitly ask for batched push (e.g., to reduce CI cost) — that request is itself the authorization: defer without re-confirming and record the batched-push decision. Agent-initiated batching remains forbidden by the push-boundary hard gate below.
 
-**Hard gate — per-cherry push boundary.** After step 7 passes and before any subsequent work runs (next cherry's investigate/apply, final report, checkpoint, or PR creation), the orchestrator must emit this confirmation block verbatim for *this* cherry:
-
-```markdown
-## Push Boundary — <pr-or-source-sha>
-Local SHA: <sha after validate/amend>
-Status: pushed | pending-authorization | deferred-by-user
-Remote SHA: <sha visible on remote after push> | n/a
-Reason (if not pushed): <one line>
-```
-
-If `Status: pushed`, the `git push` for this cherry has already happened — not queued, not deferred. If `Status: pending-authorization` (only when `--no-push` is set) or `deferred-by-user`, the orchestrator must also stop dependent follow-ups until the user clears the boundary. Do not start the next dependent cherry's worker without this block in chat for the previous cherry. This is the only structural defense against falling into the "apply, validate, next, …, done, push" rhythm that batches pushes (see gotchas.md, "Push batched at end instead of per-cherry").
+**Hard gate — per-cherry push boundary.** After step 7 passes and before any subsequent work runs (next cherry's investigate/apply, final report, checkpoint, or PR creation), set this cherry's **Push** cell in its execution-table row (the `CHERRY_PICK.md` table when the run has a manifest): `pushed <sha>` with the SHA visible on the remote, `pending-authorization` (only with `--no-push`), or `deferred` (the user deferred it), plus a one-line reason in Notes when not pushed. `pushed <sha>` means the `git push` for this cherry has already happened — not queued, not deferred. For `pending-authorization` or `deferred`, stop dependent follow-ups until the user clears the boundary. Do not start the next dependent cherry's worker while the previous cherry's Push cell is empty. This is the only structural defense against falling into the "apply, validate, next, …, done, push" rhythm that batches pushes (see gotchas.md, "Push batched at end instead of per-cherry").
 
 ## Batch Cherry-Pick Flow
 

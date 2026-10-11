@@ -15,9 +15,11 @@ Next action:
 
 ## Batch Pre-Flight
 
-| PR/SHA | Title | Source SHA | Merge State | Target Evidence | Preflight Status | Notes |
-|--------|-------|------------|-------------|-----------------|------------------|-------|
-|  |  |  |  |  | NEEDS_INVESTIGATION |  |
+Rows from `scripts/batch-preflight.sh <target> <pr or sha>...` ([batch.md](../references/batch.md)).
+
+| Status | Request | PR | SHA | Parents | Evidence | Title |
+|--------|---------|----|-----|--------:|----------|-------|
+| NEEDS_INVESTIGATION |  |  |  |  |  |  |
 
 ## Execution Waves
 
@@ -27,9 +29,11 @@ Next action:
 
 ## Execution Table
 
-| Order | PR | Source SHA | Result | Target SHA | Scope Audit | Validation | Commands | Notes |
-|------:|----|------------|--------|------------|-------------|------------|----------|-------|
-| 1 |  |  | Planned |  |  | Not run |  |  |
+Push: `pushed <sha>`, `pending-authorization` or `deferred` (SKILL.md step 8). Adaptation: `none` or one line on what changed from the source. Owner-notified: `n/a`, or the story comment link (step 7d).
+
+| Order | PR | Source SHA | Result | Target SHA | Scope Audit | Validation | Push | Adaptation | Owner-notified | Commands | Notes |
+|------:|----|------------|--------|------------|-------------|------------|------|------------|----------------|----------|-------|
+| 1 |  |  | Planned |  |  | Not run |  |  |  |  |  |
 
 ## Blocked / User Decisions
 
