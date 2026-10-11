@@ -21,6 +21,13 @@ VELOCITY_FILES = (
     "analyze.py",
     "report.py",
 )
+# Report thresholds a PGM config may override (extensions/pgm/rules/pgm.md).
+THRESHOLD_DEFAULTS: dict[str, float] = {
+    "stalled_days": 5,
+    "pr_review_hours": 48,
+    "team_wip_multiplier": 2,
+    "member_wip_max": 3,
+}
 T = TypeVar("T")
 
 
@@ -96,6 +103,49 @@ def _valid_date(value: object) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _positive_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value == value
+        and 0 < value < float("inf")
+    )
+
+
+def _threshold_problems(payload: dict[str, object]) -> list[str]:
+    if "thresholds" not in payload:
+        return []
+    value = payload["thresholds"]
+    if not isinstance(value, dict):
+        return ["config field thresholds must be an object"]
+    problems = [
+        f"config field thresholds has unknown key {key}"
+        for key in sorted(set(value) - set(THRESHOLD_DEFAULTS), key=str)
+    ]
+    problems.extend(
+        f"config field thresholds.{key} must be a positive number"
+        for key in THRESHOLD_DEFAULTS
+        if key in value and not _positive_number(value[key])
+    )
+    return problems
+
+
+def thresholds(payload: dict[str, object]) -> dict[str, float]:
+    """Return the report thresholds, with the defaults for absent keys.
+
+    Call it only on a config the preflight accepted; an invalid object raises.
+    """
+    problems = _threshold_problems(payload)
+    if problems:
+        raise PGMPreflightError("; ".join(problems))
+    configured = payload.get("thresholds")
+    if not isinstance(configured, dict):
+        configured = {}
+    return {
+        key: configured.get(key, default) for key, default in THRESHOLD_DEFAULTS.items()
+    }
 
 
 def _validate_config(workflow: str, payload: object) -> list[str]:
@@ -182,6 +232,7 @@ def _validate_config(workflow: str, payload: object) -> list[str]:
     bots = payload.get("bots")
     if not isinstance(bots, list) or any(not isinstance(item, str) for item in bots):
         problems.append("config field bots must be a list of account names")
+    problems.extend(_threshold_problems(payload))
     if workflow == "create-velocity-report":
         month = payload.get("month")
         if (

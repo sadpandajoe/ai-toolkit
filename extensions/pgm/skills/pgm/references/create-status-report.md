@@ -11,10 +11,8 @@ Effect: `local_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../../../rules/durable-workflows.md).
-The phase graph, authorization gates, and effect keys are the
-`create-status-report` entry in `interfaces/contracts.json`; use `bin/aitk
-checkpoint --with-pgm` for every durable transition and effect record.
+`create-status-report` in `interfaces/contracts.json`; transitions and effects
+go through `bin/aitk checkpoint --with-pgm`.
 
 ## Usage
 
@@ -33,56 +31,33 @@ $pgm create-status-report --audience executive    # Format for a specific audien
   "$PGM_DIR"`, adding connector flags only for capabilities that are actually
   available. On any nonzero result, stop before collection with zero report
   effects.
-- Read `$PGM_DIR/config.json` for team UUIDs, member list, bot accounts, repo mapping
-- Parse arguments: team filter, epic filter, or all teams
-- Set date context: today's date for "current state", last 14 days for "recently shipped"
+- Read `$PGM_DIR/config.json` for team UUIDs, members, bots, repositories and
+  `thresholds` (defaults in `rules/pgm.md`).
+- Parse arguments: team filter, epic filter, or all teams. "Current state" is
+  today; "recently shipped" is the last 14 days.
 
-### 2. Collect Data (Concurrent Workers When Available)
+### 2. Collect Data
+
+The parent runs every collection call; independent calls (per team, per
+repository, per epic) run concurrently when supported.
+
+- **Shortcut** (follow the Shortcut collection reference): per team,
+  `POST /stories/search` with `workflow_state_types: ["started"]` and
+  `group_id` (WIP), and with `completed_at_start` 14 days ago and `group_id`
+  (recently completed, with `cycle_time`, `story_type`, `epic_id`,
+  `estimate`). Then `GET /epics/{id}` for each unique `epic_id`, and
+  `GET /workflows` once to name the states.
+- **GitHub**, per configured repository:
+  `gh pr list -R <repo> --state open --limit 100 --json number,title,author,createdAt,reviewDecision,url,labels`
+  and `gh pr list -R <repo> --state merged --limit 200 --json number,title,author,mergedAt,url --search "merged:>YYYY-MM-DD"` (14 days ago).
+- **Docs** (optional): any connected docs search for recent meeting notes,
+  prior reports or open action items; skip it when none is connected or
+  nothing relevant comes back.
+
+Drop bot-owned stories and bot-authored PRs.
 
 <!-- aitk-model-route:pgm.status-collection -->
-When the runtime supports independent workers, collect source data in the parent/tool layer, then dispatch the 2-3 read-only summarization slices on `operations` in one scheduling step. Otherwise, summarize the same slices sequentially. Each worker brief must include instructions to:
-- Read the program management context for API patterns
-- Read `$PGM_DIR/config.json` for team UUIDs, members, bots
-- Return structured JSON or markdown that the main context can synthesize
-
-**Worker 1 — Shortcut REST API** (via `curl` with `$SHORTCUT_API_TOKEN`):
-Follow the Shortcut collection reference for the retry wrapper, JSON parsing, and field shape gotchas.
-
-Run all team queries in **parallel bash calls** (each team's queries are independent):
-- **WIP stories** per team: `POST /stories/search` with `workflow_state_types: ["started"]` and `group_id`
-  - Flag stories where `moved_at` > 5 days ago as stalled
-  - Flag stories where `blocked == true` or `blocker == true`
-  - Calculate WIP count per team member (from `owner_ids`)
-- **Recently completed** per team: `POST /stories/search` with `completed_at_start` (14 days ago) and `group_id`
-  - Include `cycle_time`, `story_type`, `epic_id`, `estimate`
-
-That's two independent search calls per configured team; schedule all independent calls concurrently when supported.
-
-Then, from the results:
-- **Epic details**: Collect unique `epic_id` values, then fetch `GET /epics/{id}` for each — these are also independent, run in parallel
-  - Track completion percentage, state, remaining story count
-- **Workflow states**: `GET /workflows` once to map state IDs → readable names
-
-Handle pagination on all search calls. Filter out bot-owned stories.
-
-**Worker 2 — GitHub CLI** (via `gh`):
-
-Run all repository queries concurrently when supported (each configured repository is independent):
-- For each repository from `config.json`:
-  - **Open PRs**: `gh pr list -R <repo> --state open --limit 100 --json number,title,author,createdAt,reviewDecision,url,labels`
-  - **Recently merged**: `gh pr list -R <repo> --state merged --limit 200 --json number,title,author,mergedAt,url --search "merged:>YYYY-MM-DD"` (14 days ago)
-
-That's two independent `gh` calls per configured repository.
-
-Then aggregate:
-- Flag PRs open > 48 hours without approved review
-- Filter out bot authors from `config.json` bots list
-- Count review backlog: PRs where `reviewDecision` is empty or "REVIEW_REQUIRED"
-
-**Worker 3 — Workspace search** (optional, skip gracefully if nothing found):
-- `notion-search` for recent meeting notes, prior program reports, or open action items
-- Only include if results are directly relevant
-- If no Notion results, return empty — don't block on this
+When the runtime supports independent workers, dispatch the collected payloads to 2-3 read-only summarization workers on `operations` in one scheduling step (Shortcut, GitHub, docs); otherwise summarize them sequentially. Each worker returns structured JSON or markdown for the parent to synthesize, flagging: stories whose `moved_at` is older than `stalled_days`; `blocked` or `blocker` stories; WIP per member from `owner_ids`; PRs open longer than `pr_review_hours` without an approving review; and the review backlog (`reviewDecision` empty or `REVIEW_REQUIRED`).
 
 ### 3. Analyze and Synthesize Report
 
@@ -101,18 +76,18 @@ For each active epic:
 
 ## Flow Health
 - **WIP**: [total] across [teams] ([per-team breakdown])
-  - [Flag if any team > 2× member count]
+  - [Flag a team whose WIP exceeds team_wip_multiplier × its member count]
 - **Cycle Time**: [median] days (last 14 days)
 - **Throughput**: [count] stories completed in last 14 days
-- **Stalled**: [count] stories with no movement > 5 days
+- **Stalled**: [count] stories with no movement > stalled_days
   - [List each with owner and current state]
 
 ## Risks & Blockers
 Auto-detected from signals:
 - Blocked stories (from Shortcut `blocked`/`blocker` fields)
-- Stalled work (no state change > 5 days)
-- Review backlog (PRs pending review > 48h)
-- High WIP (team WIP > 2× team size)
+- Stalled work (no state change > stalled_days)
+- Review backlog (PRs pending review > pr_review_hours)
+- High WIP (team WIP > team_wip_multiplier × team size)
 - Epics at risk (low completion rate vs timeline)
 
 For each risk:
@@ -122,10 +97,10 @@ For each risk:
 Per team:
 - **[Team name]** — [WIP count] in progress, [completed count] shipped (14d)
   - [Who's working on what — from story owners]
-  - [Capacity signals — anyone overloaded (>3 WIP items)?]
+  - [Capacity signals — anyone over member_wip_max WIP items?]
 
 ## PR State
-- **Open**: [count] across repos ([count] awaiting review > 48h)
+- **Open**: [count] across repos ([count] awaiting review > pr_review_hours)
 - **Merged (14d)**: [count]
 - **Review backlog**: [list PRs needing attention]
 
@@ -136,20 +111,13 @@ Per team:
 
 ### 4. Report and Follow Up
 
-Present the report.
-
-If `--audience <mode>` is provided, format the final output using the [communication reference](comms.md).
-
-Otherwise, present the default detailed report and suggest follow-up actions:
-
-- "Summarize this for execs" → use the internal PGM formatting skill with `executive` audience
-- "What are the biggest risks?" → deeper analysis from report data
-- "Write a status update" → use the internal PGM formatting skill with the requested audience
-- "Focus on [team/epic]" → filter and expand that section
+Present the report. With `--audience <mode>`, format it with
+[comms.md](comms.md) for that audience. Otherwise present the detailed report
+and offer follow-ups: an audience summary through [comms.md](comms.md), a
+deeper look at the biggest risks, or one team or epic expanded.
 
 ## Notes
 
-- This is a **live snapshot** — data is current as of query time, not historical
-- For historical metrics and trends, use `$pgm create-velocity-report` instead
-- The report identifies risks from signals but doesn't prescribe solutions — that's a conversation
-- If Shortcut API is unavailable, fall back to Shortcut MCP tools (slower, permission prompts)
+- This is a live snapshot as of query time; for historical metrics and trends,
+  use `$pgm create-velocity-report`.
+- The report names risks from signals; it does not prescribe solutions.
