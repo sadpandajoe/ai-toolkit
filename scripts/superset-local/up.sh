@@ -119,8 +119,13 @@ if [[ -z $port ]]; then
   exit 1
 fi
 code=000
-tries=$((interval > 0 ? (60 + interval - 1) / interval : 1))
-for _ in $(seq 1 "$tries"); do
+# Probe for up to 60 s. bash 3.2 (macOS) evaluates both arms of `?:`, so a
+# division by a zero interval must not appear in the expression at all.
+tries=1
+if ((interval > 0)); then
+  tries=$(((60 + interval - 1) / interval))
+fi
+for ((try = 0; try < tries; try++)); do
   code=$(frontend_status "$port")
   [[ $code == 200 || $code == 302 ]] && break
   sleep "$interval"
