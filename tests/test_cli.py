@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -82,6 +83,28 @@ class CliTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(1, missing.returncode)
+
+    def test_list_details_names_the_command_of_a_command_only_entry(self) -> None:
+        listing = self.run_cli("list", "--details", "--json")
+        self.assertEqual(0, listing.returncode, listing.stderr)
+        items = {item["name"]: item for item in json.loads(listing.stdout)["workflows"]}
+        cost = items["show-cost"]
+        self.assertEqual("bin/aitk cost", cost["command"])
+        self.assertNotIn("reference", cost)
+        self.assertEqual("read_only", cost["effect"])
+        self.assertEqual([], cost["dependencies"])
+        self.assertEqual(
+            "skills/workflows/references/verify.md", items["verify"]["reference"]
+        )
+        self.assertNotIn("command", items["verify"])
+        # Every command an entry names is a real subcommand.
+        usage = re.search(r"\{([a-z,-]+)\}", self.run_cli("--help").stdout)
+        self.assertIsNotNone(usage)
+        subcommands = set(usage.group(1).split(","))
+        for item in items.values():
+            if "command" in item:
+                with self.subTest(workflow=item["name"]):
+                    self.assertIn(item["command"].split()[1], subcommands)
 
     def test_optional_workflows_are_listed_and_routed_explicitly(self) -> None:
         listing = self.run_cli("list", "--with-pgm", "--details", "--json")

@@ -18,10 +18,15 @@ class Workflow:
     owner_skill: str
     execution_class: str
     reference_root: Path = Path("skills/workflows/references")
+    # A command-only entry runs one `bin/aitk` command and has no reference.
+    command: str = ""
 
     @property
     def reference(self) -> Path:
         return self.reference_root / f"{self.name}.md"
+
+
+COMMAND_PATTERN = re.compile(r"bin/aitk [a-z]+(?:-[a-z]+)*(?: [^\n]*)?")
 
 
 def manifest_path(root: Path) -> Path:
@@ -64,9 +69,17 @@ def _load_manifest(path: Path) -> list[Workflow]:
             "triggers",
             "execution_class",
         }
-        if not isinstance(item, dict) or set(item) != expected_item:
+        if not isinstance(item, dict) or set(item) - {"command"} != expected_item:
             raise ValueError(
                 f"{path}: every workflow must contain exactly {sorted(expected_item)}"
+                " and, for a command-only entry, command"
+            )
+        command = item.get("command", "")
+        if "command" in item and (
+            not isinstance(command, str) or COMMAND_PATTERN.fullmatch(command) is None
+        ):
+            raise ValueError(
+                f"{path}: {item.get('name')!r} command must be one `bin/aitk <subcommand>` line"
             )
         name = item["name"]
         summary = item["summary"]
@@ -105,6 +118,7 @@ def _load_manifest(path: Path) -> list[Workflow]:
                 owner_skill=owner_skill,
                 execution_class=execution_class,
                 reference_root=reference_root,
+                command=command,
             )
         )
     return workflows
@@ -138,7 +152,17 @@ def _validate_workflows(
             )
         if not workflow.triggers:
             problems.append(f"{workflow.name}: missing routing triggers")
-        if not (root / workflow.reference).is_file():
+        if workflow.command:
+            if workflow.execution_class != "single_run":
+                problems.append(f"{workflow.name}: a command-only entry must be single_run")
+            if workflow.rules:
+                problems.append(f"{workflow.name}: a command-only entry loads no rules")
+            if (root / workflow.reference).exists():
+                problems.append(
+                    f"{workflow.name}: command-only entry keeps a stale "
+                    f"{workflow.reference.as_posix()}"
+                )
+        elif not (root / workflow.reference).is_file():
             problems.append(f"{workflow.name}: missing {workflow.reference.as_posix()}")
         for rule in workflow.rules:
             if not (root / rule).is_file():

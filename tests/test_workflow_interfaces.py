@@ -36,6 +36,85 @@ class WorkflowInterfaceTests(unittest.TestCase):
     def test_manifest_is_complete_and_references_canonical_workflows(self) -> None:
         self.assertEqual([], validate_workflows(ROOT))
 
+    def test_command_only_entries_run_one_command_and_keep_no_reference(self) -> None:
+        commands = {
+            workflow.name: workflow.command
+            for workflow in load_workflows(ROOT)
+            if workflow.command
+        }
+        self.assertEqual(
+            {
+                "custom-skills-info": "bin/aitk list",
+                "metrics": "bin/aitk metrics",
+                "show-cost": "bin/aitk cost",
+                "toolkit-doctor": "bin/aitk doctor --strict",
+            },
+            commands,
+        )
+        for name in commands:
+            with self.subTest(workflow=name):
+                self.assertFalse(
+                    (ROOT / f"skills/workflows/references/{name}.md").exists()
+                )
+                self.assertEqual(
+                    (), workflow_dependency_resources(ROOT, next(
+                        item for item in load_workflows(ROOT) if item.name == name
+                    ))
+                )
+
+        def entry(payload: dict, name: str) -> dict:
+            return next(item for item in payload["workflows"] if item["name"] == name)
+
+        def problems_after(mutate) -> list[str]:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = self.fixture(temporary)
+                manifest = root / "interfaces/workflows.json"
+                payload = json.loads(manifest.read_text())
+                mutate(root, payload)
+                manifest.write_text(json.dumps(payload))
+                return validate_workflows(root) + validate_contracts(root)
+
+        def stale_reference(root: Path, payload: dict) -> None:
+            (root / "skills/workflows/references/show-cost.md").write_text("# Cost\n")
+
+        self.assertIn(
+            "show-cost: command-only entry keeps a stale skills/workflows/references/show-cost.md",
+            problems_after(stale_reference),
+        )
+        self.assertIn(
+            "metrics: a command-only entry loads no rules",
+            problems_after(lambda root, payload: entry(payload, "metrics").update(
+                rules=["rules/gates.md"]
+            )),
+        )
+        self.assertIn(
+            "metrics: a command-only entry must be single_run",
+            problems_after(lambda root, payload: entry(payload, "metrics").update(
+                execution_class="durable"
+            )),
+        )
+        for command in ("aitk cost", "bin/aitk", "bin/aitk cost\nrm -rf /", ""):
+            with self.subTest(command=command):
+                problems = problems_after(
+                    lambda root, payload: entry(payload, "show-cost").update(command=command)
+                )
+                self.assertTrue(
+                    any("command must be one `bin/aitk <subcommand>` line" in item for item in problems),
+                    problems,
+                )
+
+        def effectful_contract(root: Path, payload: dict) -> None:
+            contracts = root / "interfaces/contracts.json"
+            document = json.loads(contracts.read_text())
+            contract = next(item for item in document["contracts"] if item["name"] == "show-cost")
+            contract["effect"] = "local_mutation"
+            contracts.write_text(json.dumps(document))
+
+        self.assertIn(
+            "show-cost: a command-only entry must have a read_only contract",
+            problems_after(effectful_contract),
+        )
+
     def test_optional_pgm_manifest_references_canonical_workflows(self) -> None:
         self.assertEqual([], validate_extension_workflows(ROOT, "pgm"))
 
@@ -127,7 +206,7 @@ class WorkflowInterfaceTests(unittest.TestCase):
     def test_effect_and_authorization_markers_are_contract_bound(self) -> None:
         cases = {
             "effect-marker": (
-                "skills/workflows/references/show-cost.md",
+                "skills/workflows/references/verify.md",
                 "Effect: `read_only`.",
                 "Effect: `local_mutation`.",
                 "effect boundary marker",
@@ -215,9 +294,9 @@ class WorkflowInterfaceTests(unittest.TestCase):
             ),
             "read-only-executable-effect": (
                 lambda root: (
-                    root / "skills/workflows/references/show-cost.md"
+                    root / "skills/workflows/references/verify.md"
                 ).write_text(
-                    (root / "skills/workflows/references/show-cost.md").read_text()
+                    (root / "skills/workflows/references/verify.md").read_text()
                     + "\n```sh\ngit commit -am unsafe\n```\n"
                 ),
                 "read-only executable surface is effectful",
@@ -351,7 +430,7 @@ class WorkflowInterfaceTests(unittest.TestCase):
         for name, (link, expected) in cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
                 root = self.fixture(temporary)
-                reference = root / "skills/workflows/references/show-cost.md"
+                reference = root / "skills/workflows/references/verify.md"
                 if name == "unclassified":
                     target = root / "skills/unclassified/resource.md"
                     target.parent.mkdir()

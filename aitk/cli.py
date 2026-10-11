@@ -189,21 +189,27 @@ def _list(arguments: argparse.Namespace) -> int:
             "arguments": workflow.arguments,
         }
         if arguments.details:
-            contract = contracts[workflow.name]
+            # A command-only entry lists its command instead of a reference; an
+            # entry without a contract still lists, with the contract fields empty.
+            contract = contracts.get(workflow.name, {})
+            authorization = contract.get("authorization") or {"mode": None, "gates": []}
             item.update(
                 {
                     "owner_skill": workflow.owner_skill,
-                    "reference": workflow.reference.as_posix(),
                     "rules": list(workflow.rules),
                     "dependencies": list(workflow_dependencies(root, workflow)),
-                    "effect": contract["effect"],
-                    "authorization": contract["authorization"],
-                    "state": contract["state"],
-                    "resumable": contract["resumable"],
-                    "phases": contract["phases"],
-                    "gates": contract["authorization"]["gates"],
+                    "effect": contract.get("effect"),
+                    "authorization": authorization,
+                    "state": contract.get("state"),
+                    "resumable": contract.get("resumable", False),
+                    "phases": contract.get("phases", []),
+                    "gates": authorization.get("gates", []),
                 }
             )
+            if workflow.command:
+                item["command"] = workflow.command
+            else:
+                item["reference"] = workflow.reference.as_posix()
         items.append(item)
     payload: dict[str, object] = {
         "command": "list",

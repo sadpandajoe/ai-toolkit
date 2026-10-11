@@ -89,6 +89,8 @@ def workflow_dependency_resources(
     root: Path, workflow: Workflow
 ) -> tuple[WorkflowDependency, ...]:
     """Resolve every exact linked skill resource through the skill manifest."""
+    if workflow.command:
+        return ()
     repository = root.resolve()
     reference = (repository / workflow.reference).resolve(strict=False)
     if not reference.is_relative_to(repository) or not reference.is_file():
@@ -401,10 +403,15 @@ def _validate_contract(
     name: str,
     contract: dict[str, object],
     execution_class: str,
-    reference: Path,
+    reference: Path | None,
     rules: tuple[str, ...],
     vocabularies: dict[str, set[str]],
 ) -> list[str]:
+    """Validate one contract; `reference` is None for a command-only entry.
+
+    A command-only entry has no reference to carry its `Effect:` or
+    `Authorization mode:` line, so only a read-only contract may have one.
+    """
     problems: list[str] = []
     if set(contract) != CONTRACT_KEYS:
         missing = sorted(CONTRACT_KEYS - set(contract))
@@ -415,6 +422,11 @@ def _validate_contract(
     effect = contract["effect"]
     if not isinstance(effect, str) or effect not in EFFECTS:
         problems.append(f"{name}: invalid effect {effect}")
+    elif reference is None:
+        if effect != "read_only":
+            problems.append(
+                f"{name}: a command-only entry must have a read_only contract"
+            )
     else:
         markers = re.findall(
             r"(?m)^## Effect Boundary\s*$\n\nEffect: `([^`]+)`\.\s*$",
@@ -451,7 +463,7 @@ def _validate_contract(
             problems.append(
                 f"{name}: read-only contract must use authorization mode none"
             )
-        if effect == "external_effect":
+        if effect == "external_effect" and reference is not None:
             marker = re.search(
                 r"(?m)^Authorization mode: `(none|invocation|explicit)`\.",
                 reference.read_text(),
@@ -558,7 +570,7 @@ def _validate_contract(
             problems.append(
                 f"{name}: durable workflow must load rules/durable-workflows.md"
             )
-        reference_text = reference.read_text()
+        reference_text = reference.read_text() if reference is not None else ""
         if (
             "## Durable Runtime Contract" not in reference_text
             or re.search(r"bin/aitk\s+checkpoint", reference_text) is None
@@ -688,6 +700,11 @@ def _validate_contract(
     policies = contract["forbidden_actions"]
     if not _unique_strings(sections) or any(not item for item in sections):
         problems.append(f"{name}: required_sections must be unique strings")
+    elif reference is None:
+        if sections:
+            problems.append(
+                f"{name}: a command-only entry has no reference for required_sections"
+            )
     else:
         headings = {
             match.group(1).strip()
@@ -788,7 +805,7 @@ def validate_contracts(root: Path) -> list[str]:
                 name,
                 contract,
                 workflow.execution_class,
-                root / workflow.reference,
+                None if workflow.command else root / workflow.reference,
                 workflow.rules,
                 vocabularies,
             )
