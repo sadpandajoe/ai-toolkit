@@ -578,5 +578,90 @@ class ShortcutScriptTests(unittest.TestCase):
                 self.assertEqual(2, self.sc(*arguments).returncode)
 
 
+DOCKER_STUB = """#!/usr/bin/env python3
+import os, sys
+from pathlib import Path
+state = Path(os.environ["DOCKER_STATE"])
+args = sys.argv[1:]
+with (state / "docker.log").open("a") as handle:
+    handle.write(" ".join(args) + "\\n")
+up = (state / "up").exists()
+if args[:1] == ["compose"]:
+    (state / "up").write_text("1")
+    sys.exit(0)
+if args[:2] == ["ps", "-a"]:
+    print("superset-superset-init-light-1" if up else "")
+    sys.exit(0)
+if args[:1] == ["ps"]:
+    if up:
+        print("superset-superset-light-1\\tUp 2 minutes (healthy)\\t8088/tcp")
+        print("superset-superset-node-light-1\\tUp 2 minutes\\t0.0.0.0:9002->9000/tcp")
+    sys.exit(0)
+if args[:1] == ["logs"]:
+    print("Step 4/4 [Complete]" if os.environ.get("INIT_DONE") == "1" else "Step 3/4 loading")
+    sys.exit(0)
+sys.exit(1)
+"""
+
+
+class SupersetUpTests(unittest.TestCase):
+    """NW-20: detection, a stubbed start, and a timeout; never edits source."""
+
+    SCRIPT = ROOT / "scripts" / "superset-local" / "up.sh"
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name).resolve()
+        self.work = self.base / "superset"
+        self.work.mkdir()
+        bin_dir = self.base / "bin"
+        bin_dir.mkdir()
+        executable(bin_dir / "docker", DOCKER_STUB)
+        executable(bin_dir / "curl", "#!/bin/sh\nprintf 302\n")
+        executable(bin_dir / "clo", "#!/bin/sh\nexit 0\n")
+        self.env = {
+            key: value for key, value in os.environ.items() if key != "PROJECT"
+        } | {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "DOCKER_STATE": str(self.base), "INIT_DONE": "1"}
+
+    def up(self, *arguments: str, **env: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(self.SCRIPT), *arguments], cwd=self.work, env={**self.env, **env},
+            text=True, capture_output=True, check=False, timeout=60,
+        )
+
+    def test_detects_the_start_command(self) -> None:
+        self.assertEqual(2, self.up("--detect").returncode)
+        (self.work / "docker-compose-light.yml").write_text("services: {}\n")
+        self.assertEqual("docker compose -f docker-compose-light.yml up -d", self.up("--detect").stdout.strip())
+        self.assertEqual(2, self.up("--detect", "--interval", "soon").returncode)
+        self.assertEqual("clo docker up", self.up("--detect", PROJECT="superset").stdout.strip())
+        (self.work / ".claudette").mkdir()
+        self.assertEqual("clo docker up", self.up("--detect").stdout.strip())
+
+    def test_starts_waits_and_prints_the_node_port_without_editing_source(self) -> None:
+        (self.work / "docker-compose-light.yml").write_text("services: {}\n")
+        config = self.work / "docker/pythonpath_dev/superset_config_docker_light.py"
+        config.parent.mkdir(parents=True)
+        config.write_text("FEATURE_FLAGS = {}\n")
+        result = self.up("--interval", "0")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("PLAYWRIGHT_BASE_URL=http://localhost:9002", result.stdout)
+        self.assertIn("Frontend: http://localhost:9002 (HTTP 302)", result.stdout)
+        self.assertIn("COMPRESS_ALGORITHM", result.stderr)
+        self.assertEqual("FEATURE_FLAGS = {}\n", config.read_text())
+        self.assertIn("compose -f docker-compose-light.yml up -d", (self.base / "docker.log").read_text())
+        again = self.up("--interval", "0")
+        self.assertEqual(0, again.returncode, again.stderr)
+        starts = [line for line in (self.base / "docker.log").read_text().splitlines() if line.startswith("compose ")]
+        self.assertEqual(1, len(starts), "a healthy stack is not restarted")
+
+    def test_gives_up_after_the_timeout(self) -> None:
+        (self.work / "docker-compose-light.yml").write_text("services: {}\n")
+        result = self.up("--timeout", "0", "--interval", "0", INIT_DONE="0")
+        self.assertEqual(1, result.returncode)
+        self.assertIn("not ready after 0s (last phase: init)", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

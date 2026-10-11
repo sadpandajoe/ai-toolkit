@@ -13,7 +13,7 @@ This is a project-specific environment skill for Superset/Preset local testing.
 
 | Phase | When | Reference |
 |-------|------|-----------|
-| Start stack | Need a healthy local Superset stack and frontend URL | [references/start-stack.md](references/start-stack.md) |
+| Start stack | Need a healthy local Superset stack and frontend URL | [references/start-stack.md](references/start-stack.md); the script is `<toolkit-root>/scripts/superset-local/up.sh` |
 | Run Playwright | Need to run Superset Playwright E2E tests against the local stack | [references/run-playwright.md](references/run-playwright.md) |
 
 ## Boundaries
