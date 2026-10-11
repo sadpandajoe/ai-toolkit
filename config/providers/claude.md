@@ -21,7 +21,9 @@ provider syntax.
 - `parallel_fanout`: several Agent calls in one turn for disjoint units; the
   route and agent controls still apply to each.
 - `isolated_worktree`: the Agent tool's worktree isolation for slices that may
-  commit independently; the parent merges.
+  commit independently; the parent merges. A worker worktree with no changes
+  is cleaned up automatically; one with changes comes back as a path and
+  branch to merge or clean up.
 - `context_reset`: not required. Fresh agents are the phase boundary and
   auto-compaction protects the parent; never ask the user to clear.
 - Session environment: keep auto-compaction on, and set

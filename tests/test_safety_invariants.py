@@ -219,7 +219,7 @@ class SafetyInvariantTests(unittest.TestCase):
             for path in (
                 "rules/resource-management.md",
                 "hooks/check-resources.sh",
-                "skills/preflight/rules.md",
+                "skills/workflows/references/check-resources.md",
                 "skills/superset-local/references/start-stack.md",
             )
         )

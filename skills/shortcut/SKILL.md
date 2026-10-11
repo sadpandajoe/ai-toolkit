@@ -5,10 +5,6 @@ description: "Use for Shortcut story, epic, iteration, comment, evidence, and PR
 
 # Shortcut
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
 Shortcut work splits into two phases:
 
 | Phase | When | Reference |

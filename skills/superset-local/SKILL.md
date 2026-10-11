@@ -5,10 +5,6 @@ description: "Use for Superset local stack startup, frontend detection, explicit
 
 # Superset Local
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
 This is a project-specific environment skill for Superset/Preset local testing.
 
 | Phase | When | Reference |
