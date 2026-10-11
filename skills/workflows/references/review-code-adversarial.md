@@ -9,10 +9,8 @@ Effect: `git_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the
-`review-code-adversarial` entry in `interfaces/contracts.json`; use `bin/aitk
-checkpoint` for every durable transition and effect record.
+`review-code-adversarial` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 
@@ -22,6 +20,12 @@ review-code-adversarial --allow-degraded   # accept a same-provider lane when th
 ```
 
 ## Procedure
+
+Ensure a routing snapshot exists before any gate is recorded: `bin/aitk
+project-state init --workflow review-code-adversarial --complexity
+<classified> --size <S|M|L|XL>` when none exists; an owning workflow's
+snapshot stays as it is (`init` refuses a different workflow without
+`--replace`).
 
 1. Discover changed files as in
    [skills/review/references/local-review.md](../../review/references/local-review.md)
@@ -49,11 +53,17 @@ review-code-adversarial --allow-degraded   # accept a same-provider lane when th
 5. Fix, reject with evidence, or surface as `USER_DECISION` for every concrete
    finding; verify with `skills/verification-loop/SKILL.md`; one delta pass on
    the fixed files through the adversarial lens when fixes were substantive.
-6. Emit `## Gate: review` with `Adversarial rating: Hardened | Adequate |
-   Vulnerable | Critical`, `Reviewers: <lanes as provider/family>`, and the
-   accepted/raised tally. Write `## Adversarial Findings` and
-   `## Adversarial Fix Round N` to `PROJECT.md` before any fixes and after each
-   round.
+6. Record the gate with `bin/aitk project-state gate --gate review --status
+   <...> --result <envelope> --format block` (one `--result` per lane's
+   `model-run` envelope) and paste the `## Gate: review` block it prints, with
+   `Adversarial rating: Hardened | Adequate | Vulnerable | Critical` (derived
+   from accepted findings: Critical for an accepted security `[major]`,
+   Vulnerable for any other accepted `[major]`, Adequate for `[minor]` only,
+   Hardened for none), `Reviewers: <lanes as provider/family>`, and the
+   accepted/raised tally as its `--evidence`. A gate that is not recorded, or
+   a PASS without the envelopes, does not count, and
+   `hooks/require-review-gate.sh` refuses `gh pr create` without it. Write `## Adversarial Findings` and `## Adversarial Fix Round N` to
+   `PROJECT.md` before any fixes and after each round.
 
 ## Gates
 

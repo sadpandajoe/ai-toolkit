@@ -1,8 +1,10 @@
 """Loading and validating the routing manifest, fail-closed.
 
 Everything that answers "is this manifest, and the documents it points at,
-internally consistent" lives here: payload shape, per-lens route floors, lens menu
-completeness, seed-only closures, marker placement, and selector ownership. These
+internally consistent" lives here: payload shape, per-route tool boxes, per-lane
+contract lists, parent-only contracts kept out of workers, per-lens route floors,
+lens menu completeness, seed-only closures, marker placement, and selector
+ownership. These
 checks are the reason the resolver can be small -- by the time a route resolves, the
 data it reads has already been proven well-formed.
 """
@@ -16,21 +18,27 @@ import re
 from aitk.routing_policy import (
     CLAUDE_SELECTOR,
     CODEX_SELECTOR,
+    CRITIC_EXCLUDED_CONTRACTS,
     DISALLOWED_TOOLS,
     DISPATCH_PATTERN,
     EXEMPT_MARKER,
+    GENERATED_HEADER,
     LENS_DOMAINS,
     LENS_DOMAIN_FLOORS,
     LENS_ROUTE_FLOORS,
     ModelRouteError,
+    PARENT_ONLY_CONTRACTS,
     PERMISSION_MODES,
+    PROJECT_FILE_INSTRUCTION,
     PROVIDERS,
     REASONING,
     RESPONSIBILITIES,
     ROUTE_MARKER,
     ROUTE_NAMES,
     ROUTE_RESTRICTIONS,
+    ROUTE_TOOLS,
     SANDBOXES,
+    TOOL_ENTRY,
     SUMMARY_FORMS,
     _boundary_contracts,
     _lens_domain,
@@ -52,6 +60,10 @@ from aitk.routing_closure import (
     _required_contract_paths,
     _structural_seeds,
 )
+
+# Efforts a route may pin. `max` runs only on an explicit user ask, recorded in
+# the envelope, so it is never a route default.
+ROUTE_EFFORTS = ("low", "medium", "high", "xhigh")
 
 
 def load_model_routing(root: Path) -> dict[str, object]:
@@ -100,10 +112,14 @@ def _valid_lens_menu(root: Path, boundary: dict[str, object]) -> bool:
 
 
 def _valid_boundary_contracts(root: Path, boundary: dict[str, object]) -> bool:
-    """Check the declared per-lane contracts are distinct, existing Markdown files."""
+    """Check the lane's contract list: present, non-empty, distinct Markdown paths.
+
+    Every boundary declares its worker's contracts; nothing is inherited from the
+    boundary document any more, so a lane without a list would dispatch a worker
+    with no instructions at all. A listed file that does not exist is reported
+    separately, as a missing boundary contract, once the closure is derived.
+    """
     contracts = boundary.get("contracts")
-    if contracts is None:
-        return True
     if not isinstance(contracts, list) or not contracts:
         return False
     if len(set(map(repr, contracts))) != len(contracts):
@@ -111,10 +127,55 @@ def _valid_boundary_contracts(root: Path, boundary: dict[str, object]) -> bool:
     for contract in contracts:
         if not isinstance(contract, str) or not contract.endswith(".md"):
             return False
-        safe = _safe_path(root, contract)
-        if safe is None or not _contract_dependency_allowed(safe):
+        path = Path(contract)
+        if path.is_absolute() or ".." in path.parts:
+            return False
+        if not _contract_dependency_allowed(path):
+            return False
+        if (root / path).exists() and _safe_path(root, contract) is None:
             return False
     return True
+
+
+def _worker_contract_problems(
+    root: Path,
+    identifier: str,
+    responsibility: str,
+    closure: tuple[str, ...],
+) -> list[str]:
+    """Reject a closure that hands a worker the parent's own instructions.
+
+    Every worker is refused the routing policy and the handoff rules: they tell
+    the reader how to dispatch and brief workers. A critic (any review-route
+    lane: reviewer, second family, verifier, deep lens, plan validator,
+    adversarial lens) is also refused the parent's review procedure and the gate
+    rules, and any file that tells it to read `PROJECT.md` first, because each
+    of those carries the parent's view of the work into a lane whose value is
+    that it does not have one.
+    """
+    excluded = (
+        CRITIC_EXCLUDED_CONTRACTS if responsibility == "review" else PARENT_ONLY_CONTRACTS
+    )
+    problems = [
+        f"boundary {identifier} hands its worker a parent-only contract: {contract}"
+        for contract in closure
+        if contract in excluded
+    ]
+    if responsibility == "review":
+        for contract in closure:
+            source = root / contract
+            if not source.is_file() or source.is_symlink():
+                continue
+            try:
+                text = source.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if PROJECT_FILE_INSTRUCTION.search(text):
+                problems.append(
+                    f"boundary {identifier} hands a critic a contract that sends it "
+                    f"to PROJECT.md: {contract}"
+                )
+    return problems
 
 
 def _lens_route_problems(
@@ -331,10 +392,6 @@ def _seed_only_problems(
 # `review.code-judo`, say) and still pass, silently defeating the fail-closed
 # route pinning the skills advertise.
 BOUNDARY_INVARIANTS = {
-    "cherry-pick.batch-investigation": ("rca", "deep-rca"),
-    "cherry-pick.headless-implementation": ("implementation",),
-    "cherry-pick.scope-leak-rereview": ("review", "deep-review"),
-    "cherry-pick.scope-leak-review": ("review", "deep-review"),
     "cherry-pick.unblock-discovery": ("review",),
     "cherry-pick.validate-scope-leak": ("review", "deep-review"),
     "cherry-pick.validate-scope-leak-rerun": ("review", "deep-review"),
@@ -363,7 +420,6 @@ BOUNDARY_INVARIANTS = {
     "workflows.feedback-fix-wave": ("implementation",),
     "workflows.fix-bug-implementation": ("implementation",),
     "workflows.watch-pr-fix": ("implementation",),
-    "workflows.watch-pr-poll": ("operations",),
 }
 
 
@@ -464,6 +520,8 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         if not isinstance(route, dict) or set(route) != {
             "name",
             "reasoning",
+            "effort",
+            "tools",
             "responsibility",
             "restrictions",
             "explicit_only",
@@ -486,6 +544,11 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         seen_routes.add(name)
         if reasoning not in REASONING or responsibility not in RESPONSIBILITIES:
             problems.append(f"{name}: invalid reasoning or responsibility")
+        # Every route pins its effort (D16): a provider default differs by model
+        # and surface. `max` is never automatic, so no route may name it.
+        effort = route.get("effort")
+        if effort not in ROUTE_EFFORTS:
+            problems.append(f"{name}: effort must be one of {', '.join(ROUTE_EFFORTS)}")
         if not isinstance(explicit_only, bool):
             problems.append(f"{name}: explicit_only must be boolean")
         if (
@@ -496,6 +559,22 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             problems.append(f"{name}: restrictions must be nonempty strings")
         elif tuple(restrictions) != ROUTE_RESTRICTIONS.get(name):
             problems.append(f"{name}: responsibility restrictions do not match policy")
+        # The tool box is pinned the same way: a read-only route that quietly
+        # gained Edit, or a git specifier that is not read-only, is a widening
+        # no reviewer reads as a behaviour change in a JSON diff.
+        tools = route.get("tools")
+        if (
+            not isinstance(tools, list)
+            or not tools
+            or any(
+                not isinstance(item, str) or TOOL_ENTRY.fullmatch(item) is None
+                for item in tools
+            )
+            or len(set(tools)) != len(tools)
+        ):
+            problems.append(f"{name}: tools must be distinct tool names or read-only git rules")
+        elif tuple(tools) != ROUTE_TOOLS.get(name):
+            problems.append(f"{name}: tools do not match policy")
         mappings = route.get("providers")
         if not isinstance(mappings, dict) or set(mappings) != PROVIDERS:
             problems.append(f"{name}: provider mapping coverage mismatch")
@@ -527,6 +606,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             continue
         actual[name] = (
             reasoning,
+            effort,
             responsibility,
             explicit_only,
             codex.get("model"),
@@ -541,6 +621,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         # receives an accepted artifact and a bounded scope.
         "implementation": (
             "standard",
+            "high",
             "implementation",
             False,
             "sol",
@@ -554,6 +635,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         # and RCA so Fable remains a distinct escalation rung above them.
         "planning": (
             "standard",
+            "high",
             "planning",
             False,
             "sol",
@@ -564,6 +646,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "review": (
             "standard",
+            "high",
             "review",
             False,
             "sol",
@@ -574,6 +657,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "deep-review": (
             "deep",
+            "xhigh",
             "review",
             False,
             "astra",
@@ -584,6 +668,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "rca": (
             "standard",
+            "high",
             "rca",
             False,
             "sol",
@@ -594,6 +679,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "deep-rca": (
             "deep",
+            "xhigh",
             "rca",
             False,
             "astra",
@@ -604,6 +690,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ),
         "operations": (
             "standard",
+            "high",
             "operations",
             False,
             "sol",
@@ -686,6 +773,7 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         if not _valid_boundary_contracts(root, boundary):
             problems.append(f"invalid dispatch boundary contracts: {identifier}")
             continue
+        worker_reported = False
         for route_name in routes_value:
             route_item = _route_map(payload).get(route_name, {})
             responsibility = str(route_item.get("responsibility"))
@@ -711,16 +799,28 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             except ModelRouteError as error:
                 problems.append(str(error))
                 continue
-            if any(
-                _safe_dispatch_path(root, contract) is None
+            missing = [
+                contract
                 for contract in required_contracts
-            ):
-                problems.append(f"missing required boundary contract: {identifier}")
+                if _safe_dispatch_path(root, contract) is None
+            ]
+            if missing:
+                problems.append(
+                    f"missing required boundary contract: {identifier}: "
+                    f"{', '.join(missing)}"
+                )
             problems.extend(
                 _closure_floor_problems(
                     payload, boundary, identifier, route_name, required_contracts
                 )
             )
+            if not worker_reported:
+                worker_problems = _worker_contract_problems(
+                    root, identifier, responsibility, required_contracts
+                )
+                if worker_problems:
+                    worker_reported = True
+                    problems.extend(worker_problems)
             # Every route at a boundary shares its responsibility in practice, so
             # report the lane once rather than once per route it offers.
             if identifier not in seed_only_reported:
@@ -850,7 +950,6 @@ def validate_route_bindings(root: Path) -> list[str]:
 
 
 def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[str]:
-    del payload
     paths = [
         path
         for name in ("README.md", "CHANGELOG.md", "pyproject.toml")
@@ -894,10 +993,37 @@ def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[
         except (OSError, UnicodeDecodeError):
             continue
         if CODEX_SELECTOR.search(text) or CLAUDE_SELECTOR.search(text):
+            # A Codex agent pins its route's selector (D17) as `bin/aitk build`
+            # renders it from this manifest. The copy is allowed only in a
+            # generated agent file and only as a current selector on its `model`
+            # line; any other content change is build drift, which `doctor` and
+            # `check` report through `build --check`.
+            if _generated_codex_pin(root, path, text, payload):
+                continue
             problems.append(
                 f"volatile model selector copied outside manifest: {path.relative_to(root)}"
             )
     return problems
+
+
+def _generated_codex_pin(
+    root: Path, path: Path, text: str, payload: dict[str, object]
+) -> bool:
+    if path.parent != root / "agents/codex" or path.suffix != ".toml":
+        return False
+    if GENERATED_HEADER not in text.split("\n\n", 1)[0]:
+        return False
+    current = {
+        str(model.get("selector"))
+        for model in payload["providers"]["codex"]["models"].values()
+        if isinstance(model, dict)
+    }
+    for line in text.splitlines():
+        if CODEX_SELECTOR.search(line) or CLAUDE_SELECTOR.search(line):
+            match = re.fullmatch(r'model = "([^"]+)"', line)
+            if match is None or match.group(1) not in current:
+                return False
+    return True
 
 
 def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list[str]:

@@ -8,12 +8,9 @@ parent validates every finding against the repo before acting on it.
 
 ## Required Context
 
-Read before grading: `rules/code-review.md`, `rules/severity.md`,
-`skills/testing/references/review-tests.md`,
-`skills/plan-review/references/frontend.md`,
-`skills/plan-review/references/backend.md`. Apply the test checklist when the
-diff contains tests and the frontend or backend checklist for the domains the
-classifier reported; the others do not apply.
+Read before grading: `rules/code-review.md` (scope, the locking assertion,
+symmetry, the claim check, missing tests) and `rules/severity.md` (the tags).
+This contract's Output section is the only output format.
 
 ## Inputs
 
@@ -24,53 +21,52 @@ sensitive, architecture, refactor-shaped, CORE impact), and any acceptance
 criteria. For a delta review it also supplies the accepted findings from the
 previous round and the fix diff.
 
+Grade from that input and the repository's code. `PROJECT.md`, `PLAN.md`, and
+`.ai-toolkit/` hold earlier review rounds, plan validation, and the
+implementer's notes, so leave them unread: a cold review is only as independent
+as what it reads.
+
 ## What to do
 
-1. **Scope first.** Confirm each candidate finding's `file:line` is inside the
-   diff. Unchanged code is not a finding; note it in Remaining if it matters.
-2. **Correctness before style.** Logic errors, wrong semantics, missing error
-   handling, state and ordering bugs, data-integrity risks. Trace one real
-   execution path through every non-trivial hunk.
-3. **Tests.** For each behavior change, name the locking assertion that fails
-   on today's code and passes once the change is correct. A missing test is a
-   finding only when you can name that assertion; otherwise it is a
-   structure preference capped at `[nitpick]`.
-4. **Reuse and placement.** Check the dependency manifest and the repo for an
-   existing helper before accepting a new one. Misplaced or oddly shaped code
-   is `[minor]` even when correct.
-5. **Risk flags.** When the classifier flagged security sensitivity, check
+1. **Trace.** Correctness before style: trace one real execution path through
+   every non-trivial hunk. Backend diffs: migration reversibility and query
+   count; UI diffs: loading, error and a11y states.
+2. **Reuse.** Check the dependency manifest and the repo for an existing helper
+   before accepting a new one.
+3. **Risk flags.** When the classifier flagged security sensitivity, check
    authz paths, input validation, and secret handling explicitly and say so.
    Deeper adversarial or architecture lenses run as separate deep lanes; do
    not pad your review to imitate them.
-6. **Pre-verdict claim check.** Before reporting clean, name one claim the diff
-   alone does not prove and verify it cheaply (title matches change, removed
-   surface has no dangling callers, pinned version resolves). State the check.
-7. **Delta review only.** Grade the fix diff against the accepted findings:
+4. **Delta review only.** Grade the fix diff against the accepted findings:
    fixed, not fixed, or fixed-but-introduced, and cite the hunk that fixes
    each finding you mark fixed. Then ask the resolved-state question: does any
    accepted finding's class recur elsewhere in the recorded span? A recurrence
    is a new finding at the original severity. Do not re-review the original
    diff otherwise, unless a fix created a new code path; say when it did.
-8. **Bug fixes: same-pattern grep.** When the diff fixes a bug, grep the repo
+5. **Bug fixes: same-pattern grep.** When the diff fixes a bug, grep the repo
    for the pattern the fix replaced and report every match with `file:line`.
    A recurrence of the fixed class inside this branch keeps the finding's
-   severity and is exempt from the symmetry cap; matches outside the branch go
-   to Remaining as follow-up.
+   severity: it is the one exemption from the symmetry cap. Matches outside
+   the branch go to Remaining as follow-up.
+6. **Claim check.** Before reporting clean, run the pre-verdict claim check in
+   `rules/code-review.md` and state it.
 
 ## Calibration
 
-- One reviewer's single-source finding is worth investigating, rarely worth
-  blocking on alone; grade it honestly and give the evidence the parent needs
-  to validate it.
-- Symmetry findings ("the same issue exists in sibling X") cap at `[minor]`,
-  except a defect class the same-pattern grep confirmed inside this branch.
-- Do not demand a specific implementation, restyle, or widen scope.
-- Do not restate the diff or praise it.
+- Your job is coverage. Report every defect you find at the severity it
+  deserves, including ones you are unsure of (say so in the finding), with the
+  evidence the parent needs to check it. The parent validates each finding and
+  a verifier on another model family checks single-source majors, so deciding
+  what blocks is not yours; a dropped real defect costs more than a reported
+  one the parent later rejects.
+- Spend the summary on what you checked and what you found; the parent already
+  has the diff, and praise gives it nothing to act on.
 
 ## Output
 
 Findings are strings that open with the severity tag and carry `file:line`,
-the concrete failure or locking assertion, and one line of evidence:
+the concrete failure or locking assertion, and one line of evidence. An
+illustrative example (match the shape, not the content):
 
 ```
 [major] src/auth/session.py:88 — expired token accepted when `exp` is absent; assertion: `assert refresh(token_without_exp) raises Unauthorized`

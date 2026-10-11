@@ -29,6 +29,13 @@ the control plane in the cheapest capable model.
 5. `aitk/` and `bin/aitk` build, route, validate, install transactionally,
    serialize checkpoints, and own the `PROJECT.md` routing snapshot.
 
+Context model: rules are short always-on constraints and routing hints; skills
+own workflow context and load only at phase entry, and their descriptions are
+classifiers with explicit use and do-not-use boundaries; provider adapters
+translate capabilities and never own behavior. Work moves in small verified
+steps, narrowest approach first (YAGNI): a working solution, then
+optimization.
+
 ## Control Plane
 
 The parent session runs on the workhorse family named in
@@ -57,22 +64,35 @@ already exhausted a previous owner). An escalation climbs a bounded per-unit lad
 editorial retries, `USER_DECISION`, and `BLOCKED` are recorded without being
 charged; `RECLASSIFY` resets the counters. Verification gates carry a strength
 (`STRONG` / `PARTIAL` / `WEAK`), and only `STRONG` authorizes an auto-push.
+`STRONG` is backed by a run record: `aitk verify --run` runs the command and
+records its exit code, output tail and tree on the gate, and a review PASS
+carries the reviewer envelopes' digests and the reviewed tree (`gate --result`).
+A PASS without its record does not count for `aitk deliver` or the PR hook.
 
 ## Isolation and Routing
 
 Fresh workers are the phase boundary. The parent keeps only intent, the active
 skill, the snapshot, gate results, and short handoffs; large logs, diffs, and
 implementation detail live in workers that return the compact handoff in
-`rules/specialist-handoff.md`. No workflow depends on a manual context clear.
+`rules/specialist-handoff.md`. No workflow depends on a manual context clear;
+auto-compaction is only a safety net. A worker is reused only inside the same
+bounded phase, when re-discovery would cost more than the resume; across
+phases it starts fresh. Provider task lists mirror state and never replace the
+files.
 
 Same-provider workers are native subagents. Independent review, RCA
 validation, and plan validation prefer the other provider and cross the
 source-linked transport: skills name stable routes at inventoried markers,
 `bin/aitk model-route` resolves selector, effort, and permissions, and
-`bin/aitk model-run` inlines the boundary's validated contract closure, pins one
-selector, forbids fallback, and validates the result envelope. Codex targets run
-from a sanitized temporary project root with a scoped `--add-dir` and no user
-config, hooks, MCP servers, or project documents. Provider result formats do
+`bin/aitk model-run` passes the boundary's explicit contract list through the
+provider's instruction channel (Claude `--append-system-prompt-file`, Codex
+`developer_instructions`) with the task alone in the user message, pins one
+selector and effort, forbids fallback, and validates the result against the
+lane's own schema. Codex targets run with an isolated `CODEX_HOME` that holds
+only the auth file, from an empty temporary project root with a scoped
+`--add-dir`, and with no user config, hooks, MCP servers, or project documents.
+A provider refusal is recorded as `refused`, apart from an outage; a refused
+adversarial lens reroutes once to the other provider, recorded in the result. Provider result formats do
 not attest the internal serving model, so backend substitution stays outside
 the toolkit's evidence boundary.
 
@@ -83,9 +103,29 @@ flags. COMPLEX and CORE-impact diffs add a second cold lane on the other model
 family, merged by convergence; on other diffs a `[major]` only one lane raised
 is confirmed by a fresh verifier on the other model family before it blocks, and a security-sensitive, `--deep`, or
 adversarial review is `BLOCKED (degraded)` rather than downgraded when the
-other provider is unreachable. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
+other provider is unreachable. `bin/aitk review plan` computes which lanes run
+(`aitk/review_plan.py`) and `review merge` dedupes their findings and lists the
+majors to verify; the parent keeps the judgment. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
 REPLAN`; the RCA gate is an evidence checklist the parent grades for STANDARD
 bugs and a specialist grades for COMPLEX or uncertain ones.
+
+A boundary's contract list is the worker's whole closure, so it carries only
+what that lane grades with. Posting rules stay out of the batch reviewer's
+list: a review route is read-only and network-less, so the worker could
+neither fetch nor post, and an inlined posting contract would only invite it
+to try. The main thread fetches each PR's payload, posts, and records the
+batch's code-judo suppression itself. Code-judo runs only at its own
+`review.code-judo` boundary, which accepts `deep-review` alone and fails
+closed on any other route; batch review never fans it out, because its
+proposals have no slot in the per-PR result and the deep route is too costly
+to run across a batch.
+
+A watch keeps the same isolation: a fix runs in an `implementation` worker
+that returns a compact handoff, classification and diagnosis stay with the
+parent or an `rca`/`deep-rca` worker, and check JSON, CI logs, diffs, and
+review rounds stay out of the parent, so an idle iteration costs only a
+heartbeat. `WATCH.md` and the checkpoint are current after every iteration,
+so a session that ends for any reason resumes from them through `start`.
 
 ## Source-of-truth flow
 
@@ -107,7 +147,39 @@ Long-running workflows write human state plus two machine blocks in
 transitions, the generation counter, and pending/applied effect records with
 stable operation IDs. Focused manifests (`PLAN.md`, `WATCH.md`, `CI_FIX.md`,
 `CHERRY_PICK.md`) supplement it. All local workflow-state files are ignored by
-git and blocked by the safety hook. Resume uses durable files, never chat.
+git and blocked by the safety hook. Resume uses durable files, never chat:
+`start` reads the routing snapshot and checkpoint, re-runs classification only
+when the snapshot predates the workflow's contract, and continues at the
+recorded gate.
+
+The checkpoint API is the only writer of its machine block: it renders
+`skills/reporting/templates/workflow-checkpoint.md` from the selected v2
+contract, validates phase transitions, increments the generation, and records
+pending and applied effect operations. Human-readable status follows the
+block, with ISO timestamps. A workflow adds a summary template under
+`skills/reporting/templates/` only when it needs structured domain output.
+
+### Two Records, One Truth
+
+The routing snapshot (`bin/aitk project-state gate`) records every gate
+outcome and owns the attempt budget and ladder. The checkpoint machine block
+(`bin/aitk checkpoint`) records phase edges and effect reservations for
+durable workflows and lists `verification` and `review` as preconditions for
+effects. They never disagree by construction: a workflow records the outcome
+in the snapshot first, and an effect that `interfaces/contracts.json` gates on
+`verification` or `review` may be reserved only while the snapshot shows that
+gate `PASS`. `bin/aitk checkpoint reserve` enforces this: it reads the
+snapshot's per-gate record (`gates`) from the same `PROJECT.md` and refuses
+the reservation, with the gate and its recorded status named, when either
+required gate is not `PASS` or no snapshot exists. The record is scoped: each
+gate entry carries the phase it was recorded in and the latest outcome per
+reasoning unit, `advance` clears `verification` and `review`, and a `PASS`
+recorded in another phase or alongside an open `RETRY` on another unit does
+not count. Both runtimes rewrite the same file under one lock per path, so a
+gate record and a reservation cannot overwrite each other and the check inside
+`reserve` is atomic with its write. A workflow without a snapshot has no gate
+history, so every workflow that records a gate runs `project-state init`
+first, including standalone `review-plan` and `fix-ci`.
 
 ## Learning loop
 

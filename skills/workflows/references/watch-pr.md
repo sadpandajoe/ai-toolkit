@@ -9,10 +9,8 @@ Effect: `external_effect`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `watch-pr` entry in
-`interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`watch-pr` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 
@@ -24,34 +22,13 @@ watch-pr <pr> --no-comments  # CI only; leave comments untouched
 watch-pr <pr> --gate-strict  # WEAK verification is BLOCKED even when CI verifies downstream
 ```
 
-Fix dispatches push only on `STRONG` verification (`rules/gates.md`,
-Verification Strength); a `PASS (downstream: CI)` result is recorded and the
-next iteration reads CI as the verifier.
-
-Recurrence layers on top through the current provider binding. Load that binding
-before choosing the mode: a remote/headless recurrence cannot reach VPN-gated
-repositories, while a declared local/manual reinvocation fallback can. Apply the
-reachability gate in [skills/pr-watch/SKILL.md](../../pr-watch/SKILL.md#recurrence)
-to the selected execution environment, not to the generic capability name.
-In-session, `watch-pr` iterates until stable or escalated, then suggests an
-available recurrence layer if comment watching should continue.
-
 ## Authorization Boundary
 
-Authorization mode: `invocation`. The invocation grants only the standing
-current-PR commit, fast-forward push, and eligible reply/resolution scope stated
-below; history rewriting, merge, review decisions, and other branches are not
-authorized.
-
-## Command Contract
-
-The loop contract — iteration shape, dispatch table, authorization boundary, escalation rules, stop conditions — lives in [skills/pr-watch/SKILL.md](../../pr-watch/SKILL.md). The fix engines are the existing `fix-ci` path (via [skills/debug/](../../debug/SKILL.md)) and the `address-feedback` path (via [skills/feedback/](../../feedback/SKILL.md); its default is unattended for bot/posting work). This command never duplicates their procedures.
-
-- **Standing authorization**: invoking `watch-pr` authorizes new commits + fast-forward pushes to the PR branch and replies/resolution within the comment scope, for the duration of the watch. It does not authorize amend, rebase, force-push, merge, approve/request-changes, or pushing any other branch. The invocation is the commit confirmation; the `## Watch Started` block makes the grant explicit.
-- **Comment scope**: bot threads get full auto handling (fix, rebut with evidence, reply, resolve). Human comments are auto-fixed only when the ask is unambiguous and local; replies to humans stay factual ("Done in `<sha>`"). Everything judgment-shaped is escalated, never guessed.
-- **State lives in WATCH.md**, created from [skills/pr-watch/templates/watch-manifest.md](../../pr-watch/templates/watch-manifest.md). PROJECT.md points to it; chat is never the state store. Resolve symlinks before writing (`readlink -f`).
-- Every fix dispatch inherits its engine's own gates (classification, verification strength, review gate, PII scrub). The watch adds no shortcuts around them.
-- **Context control is subagent isolation, not self-clearing** — the loop cannot run a user-only context-clear action. The parent/tool layer polls CI/comments; an `operations` worker may reduce only the supplied evidence to a binary delta report. Fix dispatches use `implementation` and return compact handoffs. Classification and diagnosis remain on the main thread or use `rca`/`deep-rca`. Check JSON, run-watch output, diffs, CI logs, and review rounds therefore stay out of the orchestrator thread, and an idle iteration costs only a heartbeat. If the main thread still hits the reactive thresholds (~70% context, cost), it checkpoints and stops; a fresh session resumes from WATCH.md through the start workflow, with no manual context reset required. For zero-touch resets, use the selected provider recurrence binding only when its execution environment can reach the repository; otherwise use its declared local/manual fallback.
+Authorization mode: `invocation`. Authorization, the iteration contract,
+stops, and recurrence live in [skills/pr-watch/SKILL.md](../../pr-watch/SKILL.md).
+The fix engines are the `fix-ci` path ([skills/debug/](../../debug/SKILL.md))
+and the `address-feedback` path ([skills/feedback/](../../feedback/SKILL.md));
+this workflow never duplicates their procedures.
 
 ## Steps
 
@@ -59,9 +36,10 @@ The loop contract — iteration shape, dispatch table, authorization boundary, e
 
 - Resolve the PR: argument, or `gh pr view` for the current branch. No open PR → exit `blocked`.
 - Verify `gh` auth and that the local checkout matches the PR head branch (fetch if behind; **dirty working tree with unrelated changes → escalate immediately**, do not stash).
-- Find or create `WATCH.md` from the template.
+- Find or create `WATCH.md` from [skills/pr-watch/templates/watch-manifest.md](../../pr-watch/templates/watch-manifest.md). It is the state store and PROJECT.md points to it; write to its `readlink -f` target.
 
-Then emit the authorization declaration (hard gate — no iteration before this block):
+Then emit the authorization declaration (hard gate — no iteration before this
+block; on resume, emit it again before the first effect):
 
 ```markdown
 ## Watch Started
@@ -76,32 +54,18 @@ Record the watch in PROJECT.md (top-level workflow `watch-pr <pr>`, pointer to W
 
 ### 2. Iterate
 
-Run iterations per the skill's dispatch table until a stop condition or hard stop fires:
-
-<!-- aitk-model-route:workflows.watch-pr-poll -->
-1. **Check (parent tools + operations summary)**: poll the head SHA deterministically in the parent/tool layer — check-run states (blocking on `gh run watch` while a run is in progress, re-invoking past tool timeouts) and, unless `--no-comments`, comment threads newer than the cursor. After collection, spawn an `operations` worker only to reduce the supplied read-only evidence to a delta report: `no change`, or failed run id/job/error lines plus new thread ids. **No delta → skip to step 3**.
+Run iterations per the skill's Iteration, Routing, and Stops sections until a
+stop fires.
 <!-- aitk-model-route:workflows.watch-pr-fix -->
-2. **Act on deltas (session model)**: CI failure → classify (`debug/references/ci-classify-failure.md`), then dispatch on `implementation`: transient → rerun (cap 2/run id); real+ours → `fix-ci` fix path, push, reset streak; pre-existing → record, escalate only if merge-blocking. New comments → route per the dispatch table through the feedback skill references. Classification and routing never run on the check worker.
-3. **Evaluate stop conditions** from the skill: green streak ≥ target AND no unprocessed comments AND empty escalations → `stable`. Any hard stop → `escalated`.
-4. **Save state** (hard gate — no iteration ends without it):
-
-```markdown
-## Watch State Saved — Iteration [N]
-Streak: [n]/[target] | Fixes: [n] | Reruns: [n] | Comments handled: [n] | Escalations: [n]
-```
-
-<!-- aitk-model-route-exempt:describes-prior-dispatch-payloads -->
-5. **Context check**: if a reactive threshold fired (~70% context or cost), run `checkpoint` — it names `watch-pr <pr>` as the top-level workflow and WATCH.md as the manifest (extension: [`skills/reporting/templates/watch-pr-checkpoint.md`](../../reporting/templates/watch-pr-checkpoint.md)) — then stop with `Checkpoint saved. Resume the watch from WATCH.md with start in a fresh session or worker.` Otherwise continue to the next iteration; dispatch payloads stayed in their workers, so the orchestrator thread grows slowly.
-
-If the session must end mid-watch (checkpoint, user interrupt), WATCH.md keeps `Status: watching` and the PROJECT.md checkpoint names the resume target.
+For a real failure the PR caused, dispatch the `fix-ci` fix path to an `implementation` worker; it returns a compact handoff, and the parent pushes and resets the streak. Classification and routing stay with the session model.
 
 ### 3. Terminal
 
-On `stable`, `escalated`, or `blocked`, append to PROJECT.md before the chat summary (hard gate):
+On `stable`, `escalated`, or `blocked`, append a `## Watch Result` entry to PROJECT.md before the chat summary, so a fresh session sees the outcome without reopening WATCH.md:
 
 ```markdown
-## PROJECT.md Updated — Watch Complete
-PR #[number]: [stable / escalated / blocked]
+## Watch Result
+PR #[number]: [stable / escalated / blocked] (manifest: WATCH.md)
 ```
 
 Then summarize:
@@ -122,15 +86,13 @@ PR #[number] — [stable / escalated / blocked] after [N] iterations
 - [item + why the loop stopped, or "none"]
 ```
 
-If CI is stable but the PR stays open for human review, suggest the selected
-`recurrence` binding for ongoing comment watch. Remote bindings require the
-repository reachability gate; local/manual fallbacks remain eligible for
-VPN-gated repositories.
+If CI is stable but the PR stays open for human review, suggest a
+`recurrence` binding for ongoing comment watch that the skill's Recurrence
+Reachability allows.
 
-**Record metrics**:
-- `command`: `watch-pr`
-- `complexity`: `trivial` for a watch that dispatched no fix, otherwise the classification of the dispatched fix (`standard` or `complex`)
-- `status`: terminal status
-- `rounds`: iteration count
-- `gate_decisions`: `{ ci_fixes: <N>, transient_reruns: <N>, comments_fixed: <N>, comments_rebutted: <N>, comments_escalated: <N>, green_target: <N> }`
-- `worker_usage`: subagent/worker invocation counts when applicable
+**Record metrics**: `bin/aitk metrics emit --workflow watch-pr --status
+<terminal status> --extra rounds=<iterations> --extra 'decisions={"ci_fixes":
+N, "transient_reruns": N, "comments_fixed": N, "comments_rebutted": N,
+"comments_escalated": N, "green_target": N}' [--workers <route>=<n> …]`;
+add `--extra complexity=<trivial | standard | complex>` (`trivial` when the
+watch dispatched no fix).

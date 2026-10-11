@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import re
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -103,11 +107,14 @@ class CostScriptTests(unittest.TestCase):
 
     def test_codex_families_are_priced_and_the_sol_promotion_ends_on_time(self) -> None:
         """Astra and Sol are priced by selector; Sol's promotion is timestamp-aware."""
+        # 50K of each kind keeps the prompt (150K) under the GPT-6 long-context
+        # limit, so these totals are the base rates; test_long_prompt_tiers
+        # covers the long-context rule.
         usage = {
-            "input_tokens": 1_000_000,
-            "output_tokens": 1_000_000,
-            "cache_read_input_tokens": 1_000_000,
-            "cache_creation_input_tokens": 1_000_000,
+            "input_tokens": 50_000,
+            "output_tokens": 50_000,
+            "cache_read_input_tokens": 50_000,
+            "cache_creation_input_tokens": 50_000,
         }
         for script in ("show-cost.py", "optimize-cost.py"):
             module = load_script(script)
@@ -116,7 +123,7 @@ class CostScriptTests(unittest.TestCase):
                     {"input": 10.0, "output": 50.0, "cache_read": 1.0, "cache_create": 12.5},
                     module.get_pricing("gpt-6-astra", "2026-09-05T00:00:00Z"),
                 )
-                self.assertEqual(73.5, module.compute_cost(usage, "gpt-6-astra", "2026-09-05T00:00:00Z"))
+                self.assertEqual(3.675, round(module.compute_cost(usage, "gpt-6-astra", "2026-09-05T00:00:00Z"), 6))
                 # Promotional Sol until the announced end date, standard after it.
                 self.assertEqual(4.0, module.get_pricing("gpt-5.6-sol", "2026-11-21T23:59:59Z")["input"])
                 self.assertEqual(5.0, module.get_pricing("gpt-5.6-sol", "2026-11-22T00:00:00Z")["input"])
@@ -129,30 +136,100 @@ class CostScriptTests(unittest.TestCase):
                     {"input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_create": 2.5},
                     module.get_pricing("gpt-6-sol", "2026-12-01T00:00:00Z"),
                 )
-                self.assertEqual(14.7, round(module.compute_cost(usage, "gpt-6-sol", "2026-09-25T00:00:00Z"), 6))
-                self.assertEqual(14.7, round(module.compute_cost(usage, "gpt-6-sol"), 6))
+                self.assertEqual(0.735, round(module.compute_cost(usage, "gpt-6-sol", "2026-09-25T00:00:00Z"), 6))
+                self.assertEqual(0.735, round(module.compute_cost(usage, "gpt-6-sol"), 6))
 
     def test_promotional_pricing_uses_each_records_absolute_timestamp(self) -> None:
-        boundaries = {
+        # Anthropic kept Sonnet 5 at $2/$10 after 2026-09-01 instead of the
+        # announced $3/$15, so both sides of its boundary bill the same.
+        sonnet_boundaries = {
             "2026-08-31T23:59:59.999999Z": 2.0,
-            "2026-09-01T00:00:00Z": 3.0,
-            "2026-09-01T01:00:00+01:00": 3.0,
+            "2026-09-01T00:00:00Z": 2.0,
+            "2026-09-01T01:00:00+01:00": 2.0,
             "2026-09-01T01:00:00+01:01": 2.0,
-            "2026-08-31T20:00:00-04:00": 3.0,
+            "2026-08-31T20:00:00-04:00": 2.0,
+        }
+        # The Sol promotion still ends, so the same timezone spellings must
+        # land on the right side of its boundary.
+        sol_boundaries = {
+            "2026-11-21T23:59:59.999999Z": 4.0,
+            "2026-11-22T00:00:00Z": 5.0,
+            "2026-11-22T01:00:00+01:00": 5.0,
+            "2026-11-22T01:00:00+01:01": 4.0,
+            "2026-11-21T20:00:00-04:00": 5.0,
         }
         usage = {"input_tokens": 1_000_000}
         for script in ("show-cost.py", "optimize-cost.py"):
             module = load_script(script)
-            for timestamp, expected in boundaries.items():
-                with self.subTest(script=script, timestamp=timestamp):
-                    self.assertEqual(
-                        expected,
-                        module.get_pricing("claude-sonnet-5", timestamp)["input"],
-                    )
-                    self.assertEqual(
-                        expected,
-                        module.compute_cost(usage, "claude-sonnet-5", timestamp),
-                    )
+            for model, boundaries in (
+                ("claude-sonnet-5", sonnet_boundaries),
+                ("gpt-5.6-sol", sol_boundaries),
+            ):
+                for timestamp, expected in boundaries.items():
+                    with self.subTest(script=script, model=model, timestamp=timestamp):
+                        self.assertEqual(
+                            expected,
+                            module.get_pricing(model, timestamp)["input"],
+                        )
+                        self.assertEqual(
+                            expected,
+                            module.compute_cost(usage, model, timestamp),
+                        )
+
+    def test_newer_selectors_never_inherit_an_older_models_promotion(self) -> None:
+        """A promotion matches its selector or dated form only, never a longer name."""
+        module = load_script("show-cost.py")
+        october = "2026-10-05T12:00:00Z"
+        self.assertEqual(
+            {"input": 2.0, "output": 10.0, "cache_read": 0.1, "cache_create": 2.5},
+            module.get_pricing("claude-sonnet-5-5", october),
+        )
+        # Flat-priced, so a record without a timestamp still prices.
+        self.assertEqual(
+            module.get_pricing("claude-sonnet-5-5", october),
+            module.get_pricing("claude-sonnet-5-5", None, require_timestamp=True),
+        )
+        self.assertEqual(
+            {"input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_create": 2.5},
+            module.get_pricing("claude-sonnet-5-20260601", october),
+        )
+        self.assertIsNone(
+            module.get_pricing("claude-sonnet-5-20260601", None, require_timestamp=True)
+        )
+
+    def test_long_prompt_tiers(self) -> None:
+        module = load_script("show-cost.py")
+        # Haiku 5.5: a prompt over 100K tokens, cache included, bills the higher tier.
+        self.assertEqual(
+            {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_create": 0.125},
+            module.get_pricing("claude-haiku-5-5"),
+        )
+        short = {"input_tokens": 60_000, "cache_read_input_tokens": 40_000, "output_tokens": 1_000}
+        long = {"input_tokens": 60_000, "cache_read_input_tokens": 40_001, "output_tokens": 1_000}
+        self.assertAlmostEqual(0.0069, module.compute_cost(short, "claude-haiku-5-5"))
+        self.assertAlmostEqual(0.03450005, module.compute_cost(long, "claude-haiku-5-5"))
+        # GPT-6 family: over 272K input tokens bills 2x input and cache, 1.5x output.
+        self.assertEqual(
+            {"input": 2.0, "output": 10.0, "cache_read": 0.1, "cache_create": 2.5},
+            module.get_pricing("gpt-6.1-sol"),
+        )
+        self.assertEqual(
+            {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_create": 0.125},
+            module.get_pricing("gpt-6-luna"),
+        )
+        at_limit = {"input_tokens": 272_000, "output_tokens": 1_000_000}
+        over = {"input_tokens": 272_001, "output_tokens": 1_000_000}
+        self.assertAlmostEqual(10.544, module.compute_cost(at_limit, "gpt-6.1-sol"))
+        self.assertAlmostEqual(16.088004, module.compute_cost(over, "gpt-6.1-sol"))
+        self.assertAlmostEqual(
+            2 * 1.0 + 2 * 12.5,
+            module.compute_cost(
+                {"input_tokens": 100_000, "cache_read_input_tokens": 1_000_000,
+                 "cache_creation_input_tokens": 1_000_000},
+                "gpt-6-astra",
+            )
+            - 100_000 * 20.0 / 1_000_000,
+        )
 
     def test_missing_invalid_or_timezone_free_promotional_timestamps_are_unpriced(
         self,
@@ -198,7 +275,7 @@ class CostScriptTests(unittest.TestCase):
             ]
             path.write_text("".join(json.dumps(item) + "\n" for item in records))
             session = module.parse_one_session(str(path), "project", None)
-            self.assertEqual(5.0, session["total_cost"])
+            self.assertEqual(4.0, session["total_cost"])
             self.assertEqual(0, session["models"]["claude-sonnet-5"]["unpriced"])
 
     def test_project_shortening_has_no_personal_username_constant(self) -> None:
@@ -228,6 +305,103 @@ class CostScriptTests(unittest.TestCase):
             ["review-code-adversarial"],
             module.extract_commands("$workflows review-code-adversarial"),
         )
+
+
+def usage_record(message_id, request_id, usage, session="session-1"):
+    return {
+        "timestamp": "2026-09-30T12:00:00Z",
+        "sessionId": session,
+        "requestId": request_id,
+        "message": {"id": message_id, "model": "claude-opus-5-5", "usage": usage},
+    }
+
+
+def write_jsonl(path: Path, records) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(item) + "\n" for item in records))
+
+
+def write_sample_projects(home: Path) -> Path:
+    """One session with a repeated usage record and one subagent transcript.
+
+    Opus 5.5 bills $4/MTok input and $20/MTok output, so by hand:
+    msg-1 $4 (written twice, counted once) + msg-2 $20 + subagent msg-3 $20
+    = $44 over 3 messages. Without dedupe it would be $48 over 4; without the
+    subagent, $24 over 2.
+    """
+    project = home / ".claude" / "projects" / "-work-sample"
+    million_in = {"input_tokens": 1_000_000}
+    write_jsonl(
+        project / "session-1.jsonl",
+        [
+            usage_record("msg-1", "req-1", million_in),
+            usage_record("msg-1", "req-1", million_in),
+            usage_record("msg-2", "req-2", {"output_tokens": 1_000_000}),
+        ],
+    )
+    write_jsonl(
+        project / "session-1" / "subagents" / "agent-1.jsonl",
+        [usage_record("msg-3", "req-3", {"output_tokens": 1_000_000})],
+    )
+    return project.parent
+
+
+class ShowCostCountingTests(unittest.TestCase):
+    def test_repeated_usage_records_are_counted_once(self) -> None:
+        module = load_script("show-cost.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "session.jsonl"
+            million_in = {"input_tokens": 1_000_000}
+            write_jsonl(
+                path,
+                [
+                    usage_record("msg-1", "req-1", million_in),
+                    usage_record("msg-1", "req-1", million_in),
+                    usage_record("msg-1", "req-2", million_in),
+                ],
+            )
+            session = module.parse_one_session(str(path), "project", None)
+        # (msg-1, req-1) twice is one response; (msg-1, req-2) is another.
+        self.assertEqual(2, session["messages"])
+        self.assertEqual(8.0, session["total_cost"])
+
+    def test_subagent_transcripts_count_toward_their_session(self) -> None:
+        module = load_script("show-cost.py")
+        with tempfile.TemporaryDirectory() as temporary:
+            base = write_sample_projects(Path(temporary))
+            sessions = module.parse_sessions(str(base))
+        self.assertEqual(1, len(sessions))
+        self.assertEqual(3, sessions[0]["messages"])
+        self.assertEqual(44.0, sessions[0]["total_cost"])
+
+    def test_documented_invocation_runs_from_root_and_elsewhere(self) -> None:
+        """`python3 scripts/show-cost.py` and an absolute path from another cwd."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary) / "home"
+            elsewhere = Path(temporary) / "elsewhere"
+            elsewhere.mkdir()
+            write_sample_projects(home)
+            env = {**os.environ, "HOME": str(home)}
+            env.pop("PYTHONPATH", None)
+            invocations = (
+                (ROOT, "scripts/show-cost.py"),
+                (elsewhere, str(ROOT / "scripts" / "show-cost.py")),
+            )
+            for cwd, script in invocations:
+                with self.subTest(cwd=str(cwd)):
+                    result = subprocess.run(
+                        [sys.executable, script, "all"],
+                        cwd=cwd,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    output = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+                    self.assertIn("Cost: $44.00", output)
+                    self.assertIn("Messages: 3", output)
+                    self.assertIn("1 sessions", output)
 
 
 if __name__ == "__main__":

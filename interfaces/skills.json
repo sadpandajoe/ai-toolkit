@@ -9,7 +9,6 @@
     {"name": "implement-change", "path": "skills/implement-change", "classification": "internal_support"},
     {"name": "metrics-emit", "path": "skills/metrics-emit", "classification": "internal_support"},
     {"name": "pgm", "path": "extensions/pgm/skills/pgm", "classification": "public_router"},
-    {"name": "plan-review", "path": "skills/plan-review", "classification": "internal_support"},
     {"name": "planning", "path": "skills/planning", "classification": "internal_support"},
     {"name": "pm", "path": "skills/pm", "classification": "internal_support"},
     {"name": "pr-watch", "path": "skills/pr-watch", "classification": "internal_support"},

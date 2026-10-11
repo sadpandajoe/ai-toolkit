@@ -28,7 +28,6 @@ def authored_files() -> list[Path]:
     ]
     files: list[Path] = [
         ROOT / "install.sh",
-        ROOT / "install-hooks.sh",
         ROOT / "setup.sh",
     ]
     for relative in roots:
@@ -40,6 +39,60 @@ def authored_files() -> list[Path]:
             and path.suffix != ".pyc"
         )
     return files
+
+
+# The standing PII and secret scan over tracked files. Placeholders pass: a
+# repeated-digit or 12345 story id, `<org>`/`<ws>` slots, made-up workspaces.
+PLACEHOLDER_ID = re.compile(r"^(?:12345|(\d)\1+)$")
+LEAK_PATTERNS = (
+    ("Shortcut story URL", re.compile(r"app\.shortcut\.com/[\w-]+/story/(\d+)")),
+    ("Shortcut story id", re.compile(r"\bsc-(\d{5,})\b", re.IGNORECASE)),
+    (
+        "internal workspace host",
+        re.compile(
+            r"\b(?=[0-9a-f]{0,7}\d)[0-9a-f]{8}\.(?:[a-z0-9-]+\.)*app(?:-stg|-dev)?\.preset\.io\b",
+            re.IGNORECASE,
+        ),
+    ),
+    ("GitHub token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_\w{22,})")),
+    ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("Slack token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
+    ("API key", re.compile(r"\bsk-(?:ant-[\w-]{20,}|(?:proj-)?[A-Za-z0-9]{32,})")),
+    ("Google API key", re.compile(r"\bAIza[\w-]{35}")),
+    ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+)
+FIXTURE_DIRECTORIES = ("tests/fixtures/",)
+
+
+def tracked_files() -> list[Path] | None:
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z"],
+            capture_output=True,
+            check=True,
+        ).stdout.decode()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [
+        ROOT / name
+        for name in listing.split("\0")
+        if name and not name.startswith(FIXTURE_DIRECTORIES) and (ROOT / name).is_file()
+    ]
+
+
+def leak_findings(paths: list[Path], root: Path = ROOT) -> list[str]:
+    findings = []
+    for path in paths:
+        data = path.read_bytes()
+        if b"\0" in data:
+            continue
+        for line_number, line in enumerate(data.decode(errors="replace").splitlines(), 1):
+            for label, pattern in LEAK_PATTERNS:
+                for match in pattern.finditer(line):
+                    if match.groups() and PLACEHOLDER_ID.match(match.group(1) or ""):
+                        continue
+                    findings.append(f"{path.relative_to(root)}:{line_number}: {label}: {match.group(0)}")
+    return findings
 
 
 class SafetyInvariantTests(unittest.TestCase):
@@ -58,6 +111,41 @@ class SafetyInvariantTests(unittest.TestCase):
                     )
         self.assertEqual([], offenders, "secret-bearing variables must not be printed")
 
+    def test_tracked_files_carry_no_pii_or_secrets(self) -> None:
+        files = tracked_files()
+        if files is None:
+            self.skipTest("not a git checkout")
+        self.assertEqual([], leak_findings(files))
+
+    def test_the_leak_scan_catches_seeded_values(self) -> None:
+        # Seeds are assembled at run time so this file holds no literal leak.
+        story = "https://app.shortcut.com/" + "acme/story/" + "48213"
+        seeded = {
+            "Shortcut story URL": f"See {story}#activity-77",
+            "Shortcut story id": "Fixes " + "sc-" + "48213.",
+            "internal workspace host": "https://" + "9f3c2a1b" + ".us1a.app-stg.preset.io/",
+            "GitHub token": "token=" + "ghp_" + "A1b2C3d4" * 5,
+            "AWS access key": "AKIA" + "ABCDEFGH" + "12345678",
+            "private key": "-----BEGIN " + "RSA PRIVATE KEY-----",
+        }
+        placeholders = (
+            "Story: https://app.shortcut.com/<org>/story/<story-id>",
+            "create-feature sc-12345 or sc-NNNNN",
+            "https://<ws>.us1a.app-stg.preset.io and ws1.us1a.app-dev.preset.io",
+            "`app.preset.io`, manage.app-stg.preset.io",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            for index, (label, text) in enumerate(seeded.items()):
+                with self.subTest(seed=label):
+                    path = base / f"seed-{index}.md"
+                    path.write_text(f"intro\n{text}\n")
+                    findings = leak_findings([path], base)
+                    self.assertTrue(any(f"seed-{index}.md:2: {label}:" in item for item in findings), findings)
+            clean = base / "placeholders.md"
+            clean.write_text("\n".join(placeholders) + "\n")
+            self.assertEqual([], leak_findings([clean], base))
+
     def test_rbac_seed_is_dry_run_and_never_targets_production(self) -> None:
         text = read("skills/preset-rbac-setup/SKILL.md")
         lowered = text.lower()
@@ -68,7 +156,10 @@ class SafetyInvariantTests(unittest.TestCase):
         self.assertIn("refuse", lowered)
 
     def test_all_local_workflow_state_is_hook_protected(self) -> None:
-        text = read("hooks/prevent-project-commit.sh")
+        # The wrapper hands every command to aitk.hooks.git_guard, which blocks
+        # commits of the files in project_state.STATE_FILES.
+        from aitk.project_state import STATE_FILES
+
         for stem in (
             "PROJECT",
             "PROJECT_ARCHIVE",
@@ -77,7 +168,9 @@ class SafetyInvariantTests(unittest.TestCase):
             "CHERRY_PICK",
             "CI_FIX",
         ):
-            self.assertIn(stem, text)
+            self.assertIn(f"{stem}.md", STATE_FILES)
+        self.assertIn("python3 -m aitk.hooks.git_guard", read("hooks/prevent-project-commit.sh"))
+        self.assertIn("from aitk.project_state import STATE_FILES", read("aitk/hooks/git_guard.py"))
 
     def test_personal_absolute_paths_do_not_leak_into_authored_source(self) -> None:
         personal_path = re.compile(r"/(?:Users|home)/[^<*`\s/]+/")
@@ -126,7 +219,7 @@ class SafetyInvariantTests(unittest.TestCase):
             for path in (
                 "rules/resource-management.md",
                 "hooks/check-resources.sh",
-                "skills/preflight/rules.md",
+                "skills/workflows/references/check-resources.md",
                 "skills/superset-local/references/start-stack.md",
             )
         )

@@ -9,10 +9,8 @@ Effect: `local_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `review-plan` entry
-in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`review-plan` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 
@@ -37,15 +35,14 @@ review-plan --pm       # include the feature brief in the validator's input
    one independent validator, preferably on the other provider. `--pm` adds
    the brief to its input so scope and acceptance criteria are checked with the
    plan.
-4. **Consume the verdict.** `APPROVE` passes. `CHANGES_REQUIRED`: the parent
-   makes one informed revision (editorial items without a re-validation) and
-   validates once more. `REPLAN` or a second reasoning failure: `ESCALATE` to
-   `deep-review` or a `USER_DECISION` with the adjudication package. Never a
-   third round of the same validator.
+4. **Consume the verdict** as `validate-plan.md` (Consume the verdict)
+   defines it: one informed revision, never a third round of the same
+   validator.
 5. **Record.** Append `## Validation: <unit>` with the verdict and blocking
    findings to `PLAN.md`; record the gate with
-   `bin/aitk project-state gate --gate plan --status <...>` (`--editorial`
-   for a wording-only revision); write `## Plan Validated` to `PROJECT.md`.
+   `bin/aitk project-state gate --gate plan --status <...> --format block`
+   (`--editorial` for a wording-only revision) and paste the block it prints;
+   write `## Plan Validated` to `PROJECT.md`.
 
 ## Summary
 

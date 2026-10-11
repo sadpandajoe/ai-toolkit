@@ -11,6 +11,5 @@ as an argument, detect the source and fetch context before classifying.
 | `owner/repo#12345` | GitHub issue or PR | `gh issue view 12345 -R owner/repo` |
 | `https://github.com/...` | GitHub URL | `gh issue view <url>` or `gh pr view <url>` |
 
-For Shortcut REST calls, follow `rules/shortcut-api.md` and
-`skills/shortcut/references/fetch.md`. Keep fetched IDs and customer context in
-local files only.
+Shortcut calls go through the `skills/shortcut` skill. Keep fetched IDs and
+customer context in local files only.

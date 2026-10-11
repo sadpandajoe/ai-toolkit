@@ -2,7 +2,6 @@
 
 ## Golden Rules
 
-- Understand the surrounding code before writing; follow its patterns.
 - Implement the accepted artifact (plan slice, RCA, or approved comment), not a
   wider idea of it. Out-of-scope needs go in the handoff as residual risk.
 - Regression evidence first: bugs get a RED/GREEN test, features get the
@@ -10,13 +9,18 @@
   record the gap; never silently switch to test-after.
 - Update existing code before creating new; smallest change that meets the exit
   criteria.
-- Commit only working states (verification and review passed) and never with
-  `git add -A` or `git add .`. Committing and pushing the current feature branch
-  needs no confirmation, and a workflow opens a draft PR after the push
-  (`--no-pr` skips it); marking it ready for review waits for the user.
-- Never rewrite history unless explicitly asked: no force push, no rebase of
-  shared branches, no amending published commits; amend only HEAD.
-- PR descriptions are factual: what changed and why.
+- **Fix the invariant, not the test.** When a test is red, or proposed for
+  deletion to fit broken-but-current behavior, fix the behavior. Loosen or
+  delete a test only when the test itself is wrong: it asserts an unintended
+  side effect, depends on a removed feature, or encodes a judgment nobody
+  stands by.
+- **Escalate test strategy only when it is ambiguous.** Routine test authoring
+  is the implementer's or tester's job; a specialist answers "does this test
+  prove the right thing?", not "write the tests".
+- Stage explicit paths, never `git add -A` or `git add .`: those stage
+  `PROJECT.md`, `PLAN.md`, and unrelated work. `--no-verify` is hook-blocked.
+  Amend, rebase, and force-push need explicit authorization; commit, push, and
+  PR policy is in `rules/universal.md`.
 
 ## Test-First Modes
 
@@ -28,21 +32,10 @@ before the fix does not capture the bug.
 first as the spec, implement, then reconcile: fix the code when the code is
 wrong, fix the test and note why when the spec evolved.
 
-## Worker Scope
+## Pointers
 
-A routed or native implementation worker receives one slice and returns the
-compact handoff in `rules/specialist-handoff.md`. It never commits, never edits
-`PROJECT.md` or `PLAN.md`, never widens scope, and stops with `blocked` after the
-same approach fails twice. The parent runs acceptance, owns review, and owns
-any authorized git action.
-
-## Standards
-
-Functions about 20 lines, files about 300, nesting two levels with early
-returns, descriptive names, explicit error handling.
-
-## Pre-Flight Before Any Commit
-
-Build, typecheck, lint, formatter in check mode, tests for changed files, and
-pre-commit hooks (never `--no-verify`). In a worktree, install dependencies
-first.
+- Worker scope and handoff: `skills/implement-change/SKILL.md`.
+- Checks before a commit: the repository's build, typecheck, lint, formatter
+  in check mode, tests for the changed files, and its pre-commit hooks, run
+  through `skills/verification-loop/SKILL.md`; a worktree needs its
+  dependencies installed first (`rules/resource-management.md`).

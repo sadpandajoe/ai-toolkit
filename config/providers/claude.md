@@ -8,50 +8,49 @@ provider syntax.
   the plan itself comes from the `aitk-planner` agent (Fable) via
   `fresh_subagent`; the parent writes `PLAN.md`.
 - `fresh_subagent`: the Agent tool with one of the toolkit's installed agents
-  in `~/.claude/agents/`: `aitk-planner` (Fable, plan-only), `aitk-implementer`
-  (Sonnet, edits and runs tests), `aitk-debugger` (Sonnet, evidence-first
-  investigation), `aitk-tester` (Sonnet, test authoring), `aitk-reviewer`
-  (Opus, read-only cold reviewer: the second-family lane on COMPLEX and CORE
-  reviews, and the same-provider fallback when Codex is unreachable). The spawn prompt carries
+  in `~/.claude/agents/`: `aitk-planner` (plan-only), `aitk-implementer`
+  (edits and runs tests), `aitk-debugger` (evidence-first investigation),
+  `aitk-tester` (test authoring). Each agent's frontmatter pins its model
+  and effort. Reviewers are not native agents: every review lane, including
+  the Claude second family, runs through `model-run`. The spawn prompt carries
   the full contract per `rules/specialist-handoff.md`; the agent returns a
-  compact handoff. Skills whose body is a whole one-shot task may run as forked
-  leaf skills (`context: fork`).
+  compact handoff.
+- Full-history fork (Claude only): a forked subagent that carries most of the
+  live conversation, for a rare side investigation that needs it; never for a
+  normal phase boundary, where a fresh worker is the boundary.
 - `parallel_fanout`: several Agent calls in one turn for disjoint units; the
   route and agent controls still apply to each.
 - `isolated_worktree`: the Agent tool's worktree isolation for slices that may
-  commit independently; the parent merges.
-- `context_reset`: not required. Fresh agents are the phase boundary,
-  auto-compaction protects the parent, `/clear` is optional user hygiene.
-  Recommended settings: `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`, a lower
-  `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` if the parent grows quickly, and the
-  `sonnet` model alias for the parent session (not `opusplan`, which would
-  put Opus in the parent for every plan; the planner agent runs Fable only
-  for COMPLEX work). Subagents spend the same limit as the
-  parent; the Codex review lane does not, so prefer the toolkit's `review-code`
-  over general multi-agent review commands when quota is tight.
+  commit independently; the parent merges. A worker worktree with no changes
+  is cleaned up automatically; one with changes comes back as a path and
+  branch to merge or clean up.
+- `context_reset`: not required. Fresh agents are the phase boundary and
+  auto-compaction protects the parent; never ask the user to clear.
+- Session environment: keep auto-compaction on, and set
+  `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` lower (for example `80`) when the parent
+  grows faster than expected; `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2` bounds
+  nesting to the goal skill, one worker layer, and one exceptional child.
 - `recurrence`: Claude Code's recurring workflow facility with explicit stop
   conditions, subject to the repository reachability gate.
 - `independent_review`: the cross-provider specialist by default. Resolve the
   toolkit root from the installed skill, then run
   `<toolkit-root>/bin/aitk model-run review --provider codex --boundary
   <marker-id>` with the boundary's prompt file; the runner inlines
-  `agents/specialists/reviewer.md` and the grading rules. If Codex is
-  unreachable, run the `aitk-reviewer` agent with the same contract inline and
-  record `Independent review: same-provider`. In that single-provider case the
+  `agents/specialists/reviewer.md` and the grading rules. The second-family
+  lane is `model-run review --provider claude --boundary
+  review.second-family`. If Codex is unreachable, run the independent boundary
+  with `--provider claude` and record `Independent review: same-provider`. In that single-provider case the
   second-family lane is skipped and a `review`-route verifier would be Opus
   again, so the single-finding verifier runs on `deep-review` (Fable) or the
   finding stays capped at `[minor]` with `Verifier: unavailable — single
   family` recorded. Never review inline.
 - `deep_lenses`: prefer the other provider like any independent judgment. From
-  a Claude parent a flagged lens runs on Codex Astra through `model-run
-  deep-review --provider codex` and spends no Claude quota; Fable runs the
-  adversarial second vote, the escalation when Astra stayed uncertain, and the
-  single-provider verifier fallback.
+  a Claude parent a flagged lens runs through `model-run deep-review --provider
+  codex` and spends no Claude quota; the Claude `deep-review` route runs the
+  adversarial second vote, the escalation when the Codex lens stayed
+  uncertain, and the single-provider verifier fallback.
 - `routed_subagent`: `<toolkit-root>/bin/aitk model-route <route> --provider
   <codex|claude> --boundary <marker-id>` then `model-run` with the same
-  arguments. The runner pins one selector and effort, never supplies a fallback
-  model, disables ambient skills, inlines the boundary's contract closure, and
-  fails closed on a rejected request or result. Provider result envelopes do
-  not attest the internal serving model, so backend substitution stays outside
-  the toolkit's evidence boundary. Never use a generic worker when it reports
-  `MODEL_ROUTE_UNAVAILABLE`.
+  arguments. The runner pins the route's model and effort, inlines the
+  boundary's contract closure, and fails closed; never use a generic worker
+  when it reports `MODEL_ROUTE_UNAVAILABLE`.

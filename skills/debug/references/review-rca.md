@@ -4,47 +4,31 @@ The RCA gate decides whether a root-cause story is evidenced enough to plan a
 fix. The parent grades STANDARD bugs itself; an independent specialist grades
 COMPLEX or uncertain ones.
 
-## Evidence checklist
+## The PASS list and the record
 
-`PASS` requires every item evidenced, not asserted:
-
-1. The failure mechanism is explained, not merely correlated.
-2. Evidence points to the relevant execution or data path.
-3. Competing likely causes were considered or ruled out.
-4. The proposed fix changes the causal point, not only a visible symptom.
-5. A verification strategy exists that could disprove the RCA.
-6. For a bug fix, regression evidence fails before and passes after when
-   feasible; otherwise the reason is recorded.
-
-## Confidence calibration
-
-The confidence number means one thing everywhere:
-
-| Confidence | Meaning |
-|---|---|
-| 9-10 | Root cause reproduced locally; the fix is narrow and behavior-preserving |
-| 7-8 | Root cause strongly evidenced but not directly reproduced; the fix is targeted |
-| 5-6 | Root cause plausible but alternatives are still live; fix scope may move |
-| 3-4 | Several plausible root causes; investigation incomplete |
-| 1-2 | Root cause unknown; evidence indirect or contradictory |
+The PASS list and the RCA record shape live in `agents/specialists/rca.md`;
+the parent and the specialist grade against the same list.
 
 ## Parent grading (STANDARD)
 
-Grade the investigation handoff against the checklist. Confidence 8/10 or
-higher with every item evidenced → `PASS`. Below that, one more bounded
-investigation (`RETRY`), then escalate to the specialist. A `PASS` at 8 is an
-evidenced story without a reproduction; record that the regression test is the
-reproduction it lacks.
+Grade the investigation's RCA record against the PASS list. Every item
+evidenced → `PASS`. A STANDARD `PASS` without a reproduction records that the
+regression test is the reproduction it lacks. Otherwise, one more bounded
+investigation (`RETRY`) aimed at the missing item, then the specialist.
 
-## Specialist grading (COMPLEX, uncertain, or after a failed attempt)
+Go straight to the specialist when the bug is COMPLEX, an alternative that
+would change the fix is still live, an intermittent failure was not
+reproduced, or a fix attempt already failed.
+
+## Specialist grading
 
 <!-- aitk-model-route:debug.rca-specialist -->
 Launch one fresh RCA specialist worker on `rca` (default) or `deep-rca`
 (competing causes still live after an `rca` pass, intermittent or
 history-dependent failures, or cross-system behavior). Prefer the other
 provider. The prompt carries the symptom in code-level terms, the evidence
-gathered, the current hypothesis and confidence, the alternatives considered,
-the proposed regression check, and whether the specialist is validating or
+gathered, the RCA record so far with the alternatives considered and the
+proposed regression check, and whether the specialist is validating or
 producing the RCA. The worker receives its contract inline from the route
 runner and returns `Verdict: PASS | REVISE | ESCALATE`.
 

@@ -1,81 +1,34 @@
----
-name: review-adversarial
-description: Red-team code review focused on security, edge cases, race conditions, and failure modes.
-tier: Heavy
----
-
 # Adversarial Code Review
 
 ## Required Context
 
-Read before starting: `rules/code-review.md`, `rules/severity.md`,
-`rules/gates.md`.
+Read before starting: `rules/code-review.md`, `rules/severity.md`.
 Findings use the canonical `[major]` / `[minor]` / `[nitpick]` tags.
 
 ## Goal
 
-Review changed code with the assumption that it is broken. Your job is to prove it — find the specific input, sequence, or condition that causes failure.
+Find and fix defects in this diff. Assume the change is broken and find the
+input, sequence, or condition that breaks it: security (injection, auth
+bypass, secrets, untrusted deserialization), edge inputs, concurrency and
+ordering, error and partial-failure paths, data integrity, and validation at
+trust boundaries. The reproducing scenario is test input for the fix, not
+exploit code. Style, readability, and features the change never promised
+belong to other lanes.
 
-## Posture Self-Check
+Posture self-check: for every finding you can write the concrete input that
+triggers it, and for every area you found sound you name in the summary the
+input you tried. A suspected weakness without a triggering input goes in the
+summary as an open question, not in `findings`.
 
-Before you write any finding — or any "no findings" — ask: *did I look for failure scenarios, or did I read the code, find it sensible, and stop?* The second is a normal-posture review wearing an adversarial label. The test: for every finding you surfaced, you can write the concrete input that triggers it; for the clean areas, you can name the input you tried that *didn't* break them. If you can't produce the triggering input, the posture wasn't applied — go back and construct the scenario or drop the finding. Abstract reasoning ("this could be fragile") is not an adversarial finding; a reproducing scenario is.
+Report every failure you can construct, at its honest severity, with your
+confidence when it is less than high; the parent validates each one before
+acting. Before reporting no findings, run the pre-verdict claim check in
+`rules/code-review.md`. In `verification`, list exactly what you read or ran.
 
-## Focus Areas
+## Finding Shape
 
-### Security
-- Injection: SQL, command, template, XSS, SSRF
-- Auth/authz: bypass paths, privilege escalation, missing permission checks
-- Secrets: hardcoded tokens, keys, passwords, connection strings in code or config
-- Deserialization: untrusted data parsed without validation
-
-### Edge Cases
-- Null, undefined, empty string, empty collection, zero, negative values
-- Boundary values: max int, max length, Unicode, special characters
-- Single-item vs. multi-item vs. no-item collections
-- Time zones, daylight saving, leap years, epoch boundaries
-
-### Race Conditions
-- Concurrent access to shared state (files, databases, caches)
-- Async ordering: setState before/after await, callback ordering
-- TOCTOU (time-of-check-time-of-use) bugs
-- Lock contention, deadlock potential
-
-### Error Handling
-- Uncaught exceptions in async code
-- Error swallowing (empty catch blocks, ignored return values)
-- Missing fallbacks for external service failures
-- Partial failure in batch operations
-
-### Data Integrity
-- Partial writes without transactions
-- Inconsistent state after failed operations
-- Missing rollback or cleanup on error paths
-- Stale cache reads after writes
-
-### Input Validation
-- Untrusted input at system boundaries (API endpoints, form fields, URL params)
-- Missing sanitization before database queries or shell commands
-- Type coercion surprises (string "0" vs number 0, "null" vs null)
-- File path traversal, symlink attacks
-
-## Pre-Verdict Gate: Verify One Claim the Diff Doesn't Prove
-
-Before approving or rating "Hardened", name out loud one claim the verdict rests on that the diff alone does not prove — then verify it with a cheap external check. A confident pass from a sensible diff read is the exact failure mode this gate exists to catch: the diff looked fine, so the review stopped at the diff. Common claims worth one check each:
-
-- **Title/commit-message vs. actual change** — does a `fix:`-labeled change hide a breaking change, or vice versa? Compare the stated intent to what the diff does.
-- **Removed user-facing surface** — if the change deletes a flag, command, endpoint, or UI affordance, grep docs and call sites for stale references to it.
-- **Pinned/declared versions** — if it adds or changes a pinned dependency, action SHA, or image digest, verify the pin resolves to what the change claims.
-- **Orphaned references** — if it deletes a thing other code triggers or imports, grep for the now-dangling reference.
-
-State the check you ran and its result. If no claim needs external proof (the diff is self-contained), say so explicitly — don't skip the question.
-
-## Output Format
-
-For each finding, construct a specific failure scenario. The leading tag is the
-canonical severity from `rules/severity.md` — this lens sits inside the reviewer
-fan-out, so its findings dedupe and escalate alongside every other lane's, and a
-finding whose only tag is a failure *kind* has no severity to merge on. Name the
-kind after it, where it is description rather than vocabulary:
+Each finding is one entry in `findings`, opening with its severity tag and
+naming the failure kind after it:
 
 ```markdown
 ### [major|minor|nitpick] {vulnerability|edge-case|race-condition|missing-validation} — {title}
@@ -86,23 +39,5 @@ kind after it, where it is description rather than vocabulary:
 **Fix:** {Specific change to prevent the failure}
 ```
 
-## Scoring
-
-Rate the overall adversarial assessment:
-
-| Rating | Meaning |
-|--------|---------|
-| **Hardened** (9-10) | No exploitable findings. Edge cases handled. Defensive coding throughout. |
-| **Adequate** (6-8) | Minor gaps but no critical vulnerabilities. Some edge cases unhandled. |
-| **Vulnerable** (3-5) | One or more exploitable issues. Missing validation at boundaries. |
-| **Critical** (1-2) | Security vulnerabilities or data integrity risks that must be fixed before merge. |
-
-The rating is descriptive; the review gate branches on accepted `[major]` findings, not on a numeric score.
-
-## Rules
-
-- Do not flag theoretical issues — every finding must have a concrete scenario
-- Do not flag style or readability — this is not a code quality review
-- Do not flag missing features — only flag missing protection for existing features
-- Focus on what the changed code does, not what it doesn't do
-- If you find nothing, say so — "No adversarial findings" is a valid and valuable result
+"No adversarial findings" is a valid result when the summary names what you
+tried.

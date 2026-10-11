@@ -1,144 +1,79 @@
----
-tier: Standard
----
-
 # Gather + Triage PR Feedback
 
-## Inputs
+Inputs: PR number or URL; flags `--draft`, `--step` (`--auto` is a legacy
+no-op alias for the default).
 
-- PR number or URL
-- Flags: `--draft`, `--step` (`--auto` is a legacy no-op alias for the default)
+## Reviewer Inventory
 
-## Gather
-
-Detect the PR input, then run the deterministic reviewer inventory before any LLM triage.
-
-### Reviewer Inventory (Mandatory Bash-First)
-
-Fetch every visible review source, then print a compact reviewer/bot table:
+Build the inventory before any triage. Fetch every source:
 
 ```bash
-gh pr view <number> --json reviews,comments,reviewRequests \
-  --jq '
-    [
-      (.reviews[]? | [(.author.login // "unknown"), (.state // "UNKNOWN"), "review"]),
-      (.comments[]? | [(.author.login // "unknown"), "COMMENT", "top-level-comment"]),
-      (.reviewRequests[]? | [(.login // .slug // .name // "unknown"), "REQUESTED", (.__typename // "review-request")])
-    ][]
-    | @tsv
-  ' | sort
-
-gh api --paginate repos/<owner>/<repo>/pulls/<number>/comments \
-  --jq '.[] | [.user.login, "COMMENT", "inline-review-comment", (.path // ""), (.line // .original_line // "")] | @tsv' \
-  | sort
-
-gh api --paginate repos/<owner>/<repo>/pulls/<number>/reviews \
-  --jq '.[] | [(.user.login // "unknown"), (.state // "UNKNOWN"), "review-submission", (.body // "" | length)] | @tsv' \
-  | sort
-
-gh api --paginate repos/<owner>/<repo>/issues/<number>/comments \
-  --jq '.[] | [.user.login, "COMMENT", "top-level-issue-comment"] | @tsv' \
-  | sort
+gh pr view <number> --json reviews,comments,reviewRequests
+gh api --paginate repos/<owner>/<repo>/pulls/<number>/comments   # inline
+gh api --paginate repos/<owner>/<repo>/pulls/<number>/reviews    # review bodies
+gh api --paginate repos/<owner>/<repo>/issues/<number>/comments  # top-level
 ```
 
-If the workflow may reply to or resolve threads (the default; `--draft` is the exception), GraphQL review-thread data is mandatory before triage. Include unresolved counts in the inventory and stop if thread state cannot be fetched.
-
-When combining the sources above, dedupe by stable IDs (`databaseId` / REST `id` / GraphQL node id) before counting authors. `gh pr view --comments` is useful for display, but paginated REST/GraphQL IDs are the inventory authority.
-
-Use this paginated query shape for unresolved thread inventory. For the first page, omit `cursor`; for later pages add `-F cursor=<endCursor>` from the prior `PAGEINFO` row. Repeat until `hasNextPage` is false:
+Unless `--draft` was passed, the run may reply to or resolve threads, so
+review-thread state is required too. Page with `-F cursor=<endCursor>` until
+`hasNextPage` is false:
 
 ```bash
 gh api graphql -F owner=<owner> -F repo=<repo> -F number=<number> -f query='
   query($owner:String!, $repo:String!, $number:Int!, $cursor:String) {
-    repository(owner:$owner, name:$repo) {
-      pullRequest(number:$number) {
-        reviewThreads(first:100, after:$cursor) {
-          pageInfo { hasNextPage endCursor }
-          nodes {
-            id
-            isResolved
-            comments(first:1) {
-              nodes {
-                databaseId
-                author { login }
-                path
-                line
-              }
-            }
-          }
-        }
-      }
-    }
-  }' \
-  --jq '.data.repository.pullRequest.reviewThreads as $threads
-    | ($threads.nodes[] | [(.id // ""), (.comments.nodes[0].databaseId // ""), (.comments.nodes[0].author.login // "unknown"), (if .isResolved then "resolved" else "unresolved" end), (.comments.nodes[0].path // ""), (.comments.nodes[0].line // "")] | @tsv),
-      (["PAGEINFO", ($threads.pageInfo.hasNextPage|tostring), ($threads.pageInfo.endCursor // "")] | @tsv)' \
-  | sort
+    repository(owner:$owner, name:$repo) { pullRequest(number:$number) {
+      reviewThreads(first:100, after:$cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id isResolved
+          comments(first:1) { nodes { databaseId author { login } path line } } }
+      } } } }'
 ```
 
-The inventory must explicitly answer:
-- Which human reviewers commented or requested changes
-- Which bots commented, including known review/security/coverage bots when present
-- How many top-level, review-body, and inline comments each author has
-- Whether any known expected source is absent or inaccessible
+Dedupe by stable IDs (`databaseId`, REST `id`, GraphQL node id) before
+counting authors; `gh pr view --comments` is for display only. The inventory
+table answers: which humans commented or requested changes; which bots
+commented; how many top-level, review-body and inline comments each author
+has; unresolved thread counts; and whether an expected source is absent.
 
-Known bot/reviewer logins to call out explicitly when present:
+Call out these logins when present:
 - GitHub/Copilot: `github-actions[bot]`, `copilot-pull-request-reviewer[bot]`, `Copilot`, `dependabot[bot]`
 - AI review: `coderabbitai[bot]`, `greptile-apps[bot]`, `chatgpt-codex-connector[bot]`, `ultrareview`
 - Security/quality/coverage: `snyk-bot`, `codecov[bot]`, `sonarcloud[bot]`, `deepsource-autofix[bot]`
 
-Also treat any login ending in `[bot]`, containing `bot`, or using a known app/service pattern as a bot bucket unless repository convention proves it is a human account. Do not let unknown bots fall into the generic human reviewer count without naming them.
+Treat any login ending in `[bot]`, containing `bot`, or matching an app
+pattern as a bot unless repository convention proves it human; name unknown
+bots instead of counting them as human reviewers.
 
-Do not begin triage until the inventory is complete. If `gh` cannot fetch one source, stop with the missing command/output and ask for the data instead of guessing.
+If `gh` cannot fetch a source, or thread state is needed and unavailable,
+stop with the missing command and its output and ask for the data instead of
+guessing.
 
-After the inventory, fetch the detailed top-level discussion and inline review comments for investigation:
+## Complexity
 
-```bash
-gh pr view <number> --comments
-gh api --paginate repos/<owner>/<repo>/issues/<number>/comments
-gh api --paginate repos/<owner>/<repo>/pulls/<number>/comments
-gh api --paginate repos/<owner>/<repo>/pulls/<number>/reviews
-```
-
-## Complexity Gate
-
-Classify scope before acting:
-
-| Signal | TRIVIAL | STANDARD | COMPLEX |
-|--------|---------|----------|---------|
-| Comment count | 1-2 | 3-6, one subsystem | 7+ or several subsystems |
-| Fix type | Cosmetic, naming | Contained logic or test update | Behavioral, architectural, or cross-cutting |
-| Scope | Single file/area | Single subsystem | Cross-cutting |
-| Discussion items | 0 | 0-1 with clear answer | 1+ requiring user/product decision |
-
-Emit the Complexity Gate block from `rules/complexity-gate.md`.
-
-TRIVIAL with `HIGH` classification confidence uses the quick-fix path: fix, draft the reply, summarize, and skip the full triage table. Posting is the default boundary; hold posts only under `--draft` or `--step`.
-
-STANDARD path: run the triage table, fix approved items inline or in one bounded wave, verify, then draft replies. COMPLEX handling — a plan for the fix wave and the full gate ladder — applies only when comments span subsystems, require user/product decisions, or need more than one fix/review wave.
+Emit the Complexity Gate block from `rules/complexity-gate.md` for the
+accepted fixes. TRIVIAL with `HIGH` classification confidence uses the
+quick-fix path: fix, draft the reply, summarize, and skip the full triage
+table. STANDARD runs the triage table and fixes inline or in one bounded wave.
+COMPLEX handling (a plan for the fix wave and the full gate ladder) applies
+only when comments span subsystems, need a user or product decision, or need
+more than one fix/review wave.
 
 ## Investigate
 
-For each actionable review comment:
-
-- Read the referenced code and surrounding file.
-- Verify the claim; do not assume the reviewer is correct.
-- Check whether another guard, middleware, caller contract, or test already covers the concern.
-- Use git blame/log when the existing shape looks intentional.
+For each actionable comment, read the referenced code and its file and verify
+the claim; do not assume the reviewer is correct. Check whether another guard,
+caller contract or test already covers the concern. Use git blame/log when
+the existing shape looks intentional.
 
 ## Triage Output
 
-Always produce this table. With `--step`, present it and wait for approval before fixing; otherwise emit it and proceed:
-
 ```markdown
-| # | Reviewer | Comment | Verdict | Reasoning | Confidence |
-|---|----------|---------|---------|-----------|------------|
-| 1 | @user | ... | Fix | Evidence and actual risk | 9/10 |
-| 2 | @user | ... | Skip | Evidence for why current code is valid | 7/10 |
-| 3 | @user | ... | Discuss | Trade-off or missing product decision | 5/10 |
+| # | Reviewer | Comment | Verdict | Reasoning | Evidence |
+|---|----------|---------|---------|-----------|----------|
+| 1 | @user | ... | Fix | Actual risk | `path/file.py:42` |
+| 2 | @user | ... | Skip | Why current code is valid | `path/guard.py:10` |
+| 3 | @user | ... | Discuss | Trade-off or missing product decision | `path/api.py:88` |
 ```
-
-Verdicts:
 
 - `Fix`: bugs, security issues, missing error handling, established project standards.
 - `Skip`: style preference, out of scope, misunderstanding, or false positive.
@@ -146,20 +81,17 @@ Verdicts:
 
 ## Persist Triage to PROJECT.md (Hard Gate)
 
-Before the Confirmation Gate, append a `## Feedback Triage` section to PROJECT.md containing:
+Append `## Feedback Triage` with the PR identity (number, URL, head branch),
+the inventory table, the triage table (comment id, reviewer, verdict,
+reasoning, evidence) and the open thread IDs that need resolution. It must
+land before any checkpoint or fresh-worker handoff: the triage table is the
+most expensive thing to reconstruct, since it needs every comment re-fetched
+and the reviewer judgment redone.
 
-- PR identity (number, URL, head branch)
-- The Reviewer Inventory table from earlier in this reference
-- The triage table (comment id, reviewer, verdict, reasoning, confidence)
-- Open thread IDs that need resolution
+## Confirmation
 
-This is the source of truth for resuming in a fresh session. The triage table is the most expensive thing to reconstruct (it requires re-fetching every comment + redoing reviewer judgment), so it MUST land in PROJECT.md before any checkpoint. Do not hand the next phase to a fresh worker until this section exists in PROJECT.md.
-
-## Confirmation Gate
-
-Default: no pause — emit the triage table, complete the PROJECT.md write, and proceed straight to fixes. The triage table must still appear in the final summary.
-
-With `--step`: pause after triage and the PROJECT.md write. Ask the user to confirm, adjust verdicts, or override; do not start fixing or posting until approved.
-
-`--draft` still runs triage and draft response work, but does not post.
-The PROJECT.md write is required on every path.
+Default: emit the triage table, write PROJECT.md, and go straight to fixes;
+the table still appears in the final summary. `--step` pauses here for the
+user to confirm or adjust verdicts before any fix or post. `--draft` runs
+triage and drafts but does not post. The PROJECT.md write happens on every
+path.

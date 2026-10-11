@@ -9,10 +9,8 @@ Effect: `git_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `review-code` entry
-in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`review-code` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 
@@ -40,22 +38,21 @@ end to end: gather and record the base, classify with
 `qa/references/assess-impact.md`, preflight, one independent review on the other
 provider, conditional deep lenses on flagged risk, validate every finding before
 fixing, fix accepted findings, verify with `skills/verification-loop/SKILL.md`,
-run one delta review only after substantive remediation, emit the review gate,
-and write the Review Record to `PROJECT.md`.
+run one delta review only after substantive remediation, record the review
+gate with the reviewer envelopes (`project-state gate --gate review --result
+<envelope> --format block`) and paste the block it prints, and write the
+Review Record to `PROJECT.md`.
 
 ## Contract
 
-- Review judgment comes only from fresh lanes; the parent validates, fixes, and
-  verifies. It never reviews its own work inline.
-- The review gate is a reasoning unit under `rules/gates.md`: one full review
-  plus one delta pass. A finding class surviving the delta pass is `ESCALATE`
-  (a deep lens or a user decision), never a third round.
-- Zero-logic and micro-fix diffs may take the review exception; anything with
-  logic gets the independent lane, even at TRIVIAL.
+- Review judgment comes only from fresh lanes (`rules/specialist-handoff.md`,
+  Critic profile); the parent validates, fixes, and verifies.
+- The retry budget and review exceptions are `rules/gates.md`'s: one full
+  review plus one delta pass, then `ESCALATE`, never a third round.
 - Remediation is on by default when the user asked to review and fix; a
   review-only request records findings and the gate without editing.
 - Suggest `review-code-adversarial` when the classifier flags security
   sensitivity and the user did not already ask for it.
 - Internal callers (`create-feature`, `fix-bug`, `fix-ci`, `create-tests`,
   `update-tests`) own the next step after the gate; standalone runs end with
-  the Review-Code Complete summary in the orchestration reference.
+  the Review-Code Complete summary in `review/references/local-review.md`.

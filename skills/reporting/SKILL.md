@@ -5,10 +5,6 @@ description: Use for standardized end-to-end summaries and continuation checkpoi
 
 # Reporting
 
-## Before Starting
-
-Read sibling rules, lessons, and gotchas when present.
-
 This skill owns shared output shape only. Canonical workflow references own
 procedure, fields, and stop conditions.
 
@@ -34,26 +30,5 @@ procedure, fields, and stop conditions.
 
 ## Durable Checkpoint
 
-The deterministic checkpoint API is the only writer of the machine block in
-`PROJECT.md`. It renders [workflow-checkpoint.md](templates/workflow-checkpoint.md)
-from the selected v2 contract, validates phase transitions, increments
-generation, and records pending/applied effect operations.
-
-Human-readable status follows the machine block:
-
-```markdown
-### Workflow Status
-- Workflow: <name and arguments>
-- Phase: <phase>
-- Active plan: PLAN.md | none
-- Next action: <bounded action>
-- Blockers: <none or list>
-```
-
-Workflow-specific checkpoint templates may add compact human fields, but they
-never redefine the machine block or command syntax. Timestamps use ISO format.
-
-When adding a workflow, add a summary template only when it needs structured
-domain output. Add human checkpoint details only when the generic status would
-lose material resume context; the v2 contract and deterministic checkpoint API
-remain authoritative.
+The CLI renders workflow status (`bin/aitk project-state show`) and
+`bin/aitk checkpoint` writes the machine block; do not hand-edit either.

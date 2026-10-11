@@ -9,11 +9,9 @@ Effect: `git_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `create-feature`
-entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
-durable transition and effect record, and `bin/aitk project-state` for the
-routing snapshot and gates.
+`create-feature` in `interfaces/contracts.json`; transitions and effects go
+through `bin/aitk checkpoint`, the routing snapshot and gates through
+`bin/aitk project-state`.
 
 ## Usage
 
@@ -27,13 +25,13 @@ create-feature <request> --deliver-per-phase  # separate branch + draft PR per p
 
 ## Feature Complexity Signals
 
-Workflow-specific signals for `rules/complexity-gate.md`; any hard signal there
-still forces COMPLEX.
+Workflow-specific signals for `rules/complexity-gate.md`, the one complexity
+definition; any hard signal there still forces COMPLEX.
 
 | Signal | TRIVIAL | STANDARD | COMPLEX |
 |--------|---------|----------|---------|
 | Design decision | None; an existing pattern applied | One known pattern, bounded choices | Several plausible designs, or a new pattern |
-| Files touched | 1-3 | 4-8, one subsystem | 9+ across subsystems, or unclear ownership |
+| Ownership | One clear owner | One subsystem, clear owner | Unclear ownership, or crosses a public contract |
 | Behavioral change | Cosmetic: theme, copy, spacing, a button type or variant | Contained new behavior | Cross-cutting behavior or a contract change |
 | Risk | Local, reversible | Contained functional risk | Data, auth, migration, compatibility, or cross-service risk |
 
@@ -44,14 +42,15 @@ the default for real, contained work.
 
 ## Goal Loop
 
-The parent (Sonnet or Sol) runs this loop inline. Each step reads the routing
+The parent (orchestrating) session runs this loop inline. Each step reads the routing
 snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
 
 1. **Intake.** Normalize input (`rules/input-detection.md`), fetch ticket
    context, and inspect the codebase enough to classify without guessing.
 2. **Classify** complexity, size, and shape (`rules/complexity-gate.md`) and
-   persist it: `bin/aitk project-state init --workflow create-feature ...`.
-   Emit the Complexity Gate block. Existing-pattern features are STANDARD.
+   persist it: `bin/aitk project-state init --workflow create-feature ...
+   --format block`, and paste the Complexity Gate block it prints.
+   Existing-pattern features are STANDARD.
 3. **Scope** only when it is ambiguous: load `pm/references/create-feature-brief.md`
    for a loose request, multiple product surfaces, or unclear acceptance
    criteria. Otherwise the ticket is the brief.
@@ -65,13 +64,16 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
      `planning/references/validate-plan.md`.
    - MULTI_PHASE: `planning/references/decompose-work.md`, validate the
      decomposition (always, any complexity), then per phase: reclassify the phase,
-     `planning/references/plan-phase.md`, validate only if the phase is
-     COMPLEX.
+     plan it (`planning/references/plan-implementation.md`), validate only if
+     the phase is COMPLEX.
    <!-- aitk-model-route:workflows.create-feature-planning -->
    For COMPLEX plans, launch one fresh planner worker on `planning`
    (the toolkit's planner agent, or the routed `planning` specialist) with the
    brief, the routing snapshot line, accepted invariants, and the mode. The
-   parent writes the returned plan to `PLAN.md`; the planner never edits files.
+   planner never edits files: it returns the `PLAN.md` section, and for a
+   decomposition its fenced `phases-json` block. The parent writes the section
+   to `PLAN.md` verbatim and passes the block unchanged to
+   `bin/aitk project-state phases --phases-json`.
 5. **Implement** the next unit.
    <!-- aitk-model-route:workflows.create-feature-implementation -->
    Launch one fresh implementer worker on `implementation` (the toolkit's
@@ -93,7 +95,7 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    review measures only phase three; the branch base is reserved for the
    integrated review in step 10. Review depth follows the tier table in
    `rules/code-review.md`; a TRIVIAL unit gets no delta pass.
-8. **Validate behavior** with `qa/references/validate-feature.md` when
+8. **Validate behavior** with `qa/references/validate.md` when
    user-visible behavior changed and the app runs; otherwise record why not.
 9. **Checkpoint the unit.** Hard gate before the next unit or any handoff:
    append the `## Phase Complete: <phase or wave>` block from
@@ -101,32 +103,25 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    with evidence, learned constraints, invariant changes, evidence pointer,
    roadmap check, `Tree:`, next phase) and mark the phase `done` in the
    snapshot with `bin/aitk project-state phase --name <phase> --status done
-   --sha <tree>`; that SHA is the next phase's review base. The
-   **roadmap check** asks two questions: does the decomposition still hold,
-   and is the next phase's exit goal still right given what this phase
-   learned? `holds` advances to step 4 for the next phase. `no` is
-   `bin/aitk project-state gate --gate phase-exit --status RECLASSIFY --unit
-   decomposition`, an update to `## Decomposition` in `PLAN.md`, and one
-   revalidation in `decomposition` mode before the next phase is planned.
+   --sha <tree>`; that SHA is the next phase's review base. The template owns
+   the roadmap check: `holds` advances to step 4 for the next phase, and
+   anything else records `--gate phase-exit --status RECLASSIFY` and
+   revalidates the decomposition before the next phase is planned.
    For MULTI_PHASE work the phase is then **prepared** as its own commit in
    the roadmap's delivery order (`decompose-work.md`). The commit is pushed to
    the feature branch without asking and opened as a draft PR by the delivery
    sequence in step 11, before the phase is marked advanced. Phases on the same
    branch reuse the one draft PR (no new reservation); a phase on a separate
    branch does its own lookup and reservation. With `--no-pr` the phase stays
-   `pushed — awaiting PR request` and the loop continues. Fresh
-   workers are the context boundary; no manual clear is needed.
+   `pushed — awaiting PR request` and the loop continues.
 10. **Integrated review** (MULTI_PHASE and BATCHED only; hard gate before
     `## Feature Complete`). After the last unit's checkpoint, run one more
-    `review-code` pass over the full recorded **branch base** to HEAD, and
-    validate end to end against the decomposition's per-phase exit goals and
-    global invariants (`qa/references/validate-feature.md` on the whole
-    feature when the app runs). It has its own `## Gate: review (integrated)`
-    block and its own Review Record entry, marked `Scope: integrated`; the
-    per-phase records stay as they are. A finding here is fixed in the phase
-    that owns the code, then the integrated delta pass runs once.
+    `review-code` pass over the recorded **branch base** to HEAD, with its own
+    `## Gate: review (integrated)` block, as `review/references/local-review.md`
+    (Integrated Review) defines it.
 11. **Finish.** Write the `## Feature Complete` entry, emit the summary from
-    `reporting/templates/create-feature-summary.md`, record `metrics-emit`.
+    `reporting/templates/create-feature-summary.md`, record metrics with
+    `bin/aitk metrics emit --workflow create-feature --status <status>`.
     Deliver after the review gate is `PASS` and before any `project-state
     advance`, never from `main`, in this order:
     1. `--no-pr`: commit and push per step 2, then stop, recording
@@ -168,31 +163,25 @@ plan-validation findings and review findings are handled in the loop.
 
 ## Hard Gates
 
-- Emit the Complexity Gate before planning or implementing; persist it.
 - No implementation of a COMPLEX unit before its plan validates `APPROVE`.
-- Verification `PASS` before review; review gate `PASS` before the next unit.
-- `## Phase Complete` in `PROJECT.md`, roadmap check answered, before every
-  phase or wave transition; `## Feature Complete` before the chat summary.
 - MULTI_PHASE and BATCHED work: integrated review gate `PASS` over the branch
-  base, with its own Review Record entry, before `## Feature Complete`.
-- Commit, push, or open a draft PR only with STRONG verification and a `PASS`
-  review gate; no confirmation is needed. Promoting a draft needs the user's
-  request. The draft PR is the contract's `publish-explicit` gate satisfied by
-  the covered workflow's `create-pr --draft` step. Each is its own
-  `published_pr` record with operation ID `phase:<name>` (`phase:single` for
-  SINGLE_PHASE), reserved before creation and applied after.
+  base before `## Feature Complete`.
+
+Delivery is the contract's `publish-explicit` gate, satisfied by the
+`create-pr --draft` step: each draft PR is its own `published_pr` record with
+operation ID `phase:<name>` (`phase:single` for SINGLE_PHASE), reserved
+before creation and applied after.
+
+`## Feature Complete` in `PROJECT.md` carries the fields the summary
+(`reporting/templates/create-feature-summary.md`) does not:
 
 ```markdown
 ## Feature Complete
 Feature: <one line or ticket>
 Complexity/Size/Shape: <from snapshot>
 Phases delivered: <count or single-shot>
-Files changed: <summary>
 Tests: <added/updated>
 Verification: <PASS evidence>
-Review: <lane, accepted/raised findings>
 Behavior validation: <pass | fail | skipped — reason>
 Integrated review: <gate, lane, accepted/raised | not applicable (SINGLE_PHASE)>
-Residual risk: <one line or none>
-Delivery: <draft PR #n | draft PR per phase branch, in roadmap order: #a, #b, #c | no PR (--no-pr) | pushed — awaiting PR request>
 ```

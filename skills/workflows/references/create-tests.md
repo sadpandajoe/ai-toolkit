@@ -10,10 +10,8 @@ Effect: `git_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `create-tests` entry
-in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`create-tests` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 ```
@@ -23,84 +21,73 @@ create-tests --function <name>       # First meaningful tests for a specific fun
 create-tests <target> --no-pr        # Commit and push only; skip the draft PR
 ```
 
-## Command Contract
+## Goal
 
-- Only the main thread writes PROJECT.md. Subagents return compact handoffs.
-- For STANDARD or expensive runs (large untested surface, multi-subsystem scope), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then hand the next expensive phase to a fresh worker.
-- Required PROJECT.md updates on STANDARD/expensive runs:
-  - After step 2 (initial tests written): `## Tests Created` (files added, behaviors covered, test layer chosen).
-  - After step 3 (verify + review): `## Test Review Status` (verification result, review gate status).
-- These writes are **hard gates before any checkpoint** on STANDARD/expensive runs.
+Give an area that has no meaningful suite its first high-signal tests (the
+uncommitted changes, a file, or `--function <name>`) and deliver them as a
+reviewed `test:` commit. This is test-only work, not the entry point for
+feature or bug work, and `review-code` runs inside it rather than as the
+user's next step. Prefer the smallest set of tests that locks in real
+behavior: size them like the neighboring test files, roughly one focused test
+per behavior, and keep scratch checks out of the commit.
 
-## Steps
+Write the tests with
+[skills/testing/references/create-tests.md](../../testing/references/create-tests.md),
+which owns choosing the behaviors to cover, the test layer, and the
+targeted verification. Only the main thread writes PROJECT.md; subagents
+return compact handoffs.
 
-1. **Determine Scope**
+## Exit Criteria
 
-   Identify the code to test:
-   - Uncommitted changes: `git diff --name-only`
-   - Specific file or function: as provided
-   - Read the code thoroughly before writing any tests
-
-2. **Create Initial Tests**
-
-   Load [skills/testing/references/create-tests.md](../../testing/references/create-tests.md) for this step. This testing context owns:
-   - running `review-tests` before writing tests
-   - choosing the right test layer
-   - creating the first meaningful tests for the target area
-   - targeted verification
-
-3. **Review Changed Test Files**
-
-   Run `verify` or equivalent targeted checks first, then run `review-code` on the changed repo-tracked files: one independent review, fix the accepted findings, one delta pass over the fix. A finding still open after the delta is `ESCALATE` (or `USER_DECISION` when it needs a product call), not a third round.
-
-4. **Summary**
-   ```markdown
-## Create-Tests Complete
-
-   ### Outcome
-   - [Created first meaningful suite / stopped on blocker]
-
-   ### Scope
-   - [What behavior or files were covered]
-
-   ### Behavioral Coverage
-   - [What regressions or behaviors are now covered]
-
-   ### Review / Quality
-   - [Review rounds and final review outcome]
-
-   ### Verification
-   - [Checks run]
-
-   ### Risks / Blockers
-   - [Anything still unverified or out of scope]
-
-   ### Remaining Gaps
-   - [Anything still not covered]
-
-   ### Next Decision
-   - [Committed and pushed / needs more work]
-   ```
-
-## Notes
-- `create-tests` is a test-only command, not the normal entrypoint for feature or bug workflows
-- Favor the smallest set of high-signal tests over broad test quantity
-- `review-code` is an internal phase here, not the expected next top-level user step
+- Verification of the new tests is strong (`verify` or an equivalent targeted
+  check), and `review-code` has run on the changed repo-tracked files: one
+  independent review, fix the accepted findings, one delta pass over the fix.
+  A finding still open after the delta is `ESCALATE` (or `USER_DECISION` when
+  it needs a product call), not a third round.
 - With strong verification and a passing `review-code`, commit the tests as a `test:` commit, push (when the branch already has an upstream, require `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal `<remote>/<branch>`, else pause as an ambiguous push target, then push with `git push "<remote>" "HEAD:refs/heads/<branch>"`, never a bare `git push`, never `-u`; with no upstream, `git push -u <remote> HEAD`, where `<remote>` is `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`, pausing on an ambiguous push target), then open a draft PR with `create-pr --draft` straight through, with no checkpoint reservation. All without asking, never from `main`. `--no-pr` stops after the push and records `pushed — awaiting PR request`. Promoting the draft to ready for review, requesting reviewers, and merging need the user's words. Stop before committing when verification is partial or blocked.
-- Every run writes at least a one-line `## Tests Created` entry to PROJECT.md before the chat summary so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) after `create-tests` does not lose the record. TRIVIAL/STANDARD runs satisfy this with a single end-of-run entry; COMPLEX or expensive runs follow the hard-gate cadence in the Command Contract.
-
-  Minimum entry shape for TRIVIAL/STANDARD:
+- PROJECT.md has a `## Tests Created` entry before the chat summary, so a
+  fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md)
+  after `create-tests` keeps the record:
 
   ```markdown
   ## Tests Created
   Files: [list]
   Behaviors covered: [one-liner]
+  Test layer: [chosen layer]
   Verification: [strength label]
   ```
 
-  Emit before the chat summary:
+  When verification or review runs in a fresh worker, write this entry before
+  that phase starts and add `## Test Review Status` (verification result,
+  review gate status) after it: the worker and any later session resume only
+  from PROJECT.md.
 
-  ```markdown
-  ## PROJECT.md Updated — Tests Created
-  Files recorded: [count]
-  ```
+## Summary
+
+```markdown
+## Create-Tests Complete
+
+### Outcome
+- [Created first meaningful suite / stopped on blocker]
+
+### Scope
+- [What behavior or files were covered]
+
+### Behavioral Coverage
+- [What regressions or behaviors are now covered]
+
+### Review / Quality
+- [Review rounds and final review outcome]
+
+### Verification
+- [Checks run]
+
+### Risks / Blockers
+- [Anything still unverified or out of scope]
+
+### Remaining Gaps
+- [Anything still not covered]
+
+### Next Decision
+- [Committed and pushed / needs more work]
+```

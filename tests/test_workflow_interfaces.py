@@ -56,6 +56,45 @@ class WorkflowInterfaceTests(unittest.TestCase):
                 "cherry-pick: public skill is missing agents/openai.yaml", problems
             )
 
+    def test_cherry_pick_contract_follows_the_single_run_rules(self) -> None:
+        self.assertEqual([], validate_contracts(ROOT))
+        contract = next(
+            item
+            for item in json.loads((ROOT / "interfaces/contracts.json").read_text())["contracts"]
+            if item["name"] == "cherry-pick"
+        )
+        self.assertEqual("invocation", contract["authorization"]["mode"])
+        self.assertEqual(["PROJECT.md", "CHERRY_PICK.md"], contract["state"]["artifacts"])
+
+        def mutated(callback) -> list[str]:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = self.fixture(temporary)
+                path = root / "interfaces/contracts.json"
+                payload = json.loads(path.read_text())
+                callback(root, payload)
+                path.write_text(json.dumps(payload))
+                return validate_contracts(root)
+
+        def contract_of(payload: dict, name: str) -> dict:
+            return next(item for item in payload["contracts"] if item["name"] == name)
+
+        resumable = mutated(lambda root, payload: contract_of(payload, "cherry-pick").update({"resumable": True}))
+        self.assertIn("cherry-pick: single_run contract must use the canonical run graph", resumable)
+
+        def drop_marker(root: Path, payload: dict) -> None:
+            skill = root / "skills/cherry-pick/SKILL.md"
+            skill.write_text(skill.read_text().replace("Authorization mode: `invocation`.", "Authorization:"))
+
+        self.assertIn(
+            "cherry-pick: external-effect authorization marker does not match its contract",
+            mutated(drop_marker),
+        )
+
+        def internal_skill(root: Path, payload: dict) -> None:
+            payload["contracts"].append({**contract_of(payload, "cherry-pick"), "name": "shortcut"})
+
+        self.assertIn("contract references unknown workflow: shortcut", mutated(internal_skill))
+
     def test_contract_version_one_is_rejected_with_migration_error(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
@@ -275,8 +314,8 @@ class WorkflowInterfaceTests(unittest.TestCase):
             codex = root / "config/AGENTS.md"
             codex.write_text(
                 codex.read_text().replace(
-                    "{{TOOLKIT_DIR}}/rules/context-management.md",
-                    "missing-context-rule",
+                    "{{TOOLKIT_DIR}}/rules/universal.md",
+                    "missing-universal-rule",
                 )
             )
 
@@ -355,12 +394,12 @@ class WorkflowInterfaceTests(unittest.TestCase):
             root = self.fixture(temporary)
             reference = root / "skills/workflows/references/complete-project.md"
             linked = (
-                "[skills/reporting/templates/complete-project-metrics.md]"
-                "(../../reporting/templates/complete-project-metrics.md)"
+                "[skills/reporting/templates/complete-project-summary.md]"
+                "(../../reporting/templates/complete-project-summary.md)"
             )
             self.assertIn(linked, reference.read_text())
             reference.write_text(
-                reference.read_text().replace(linked, "metrics template")
+                reference.read_text().replace(linked, "summary template")
             )
             workflow = next(
                 item for item in load_workflows(root) if item.name == "complete-project"
@@ -374,7 +413,7 @@ class WorkflowInterfaceTests(unittest.TestCase):
             self.assertNotIn(
                 (
                     "reporting",
-                    "skills/reporting/templates/complete-project-metrics.md",
+                    "skills/reporting/templates/complete-project-summary.md",
                 ),
                 dependencies,
             )

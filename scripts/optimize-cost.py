@@ -269,7 +269,7 @@ def analyze(sessions):
                     f"({pct_of_total:.0f}% of total). Average: {format_cost(avg_expensive)}/session. "
                     f"Top offender: {format_cost(max(s['total_cost'] for s in expensive))}."
                 ),
-                "action": "Auto-checkpoint at $8 per context-management.md. Each continuation saves ~30-50% vs continuing in a bloated session.",
+                "action": "Auto-checkpoint at $8 and hand the next phase to a fresh worker. Each continuation saves ~30-50% vs continuing in a bloated session.",
             }
         )
 

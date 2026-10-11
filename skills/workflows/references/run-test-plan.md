@@ -1,6 +1,5 @@
 # Standalone QA Validation
 
-
 > **When**: You want to validate a feature area, story, PR, or existing test-plan doc without fixing code in the same workflow.
 > **Produces**: A reviewed runnable test plan, execution results, evidence for material failures, and a local findings summary.
 
@@ -10,10 +9,8 @@ Effect: `local_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `run-test-plan` entry
-in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`run-test-plan` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 ```
@@ -24,19 +21,79 @@ run-test-plan apache/superset#28456
 run-test-plan https://github.com/owner/repo/pull/123
 ```
 
-## Command Contract
+## Goal
 
-- The main thread owns scenario state, evidence paths, and reporting destinations. Subagents return compact scenario/review handoffs only.
-- For STANDARD or expensive runs (large scenario matrix, multi-flow validation), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then hand the next expensive phase to a fresh worker.
-- Required PROJECT.md updates on STANDARD/expensive runs:
-  - After step 3 (plan accepted): `## Test Plan` (final scenario matrix, plan source, review verdict).
-  - After step 4 (execution): `## Test Plan Results` (per-scenario PASS/FAIL/BLOCKED/SKIP, evidence paths).
-  - After step 6 (report): `## Test Plan Reported` (where posted: Shortcut story link, PR comment, or local only).
-- These writes are **hard gates before any checkpoint** on STANDARD/expensive runs — chat-only scenario state is unrecoverable after clear.
-- The plan matrix and per-scenario evidence paths must land in PROJECT.md before clear regardless of whether the run is reactive or proactive checkpoint.
-- **Every run** (including TRIVIAL/STANDARD) writes at least a `## Test Plan Results` entry to PROJECT.md before the chat summary so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) after `run-test-plan` does not lose the QA record. TRIVIAL/STANDARD runs may fold plan + results + report into a single end-of-run entry; COMPLEX or expensive runs follow the per-phase cadence above.
+Validate a feature area, story, PR, or existing test-plan doc without fixing
+code: a reviewed runnable matrix, executed where the environment allows,
+evidence for material failures, and a findings report. This workflow validates
+only; it does not file bugs or route into `fix-bug`. Prefer a small runnable
+matrix over a broad exploratory sweep, and keep findings factual and
+local-first.
 
-  Minimum entry shape for TRIVIAL/STANDARD:
+The main thread owns test design, scenario execution and state, diagnosis,
+evidence paths, and reporting destinations. The `operations` route only
+summarizes evidence already collected, the `review` route judges results
+independently, and any subagent returns a compact scenario or review handoff.
+
+1. **Plan.** Accept a test-plan doc or matrix, a feature or product area, a
+   Shortcut story ID or URL, or a GitHub issue or PR reference, and pull in
+   the external context it points to.
+2. **Build and review the matrix.** Normalize a provided plan, or derive one
+   from the target: happy path first, then edge paths, validations, and
+   asymmetric behavior. Each row carries four fields:
+
+   ```markdown
+   - Use case: <name>
+     - Status: <likely bug / needs validation / known issue>
+     - Confidence: <high / medium / low>
+     - Context: <flags, roles, env needs>
+     - Why it matters: <user or regression impact>
+   ```
+
+   Review the matrix once with a fresh test-plan reviewer, and again only
+   after material revisions. Revise once on its blocking findings (one
+   informed retry under `rules/gates.md`), then execute; stop early only when
+   blockers or unresolved ambiguities would make execution unsafe or
+   misleading.
+3. **Execute** only the scenarios the current environment can test: browser
+   automation for UI and workflow checks, API or CLI calls otherwise, and
+   `BLOCKED` or `SKIP` with the reason when a prerequisite is missing. For UI
+   scenarios, capture evidence with
+   [skills/qa/references/browser-recording.md](../../qa/references/browser-recording.md)
+   and its platform recorder: one recording per logical flow when recording
+   is available, plus screenshots for high-value states and failures. Add
+   console logs or API output only when the video does not explain a failure.
+4. **Report** each scenario:
+
+   ```markdown
+   - Scenario: <name>
+     - Result: <PASS / FAIL / BLOCKED / SKIP>
+     - Validation path: <playwright / api / manual>
+     - Evidence: <screenshots, logs, video, or none>
+     - Best proof: <the single artifact or log line to reference first>
+   ```
+
+   Body shape, tone, and evidence rules come from
+   [skills/qa/references/write-report.md](../../qa/references/write-report.md);
+   attachment size limits from `browser-recording.md`. When a Shortcut story
+   is known (input or PROJECT.md), upload the recording through the Shortcut
+   `/files` endpoint and post the report as a story comment
+   ([skills/shortcut/references/report.md](../../shortcut/references/report.md)).
+   When a GitHub PR is given, scrub the report body and attachment names per
+   `rules/pii-scrub.md` first (a PR comment is public; a Shortcut comment is
+   not), attach the recording inline if it fits under GitHub's size limit
+   (transcode to MP4 if needed) or note the local path, and post the report
+   as a PR comment. Otherwise show the report locally with the recording path.
+
+## Exit Criteria
+
+- The matrix passed its one review, or the reason execution stopped is
+  recorded.
+- Every scenario is `PASS`, `FAIL`, `BLOCKED`, or `SKIP`, and every material
+  failure has evidence.
+- PROJECT.md has a `## Test Plan Results` entry before the chat summary, so a
+  fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md)
+  after `run-test-plan` keeps the QA record:
 
   ```markdown
   ## Test Plan Results
@@ -46,106 +103,21 @@ run-test-plan https://github.com/owner/repo/pull/123
   Reported: [link or "local only"]
   ```
 
-  Emit before the chat summary:
+  Across workers, PROJECT.md follows the durable-state rule in
+  `rules/universal.md`.
 
-  ```markdown
-  ## PROJECT.md Updated — Test Plan Results
-  Scenarios recorded: [count]
-  ```
+## Summary
 
-## Steps
+Always display locally, whether or not a report was posted:
 
-1. **Resolve the Starting Point**
-
-   Accept:
-   - an existing test-plan doc or matrix
-   - a feature or product area
-   - a Shortcut story ID or URL
-   - a GitHub issue or PR reference / URL
-
-   Pull in external context when references are provided.
-
-2. **Create or Resolve the Test Plan**
-
-   If a plan is provided:
-   - read it and normalize it into a compact runnable matrix
-
-   If no plan is provided:
-   - derive a compact use-case matrix from the target area or external context
-
-3. **Review the Plan Once**
-
-   Load [skills/testing/references/review-testplan.md](../../testing/references/review-testplan.md) and review the matrix with a fresh test-plan reviewer after material revisions.
-   Revise once on the reviewer's blocking findings (one informed retry under `rules/gates.md`), then execute; stop early only if blockers or unresolved ambiguities make execution unsafe or misleading.
-
-4. **Execute the Plan**
-
-   Run only the scenarios that are actually testable in the current environment.
-
-   Execution defaults:
-   - Available browser automation for UI and workflow checks
-   - API or CLI calls for non-UI validation
-   - clear `BLOCKED` or `SKIP` outcomes when prerequisites are missing
-
-5. **Capture Evidence**
-
-   For UI scenarios, drive the available browser automation and capture evidence using [skills/qa/references/browser-recording.md](../../qa/references/browser-recording.md). Choose the platform-specific recorder from that reference. Capture one recording per logical flow when recording is available, plus screenshots for high-value states or failures.
-
-   Supplement with console logs or API output only when video alone doesn't explain a failure.
-
-6. **Report Findings**
-
-   Body shape, tone, and evidence rules come from [skills/qa/references/write-report.md](../../qa/references/write-report.md). Destination-specific upload + post mechanics live in the matching reference (e.g. [skills/shortcut/references/report.md](../../shortcut/references/report.md) for Shortcut). For attaching the recording, follow the size-limit guidance in [skills/qa/references/browser-recording.md](../../qa/references/browser-recording.md).
-
-   **If a Shortcut story is known** (provided as input, or from PROJECT.md):
-   - Upload the recording to the story via the Shortcut `/files` endpoint
-   - Post the report as a story comment
-
-   **If a GitHub PR is known** (provided as input):
-   - Attach the recording inline if it fits under GitHub's size limit (transcode to MP4 if needed); otherwise note the local path
-   - Post the report as a PR comment
-
-   **Otherwise**:
-   - Display the report locally using the same template, with the recording path
-
-   Do not auto-file bugs or auto-route into `fix-bug`.
-
-7. **Summary**
-
-   Always display locally, regardless of whether external reporting happened:
-
-   ```markdown
-   ## Run-Test-Plan Complete
-
-   ### Outcome
-   - [Executed plan / stopped on blocker before execution]
-
-   ### Source
-   - [Plan doc, area, story, or PR]
-
-   ### Plan Quality
-   - [Final review score or blocker]
-
-   ### Results
-   - [PASS / FAIL / BLOCKED / SKIP by scenario]
-
-   ### Evidence
-   - [Video files with paths]
-   - [Best proof for failures or high-value passes]
-
-   ### Reported To
-   - [Shortcut story link / GitHub PR link / local only]
-
-   ### Risks / Blockers
-   - [What could not be executed or remains unclear]
-
-   ### Follow-Up
-   - [Manual next steps only]
-   ```
-
-## Notes
-- `run-test-plan` is validation-only in v1
-- Prefer a small runnable matrix over a broad exploratory sweep
-- Keep findings factual and local-first
-- The command should keep tightening and executing the plan automatically until the matrix reaches threshold or a real blocker stops it
-- The main thread owns scenario execution, state, evidence paths, and reporting destinations; use `operations` only to summarize already-collected evidence, use `review` for independent test-result judgment, and keep test design or diagnosis on the main thread; any subagent returns compact scenario/review handoffs only
+```markdown
+## Run-Test-Plan Complete
+Outcome: <executed | stopped on blocker before execution>
+Source: <plan doc, area, story, or PR>
+Plan quality: <reviewer verdict or blocker>
+Results: <PASS / FAIL / BLOCKED / SKIP by scenario>
+Evidence: <video paths; the best proof for failures and high-value passes>
+Reported to: <Shortcut story link | GitHub PR link | local only>
+Risks / blockers: <what could not be executed or remains unclear>
+Follow-up: <manual next steps only>
+```

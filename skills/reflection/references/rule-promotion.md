@@ -2,7 +2,25 @@
 
 Use for `reflect propose-rule` and `reflect promote`.
 
-Read `rules/rule-maintenance.md` before drafting or modifying rules.
+## Rule Maintenance
+
+Rules change on evidence, not on intuition mid-task. The evidence is a cluster
+in the observation queue (`.ai-toolkit/observations.jsonl`) that `reflect`
+reviews.
+
+- **A rule was violated:** diagnose whether context, scope, or placement
+  failed: add the reason the rule exists, narrow it to the step that failed, or
+  load it earlier. Add the eval case that would have caught it.
+- **A rule is stale:** update it to current behavior, remove dead thresholds,
+  and say so in the summary.
+- **A new pattern emerged:** check existing rules for partial coverage first. A
+  rule belongs in `rules/` only when it applies across skills; workflow
+  sequences and domain methods belong in skills. One concern per file; split a
+  rule that covers two.
+- **Promotion:** rule and skill changes need human approval and ship with an
+  eval candidate under `evals/`. Never mutate rules or skills automatically
+  from observations. Scope is the toolkit's `rules/`; never edit a project's
+  own guidance.
 
 ## Propose Rule Flow
 

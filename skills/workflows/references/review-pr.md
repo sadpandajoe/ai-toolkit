@@ -7,21 +7,17 @@
 
 Effect: `external_effect`.
 
-Use `--draft` to show the review locally without posting. Use `--auto` to skip
-confirmations and authorize posting or approval for the reviewed PRs.
-
 ## Authorization Boundary
 
 Authorization mode: `explicit`. Invocation alone does not authorize posting or
 approval; `--auto` or a separate confirmation grants the bounded provider
-effect after the PII scrub.
+effect after the PII scrub. `--draft` shows the review locally without
+posting.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `review-pr` entry in
-`interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`review-pr` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 
@@ -43,14 +39,16 @@ review-pr --all-open
    flags, validate findings, recommend.
 3. **Post or draft** with
    [skills/review/references/pr-posting.md](../../review/references/pr-posting.md)
-   after the PII scrub from `feedback/references/reply-resolve.md`. Findings
+   after the PII scrub (`rules/pii-scrub.md`). Before each posted review,
+   `bin/aitk project-state op --check review:<pr>:<sha>` skips one that already
+   ran; record it with `op --id review:<pr>:<sha>` after it succeeds. Findings
    posted to GitHub carry severity and evidence only; model provenance stays in
    the local record.
 
 ## Contract
 
 - Read full changed-file context, not only the diff.
-- Emit the Complexity Gate for single-PR reviews; assess impact before
+- State complexity and impact in the review summary; assess impact before
   calibrating severity.
 - Show findings and severity reasoning before posting unless `--auto`.
 - `--deep` (or a deep-tier phrase) pins complexity to at least COMPLEX and runs

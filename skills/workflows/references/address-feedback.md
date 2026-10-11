@@ -7,30 +7,23 @@
 
 Effect: `external_effect`.
 
+Authorization mode: `invocation`.
+
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `address-feedback`
-entry in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every
-durable transition and effect record.
+`address-feedback` in `interfaces/contracts.json`; transitions and effects go
+through `bin/aitk checkpoint`.
 
-## Usage
+## Authorization Boundary
 
 ```bash
 address-feedback <pr-number-or-url> [--draft] [--step]
 ```
 
-The default runs unattended for bot and posting work: new commits, pushes to
-the current PR branch, replies to bot threads, resolution of eligible bot
-threads once fixes are verified. Invariant pauses on every path: human-thread
-reply wording, amend/rebase/force-push, ambiguous push target, failed
-verification, approve or request-changes. `--step` restores confirmations.
-
-## Authorization Boundary
-
-Authorization mode: `invocation`. The invocation grants only the documented
-default commit, current-branch push, bot reply, and eligible thread resolution
-scope; every invariant pause still requires explicit input.
+The invocation grants the push and post defaults in
+`feedback/references/reply-resolve.md`, and nothing more. Its invariant pauses,
+human-thread reply wording first, still need explicit input on every path;
+`--step` restores the per-step confirmations.
 
 ## Goal Loop
 
@@ -41,7 +34,9 @@ implementation session. Load the `feedback` skill phase by phase.
    the Reviewer Inventory table first; then investigate each thread and decide
    fix, skip, or discuss with evidence. Reject incorrect suggestions with
    evidence rather than complying. Persist `## Feedback Triage` (hard gate).
-2. **Classify complexity** of the accepted fixes and persist the snapshot.
+2. **Classify complexity** of the accepted fixes and persist it with
+   `bin/aitk project-state init --workflow address-feedback ... --format
+   block`; paste the Complexity Gate block it prints.
 3. **Fix** with `feedback/references/fix-review.md`.
    <!-- aitk-model-route:workflows.feedback-fix-wave -->
    For large rounds with disjoint ownership, launch fresh implementer workers on
@@ -55,7 +50,10 @@ implementation session. Load the `feedback` skill phase by phase.
    reviewer through one independent lane (`review/references/local-review.md`
    independent review) rather than the parent's opinion.
 6. **Reply and resolve** with `feedback/references/reply-resolve.md` after the
-   PII scrub over every reply, comment, and commit message. Persist
+   PII scrub over every reply, comment, and commit message. Before each reply,
+   resolution and push, `bin/aitk project-state op --check <id>` skips one
+   that already ran; record each with `op --id <id>` after it succeeds
+   (`reply:<comment-id>`, `resolve:<thread-id>`, `push:<sha>`). Persist
    `## Feedback Posted`.
 
 ## Summary
@@ -69,4 +67,5 @@ PR #<n> — <fixed> fixed, <skipped> skipped, <discussed> discussed
 ### Suggested Next Steps
 ```
 
-Record a `metrics-emit` event with the fields from `reply-resolve.md`.
+Record metrics with `bin/aitk metrics emit --workflow address-feedback --status
+<terminal status>`, adding the fields `reply-resolve.md` names with `--extra`.

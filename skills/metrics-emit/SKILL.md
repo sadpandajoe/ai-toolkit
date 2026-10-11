@@ -43,9 +43,10 @@ Omit unknown values rather than guessing.
 
 ## Steps
 
-1. Build the event with `timestamp` (ISO 8601) and the fields above.
-2. Append one strict-JSON line; create the file if needed.
-3. On any failure, note it in conversation and continue; metrics never gate
+1. Run `bin/aitk metrics emit --workflow <name> --status <outcome>`; it fills
+   the snapshot's fields, adds `--review-json`, `--workers`, and `--extra`
+   values, and appends one strict-JSON line.
+2. On any failure, note it in conversation and continue; metrics never gate
    progress.
 
 ```markdown

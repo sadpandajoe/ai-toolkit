@@ -4,11 +4,10 @@
 
 Effect: `read_only`.
 
-Use the deterministic repository doctor. Do not reconstruct its checks manually.
-
 ## Run
 
-From the AI Toolkit repository root:
+Use the deterministic repository doctor; do not reconstruct its checks
+manually. From the AI Toolkit repository root:
 
 ```bash
 bin/aitk doctor --strict

@@ -734,6 +734,13 @@ def validate_contracts(root: Path) -> list[str]:
             workflow.name: workflow
             for workflow in load_workflows(root, include_pgm=True)
         }
+        # A public skill that runs as its own workflow (cherry-pick) carries a
+        # contract too, validated with the single_run rules against its SKILL.md.
+        public_skills = {
+            item["name"]: root / item["path"] / "SKILL.md"
+            for item in load_skill_interfaces(root)
+            if item["classification"] == "public_direct"
+        }
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         return [f"unable to load workflow contracts: {error}"]
     problems: list[str] = _validate_durable_runtime(root)
@@ -765,7 +772,15 @@ def validate_contracts(root: Path) -> list[str]:
         seen.add(name)
         workflow = workflows.get(name)
         if workflow is None:
-            problems.append(f"contract references unknown workflow: {name}")
+            skill_reference = public_skills.get(name)
+            if skill_reference is None:
+                problems.append(f"contract references unknown workflow: {name}")
+                continue
+            problems.extend(
+                _validate_contract(
+                    root, name, contract, "single_run", skill_reference, (), vocabularies
+                )
+            )
             continue
         problems.extend(
             _validate_contract(

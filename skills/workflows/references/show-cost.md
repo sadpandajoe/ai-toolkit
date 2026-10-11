@@ -31,18 +31,10 @@ Where `<period>` is the argument from the user (default: `7d`).
 
 The script handles all formatting. Present its output directly — do not reformat or summarize.
 
-### 3. Interpret If Asked
-
-If the user asks "why is this expensive?", look for:
-- **High-cost model output tokens**: long reasoning chains, verbose subagents
-- **Low cache hit rate**: context not being reused efficiently across turns
-- **One project dominating**: a specific workflow is burning tokens
-- **Many messages per session**: long sessions where context compresses and re-expands
-
 ## Notes
 - Costs shown are **API-equivalent estimates**, not actual billing. Subscription users pay a flat rate regardless of token usage. These numbers indicate relative usage weight.
 - Unknown models are shown with token/message counts but excluded from cost totals instead of being priced as a different provider/model.
 - The exact provider/session source supported by this release is documented in [telemetry support](../../../docs/TELEMETRY.md). Unsupported sources are reported as unavailable.
 - Promotional pricing uses each record's timezone-aware timestamp. Missing, invalid, or timezone-free timestamps are unpriced rather than charged at today's rate.
-- The script skips subagent log files (they're under `/subagents/` subdirectories).
+- Subagent transcripts (`<session-id>/subagents/*.jsonl`) count toward their parent session, and a usage record repeated under the same `(message.id, requestId)` is counted once.
 - Multi-day sessions are attributed proportionally to each active day.

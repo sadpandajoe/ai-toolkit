@@ -10,10 +10,8 @@ Effect: `git_mutation`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `update-tests` entry
-in `interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`update-tests` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 ```
@@ -24,129 +22,55 @@ update-tests --function normalize_query
 update-tests <target> --no-pr        # Commit and push only; skip the draft PR
 ```
 
-## Command Contract
+## Goal
 
-- Only the main thread writes PROJECT.md. Subagents return compact handoffs.
-- For STANDARD or expensive runs (large suite, multi-subsystem target), follow `rules/context-management.md`: write durable state to PROJECT.md at each phase boundary, then hand the next expensive phase to a fresh worker. The internal `review-code` pass counts as one of those phases.
-- Required PROJECT.md updates on STANDARD/expensive runs:
-  - After step 3 (gap analysis): `## Test Suite Analysis` (target, weak tests, missing coverage, planned updates).
-  - After step 6 (updates applied): `## Test Updates Applied` (files changed, tests added/updated, replaced low-signal tests).
-  - After step 7 (verify + review): `## Test Review Status` (verification result, review gate status).
-- These writes are **hard gates before any checkpoint** on STANDARD/expensive runs — a fresh session without them loses the gap analysis or fix queue.
+Make the smallest high-signal improvement to the existing suite for the target
+(a product area such as `sql-lab`, a code path, a test file or directory, or
+`--function <name>`) and deliver it as a reviewed `test:` commit.
+`update-tests` is the public workflow for existing-suite maintenance;
+`review-code` runs inside it rather than as the user's next step. Prefer
+replacing low-signal tests over adding redundant ones, size additions like the
+neighboring test files, and keep scratch checks out of the commit. Write the
+failing test first when feasible; when that is blocked, record why before
+changing the suite. Only the main thread writes PROJECT.md; subagents return
+compact handoffs.
 
-## Steps
+Resolve the target from matching product-area names, code paths, and test
+paths. If more than one plausible target remains, stop and name them: the
+choice is the user's.
 
-1. **Normalize the Target**
+When the target has no meaningful suite, say so and continue as `create-tests`
+(carrying `--no-pr`): the deliverable is the same, and a first suite follows
+`create-tests`' procedure, not this improvement loop. With `--step` (or
+`--no-handoff`), stop and recommend `create-tests` instead.
 
-   Accept:
-   - a product area such as `sql-lab`
-   - a repo path
-   - a test file or test directory
-   - `--function <name>`
+Find weak or low-signal tests, missing behavioral coverage, production blind
+spots, and simplification opportunities; for workflow-heavy, integration-heavy, or user-visible targets, add a compact
+QA must-cover scenario matrix. Sort the results into must-update now, suggested
+follow-up, and out of scope, and change only the must-update set with
+[skills/testing/references/update-tests.md](../../testing/references/update-tests.md),
+which owns updating, adding, and replacing tests and the targeted
+verification.
 
-   Resolve the target by searching matching product-area names, code paths, and test paths.
-   If multiple plausible targets remain, stop and surface the ambiguity.
+## Exit Criteria
 
-2. **Discover the Existing Suite**
+- Verification is strong (`verify` or an equivalent targeted check), and
+  `review-code` has run on the changed repo-tracked files: one independent
+  review, fix the accepted findings, one delta pass over the fix. A finding
+  still open after the delta is `ESCALATE` (or `USER_DECISION` when it needs a
+  product call), not a third round.
+- If verification is strong and `review-code` leaves no unresolved `[major]` or `[minor]` issues:
+  - create a `test:` commit and push (when the branch already has an upstream, require `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal `<remote>/<branch>`, else pause as an ambiguous push target, then push with `git push "<remote>" "HEAD:refs/heads/<branch>"`, never a bare `git push`, never `-u`; with no upstream, `git push -u <remote> HEAD`, where `<remote>` is `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`, pausing on an ambiguous push target), then open a draft PR with `create-pr --draft` straight through, with no checkpoint reservation (no confirmation, never from `main`); `--no-pr` stops after the push and records `pushed — awaiting PR request`; promotion to ready, reviewers, and merge need the user's words
 
-   Identify the meaningful existing tests for the target area before planning any updates.
+  Commit message format:
+  - `test: update <scope> coverage`
+  - fallback: `test: update targeted coverage`
 
-   If no meaningful suite exists:
-   - announce the transition and hand off into the `create-tests` flow automatically (carrying `--no-pr` when it was passed) — the delegated intent ("get this area properly tested") is the same deliverable, and end-to-end workflows own their internal loops
-   - `--step` (or `--no-handoff`) restores the stop-and-recommend behavior
-   - either way, do not build the first suite using `update-tests`' own improvement loop — first suites follow `create-tests`' procedure
-
-3. **Analyze the Current Suite**
-
-   Load [skills/testing/references/review-tests.md](../../testing/references/review-tests.md) to identify:
-   - weak or low-signal tests
-   - missing behavioral coverage
-   - production blind spots
-   - simplification opportunities
-
-4. **Expand Use Cases When Needed**
-
-   For workflow-heavy, integration-heavy, or user-visible targets:
-   - run QA use-case analysis to produce a compact must-cover scenario matrix
-
-5. **Scope the Smallest Useful Update**
-
-   Collapse the findings into:
-   - must-update now
-   - suggested follow-up tests
-   - out-of-scope risks
-
-   Keep the current change focused on the smallest set of high-signal suite improvements.
-
-6. **Update the Tests**
-
-   Load [skills/testing/references/update-tests.md](../../testing/references/update-tests.md):
-
-   This helper owns:
-   - updating existing tests first
-   - adding tests only where they fit the current suite naturally
-   - replacing low-signal tests when the replacement is clearly better
-   - writing failing tests first when feasible
-   - targeted verification
-
-7. **Verify and Review Changed Test Files**
-
-   Run `verify` or equivalent targeted checks first, then run `review-code` on the changed repo-tracked files: one independent review, fix the accepted findings, one delta pass over the fix. A finding still open after the delta is `ESCALATE` (or `USER_DECISION` when it needs a product call), not a third round.
-
-8. **Commit Boundary**
-
-   If verification is strong and `review-code` leaves no unresolved `[major]` or `[minor]` issues:
-   - create a `test:` commit and push (when the branch already has an upstream, require `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal `<remote>/<branch>`, else pause as an ambiguous push target, then push with `git push "<remote>" "HEAD:refs/heads/<branch>"`, never a bare `git push`, never `-u`; with no upstream, `git push -u <remote> HEAD`, where `<remote>` is `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`, pausing on an ambiguous push target), then open a draft PR with `create-pr --draft` straight through, with no checkpoint reservation (no confirmation, never from `main`); `--no-pr` stops after the push and records `pushed — awaiting PR request`; promotion to ready, reviewers, and merge need the user's words
-
-   Commit message format:
-   - `test: update <scope> coverage`
-   - fallback: `test: update targeted coverage`
-
-   Stop instead of committing when:
-   - verification is partial or blocked
-   - meaningful ambiguity remains
-   - the workflow handed off to `create-tests`
-
-9. **Summary**
-   ```markdown
-   ## Update-Tests Complete
-
-   ### Outcome
-   - [Updated suite / handed off to create-tests / stopped on blocker]
-
-   ### Scope
-   - [Target area, path, or function]
-
-   ### Suite Outcome
-   - [Updated existing suite / handed off to create-tests]
-
-   ### Behavioral Coverage
-   - [What regressions or behaviors are now covered]
-
-   ### Review / Quality
-   - [Review rounds and final review outcome]
-
-   ### Verification
-   - [Checks run]
-
-   ### Risks / Blockers
-   - [Anything still weak, blocked, or intentionally left for follow-up]
-
-   ### Remaining Gaps
-   - [Suggested follow-up tests or none]
-
-   ### Commit Result
-   - [Created `test:` commit / no commit and why]
-   ```
-
-## Notes
-- `update-tests` is the public workflow for existing-suite maintenance
-- Favor replacing low-signal tests over adding redundant ones
-- Write the failing test first when feasible; if blocked, document why before changing the suite
-- `review-code` is an internal phase here, not the expected next top-level user step
-- Every run writes at least a one-line `## Tests Updated` entry to PROJECT.md before the chat summary so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) after `update-tests` does not lose the record. TRIVIAL/STANDARD runs satisfy this with a single end-of-run entry; COMPLEX or expensive runs follow the hard-gate cadence in the Command Contract.
-
-  Minimum entry shape for TRIVIAL/STANDARD:
+  Stop instead of committing when verification is partial or blocked,
+  meaningful ambiguity remains, or the run continued as `create-tests`.
+- PROJECT.md has a `## Tests Updated` entry before the chat summary, so a
+  fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md)
+  after `update-tests` keeps the record:
 
   ```markdown
   ## Tests Updated
@@ -156,9 +80,42 @@ update-tests <target> --no-pr        # Commit and push only; skip the draft PR
   Commit: [SHA or "no commit"]
   ```
 
-  Emit before the chat summary:
+  When a later phase runs in a fresh worker, persist what it needs first:
+  `## Test Suite Analysis` (target, weak tests, missing coverage, planned
+  updates) before the update, `## Test Updates Applied` (files changed; tests
+  added, updated, or replaced) before review, and `## Test Review Status`
+  (verification result, review gate status) after it. The worker and any
+  later session resume only from PROJECT.md.
 
-  ```markdown
-  ## PROJECT.md Updated — Tests Updated
-  Files recorded: [count]
-  ```
+## Summary
+
+```markdown
+## Update-Tests Complete
+
+### Outcome
+- [Updated suite / handed off to create-tests / stopped on blocker]
+
+### Scope
+- [Target area, path, or function]
+
+### Suite Outcome
+- [Updated existing suite / handed off to create-tests]
+
+### Behavioral Coverage
+- [What regressions or behaviors are now covered]
+
+### Review / Quality
+- [Review rounds and final review outcome]
+
+### Verification
+- [Checks run]
+
+### Risks / Blockers
+- [Anything still weak, blocked, or intentionally left for follow-up]
+
+### Remaining Gaps
+- [Suggested follow-up tests or none]
+
+### Commit Result
+- [Created `test:` commit / no commit and why]
+```

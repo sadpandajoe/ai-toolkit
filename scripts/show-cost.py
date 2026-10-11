@@ -9,12 +9,15 @@ from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+# Run as `python3 <toolkit-root>/scripts/show-cost.py` from any directory: the
+# script's own directory is on sys.path, the toolkit root is not.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from aitk.pricing import compute_cost, get_pricing
 
 # Per-model global API-equivalent pricing ($/MTok) lives in aitk/pricing.py.
-# Keep unknown models unpriced. Claude 5 family rates (Fable 5.1, Opus 5,
-# Sonnet 5) were taken from the Anthropic model table on 2026-09-05, Opus 5.5
-# on 2026-09-25; Sonnet 5 promotional pricing is timestamp-aware.
+# Keep unknown models unpriced. Promotional and long-prompt rates are applied
+# per record there (timestamp and prompt size).
 # ANSI colors
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -25,19 +28,35 @@ YELLOW = "\033[33m"
 CYAN = "\033[36m"
 
 
+def session_files(proj_path):
+    """Group a project's transcripts by session: the session file first, then
+    its subagent transcripts (`<session-id>/subagents/*.jsonl`)."""
+    groups = defaultdict(list)
+    for path in sorted(glob.glob(os.path.join(proj_path, "*.jsonl"))):
+        groups[Path(path).stem].append(path)
+    for path in sorted(glob.glob(os.path.join(proj_path, "*", "subagents", "*.jsonl"))):
+        groups[Path(path).parent.parent.name].append(path)
+    return groups
+
+
 def parse_sessions(base_dir, since=None):
-    """Parse all session JSONL files, return per-session aggregated data."""
+    """Parse all session JSONL files, return per-session aggregated data.
+
+    Subagent transcripts count toward their parent session. A usage record
+    repeated under the same `(message.id, requestId)`, in one file or across
+    files, is counted once.
+    """
     sessions = []
-    for proj_dir in os.listdir(base_dir):
+    seen = set()
+    for proj_dir in sorted(os.listdir(base_dir)):
         proj_path = os.path.join(base_dir, proj_dir)
         if not os.path.isdir(proj_path):
             continue
-        for jsonl_path in glob.glob(os.path.join(proj_path, "*.jsonl")):
-            # Skip subagent logs
-            if "/subagents/" in jsonl_path:
-                continue
+        for paths in session_files(proj_path).values():
             try:
-                session = parse_one_session(jsonl_path, proj_dir, since)
+                session = parse_one_session(
+                    paths[0], proj_dir, since, seen=seen, extra_paths=paths[1:]
+                )
                 if session and session["messages"] > 0:
                     sessions.append(session)
             except Exception:
@@ -45,8 +64,30 @@ def parse_sessions(base_dir, since=None):
     return sessions
 
 
-def parse_one_session(path, project, since):
-    """Parse a single session JSONL file."""
+def usage_key(obj, msg):
+    """Identity of one API response: `(message.id, requestId)`, or None."""
+    key = (msg.get("id"), obj.get("requestId"))
+    return None if key == (None, None) else key
+
+
+def iter_records(paths):
+    for path in paths:
+        with open(path) as f:
+            for line in f:
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+
+def parse_one_session(path, project, since, seen=None, extra_paths=()):
+    """Parse one session JSONL file plus any extra (subagent) files.
+
+    `seen` holds the usage keys already counted; pass one set across calls to
+    deduplicate across sessions.
+    """
+    if seen is None:
+        seen = set()
     totals = defaultdict(
         lambda: {
             "input": 0,
@@ -64,51 +105,55 @@ def parse_one_session(path, project, since):
     session_id = None
     message_count = 0
 
-    with open(path) as f:
-        for line in f:
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
+    for obj in iter_records([path, *extra_paths]):
+        if not isinstance(obj, dict):
+            continue
+        ts_str = obj.get("timestamp", "")
+        if not session_id:
+            session_id = obj.get("sessionId")
+
+        msg = obj.get("message", {})
+        if not isinstance(msg, dict) or "usage" not in msg:
+            continue
+
+        # One API response can be written as several records (one per content
+        # block), each repeating the same usage; count it once.
+        key = usage_key(obj, msg)
+        if key is not None:
+            if key in seen:
                 continue
+            seen.add(key)
 
-            ts_str = obj.get("timestamp", "")
-            if not session_id:
-                session_id = obj.get("sessionId")
+        # Parse timestamp
+        date = ts_str[:10] if ts_str else None
+        if date and since and date < since:
+            continue
 
-            msg = obj.get("message", {})
-            if not isinstance(msg, dict) or "usage" not in msg:
-                continue
+        if date:
+            dates.add(date)
+        if ts_str:
+            if not first_ts or ts_str < first_ts:
+                first_ts = ts_str
+            if not last_ts or ts_str > last_ts:
+                last_ts = ts_str
 
-            # Parse timestamp
-            date = ts_str[:10] if ts_str else None
-            if date and since and date < since:
-                continue
+        model = msg.get("model", "unknown")
+        usage = msg["usage"]
+        inp = usage.get("input_tokens", 0)
+        out = usage.get("output_tokens", 0)
+        cr = usage.get("cache_read_input_tokens", 0)
+        cc = usage.get("cache_creation_input_tokens", 0)
+        pricing = get_pricing(model, ts_str, require_timestamp=True)
+        cost = compute_cost(usage, model, ts_str)
 
-            if date:
-                dates.add(date)
-            if ts_str:
-                if not first_ts or ts_str < first_ts:
-                    first_ts = ts_str
-                if not last_ts or ts_str > last_ts:
-                    last_ts = ts_str
-
-            model = msg.get("model", "unknown")
-            usage = msg["usage"]
-            inp = usage.get("input_tokens", 0)
-            out = usage.get("output_tokens", 0)
-            cr = usage.get("cache_read_input_tokens", 0)
-            cc = usage.get("cache_creation_input_tokens", 0)
-            pricing = get_pricing(model, ts_str, require_timestamp=True)
-            cost = compute_cost(usage, model, ts_str)
-
-            totals[model]["input"] += inp
-            totals[model]["output"] += out
-            totals[model]["cache_read"] += cr
-            totals[model]["cache_create"] += cc
-            totals[model]["cost"] += cost
-            totals[model]["messages"] += 1
-            totals[model]["unpriced"] += int(pricing is None)
-            message_count += 1
+        totals[model]["input"] += inp
+        totals[model]["output"] += out
+        totals[model]["cache_read"] += cr
+        totals[model]["cache_create"] += cc
+        totals[model]["cost"] += cost
+        totals[model]["messages"] += 1
+        totals[model]["unpriced"] += int(pricing is None)
+        message_count += 1
 
     if message_count == 0:
         return None

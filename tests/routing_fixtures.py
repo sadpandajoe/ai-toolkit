@@ -32,36 +32,123 @@ MODEL_ROUTE_FLOORS = {
 }
 
 
+# Every flag the runner's preflight looks for in each provider's help text. One
+# copy, so a test stub cannot drift from the flags `_required_flags` demands.
+CLAUDE_HELP = " ".join(
+    (
+        "--print --no-session-persistence --safe-mode --restricted",
+        "--strict-mcp-config --mcp-config --model --effort",
+        "--permission-mode --permission-prompts --json-schema --output-format",
+        "--disallowedTools --allowedTools --tools --append-system-prompt",
+        "--max-budget-usd",
+    )
+)
+
+
+CODEX_HELP = " ".join(
+    (
+        "--ephemeral --strict-config --ignore-user-config --ignore-rules",
+        "--skip-git-repo-check --disable --model --config --sandbox --cd",
+        "--add-dir --output-schema --output-last-message --json",
+    )
+)
+
+
 def _claude_runner(
     worker: dict[str, object],
+    calls: list[dict[str, object]] | None = None,
+    refusal: str | None = None,
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
-    """A stub `claude` that passes preflight and returns one worker envelope."""
+    """A stub `claude` that passes preflight and returns one worker envelope.
 
-    def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+    `calls` collects each worker invocation's argv, stdin and the instruction
+    file's text and mode, read while the file still exists. A `refusal` stop
+    reason makes the worker decline instead of answering.
+    """
+
+    def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
         if "--version" in argv:
-            return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
+            return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
         if "--help" in argv:
-            flags = " ".join(
-                (
-                    "--print --no-session-persistence --safe-mode ",
-                    "--strict-mcp-config --mcp-config --model --effort ",
-                    "--permission-mode --json-schema --output-format ",
-                    "--disallowedTools --tools",
-                )
-            )
-            return subprocess.CompletedProcess(argv, 0, flags, "")
-        return subprocess.CompletedProcess(
-            argv,
-            0,
-            json.dumps(
+            return subprocess.CompletedProcess(argv, 0, CLAUDE_HELP, "")
+        if calls is not None:
+            path = Path(argv[argv.index("--append-system-prompt-file") + 1])
+            calls.append(
                 {
-                    "type": "result",
-                    "subtype": "success",
-                    "is_error": False,
-                    "structured_output": worker,
+                    "argv": list(argv),
+                    "input": options.get("input"),
+                    "instructions": path.read_text(),
+                    "instructions_mode": path.stat().st_mode & 0o777,
                 }
-            ),
-            "",
+            )
+        if refusal is not None:
+            envelope: dict[str, object] = {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "stop_reason": refusal,
+                "result": "",
+            }
+        else:
+            envelope = {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "structured_output": worker,
+            }
+        return subprocess.CompletedProcess(argv, 0, json.dumps(envelope), "")
+
+    return runner
+
+
+def _codex_runner(
+    worker: dict[str, object] | None,
+    calls: list[dict[str, object]] | None = None,
+    refusal: str | None = None,
+) -> Callable[..., subprocess.CompletedProcess[str]]:
+    """A stub `codex` that passes preflight and writes one final worker message.
+
+    `calls` collects each worker invocation's argv, environment, stdin, the
+    schema file's content and what its `CODEX_HOME` held (name to mode), read
+    while those still exist, so a test can check what actually reached the
+    worker. A `None` worker writes no final message at all; a `refusal` code
+    emits an error event carrying it instead of a result.
+    """
+
+    def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
+        if "--help" in argv:
+            return subprocess.CompletedProcess(argv, 0, CODEX_HELP, "")
+        environment = dict(options.get("env") or {})
+        if calls is not None:
+            home = environment.get("CODEX_HOME")
+            calls.append(
+                {
+                    "argv": list(argv),
+                    "env": environment,
+                    "input": options.get("input"),
+                    "cwd": options.get("cwd"),
+                    "schema": json.loads(
+                        Path(argv[argv.index("--output-schema") + 1]).read_text()
+                    ),
+                    "codex_home": {
+                        path.name: path.stat().st_mode & 0o777
+                        for path in sorted(Path(home).iterdir())
+                    }
+                    if home
+                    else None,
+                }
+            )
+        if refusal is not None:
+            event = {"type": "error", "error": {"code": refusal, "message": "declined"}}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(event), "")
+        if worker is not None:
+            Path(argv[argv.index("--output-last-message") + 1]).write_text(
+                json.dumps(worker)
+            )
+        return subprocess.CompletedProcess(
+            argv, 0, json.dumps({"type": "turn.completed"}), ""
         )
 
     return runner

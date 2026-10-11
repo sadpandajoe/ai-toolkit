@@ -504,6 +504,114 @@ class ConformanceTests(unittest.TestCase):
         rca = (ROOT / "agents/specialists/rca.md").read_text()
         self.assertIn("Verdict: PASS | REVISE | ESCALATE", rca)
 
+    def test_review_lanes_run_through_model_run_with_their_own_contracts(self) -> None:
+        """No native reviewer agent; each critic reads only what grades its lane.
+
+        The second family and the same-provider fallback are `model-run`
+        lanes (D7). Checklists for other lanes moved into the two contracts
+        that use them, and the QA bug table has one home.
+        """
+        self.assertFalse((ROOT / "agents/claude/aitk-reviewer.md").exists())
+        for content_root in ("config", "rules", "skills", "agents"):
+            for path in sorted((ROOT / content_root).rglob("*.md")):
+                with self.subTest(path=str(path.relative_to(ROOT))):
+                    self.assertNotIn("aitk-reviewer", path.read_text())
+        self.assertNotIn("aitk-reviewer", (ROOT / "README.md").read_text())
+        binding = (ROOT / "config/providers/claude.md").read_text()
+        self.assertIn("review.second-family", binding)
+        reviewer = (ROOT / "agents/specialists/reviewer.md").read_text()
+        validator = (ROOT / "agents/specialists/plan-validator.md").read_text()
+        for retired in (
+            "plan-review/references/backend.md",
+            "plan-review/references/frontend.md",
+            "testing/references/review-tests.md",
+            "plan-review/references/implementation.md",
+            "testing/references/review-testplan.md",
+        ):
+            self.assertNotIn(retired, reviewer)
+            self.assertNotIn(retired, validator)
+        rule = " ".join((ROOT / "rules/code-review.md").read_text().split())
+        self.assertIn("Each new test fails when the behaviour it covers breaks", rule)
+        self.assertIn("No mocks of internal code", rule)
+        self.assertIn("Pre-verdict claim check", rule)
+        flat_validator = " ".join(validator.split())
+        self.assertIn("dependent code may already be deployed", flat_validator)
+        self.assertIn("A first failing test is named per slice", flat_validator)
+        severity = (ROOT / "rules/severity.md").read_text()
+        self.assertNotIn("| high |", severity)
+        self.assertIn("skills/qa/references/file-bug.md", severity)
+        bug = (ROOT / "skills/qa/references/file-bug.md").read_text()
+        self.assertIn("`[major]` =\n`[High]` = high", bug)
+        gates = " ".join((ROOT / "rules/gates.md").read_text().split())
+        self.assertIn("A refused security or adversarial lens may reroute once", gates)
+
+    def test_the_rca_pass_list_and_record_have_one_home(self) -> None:
+        """The parent gate and the specialist grade against the same list.
+
+        The record's observables (reproduced, alternatives) replace a
+        confidence number, so neither the gate nor the debugger can pass a
+        story on a score.
+        """
+        rca = (ROOT / "agents/specialists/rca.md").read_text()
+        flat = " ".join(rca.split())
+        for item in (
+            "evidenced, not asserted",
+            "## RCA record",
+            "Reproduced: yes",
+            "Alternatives: ruled out",
+            "Fix point:",
+            "the regression test is the reproduction",
+            "git show <sha>^:<file>",
+            "Never invent a root cause",
+        ):
+            self.assertIn(item, flat)
+        self.assertNotIn("/10", rca)
+        for path in (
+            "skills/debug/references/review-rca.md",
+            "skills/debug/references/investigate-change.md",
+        ):
+            text = (ROOT / path).read_text()
+            with self.subTest(path=path):
+                self.assertIn("agents/specialists/rca.md", text)
+                self.assertNotIn("evidenced, not asserted", text)
+                self.assertNotIn("/10", text)
+        gate = (ROOT / "skills/debug/references/review-rca.md").read_text()
+        self.assertIn("aitk-model-route:debug.rca-specialist", gate)
+        self.assertIn("rabbit-hole guardrail", gate)
+
+    def test_planner_returns_the_plan_section_the_parent_writes(self) -> None:
+        """One writer for PLAN.md: the planner returns text, the parent pastes it.
+
+        The planner's contract and the two plan shapes it returns are its whole
+        handoff, and a decomposition carries its phase table as a fenced block
+        the parent records unchanged instead of re-typing it.
+        """
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        by_id = {b["id"]: b for b in payload["dispatch_boundaries"]}
+        self.assertEqual(
+            [
+                "agents/specialists/planner.md",
+                "skills/planning/references/decompose-work.md",
+                "skills/planning/references/plan-implementation.md",
+            ],
+            by_id["workflows.create-feature-planning"]["contracts"],
+        )
+        planner = (ROOT / "agents/specialists/planner.md").read_text()
+        self.assertIn("read-only", planner)
+        for line in ("Status: completed", "Status: blocked", "RECLASSIFY: <"):
+            self.assertIn(line, planner)
+        for heading in ("## Decomposition", "## Phase: <name>", "phases-json"):
+            self.assertIn(heading, planner)
+        decompose = (ROOT / "skills/planning/references/decompose-work.md").read_text()
+        self.assertIn("```phases-json", decompose)
+        self.assertIn("bin/aitk project-state phases --phases-json", decompose)
+        plan = (ROOT / "skills/planning/references/plan-implementation.md").read_text()
+        self.assertIn("Reclassify the phase first", plan)
+        self.assertIn("project-state phase --name <phase> --status active", plan)
+        self.assertIn("### Global invariants touched", plan)
+        feature = (ROOT / "skills/workflows/references/create-feature.md").read_text()
+        self.assertIn("writes the section\n   to `PLAN.md` verbatim", feature)
+
     def test_gates_rule_defines_outcomes_and_the_retry_budget(self) -> None:
         gates = (ROOT / "rules/gates.md").read_text()
         for outcome in ("`PASS`", "`RETRY`", "`ESCALATE`", "`RECLASSIFY`", "`USER_DECISION`", "`BLOCKED`"):
@@ -612,17 +720,17 @@ class ConformanceTests(unittest.TestCase):
         self.assertIn("size XL", validate)
 
     def test_pre_switch_review_controls(self) -> None:
-        """Clean-verdict guard, rejected majors, reviewer-reported flags, yield thresholds."""
+        """Coverage check on clean verdicts, rejected majors, reviewer-reported flags, yield thresholds."""
         local = (ROOT / "skills/review/references/local-review.md").read_text()
-        self.assertIn("clean-verdict guard", local)
-        self.assertIn("above 200 changed\nlines or 5 files", local)
+        self.assertIn("Coverage rerun:", local)
+        self.assertNotIn("clean-verdict guard", local)
         self.assertIn("never **rejected** on it either", local)
         self.assertIn("`CONFIRMED` overrides the parent", local)
         self.assertIn("**Reviewer-reported flags.**", local)
         self.assertIn("Missing flag:", local)
         self.assertIn("Lane demoted:", local)
         pr = (ROOT / "skills/review/references/pr-review.md").read_text()
-        self.assertIn("clean-verdict guard", pr)
+        self.assertNotIn("clean-verdict guard", pr)
         reviewer = (ROOT / "agents/specialists/reviewer.md").read_text()
         self.assertIn("Missing flag:", reviewer)
         self.assertIn("you do not\nreview under it yourself", reviewer)

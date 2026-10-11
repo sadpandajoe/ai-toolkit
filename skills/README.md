@@ -56,7 +56,6 @@ End-to-end workflow umbrellas:
 | [reflection/](reflection/) | Observation queue, memory review/prune, failure postmortems, rule promotion with eval candidates |
 | [planning/](planning/) | Sized planning: inline plans, decomposition, just-in-time phase plans, independent validation |
 | [pm/](pm/) | Product scoping before planning — feature briefs, acceptance criteria, milestones |
-| [plan-review/](plan-review/) | Focused lenses the plan validator and deep code review apply: architecture, backend, frontend, feasibility |
 | [qa/](qa/) | Triage, fix validation, impact assessment, use-case discovery, scenario expansion, bug filing |
 | [testing/](testing/) | HOW to test — creating/updating automated test suites, reviewing test code |
 | [review/](review/) | One independent review, validate-then-fix, delta re-review, conditional deep lenses, PR posting |

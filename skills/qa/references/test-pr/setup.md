@@ -1,7 +1,3 @@
----
-tier: Standard
----
-
 # Test PR Setup
 
 ## Resolve PR Context
@@ -50,10 +46,7 @@ Decision:
 - Multiple results: ask which is the app under test.
 - No results: ask the user to start the app or provide `--url`; do not continue.
 
-## Auth Strategy
+## Auth
 
-Use `rules/preset-environments.md`:
-
-- Staging URL containing `stg.`: require `$PRESET_STG_BOT_LOGIN` and `$PRESET_STG_BOT_PASSWORD`.
-- Local dev: try `admin`/`admin`, then `admin`/`general`.
-- Production: stop; do not run browser automation against production.
+Credentials and host classes follow `rules/preset-environments.md`. On a
+production host, stop: no browser automation against production.

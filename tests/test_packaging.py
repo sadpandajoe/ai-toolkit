@@ -30,6 +30,16 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual("aitk.cli:main", project["scripts"]["aitk"])
         self.assertEqual([], project["dependencies"])
 
+    def test_every_python_package_ships_in_the_wheel(self) -> None:
+        listed = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["setuptools"]["packages"]
+        found = {
+            ".".join(path.parent.relative_to(ROOT).parts)
+            for path in (ROOT / "aitk").rglob("__init__.py")
+            if "__pycache__" not in path.parts
+        }
+        self.assertEqual(sorted(found), sorted(listed))
+        self.assertIn("aitk.hooks", listed)
+
     def test_ci_runs_the_same_local_gate_with_pinned_actions(self) -> None:
         workflow = (ROOT / ".github/workflows/validate.yml").read_text()
         self.assertIn("run: bin/aitk check", workflow)

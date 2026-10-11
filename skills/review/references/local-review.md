@@ -36,10 +36,25 @@ the reviewer always gets the full recorded base to HEAD (branch or phase). When
 the reviewer's span is wider than the user's filter, the Review Record says so
 in `Scope note`.
 
+## Integrated Review
+
+MULTI_PHASE and BATCHED work ends with one integrated review after the last
+unit's checkpoint: one more pass over the recorded branch base to HEAD,
+validated end to end against the decomposition's per-phase exit goals and
+global invariants, with the whole feature exercised when the app runs. It has
+its own `## Gate: review (integrated)` block and its own Review Record entry,
+marked `Scope: integrated`; the per-phase records stay as they are. A finding
+is fixed in the phase that owns the code, then the integrated delta pass runs
+once.
+
 ## Classify
 
 Run [classify-diff.md](classify-diff.md) and `qa/references/assess-impact.md`.
-Record the complexity, impact, and risk flags in the Review Record. TRIVIAL
+`bin/aitk review plan --parent <your provider> --impact <impact>` (plus the
+semantic flags) prints the classification and the lanes the sections below
+call for, with their providers, the verifier family, the delta rule, and
+`BLOCKED (degraded)`; launch what it lists. Record the complexity, impact, and
+risk flags in the Review Record. TRIVIAL
 zero-logic or micro-fix diffs may take the review exception in `rules/gates.md`;
 everything else gets the independent review below, even at TRIVIAL. A TRIVIAL
 diff with CORE impact is reviewed as STANDARD: the exception is unavailable and
@@ -68,32 +83,35 @@ the preflight result, the classifier's flags and impact, and acceptance
 criteria from `PROJECT.md` when relevant. It never carries the implementer's
 transcript or any earlier findings. The worker receives its contract inline from
 the route runner. If no cross-provider lane is reachable and the diff is neither
-security-sensitive nor deep-tier, run the toolkit's same-provider reviewer
-agent instead and record `Independent review: same-provider` in the Review
-Record; never skip the lane and never review
+security-sensitive nor deep-tier, run the same boundary on the parent's own
+provider (`bin/aitk model-run review --provider <parent provider> --boundary
+review.independent`) and record `Independent review: same-provider` in the
+Review Record; never skip the lane and never review
 inline. A security-sensitive or deep-tier diff with no cross-provider lane is
 `## Gate: review` `BLOCKED (degraded)` until the other provider is reachable or
 the user passes `--allow-degraded`, recorded as `USER_DECISION`
 (`rules/gates.md`, Independent Judgment).
 
-## Second Family (COMPLEX, CORE impact, or a clean verdict on a sizeable diff)
+A clean verdict counts only when the lane's `verification` list covers every
+changed file other than generated files and lockfiles. When it skips files, run
+the same lane once more on the files it skipped and note `Coverage rerun:
+<files>` in the Review Record. The coverage rule is owned by `rules/gates.md`
+(Independent Judgment); this is how the parent applies it.
+
+## Second Family (COMPLEX or CORE impact)
 
 <!-- aitk-model-route:review.second-family -->
 Launch one more fresh reviewer worker on `review` (`deep-review` under a
 deep-tier escalation) on the provider the independent lane did not use, with
-the same prompt and nothing from the first lane, when the classifier reports
-COMPLEX or CORE impact, or when the **clean-verdict guard** fires: the
-independent lane returned zero findings on a STANDARD diff above 200 changed
-lines or 5 files (generated files and lockfiles excluded). A clean verdict on
-that much surface is more often a miss than perfection, so the second family
-runs after the fact rather than concurrently, and the Review Record notes
-`Second family: clean-verdict guard`. The two lanes merge under the
+the same prompt and nothing from the first lane, concurrently with the
+independent lane, when the classifier reports COMPLEX or CORE impact. The two
+lanes merge under the
 convergence rule in `rules/code-review.md`: raised by both → keep the severity;
 raised by one → capped at `[minor]` until the parent's validation names the
 concrete failure. No verifier lane runs when this lane ran; the second family
-already answered. On a Claude parent this lane is the Opus reviewer agent and
-spends Claude quota, while the Codex lane spends none, which is why STANDARD
-diffs stay at one lane. Skip it and disclose when the second provider is
+already answered. It runs through `bin/aitk model-run review --provider
+<other provider> --boundary review.second-family` and spends that family's
+quota, which is why STANDARD diffs stay at one lane. Skip it and disclose when the second provider is
 unreachable and the diff is not security-sensitive; a security-sensitive diff
 is `BLOCKED (degraded)` as above.
 
@@ -104,31 +122,39 @@ When the classifier flagged risk, launch at most two additional fresh worker
 lanes on `deep-review`, one per flagged lens, concurrently with the independent
 review: [adversarial.md](adversarial.md) for security-sensitive diffs or a
 red-team ask, [deep-quality.md](deep-quality.md) for refactor-shaped or
-deep-quality asks, and
-[../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
-for architecture changes. Each lane is resolved with `--lens <repo-relative
+deep-quality asks, and [architecture.md](architecture.md) for architecture
+changes. Each lane is resolved with `--lens <repo-relative
 lens path>` so one worker receives exactly one lens, and on the other provider
-when reachable (Astra from a Claude parent, Fable from a Codex parent); the
-same provider's deep family is the fallback and is disclosed. No flags means no
+when reachable; the same provider's `deep-review` family is the fallback and
+is disclosed. No flags means no
 deep lanes. A code-judo ask runs at its own boundary
 ([code-judo.md](code-judo.md)) and returns proposals, not findings.
 
 ## Validate, Then Fix
 
-Collect findings from every lane and dedupe by file, line, and class. For each
+Collect findings from every lane and dedupe by file, line, and class
+(`bin/aitk review merge --result <lane>=<envelope> …` dedupes by file:line,
+counts convergence, applies the coverage rule, and lists the single-source
+majors that need a verifier). For each
 `[major]` and `[minor]`, check the claim against the current repo and diff
 before changing anything: accepted, or rejected with a one-line evidence-based
-reason.
+reason. A finding that says the slice boundary, acceptance criterion or RCA is
+wrong is `RECLASSIFY` back to planning, independent of its severity:
+severity and classification are separate axes.
 
+The single-source-major rule is owned by `rules/gates.md` (Independent
+Judgment); this section is how the parent applies it.
 A `[major]` that only one lane raised is never accepted on the parent's reading
-alone, and never **rejected** on it either: a `[major]` the parent intends to
-reject goes to the same verifier, and the rejection stands only on `REFUTED`
-or `UNVERIFIABLE`; `CONFIRMED` overrides the parent and the finding is
-accepted at the verifier's severity. A finding two lanes raised independently
-needs no verifier, and when the second-family lane ran, its silence is the
-second family's answer (cap at `[minor]` unless validation names the
-failure). The verifier below is for reviews where a single independent lane
-ran, in both directions.
+alone, and never **rejected** on it either. The parent accepts it once it
+reproduces the failure on the current code or runs the finding's locking
+assertion and sees it fail; a reproduced failure is evidence, not a reading. A
+`[major]` the parent intends to reject, or cannot reproduce, goes to the
+verifier below, and the rejection stands only on `REFUTED` or `UNVERIFIABLE`;
+`CONFIRMED` overrides the parent and the finding is accepted at the verifier's
+severity. A finding two lanes raised independently needs no verifier, and when
+the second-family lane ran, its silence is the second family's answer (cap at
+`[minor]` unless validation names the failure). The verifier below is for
+reviews where a single independent lane ran.
 <!-- aitk-model-route:review.verify-major -->
 Launch one fresh verifier worker on `review` (`deep-review` when the review ran
 deep) on the model family that did not raise the finding, with only the finding,
@@ -136,10 +162,11 @@ the diff, and the full changed files; it returns `Verdict: CONFIRMED | REFUTED |
 UNVERIFIABLE` with a concrete failure scenario. `CONFIRMED` keeps the severity;
 `REFUTED` records the finding as rejected with the verifier's evidence;
 `UNVERIFIABLE` caps it at `[minor]` until the parent settles the fact the
-verifier named. On a single-provider machine (Codex unreachable) the
-independent lane ran on Opus and the second family was skipped, so a
-`review`-route verifier would be Opus again: run the verifier on `deep-review`
-(Fable) instead, or leave the finding capped at `[minor]` and record
+verifier named. On a single-provider machine (the other provider unreachable)
+the independent lane ran on this provider's `review` family and the second
+family was skipped, so a `review`-route verifier would be the same family
+again: run the verifier on `deep-review` instead, or leave the finding capped
+at `[minor]` and record
 `Verifier: unavailable — single family` in the Review Record. A verifier on the
 family that raised the finding is not a verifier.
 
@@ -180,11 +207,15 @@ or comment. A finding class surviving the delta pass is `ESCALATE` under
 
 ## Gate and Record
 
-Emit the gate block from `rules/gates.md` as `## Gate: review` with
-`Independent review: <provider/family | same-provider>`, `Deep lenses: <names
-or none>`, `Findings: <accepted>/<raised> accepted`, and `Delta: <clean |
-reopened N | not required>` on the Evidence line. Record it with
-`bin/aitk project-state gate --gate review --status <...>`.
+Record the gate with `bin/aitk project-state gate --gate review --status
+<...> --result <envelope> --format block`, passing each reviewer lane's
+`model-run` envelope (saved JSON) as a `--result`, and paste the `## Gate:
+review` block it prints with `Independent review: <provider/family |
+same-provider>`, `Deep lenses: <names or none>`, `Findings:
+<accepted>/<raised> accepted`, and `Delta: <clean | reopened N | not
+required>` as its `--evidence`. A PASS without a reviewer envelope (or a
+review exception's `--exception` on a passing `verify --run`) does not count
+for `bin/aitk deliver` or the PR hook.
 
 Review Record in `PROJECT.md` (compact, actionable only):
 
@@ -196,7 +227,7 @@ Review Record in `PROJECT.md` (compact, actionable only):
 **Scope note:** <none | reviewer span wider than the filter: <what it covered>>
 **Preflight:** <pass/fail/skipped — command or reason>
 **Independent review:** <provider/family | same-provider>
-**Second family:** <provider/family — COMPLEX | CORE | clean-verdict guard, or not run — <reason>>
+**Second family:** <provider/family — COMPLEX | CORE, or not run — <reason>>
 **Reclassified:** <none | <flag> on reviewer evidence <file:line>>
 **Lane yields:** <lane: accepted/raised, … | demoted: <lane> (<yield> over <n> runs)>
 **Deep lenses:** <names, or none> — <flags that triggered them>

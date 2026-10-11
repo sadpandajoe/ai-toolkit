@@ -1,6 +1,5 @@
 # Manual PR Testing via Browser
 
-
 > **When**: You want to manually verify a PR's user-visible behavior in a running local or staging app.
 > **Produces**: Scenario-by-scenario pass/fail results with screenshot and optional video evidence.
 
@@ -10,10 +9,8 @@ Effect: `external_effect`.
 
 ## Durable Runtime Contract
 
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `test-pr` entry in
-`interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record.
+`test-pr` in `interfaces/contracts.json`; transitions and effects go through
+`bin/aitk checkpoint`.
 
 ## Usage
 
@@ -53,19 +50,10 @@ Use the `qa` skill and load only the needed references:
 
 The main thread owns PR identity, app URL, scenario selection, evidence paths, posting decisions, and final summary. Do not load execution/reporting references until setup and scenario selection are complete.
 
-## PROJECT.md Discipline
+## PROJECT.md Record
 
-**Every run** writes at least one entry to PROJECT.md before the chat summary, so a fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md) immediately after `test-pr` does not lose the QA record.
-
-For STANDARD or expensive runs (CORE impact, broad scenario set, repeated re-validation), follow `rules/context-management.md` and write durable state to PROJECT.md at each phase boundary before any checkpoint:
-
-- After scenario selection: `## Test-PR Scenarios` (PR identity, app URL, impact tier, scenario list).
-- After execution: `## Test-PR Results` (per-scenario result, evidence paths, recording path).
-- After posting: `## Test-PR Posted` (Shortcut/PR comment link or "local only").
-
-These writes are **hard gates before any checkpoint** on STANDARD/expensive runs.
-
-For TRIVIAL/STANDARD runs (including `--smoke`), a single `## Test-PR Results` entry at completion is the minimum:
+Every run appends this entry to PROJECT.md before the chat summary; across
+workers, PROJECT.md follows the durable-state rule in `rules/universal.md`.
 
 ```markdown
 ## Test-PR Results — PR #[number]
@@ -76,47 +64,19 @@ Evidence: [recording path or "none"]
 Posted: [link or "local only"]
 ```
 
-Emit before the chat summary:
-
-```markdown
-## PROJECT.md Updated — Test-PR Results
-PR #[number] recorded
-```
-
 ## Gates
 
 - Stop if the app URL cannot be resolved.
 - Stop on production URLs.
-- Print the selected scenarios and proceed — invoking the command delegates scenario selection, and execution is non-destructive on local/staging (prod is already gated above). `--step` restores the confirm-before-execution pause.
+- Print the selected scenarios and proceed — invoking the command delegates scenario selection, and execution is non-destructive on local/staging (prod is already gated above). With `--step`, confirm before execution.
 - Run scenarios sequentially; do not parallelize browser evidence gathering.
 - Record by default; skip only with `--no-record`.
-- Stop before posting unless `--post` was passed and evidence paths are available.
+- Stop before posting unless `--post` was passed and evidence paths are available. Before a PR comment, scrub the posted text and attachment names per `rules/pii-scrub.md`; a PR comment is public.
 
-## Summary Contract
+## Summary
 
-Do not emit the chat summary until the `## PROJECT.md Updated — Test-PR Results` confirmation block has been emitted.
-
-End with:
-
-```markdown
-## Test-PR Complete
-
-PR: #<number> - <title>
-Branch: <head-branch>
-App: <url>
-Impact: CORE / STANDARD / PERIPHERAL
-
-### Results
-| # | Scenario | Tag | Result | Notes |
-|---|----------|-----|--------|-------|
-
-### Evidence
-- Recording: ...
-- Screenshots: ...
-
-### Next Steps
-- ...
-```
+End with the `## Test-PR Complete` summary in
+[skills/qa/references/test-pr/report.md](../../qa/references/test-pr/report.md).
 
 ## Notes
 

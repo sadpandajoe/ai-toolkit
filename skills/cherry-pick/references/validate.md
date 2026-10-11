@@ -1,172 +1,84 @@
 # Cherry-Pick Validate
 
-Use after a cherry-pick applies cleanly or after conflict resolution completes.
+Use after a cherry-pick applies cleanly or after conflict resolution. Prove the
+moved change contains only the intended changes and left the target working.
+Do not re-litigate whether the pick should have happened.
 
-Validate is two distinct jobs:
-
-- **Scope-leak audit (7a)** — runs as a subagent, mandatory for every cherry, no exceptions. Catches the silent failure mode that build/test cannot catch.
-- **Correctness validation (7b)** — runs on the main thread. Build/type-check/tests fail loudly when the cherry is broken; no fresh context required.
-
-<!-- aitk-model-route:cherry-pick.validate-scope-leak -->
-**Route selection** for the scope-leak subagent: the caller spawns the subagent on `review` for trivial or `deep-review` for non-trivial changes.
-
-## Goal
-
-Prove that the moved change is integrated cleanly, contains only the intended changes, and did not leave the target branch broken.
-
-Consume risk signals from investigate and adaptation signals from adapt. Do not re-litigate whether the cherry-pick should have happened.
-
-## Subagent Contract — Scope-Leak Audit (7a)
-
-**One job, one rule: every cherry-pick gets a fresh subagent for leak detection. No tiers, no carve-outs, no "trivial" skip.** Clean applies are the highest-risk vector — they look fine and ship leaked code from adjacent commits (see [../gotchas.md](../gotchas.md) #1).
-
-**Subagent inputs:** source commit SHA, target branch HEAD SHA after apply, summary of any adapt-phase changes.
-
-**Subagent must produce** (orchestrator refuses `Applied` status without all three):
-
-1. Literal stdout of `<skill-dir>/scripts/scope-audit.sh <source-commit>` — pasted verbatim, not summarized. Resolve `<skill-dir>` from the currently installed cherry-pick skill.
-2. Per-hunk audit verdict from Step 2 below — explicit list of extra hunks (or "none") with origin classification for each.
-3. Final recommendation: `CLEAN` / `LEAK — revert <hunks>` / `ESCALATE — <reason>`.
-
-<!-- aitk-model-route:cherry-pick.validate-scope-leak-rerun -->
-If the subagent returns `LEAK`, the main thread reverts the named hunks, amends, and re-spawns the subagent on the same route on the amended commit. Loop until `CLEAN` or `ESCALATE`.
-
-The subagent does **not** run build/test. Correctness is the main thread's job (7b).
-
-## Diff Audit Procedure (executed by the subagent)
-
-Run **before** build/test validation. A clean build doesn't catch unrelated changes that happen to compile.
-
-### Step 1: Mechanical Pre-Check
-
-Run the bundled script:
-
-```bash
-<skill-dir>/scripts/scope-audit.sh <source-commit>
-```
-
-This produces a mechanical comparison (file list, line counts) — no LLM judgment. It outputs:
-- Extra files in cherry-pick result not in source
-- Missing files (may be legitimate exclusions)
-- Line count divergence per shared file
-
-**Interpretation:**
-- **Extra files found** → scope leak until proven otherwise. Investigate each in Step 2.
-- **Line count differs by >20% for a shared file** → flag for hunk-level investigation.
-- **Both checks clean** → Step 2 is still mandatory. Mechanical CLEAN does NOT permit skipping the hunk audit — small leaks inside heavily-touched shared files pass under the 20% threshold. The mechanical pre-check only adjusts confidence; it never removes the hunk audit requirement.
-
-### Step 2: LLM Hunk-Level Audit
-
-1. Get the source commit's diff: `git diff <source-commit>^..<source-commit>`
-2. Get the cherry-pick result diff: `git diff HEAD^..HEAD`
-3. Compare file-by-file:
-   - **Extra files** (already flagged mechanically): revert with `git checkout HEAD^ -- <file>` and amend. No exceptions unless the file is a legitimate adaptation (new test file for the cherry-picked change).
-   - **Extra hunks**: within a shared file, any hunk in the cherry-pick diff with no corresponding change in the source diff is a leak candidate. May be a legitimate adaptation (import path change for target) or an accidental pickup from an adjacent commit.
-4. For each extra hunk, determine origin:
-   ```bash
-   git log --oneline --all -S "<leaked line>" -- <file>
-   ```
-   If it belongs to a different commit than the one being cherry-picked, it's a leak.
-
-### Step 3: Report
-
-```markdown
 ## Scope Audit
 
-### Mechanical Pre-Check
-Files in source: [N] | Files in cherry-pick: [M]
-Extra files: [list or "none"]
-Missing files: [list or "none"]
-Line count divergence: [list of flagged files or "none"]
-Mechanical verdict: CLEAN / FLAGGED
+The parent runs the mechanical audit on every cherry, clean applies included:
+they look fine and still ship adjacent-commit code ([../gotchas.md](../gotchas.md),
+"Code from adjacent commits leaks").
 
-### Hunk-Level Audit
-Extra hunks: [list with origin commit or "none"]
-Legitimate adaptations: [list or "none"]
-Verdict: [clean / leaked — reverted / leaked — kept with justification]
+```bash
+<skill-dir>/scripts/scope-audit.sh <source-commit>      # -C <repo> for another checkout
 ```
 
-If the audit finds leaks, revert them before proceeding to build/test validation. If a leaked change appears to be a required prerequisite, escalate to the user rather than silently keeping it.
+It compares the exact changed lines of the source commit and the result, file
+by file, and lists extra files and lines (with the source-side commits that
+touched them), missing lines (an adaptation or an incomplete pick), and lines a
+move or copy carried from a neighbouring commit. Extra and moved lines are
+leaks until proven otherwise; each missing line must match an adaptation
+recorded in adapt.
 
-## Correctness Validation — Main Thread (7b)
+When the script reports nothing and no conflicts were resolved, the row's Scope
+Audit is `CLEAN`. Otherwise run the LLM audit.
 
-Runs only after the scope-leak subagent returns `CLEAN`. Build/test failures are loud and self-describing; no fresh context required.
+<!-- aitk-model-route:cherry-pick.validate-scope-leak -->
+Spawn a fresh reviewer worker on `review` for the LLM audit, with the source SHA, the target SHA after apply, the literal script output and the adapt summary; re-run it on `deep-review` only when it returns ESCALATE.
 
-At minimum:
+The worker compares `git diff <source-commit>^..<source-commit>` with
+`git diff HEAD^..HEAD` hunk by hunk, traces each extra hunk with
+`git log --oneline --all -S "<line>" -- <file>`, and returns:
+
+1. the literal `scope-audit.sh` output, pasted verbatim;
+2. a per-hunk verdict: each extra hunk with its origin, or "none", and the
+   legitimate adaptations (an import path for the target, a test for the
+   picked change);
+3. `CLEAN`, `LEAK — revert <hunks>` or `ESCALATE — <reason>`.
+
+It does not run build or tests. The parent refuses `Applied` without all three.
+
+<!-- aitk-model-route:cherry-pick.validate-scope-leak-rerun -->
+On `LEAK`, the parent reverts the named hunks, amends, and sends the amended commit back to a fresh reviewer worker on the same route; loop until `CLEAN` or `ESCALATE`.
+
+A leaked change that looks like a required prerequisite is escalated to the
+user, never kept silently. Record `CLEAN`, `LEAKED-REVERTED` or `ESCALATED`.
+
+## Correctness Validation
+
+On the main thread, after the scope audit:
+
 1. Confirm no conflict markers.
-2. **Run pre-commit on changed files** (see "Pre-Commit Gate" below). Mandatory — this is what CI runs, and conflict resolution often re-indents lines past length limits.
-3. Run the smallest relevant build or type-check.
-4. Run targeted tests covering the changed area.
+2. Run pre-commit on the changed files (below).
+3. Run the smallest relevant build or type-check, discovered from
+   `package.json`, `Makefile`, `pyproject.toml`, `setup.cfg` or CI config.
+4. Run targeted tests for the changed area; broader validation when the pick
+   touched shared infrastructure or the branches differ materially.
 
-For config-only changes (YAML, JSON, feature flags) where there is no build or test to run, validate by parsing the file programmatically and verifying the intended effect (load YAML and assert the expected keys/values are present).
-
-Run broader validation when:
-- the cherry-pick touched shared infrastructure
-- the target branch differs materially from the source branch
-- the targeted checks fail to provide confidence
+For config-only changes with nothing to build or test, parse the file and
+assert the intended keys and values.
 
 ## Pre-Commit Gate
 
-Run pre-commit on the changed files **after** the cherry-pick commit exists and **before** pushing. This is the single consistent rule for both clean applies and conflicted applies — clean applies have no `--continue` step to hook into.
+Run pre-commit on the changed files **after** the cherry-pick commit exists and
+**before** pushing; clean applies have no `--continue` to hook into.
 
 ```bash
 pre-commit run --files <changed-file-1> <changed-file-2>
-# or, if pre-commit isn't the repo's tool, use the equivalent CI lint/format command
+# or the repo's equivalent CI lint/format command
 ```
 
-`$cherry-pick` authorizes local amend of the in-progress cherry-pick commit for validation-only cleanup before any push. Do not amend older commits, rebase, or push unless the calling workflow separately authorizes that boundary.
-
-**If pre-commit auto-fixes files** (ruff-format, end-of-files, trailing whitespace, etc.):
-```bash
-git add <fixed-files>
-git commit --amend --no-edit
-```
-
-**If pre-commit reports manual-fix errors** (line length, lint rules without fixers): edit the file, then amend as above.
-
-**Re-run pre-commit after amend** until it passes on the changed files.
-
-**Pre-existing failures on unrelated files** (warnings on files the cherry-pick didn't touch) are out of scope — note them in the validation summary but do not attempt to fix them within the cherry-pick.
-
-The validation amend must complete **before** the per-cherry push in step 8. Push is the default at step 8; if you push first and then amend, you have to force-push to publish the fix — which the workflow forbids. Always: validate → fix → amend → emit Push Boundary → push.
-
-## Minimum Validation Bar
-
-**Python:**
-- `ruff check <changed-files>` (or repo's lint command)
-- `mypy <changed-files>` when the repo uses type checking
-
-**JavaScript/TypeScript:**
-- The repo's lint command (e.g., `npm run lint`)
-- `tsc --noEmit` when the repo uses TypeScript
-
-Discover commands from `package.json` scripts, `Makefile`, `pyproject.toml`, `setup.cfg`, or CI config. These checks are mandatory, not aspirational — if skipped, the validation status must reflect it.
-
-## Validation Gap Flagging
-
-When targeted tests exist and are runnable but were not executed, flag the gap — do not silently record a weaker status label. Include:
-- what tests were available (e.g., "pytest tests/unit_tests/mcp_service/ covers the changed area")
-- why they weren't run (time constraint, environment not set up)
-- recommended follow-up ("run before merging")
-
-Recording `Checked` or `Structural` when `Tested` was achievable without extraordinary effort is an undercount that must be called out. See [../gotchas.md](../gotchas.md).
-
-## Dependency Manifest Rule
-
-If the cherry-pick touches dependency manifests or lockfiles (`package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `requirements.txt`, `setup.py`, `pyproject.toml`):
-
-1. Do not treat validation as routine.
-2. Treat manifest/lockfile changes detected during investigate as a validation escalation, not as a reason to reopen planning unless validation cannot proceed safely.
-3. Prefer the repo's existing build, type-check, or CI verification commands over reinstalling dependencies locally.
-4. Treat any rebuild or environment refresh as an intervention point unless the command is already the standard non-destructive verification path for this repo.
-5. Run the smallest verification command that gives confidence, and surface when stronger validation would require rebuilding or environment changes.
-6. For pip-compiled lockfiles (`requirements.txt` generated from `setup.py`/`pyproject.toml`): resolve the source file first, then decide whether to regenerate via `pip-compile` or resolve surgically. Surface the choice rather than guessing.
-
-If the target branch uses a different package manager or lockfile than the source, stop and surface that mismatch.
+The run's grant covers this local amend of the in-progress cherry and the
+fast-forward push ([../SKILL.md](../SKILL.md), Authorization Boundary); never
+amend older or pushed commits, rebase, or force-push. Auto-fixes and manual
+fixes go in with `git add <files>` and `git commit --amend --no-edit`; re-run
+until it passes. Failures on files the pick did not touch are noted, not fixed.
+Order: validate → fix → amend → push → record the Push cell.
 
 ## Validation Status Labels
 
-Use these strictly in the execution table. Do not overstate:
+The only label table. Do not overstate:
 
 | Label | Meaning |
 |-------|---------|
@@ -176,22 +88,20 @@ Use these strictly in the execution table. Do not overstate:
 | **Structural** | Conflict markers clear, file parse OK, no lint/build/test run |
 | **Not run** | No validation performed |
 
-Never use "Clean" or "Validated" — they are ambiguous.
+Never use "Clean" or "Validated"; they are ambiguous.
 
-## What To Do When Validation Fails
+**Gap flagging.** When targeted tests existed and were runnable but did not
+run, say which tests, why they were skipped, and the follow-up ("run before
+merging"). Recording `Checked` or `Structural` when `Tested` was within reach
+is an undercount to call out.
 
-| Current Label | Failure | Action |
-|---------------|---------|--------|
-| Tested | Test failure | Re-run failed tests, fix the issue, re-validate |
-| Checked | Lint or type error | Fix errors, re-run checks |
-| Build-only | Build failure | Fix build, re-run |
-| Structural | Parse error or conflict markers found | Fix by hand, re-validate |
-| Not run | No validation performed | Run at least structural validation before merging |
+## Dependency Manifests
 
-## Output
-
-Summarize:
-- what validated successfully and what commands were run
-- what was skipped and why
-- the final validation status label (from the table) to record in the execution table
-- remaining residual risk, if any
+When the pick touches `package.json`, a lockfile, `requirements.txt`,
+`setup.py` or `pyproject.toml`, validation is not routine: prefer the repo's
+existing build, type-check or CI commands over a local reinstall, treat any
+rebuild or environment refresh as an intervention point, and say when stronger
+validation would need one. For pip-compiled `requirements.txt`, resolve the
+source file first, then surface the choice between regenerating with
+`pip-compile` and resolving surgically. A different package manager or
+lockfile on the target is a stop.

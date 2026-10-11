@@ -14,10 +14,10 @@
   },
   "providers": {
     "codex": {
-      "minimum_cli": "0.155.0",
+      "minimum_cli": "0.159.3",
       "models": {
         "sol": {
-          "selector": "gpt-6-sol"
+          "selector": "gpt-6.1-sol"
         },
         "astra": {
           "selector": "gpt-6-astra"
@@ -25,7 +25,7 @@
       }
     },
     "claude": {
-      "minimum_cli": "2.1.280",
+      "minimum_cli": "2.1.284",
       "models": {
         "opus": {
           "selector": "claude-opus-5-5"
@@ -34,7 +34,7 @@
           "selector": "claude-fable-5-1"
         },
         "sonnet": {
-          "selector": "claude-sonnet-5"
+          "selector": "claude-sonnet-5-5"
         }
       }
     }
@@ -43,6 +43,14 @@
     {
       "name": "implementation",
       "reasoning": "standard",
+      "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write"
+      ],
       "responsibility": "implementation",
       "restrictions": [
         "Implement only the bounded task contract.",
@@ -64,6 +72,16 @@
     {
       "name": "planning",
       "reasoning": "standard",
+      "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "planning",
       "restrictions": [
         "Produce a bounded plan, decomposition, or phase plan from the supplied context.",
@@ -89,6 +107,16 @@
     {
       "name": "review",
       "reasoning": "standard",
+      "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "review",
       "restrictions": [
         "Perform an independent read-only review.",
@@ -114,6 +142,16 @@
     {
       "name": "deep-review",
       "reasoning": "deep",
+      "effort": "xhigh",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "review",
       "restrictions": [
         "Perform an independent read-only architecture, security, adversarial, or cold review.",
@@ -139,6 +177,16 @@
     {
       "name": "rca",
       "reasoning": "standard",
+      "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "rca",
       "restrictions": [
         "Synthesize root cause from supplied evidence.",
@@ -164,6 +212,16 @@
     {
       "name": "deep-rca",
       "reasoning": "deep",
+      "effort": "xhigh",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash(git log *)",
+        "Bash(git show *)",
+        "Bash(git diff *)",
+        "Bash(git blame *)"
+      ],
       "responsibility": "rca",
       "restrictions": [
         "Synthesize ambiguous, intermittent, history-dependent, or cross-system root cause from supplied evidence.",
@@ -189,6 +247,12 @@
     {
       "name": "operations",
       "reasoning": "standard",
+      "effort": "high",
+      "tools": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
       "responsibility": "operations",
       "restrictions": [
         "Collect read-only evidence, produce deterministic reports, or prepare already-authored API, ticket, or Playwright steps for parent execution.",
@@ -219,6 +283,11 @@
       "count": 1,
       "routes": [
         "planning"
+      ],
+      "contracts": [
+        "agents/specialists/planner.md",
+        "skills/planning/references/decompose-work.md",
+        "skills/planning/references/plan-implementation.md"
       ]
     },
     {
@@ -227,6 +296,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -235,6 +308,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -243,14 +320,10 @@
       "count": 1,
       "routes": [
         "implementation"
-      ]
-    },
-    {
-      "id": "workflows.watch-pr-poll",
-      "path": "skills/workflows/references/watch-pr.md",
-      "count": 1,
-      "routes": [
-        "operations"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -259,6 +332,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -270,7 +347,9 @@
       ],
       "lens_domain": "code",
       "contracts": [
-        "skills/review/references/adversarial.md"
+        "skills/review/references/adversarial.md",
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -282,7 +361,9 @@
       ],
       "lens_domain": "code",
       "contracts": [
-        "skills/review/references/adversarial.md"
+        "skills/review/references/adversarial.md",
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -327,11 +408,14 @@
     },
     {
       "id": "debug.ci-triage",
-      "path": "skills/debug/references/ci-fix-orchestration.md",
+      "path": "skills/workflows/references/fix-ci.md",
       "count": 1,
       "routes": [
         "rca",
         "deep-rca"
+      ],
+      "contracts": [
+        "skills/debug/references/ci-classify-failure.md"
       ]
     },
     {
@@ -345,7 +429,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -359,7 +444,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -373,10 +459,11 @@
       "lenses": [
         "skills/review/references/adversarial.md",
         "skills/review/references/deep-quality.md",
-        "skills/plan-review/references/architecture.md"
+        "skills/review/references/architecture.md"
       ],
       "contracts": [
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -390,7 +477,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -404,7 +492,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/finding-verifier.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -418,7 +507,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -432,7 +522,8 @@
       "lens_domain": "code",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -446,10 +537,11 @@
       "lenses": [
         "skills/review/references/adversarial.md",
         "skills/review/references/deep-quality.md",
-        "skills/plan-review/references/architecture.md"
+        "skills/review/references/architecture.md"
       ],
       "contracts": [
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md"
       ]
     },
     {
@@ -464,7 +556,9 @@
       "summary_form": "pr-batch",
       "contracts": [
         "agents/specialists/reviewer.md",
-        "rules/code-review.md"
+        "rules/code-review.md",
+        "rules/severity.md",
+        "skills/review/references/classify-diff.md"
       ]
     },
     {
@@ -480,30 +574,6 @@
       ]
     },
     {
-      "id": "cherry-pick.scope-leak-review",
-      "path": "skills/cherry-pick/SKILL.md",
-      "count": 1,
-      "routes": [
-        "review",
-        "deep-review"
-      ],
-      "contracts": [
-        "skills/cherry-pick/references/validate.md"
-      ]
-    },
-    {
-      "id": "cherry-pick.scope-leak-rereview",
-      "path": "skills/cherry-pick/SKILL.md",
-      "count": 1,
-      "routes": [
-        "review",
-        "deep-review"
-      ],
-      "contracts": [
-        "skills/cherry-pick/references/validate.md"
-      ]
-    },
-    {
       "id": "cherry-pick.unblock-discovery",
       "path": "skills/cherry-pick/SKILL.md",
       "count": 1,
@@ -515,29 +585,15 @@
       ]
     },
     {
-      "id": "cherry-pick.batch-investigation",
-      "path": "skills/cherry-pick/references/batch-sequence.md",
-      "count": 1,
-      "routes": [
-        "rca",
-        "deep-rca"
-      ]
-    },
-    {
-      "id": "cherry-pick.headless-implementation",
-      "path": "skills/cherry-pick/references/headless-trivial.md",
-      "count": 1,
-      "routes": [
-        "implementation"
-      ]
-    },
-    {
       "id": "cherry-pick.validate-scope-leak",
       "path": "skills/cherry-pick/references/validate.md",
       "count": 1,
       "routes": [
         "review",
         "deep-review"
+      ],
+      "contracts": [
+        "skills/cherry-pick/references/validate.md"
       ]
     },
     {
@@ -547,6 +603,9 @@
       "routes": [
         "review",
         "deep-review"
+      ],
+      "contracts": [
+        "skills/cherry-pick/references/validate.md"
       ]
     },
     {
@@ -555,6 +614,10 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md"
       ]
     },
     {
@@ -563,6 +626,11 @@
       "count": 1,
       "routes": [
         "implementation"
+      ],
+      "contracts": [
+        "skills/implement-change/SKILL.md",
+        "rules/implementation.md",
+        "rules/resource-management.md"
       ]
     },
     {
@@ -583,6 +651,9 @@
       "count": 1,
       "routes": [
         "operations"
+      ],
+      "contracts": [
+        "skills/shortcut/references/fetch.md"
       ]
     }
   ],
@@ -595,26 +666,6 @@
     {
       "path": "skills/review/references/local-review.md",
       "marker": "pre-dispatch-condition",
-      "count": 1
-    },
-    {
-      "path": "skills/testing/rules.md",
-      "marker": "test-runner-process-workers",
-      "count": 1
-    },
-    {
-      "path": "skills/workflows/references/start.md",
-      "marker": "preflight-before-later-dispatch",
-      "count": 1
-    },
-    {
-      "path": "skills/workflows/references/watch-pr.md",
-      "marker": "describes-prior-dispatch-payloads",
-      "count": 1
-    },
-    {
-      "path": "skills/workflows/SKILL.md",
-      "marker": "meta-routing-policy",
       "count": 1
     },
     {
@@ -632,7 +683,7 @@
     "skills/review/references/adversarial.md": [
       "deep-review"
     ],
-    "skills/plan-review/references/architecture.md": [
+    "skills/review/references/architecture.md": [
       "deep-review"
     ]
   },
@@ -640,7 +691,7 @@
     "code": [
       "skills/review/references/adversarial.md",
       "skills/review/references/deep-quality.md",
-      "skills/plan-review/references/architecture.md"
+      "skills/review/references/architecture.md"
     ]
   }
 }

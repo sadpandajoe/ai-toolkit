@@ -18,6 +18,7 @@ from .interfaces import (
 )
 from .model_routing import validate_model_routing
 from .installer import LEGACY_COMMAND_NAMES_0_1, InstallPaths, inspect_install
+from .project_state import STATE_FILES
 from .workflows import (
     extension_manifest_path,
     manifest_path,
@@ -44,14 +45,6 @@ IGNORED_TREE_PARTS = {
     "site-packages",
     "venv",
 }
-STATE_FILES = (
-    "PROJECT.md",
-    "PROJECT_ARCHIVE.md",
-    "PLAN.md",
-    "WATCH.md",
-    "CHERRY_PICK.md",
-    "CI_FIX.md",
-)
 PROVIDER_PATTERNS = (
     ("provider template import", re.compile(r"@\{\{TOOLKIT_DIR\}\}")),
     ("EnterPlanMode", re.compile(r"\bEnterPlanMode\b")),
@@ -436,14 +429,18 @@ def _state_protection(root: Path) -> Finding:
     gitignore = (
         (root / ".gitignore").read_text() if (root / ".gitignore").is_file() else ""
     )
-    hook_path = root / "hooks/prevent-project-commit.sh"
-    hook = hook_path.read_text() if hook_path.is_file() else ""
     ignored = {line.strip() for line in gitignore.splitlines()}
-    problems = [
-        f"/{name}"
-        for name in STATE_FILES
-        if f"/{name}" not in ignored or name not in hook
-    ]
+    problems = [f"/{name}" for name in STATE_FILES if f"/{name}" not in ignored]
+    # The hook is a wrapper around aitk.hooks.git_guard, which blocks commits of
+    # every STATE_FILES entry by importing the list.
+    wrapper_path = root / "hooks/prevent-project-commit.sh"
+    guard_path = root / "aitk/hooks/git_guard.py"
+    wrapper = wrapper_path.read_text() if wrapper_path.is_file() else ""
+    guard = guard_path.read_text() if guard_path.is_file() else ""
+    if "python3 -m aitk.hooks.git_guard" not in wrapper:
+        problems.append("hooks/prevent-project-commit.sh does not run aitk.hooks.git_guard")
+    if "from aitk.project_state import STATE_FILES" not in guard:
+        problems.append("aitk/hooks/git_guard.py does not import project_state.STATE_FILES")
     status = "FAIL" if problems else "PASS"
     return Finding(
         "state-protection", status, "Local state protection", tuple(problems)

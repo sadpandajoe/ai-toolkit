@@ -2,14 +2,12 @@
 
 AI Toolkit is installed at `{{TOOLKIT_DIR}}`.
 
-- Before acting, read and follow `{{TOOLKIT_DIR}}/rules/universal.md`,
-  `{{TOOLKIT_DIR}}/rules/resource-management.md`, and
-  `{{TOOLKIT_DIR}}/rules/context-management.md`. These are the canonical
+- Before acting, read and follow `{{TOOLKIT_DIR}}/rules/universal.md`, the
   always-on rules declared by `interfaces/guidance.json`.
-- Describe the outcome in plain language; the `$workflows` skill selects the
-  workflow, classifies complexity and size, persists the routing snapshot in
-  `PROJECT.md`, and drives the gates. Specialists (planner, RCA, independent
-  reviewer) run only where their reasoning is worth the cost.
+- Route multi-step and publishing work through the `$workflows` skill (a
+  contained edit with a passing check runs inline): it selects the workflow,
+  classifies complexity and size, persists the routing snapshot in
+  `PROJECT.md`, and drives the gates.
 - Treat `skills/` as canonical behavior. Provider adapters translate syntax and
   tool names but preserve safety, authorization, state, verification, and
   reporting semantics.

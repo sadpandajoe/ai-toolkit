@@ -1,12 +1,9 @@
----
-tier: Standard
----
-
 # Test PR Report
 
 ## Terminal Summary
 
-Use this shape for in-conversation output:
+This is the one home of the `test-pr` summary; use it for in-conversation
+output:
 
 ```markdown
 ## Test-PR Complete
@@ -29,7 +26,7 @@ Impact: CORE / STANDARD / PERIPHERAL
 
 ### Evidence
 - Recording: ~/qa-recordings/<file>.webm (<size>)
-- Screenshots: scenario-1-*.png, scenario-2-*.png
+- Screenshots: <source-id>-scenario-1-*.png, <source-id>-scenario-2-*.png
 
 ### Failures
 [Expected, actual, screenshot, console errors]

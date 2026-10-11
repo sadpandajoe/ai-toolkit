@@ -42,6 +42,8 @@ type: feedback
 **How to apply:** {Specific rule, gate, or skill to adjust — reference by file path}
 ```
 
-Update `MEMORY.md` index after writing.
+Update `MEMORY.md` index after writing, and queue the failure for `reflect
+observations` with `bin/aitk observe --kind user-correction --detail "<one
+sentence>" --evidence <memory file>`.
 
 If the postmortem points to a clear rule or skill fix, suggest the specific change. Do not auto-apply it.
