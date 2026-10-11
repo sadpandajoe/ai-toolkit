@@ -13,4 +13,4 @@ Known traps for diagnosis and bug-fix workflows.
 - Missing filters -> validate required scoping server-side.
 - Unbounded batch size -> cap accepted batch sizes.
 
-If the server-side fix is low-risk, include it in the same PR. If not, record a concrete follow-up in `PROJECT.md`.
+Record it under `Latent findings` in the RCA record; the plan includes it only if accepted.

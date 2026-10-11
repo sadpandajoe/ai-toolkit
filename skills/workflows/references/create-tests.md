@@ -33,7 +33,7 @@ per behavior, and keep scratch checks out of the commit.
 
 Write the tests with
 [skills/testing/references/create-tests.md](../../testing/references/create-tests.md),
-which owns running `review-tests` first, choosing the test layer, and the
+which owns choosing the behaviors to cover, the test layer, and the
 targeted verification. Only the main thread writes PROJECT.md; subagents
 return compact handoffs.
 

@@ -13,14 +13,14 @@ Blocked:
 
 ## Failed Jobs
 
-| Job | Step | Log path | Fingerprint | Classification | Ours? | Notes |
-|-----|------|----------|-------------|----------------|-------|-------|
-|  |  |  |  | Unclassified |  |  |
+| Job | Step | Log path | Pattern | Ours? | Notes |
+|-----|------|----------|---------|-------|-------|
+|  |  |  | Unclassified |  |  |
 
 ## Root Cause Groups
 
-| Group | Failures | Root cause | Proposed fix | Complexity | Confidence |
-|-------|----------|------------|--------------|------------|------------|
+| Group | Failures | Root cause | Fix point | Complexity | Reproduced |
+|-------|----------|------------|-----------|------------|------------|
 |  |  |  |  |  |  |
 
 ## Fix Waves
@@ -33,11 +33,13 @@ Blocked:
 
 ### Job / Group
 
-- Classification:
-- Root cause:
-- Evidence:
-- Proposed fix:
-- Verification:
+Each worker returns the RCA record fields from `agents/specialists/rca.md`:
+
+- Pattern:
 - Ours:
-- Confidence:
-- Residual risk:
+- Problem:
+- Root cause:
+- Reproduced:
+- Alternatives:
+- Fix point:
+- Regression check:

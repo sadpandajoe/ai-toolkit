@@ -5,13 +5,10 @@ description: Investigating a bug or failure — find the root cause with evidenc
 
 # Debug
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
 Umbrella for diagnostic work: finding root causes, evidencing them, and
-confirming fixes. Evidence-first: confidence is a number with a reason, and the
-RCA gate passes on evidenced mechanism, not on a plausible story.
+confirming fixes. The RCA gate passes on an evidenced mechanism, not on a
+plausible story. Before diagnosing a flake or an API-boundary bug, read
+[gotchas.md](gotchas.md) and [lessons.md](lessons.md).
 
 ## Phases
 
@@ -23,26 +20,23 @@ RCA gate passes on evidenced mechanism, not on a plausible story.
 | Recover Git state | A failed Git operation needs bounded recovery | Parent inline | [references/recover-git-state.md](references/recover-git-state.md) |
 | Gather CI logs | Resolve the real failing logs or artifacts | Parent inline | [references/ci-gather-logs.md](references/ci-gather-logs.md) |
 | Classify CI failure | Logs available, need pattern match | Producer | [references/ci-classify-failure.md](references/ci-classify-failure.md) |
-| Orchestrate CI fix | Group failures, route, choose safe fix | Parent inline | [references/ci-fix-orchestration.md](references/ci-fix-orchestration.md) |
-| Verify CI fix | Fix applied; determine local verification strength | Tiering | [references/ci-verify-fix.md](references/ci-verify-fix.md) |
+| Orchestrate CI fix | Group failures, choose the fix path | Parent inline | [references/ci-fix-orchestration.md](references/ci-fix-orchestration.md) |
+
+Verifying a CI fix follows `fix-ci` step 6 and the strength table in
+`rules/gates.md`.
 
 ## Composition
 
-- **fix-bug**: check-existing-fix → investigate-change → RCA gate → the
-  workflow plans, implements, verifies, and reviews.
-- **fix-ci**: ci-gather-logs → ci-classify-failure → ci-fix-orchestration →
-  ci-verify-fix. The specialist enters only for CI-only failures, flakiness or
-  races, or repeated unexplained failures.
-- **RCA only** ("investigate why X happens, do not change code"): investigate
-  → RCA gate → an evidence-backed RCA artifact in `PROJECT.md` another workflow
-  can consume.
-- **cherry-pick**: check-existing-fix decides whether the cherry is needed.
+`fix-bug` and `fix-ci` own the end-to-end order; `cherry-pick` uses
+check-existing-fix to decide whether a pick is needed. RCA-only work
+("investigate why X happens, do not change code") stops after the RCA gate
+and writes a `PROJECT.md` artifact only when the user asks for one.
 
 ## Notes
 
-- Scope git history searches to the main branch and the current branch; never
-  `--all`.
+- Scope git history searches to the main branch, the current branch and
+  merged PRs; never `git log --all`, because unmerged branches hold
+  experimental code that never shipped.
 - Separate the incident root cause from latent bugs found along the way; keep
-  the distinction in `PROJECT.md` and the later PR description.
-- `check-existing-fix` can be skipped for dependency upgrades and structural
-  refactors.
+  the split in `PROJECT.md` and the later PR description as **Incident Root
+  Cause**, then **Latent Bugs / Hardening** when present.

@@ -45,9 +45,7 @@ When the target has no meaningful suite, say so and continue as `create-tests`
 `--no-handoff`), stop and recommend `create-tests` instead.
 
 Find weak or low-signal tests, missing behavioral coverage, production blind
-spots, and simplification opportunities with
-[skills/testing/references/review-tests.md](../../testing/references/review-tests.md);
-for workflow-heavy, integration-heavy, or user-visible targets, add a compact
+spots, and simplification opportunities; for workflow-heavy, integration-heavy, or user-visible targets, add a compact
 QA must-cover scenario matrix. Sort the results into must-update now, suggested
 follow-up, and out of scope, and change only the must-update set with
 [skills/testing/references/update-tests.md](../../testing/references/update-tests.md),

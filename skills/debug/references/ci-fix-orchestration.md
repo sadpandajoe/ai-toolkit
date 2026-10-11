@@ -1,120 +1,35 @@
 # CI Fix Orchestration
 
-Use after logs have been gathered and failures have been classified. The
-calling workflow owns the final decision; this reference defines grouping,
-routing, safe-fix scope, and commit recommendation strategy.
+Use after failures are classified. `fix-ci` owns the order, the triage
+routing (step 1) and the commit action (step 8); this reference covers
+grouping and the amend mechanics.
 
-## Classify and Group
+## Group Before Fixing
 
-The orchestrator classifies failures inline by default; `fix-ci` step 1 owns
-the large-log and triage routing.
+The main thread groups classified failures by root cause and owns the order;
+classification records go to `CI_FIX.md` when the run has one.
 
-For large CI runs, classify failures in parallel by job/log chunk. Each subagent receives only the relevant log path or excerpt plus the classification shape below. It returns a compact record; the main thread writes that record to `CI_FIX.md` and groups failures by root cause before any fix is attempted.
+- **One shared root cause** → one fix path.
+- **Independent root causes** → fix in waves, smallest and safest first.
+- **Pre-existing or flaky** → excluded from the fix path, with evidence. All
+  pre-existing → exit early with evidence and no fix or review cycle.
 
-Expected classification shape:
+Keep each fix on the failing surface; when verification is weak or the root
+cause is ambiguous, stop instead of widening scope.
 
-```yaml
-failures:
-  - name: <failing job/step>
-    root_cause: <hypothesis>
-    fix: <narrow proposed change>
-    verification: <how to verify locally>
-    complexity: trivial | standard | complex
-    confidence: <0-10>
-    ours: true | false
-notes: <any cross-failure context>
-```
+## Amend Targets
 
-Group failures before fixing:
-- **One shared root cause** -> one fix path
-- **Independent root causes** -> fix in waves, smallest/safest first
-- **Pre-existing/flaky** -> exclude from fix path and record evidence
-
-The main thread owns grouping and sequencing. Subagents classify; they do not decide final fix order.
-
-## Complexity Routing
-
-Not-our-failure fast path: if all classified failures are pre-existing or not caused by this branch, exit early with evidence and no fix/review cycle.
-
-Evaluate each remaining failure:
-
-| Signal | TRIVIAL | STANDARD | COMPLEX |
-|--------|---------|----------|----------|
-| Failure pattern | Known-pattern, mechanical | Known-pattern but behavioral | Novel or mixed |
-| Files touched | 1-2 | 2-4, single subsystem | 3+ or unclear scope |
-| Fix type | Mechanical | Logic change, known pattern | Behavioral, cross-cutting |
-| Verification | STRONG or PARTIAL available | STRONG or PARTIAL available | WEAK only |
-
-TRIVIAL path: apply, verify, review gate (exception allowed), update PROJECT.md, summarize.
-
-STANDARD path: plan inline, apply, verify, run `review-code`, update PROJECT.md, summarize.
-
-COMPLEX path: update PROJECT.md, run the RCA gate with the specialist when needed, then apply only when it passes.
-
-## RCA Gate
-
-Use RCA validation when:
-- the failure is novel
-- the classification confidence is below `HIGH` (8/10)
-- multiple plausible root causes exist
-- the proposed fix changes behavior
-
-Proceed automatically only when the RCA gate is `PASS` and verification can run locally or downstream (`rules/gates.md`).
-
-## Apply Safe Fixes
-
-- Trivial path: orchestrator applies the proposed fix inline.
-- COMPLEX path: plan the fix in the main thread after the RCA gate passes. The orchestrator applies the plan.
-
-Keep scope limited to the failing surface. If verification is weak or root cause is ambiguous, stop instead of widening scope.
-
-## Commit Recommendation Strategy
-
-For STRONG-verified TRIVIAL/STANDARD fixes with a `PASS` review gate, the default flow creates a new commit on the current feature branch and pushes it. Amend, rebase, and force-push still require explicit user authorization for this run, and the push target must be the current feature branch on the expected remote. PARTIAL/WEAK verification and standard-path holds stay non-committing.
-
-| Scenario | Action |
-|----------|--------|
-| Lint/style only, cherry-pick flow | Recommend amending into the breaking cherry-pick commit; ask before rebase/force-push |
-| Lint/style only, single parent commit clear | Recommend amend; ask before force-push |
-| Lint/style only, multiple parent commits | Recommend `style:` commit; ask before commit/push |
-| TRIVIAL/STANDARD code fix + STRONG verification + `PASS` review | Create a new commit on the current feature branch and push it (the default flow above); amend, rebase, and force-push still need explicit authorization |
-| COMPLEX path or PARTIAL/WEAK verification | Stop before commit — present diagnosis and recommended next step |
-
-Detecting cherry-pick flow: check `git log --grep="cherry picked from commit"` on recent branch commits. If cherry-picked commits are present, trace which one last touched the lint-failing files (`git log -- <file>` filtered to cherry-picked SHAs). That is the commit to amend into, not necessarily the latest.
-
-Force-push is only permitted after explicit user authorization, only on the current feature branch, and never on main/master or shared branches.
-
-Use fixup+autosquash when amending a non-tip commit:
+An amend needs the user's explicit authorization (`fix-ci` step 8). On a
+cherry-pick branch (`git log --grep="cherry picked from commit"` on recent
+commits), the amend target is the cherry-picked commit that last touched the
+failing files (`git log -- <file>` filtered to those SHAs), not necessarily the
+latest. For a non-tip commit:
 
 ```bash
 git commit --fixup=<originating-sha>
 git rebase --autosquash <base>
 ```
 
-Pre-commit hook warning: when staging files for commit A's fixup, hooks stash unstaged changes (including commit B's fix) and run checks against the incomplete state. Commit fixups in dependency order.
-
-## Summary Shape
-
-Compact success:
-
-```markdown
-## Fix-CI Complete
-<failure> -> <fix> | Verification: STRONG | Review: <status>
-Next: <specific next action>
-```
-
-Full/partial:
-
-```markdown
-## Fix-CI Complete
-<what failed and what was fixed>
-
-### Review
-- Rounds: <N> | Pre-flight: <pass/fail/skipped> | Status: <status>
-
-### What to do next
-- <specific next action>
-
-### Open risks
-- <anything uncertain or untested>
-```
+Pre-commit trap: staging commit A's fixup makes hooks stash the unstaged
+changes (including commit B's fix) and check the incomplete state, so commit
+fixups in dependency order.

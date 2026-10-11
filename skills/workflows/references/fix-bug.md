@@ -80,7 +80,7 @@ specialist grades the root cause and the fix plan is validated before code.
    the tier table in `rules/code-review.md` (a TRIVIAL fix gets no delta;
    BATCHED fixes review the transformation on wave one; MULTI_PHASE fixes pass
    the phase base recorded with `project-state phase --sha`).
-10. **Validate** user-visible behavior with `qa/references/validate-fix.md`
+10. **Validate** user-visible behavior with `qa/references/validate.md`
     when the app runs; otherwise record why not.
     BATCHED or MULTI_PHASE fixes end, after the last unit's `## Phase
     Complete`, with one integrated review over the recorded branch base and

@@ -1,29 +1,21 @@
----
-tier: Heavy
----
-
 # Triage Bug
 
-Use this phase at the start of a bug workflow to determine whether the report is reproducible, what evidence exists, and what setup is required.
-
-For UI and workflow bugs, this is a two-stage process:
-- first-pass triage from the report, logs, screenshots, and available context
-- full reproduction after the local app or target environment is ready
-
-## Goal
-
-Turn a loose bug report into a concrete QA handoff with repro steps, expected behavior, actual behavior, and confidence about whether the issue is real.
-
-## Core Steps
+Use at the start of a bug workflow to decide whether the report is
+reproducible, what evidence exists, and what setup is required. For UI and
+workflow bugs this is two-stage: a first pass from the report, logs,
+screenshots and context, then full reproduction once the app or target
+environment is ready.
 
 1. Restate the reported problem in user-facing terms.
 2. Identify the environment, data, feature flags, and accounts needed to reproduce it.
 3. Attempt a fast first-pass reproduction or explain why it cannot be reproduced yet.
-4. Decide whether local app startup is required before reliable reproduction is possible — if yes, hand off to the `preflight` skill's [prepare-environment reference](../../preflight/references/prepare-environment.md).
-5. For UI paths, prefer Playwright MCP once the app is runnable.
-6. Record expected behavior versus actual behavior.
-7. Capture artifacts that increase confidence: screenshots, logs, failing steps, or URLs.
-8. Flag gaps that block reliable validation.
+4. When reliable reproduction needs a running app, use superset-local for
+   Superset; otherwise start only the services the repro needs and record
+   blockers.
+5. For UI paths, drive the repro with the available browser automation once the app is runnable.
+6. Record expected versus actual behavior, the artifacts that raise
+   confidence (screenshots, logs, failing steps, URLs), and the gaps that
+   block reliable validation.
 
 ## Output
 
@@ -36,7 +28,7 @@ Turn a loose bug report into a concrete QA handoff with repro steps, expected be
 - Expected behavior: <what should happen>
 - Actual behavior: <what happens instead>
 - Environment needs: <data, flags, accounts, browsers, services>
-- Playwright MCP: <required / useful / not needed>
+- Browser automation: <required / useful / not needed>
 - Evidence: <key proof points>
 - Open gaps: <what still blocks reliable validation>
 ```

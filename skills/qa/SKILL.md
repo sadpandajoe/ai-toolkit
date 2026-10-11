@@ -1,53 +1,36 @@
 ---
 name: qa
-description: Manual QA work — triage a loose bug report into a repro plan, validate a fix, assess change impact, discover or expand use cases, execute scenarios in a real environment, or file a bug report. Do NOT use for root-cause investigation (use debug/), writing automated tests (use testing/), or code review (use review/).
+description: Manual QA work — triage a loose bug report into a repro plan, validate a fix or feature, assess change impact, run PR smoke scenarios in a real environment, file a bug report, or write a QA report. Do NOT use for root-cause investigation (use debug/), writing automated tests (use testing/), or code review (use review/).
 ---
 
 # QA
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
-Umbrella skill for repo-standard QA phases. The orchestrator picks the relevant phase from the decision tree below and reads the corresponding reference for steps + output template.
+Umbrella for QA phases. The orchestrator reads the phase reference it needs
+and emits its output block.
 
 ## Phases
 
 | Phase | When | Reference |
 |-------|------|-----------|
 | Bug triage | Pre-investigation: turn loose report into repro plan | [references/triage-bug.md](references/triage-bug.md) |
-| Validate fix | Post-implementation: confirm bug resolved in user-visible flow | [references/validate-fix.md](references/validate-fix.md) |
-| Validate feature | Post-implementation: confirm acceptance criteria in user-visible flow | [references/validate-feature.md](references/validate-feature.md) |
+| Validate | Post-implementation: confirm a fix or acceptance criteria in the user-visible flow | [references/validate.md](references/validate.md) |
 | Impact assessment | Code review: classify changeset as CORE / STANDARD / PERIPHERAL | [references/assess-impact.md](references/assess-impact.md) |
-| Analyze use cases | Discovery: build use-case matrix from code + context | [references/analyze-use-cases.md](references/analyze-use-cases.md) |
-| Expand scenarios | After fix is known: identify smallest extra checks for regression protection | [references/expand-scenarios.md](references/expand-scenarios.md) |
-| Execute use cases | Run scenarios against a real environment with evidence capture | [references/execute-use-cases.md](references/execute-use-cases.md) |
+| PR smoke scenarios | Derive focused scenarios from a PR | [references/pr-smoke-scenarios.md](references/pr-smoke-scenarios.md) |
 | Manual PR test | Verify a PR in a running browser app | [references/test-pr/setup.md](references/test-pr/setup.md), [scenarios](references/test-pr/scenarios.md), [execute](references/test-pr/execute.md), [report](references/test-pr/report.md) |
-| File bug | Strong failure signal needs a clean handoff (Shortcut posting included) | [references/file-bug.md](references/file-bug.md) |
-| Write report | QA results need to land on a Shortcut/PR/Slack/email destination — canonical body shape and tone | [references/write-report.md](references/write-report.md) |
-
-## Invocation Patterns
-
-Most QA phases are checklist + output-template work the orchestrator does inline:
-
-1. Read the relevant reference.
-2. Follow its steps.
-3. Emit its output block into the conversation.
+| Browser recording | Record UI evidence | [references/browser-recording.md](references/browser-recording.md) |
+| File bug | Strong failure signal needs a clean handoff | [references/file-bug.md](references/file-bug.md) |
+| Write report | QA results go to a Shortcut/PR/Slack/email destination | [references/write-report.md](references/write-report.md) |
 
 <!-- aitk-model-route:qa.fresh-validation -->
 When fresh context matters (long-running session, parallel work, separation from the implementation thread), spawn a subagent on `review` for validation judgment or `operations` for deterministic evidence collection and pass the reference content as the prompt.
 
-## Phase Composition
+## Consumers
 
-Common combinations:
-- **Bug workflow** (`fix-bug`): triage-bug → (implement) → validate-fix → optionally file-bug
-- **Feature workflow** (`create-feature`): feature acceptance criteria → validate-feature
-- **Code review** (`review-code`, `review-pr`): assess-impact (always) → expand-scenarios (when reviewing a fix)
-- **Test plan**: analyze-use-cases → expand-scenarios → execute-use-cases
-- **PR smoke test** (`test-pr`): test-pr/setup → assess-impact → pr-smoke-scenarios → test-pr/execute → test-pr/report
+- `fix-bug`: triage-bug, then validate.
+- `create-feature`: validate.
+- `review-code`, `review-pr`: assess-impact.
+- `test-pr`: setup → assess-impact → pr-smoke-scenarios → execute → report.
+- `run-test-plan`: browser-recording and write-report.
 
-## Notes
-
-- References hold the per-phase steps and output templates. SKILL.md only routes.
-- Environment prep lives in the `preflight` skill (`preflight/references/prepare-environment.md`) — used outside QA contexts too (implementation env prep). Triage and validate-fix link to it when env prep is required.
-- `file-bug` includes the Shortcut posting protocol for workflows that push results back.
+When a phase needs a running app, use superset-local for Superset; otherwise
+start only the services the repro needs and record blockers.

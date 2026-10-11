@@ -38,7 +38,7 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    `PROJECT.md` before branching (hard gate): failing run, failures,
    ours/pre-existing split, hypothesis each. All pre-existing → exit with
    evidence, no fix cycle.
-3. **Classify complexity** per the CI matrix in `ci-fix-orchestration.md` and
+3. **Classify complexity** per `rules/complexity-gate.md` and
    persist with `bin/aitk project-state init --workflow fix-ci ... --format
    block`; paste the Complexity Gate it prints.
 4. **Diagnose.** The parent diagnoses known patterns. The independent RCA
@@ -50,11 +50,10 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    `CI_FIX.md` (`debug/templates/ci-fix-manifest.md`) for three or more failed
    jobs or artifact bundles.
 6. **Verify** with `skills/verification-loop/SKILL.md`, starting with the
-   command closest to the failing CI step, using the verification strength
-   tiers in `debug/references/ci-verify-fix.md`, and record the
-   strength with `bin/aitk verify --run "<cmd>" --strength <STRONG | PARTIAL |
-   WEAK>` per the table in `rules/gates.md`. When the failing check cannot run locally, CI is the
-   downstream verifier: `PASS (downstream: CI)` is legitimate for `PARTIAL`,
+   command closest to the failing CI step, then nearby checks on the changed
+   files, and record the strength with `bin/aitk verify --run "<cmd>"
+   --strength <STRONG | PARTIAL | WEAK>` per the table in `rules/gates.md`.
+   When the failing check cannot run locally, CI is the downstream verifier: `PASS (downstream: CI)` is legitimate for `PARTIAL`,
    and for `WEAK` unless `--gate-strict`; a push after a locally failed check
    never is.
 7. **Review** changed repo-tracked files through `review-code`; the review
@@ -93,7 +92,8 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    The PR is a draft only; promotion, reviewers, and merge need the user's
    words.
 9. **Finish.** Append the `Completed` entry to `PROJECT.md` (hard gate),
-   summarize with the shapes in `ci-fix-orchestration.md`, and record
+   summarize as `## Fix-CI Complete` (what failed, the fix, verification
+   strength, review status, open risks, next action), and record
    metrics with `bin/aitk metrics emit --workflow fix-ci --status <status>
    --workers <route>=<n> …` (complexity, gates, and retries come from the
    snapshot).

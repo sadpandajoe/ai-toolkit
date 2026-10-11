@@ -1,7 +1,3 @@
----
-tier: Standard
----
-
 # Write QA Report
 
 Canonical rules for QA verification reports posted to **any** shared destination — Shortcut comments, GitHub PR/issue comments, Slack threads, email summaries. Destination-specific mechanics (file upload API, comment endpoint, attachments rail) live in the destination's own reference; this file owns the body content rules.
@@ -10,7 +6,7 @@ Canonical rules for QA verification reports posted to **any** shared destination
 
 After running QA validation, fix verification, or PR smoke tests, when results need to land on a ticket, PR, or shared channel that *other people* will read.
 
-Use *instead of* terminal-only output formats (e.g. `test-pr` Step 7 grid, `validate-fix.md` bullet block) when the destination is external.
+Use *instead of* terminal-only output formats (the results table in [test-pr/report.md](test-pr/report.md), the [validate.md](validate.md) bullet blocks) when the destination is external.
 
 ## Pick the Shape
 
@@ -56,12 +52,12 @@ Lead the **Result** with a one-sentence verdict (PASS / FAIL / PARTIAL) and the 
 
 - **Video** — record the *full* flow (login → setup → all scenarios). One recording covering everything is more useful than one per scenario.
 - **Screenshots** — one per scenario in multi-scenario reports, embedded inline at the verification point. Skip in single-flow reports unless the video is too long to scrub.
-- **Naming** — use `<destination-id>-<short-label>.<ext>`, e.g. `sc-NNNNN-1280x720-popover.png`, `pr-NNNN-readonly-role.png`. Makes attachments self-describing in the destination's file rail.
+- **Naming** — screenshots use `<source-id>-scenario-<N>-<label>.png`, e.g. `sc-NNNNN-scenario-1-1280x720-popover.png`, `pr-NNNN-scenario-2-readonly-role.png` (shared with [test-pr/execute.md](test-pr/execute.md)), so attachments are self-describing in the destination's file rail.
 - **Upload mechanism** — see the destination's reporting reference (e.g. `skills/shortcut/references/report.md` for Shortcut's `/files` endpoint). Capture the returned hosted URL and embed inline.
 
 ## Anti-Patterns
 
-- Pasting a tabular pass/fail grid (the `test-pr` Step 7 format) as a Shortcut/GitHub comment — that grid is for terminal output only.
+- Pasting the tabular pass/fail grid from [test-pr/report.md](test-pr/report.md) as a Shortcut/GitHub comment — that grid is for terminal output only.
 - One mashed-up repro list covering four different viewports, with all evidence dumped at the bottom — use multi-scenario shape instead.
 - Engineering postmortem prose ("the issue is that `calculatePopupAlign` doesn't clamp the dropdown wrapper") — keep cause analysis out of the comment; file it separately.
 - "Tested on staging" with no URL/build/branch — make the environment line copy-pasteable so a reader can re-run.

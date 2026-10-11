@@ -679,7 +679,7 @@
       "contracts": [
         "skills/implement-change/SKILL.md",
         "rules/implementation.md",
-        "skills/testing/rules.md"
+        "rules/resource-management.md"
       ]
     },
     {
@@ -715,11 +715,6 @@
     {
       "path": "skills/review/references/local-review.md",
       "marker": "pre-dispatch-condition",
-      "count": 1
-    },
-    {
-      "path": "skills/testing/rules.md",
-      "marker": "test-runner-process-workers",
       "count": 1
     },
     {

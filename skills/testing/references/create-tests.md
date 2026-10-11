@@ -6,7 +6,7 @@ Use this phase when the workflow needs to create the first meaningful automated 
 
 Write the smallest set of high-signal tests that establishes real regression protection, follows project conventions, and gives later `update-tests` work something meaningful to improve.
 
-Confirm first that there is no meaningful suite to improve. Let the sibling [review-tests.md](review-tests.md) decide which behaviors need coverage, and test each one at the narrowest layer that can prove it. A new test is done when it passes and you have watched it fail with the behavior broken (revert a line or flip the asserted value, then restore); a test that cannot be made to fail is noise, so rewrite it.
+Confirm first that there is no meaningful suite to improve. List the real behaviors, state transitions and failure scenarios the area has without a test, and test each one at the narrowest layer that can prove it. A new test is done when it passes and you have watched it fail with the behavior broken (revert a line or flip the asserted value, then restore); a test that cannot be made to fail is noise, so rewrite it.
 
 ## Output
 
