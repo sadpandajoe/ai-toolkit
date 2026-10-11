@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -34,6 +35,53 @@ class CliTests(unittest.TestCase):
         self.assertEqual("doctor", payload["command"])
         self.assertIn("summary", payload)
         self.assertIn("findings", payload)
+
+    def test_cost_reads_claude_transcripts_and_refuses_an_unknown_period(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            project = home / ".claude/projects/-work-sample"
+            project.mkdir(parents=True)
+            record = {
+                "timestamp": "2026-09-30T12:00:00Z",
+                "sessionId": "session-1",
+                "requestId": "req-1",
+                "message": {
+                    "id": "msg-1",
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 1_000_000},
+                },
+            }
+            (project / "session-1.jsonl").write_text(json.dumps(record) + "\n")
+            environment = {**os.environ, "HOME": str(home)}
+            result = subprocess.run(
+                [str(ROOT / "bin/aitk"), "cost", "all"],
+                cwd=home,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("$4.00", result.stdout)
+            refused = subprocess.run(
+                [str(ROOT / "bin/aitk"), "cost", "last-week"],
+                cwd=home,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(2, refused.returncode)
+            self.assertIn("unknown period", refused.stdout)
+            missing = subprocess.run(
+                [str(ROOT / "bin/aitk"), "cost"],
+                cwd=home,
+                env={**environment, "HOME": str(home / "nobody")},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(1, missing.returncode)
 
     def test_optional_workflows_are_listed_and_routed_explicitly(self) -> None:
         listing = self.run_cli("list", "--with-pgm", "--details", "--json")

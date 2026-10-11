@@ -1,23 +1,32 @@
-#!/usr/bin/env python3
-"""Aggregate token usage and estimated costs from local session JSONL files."""
+"""`bin/aitk cost [period]`: token usage and estimated cost from local sessions.
 
+Reads Claude Code transcripts under `~/.claude/projects/` (Codex keeps no
+equivalent usage records, so the report is Claude-only). Rates come from
+`aitk/pricing.py`: a model without a known price, or a promotional model
+without a valid record timestamp, stays unpriced rather than guessed.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from datetime import date as calendar_date, datetime, timedelta
+import glob
 import json
 import os
-import sys
-import glob
 from pathlib import Path
-from collections import defaultdict
-from datetime import datetime, timedelta
 
-# Run as `python3 <toolkit-root>/scripts/show-cost.py` from any directory: the
-# script's own directory is on sys.path, the toolkit root is not.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from .pricing import compute_cost, get_pricing
 
-from aitk.pricing import compute_cost, get_pricing
+__all__ = (
+    "aggregate_by_date",
+    "compute_cost",
+    "get_pricing",
+    "main",
+    "parse_one_session",
+    "parse_sessions",
+    "since_for",
+)
 
-# Per-model global API-equivalent pricing ($/MTok) lives in aitk/pricing.py.
-# Keep unknown models unpriced. Promotional and long-prompt rates are applied
-# per record there (timestamp and prompt size).
 # ANSI colors
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -339,37 +348,41 @@ def print_period(label, dates_data, show_details=True):
             print(f"  {proj:<35} {format_cost(pt['cost']):>8} {pt['messages']:>6}")
 
 
-def main():
-    period = "7d"
-    if len(sys.argv) > 1:
-        period = sys.argv[1]
+def since_for(period: str, today: calendar_date | None = None) -> str | None:
+    """Return the first ISO date a period covers, or None for all time.
 
-    base_dir = os.path.expanduser("~/.claude/projects")
-    if not os.path.isdir(base_dir):
-        print("No Claude Code session data found at ~/.claude/projects/")
-        sys.exit(1)
-
-    # Compute date ranges
-    today = datetime.now().date()
+    Periods: `today`, `<N>d`, `month`, `all`, or a `YYYY-MM-DD` start date.
+    Raises ValueError for anything else.
+    """
+    today = today or datetime.now().date()
     if period == "today":
-        since = today.isoformat()
-    elif period.endswith("d"):
-        days = int(period[:-1])
-        since = (today - timedelta(days=days)).isoformat()
-    elif period == "month":
-        since = today.replace(day=1).isoformat()
-    elif period == "all":
-        since = None
-    else:
-        # Try as YYYY-MM-DD
-        since = period
+        return today.isoformat()
+    if period == "month":
+        return today.replace(day=1).isoformat()
+    if period == "all":
+        return None
+    if period.endswith("d") and period[:-1].isdigit():
+        return (today - timedelta(days=int(period[:-1]))).isoformat()
+    return calendar_date.fromisoformat(period).isoformat()
+
+
+def main(period: str = "7d", base_dir: Path | None = None) -> int:
+    base = base_dir or Path.home() / ".claude" / "projects"
+    if not base.is_dir():
+        print("No Claude Code session data found at ~/.claude/projects/")
+        return 1
+    try:
+        since = since_for(period)
+    except ValueError:
+        print(f"cost: unknown period {period!r} (today, <N>d, month, all, or YYYY-MM-DD)")
+        return 2
 
     print(f"{DIM}Scanning session files...{RESET}")
-    sessions = parse_sessions(base_dir, since)
+    sessions = parse_sessions(str(base), since)
 
     if not sessions:
         print(f"No session data found for period: {period}")
-        sys.exit(0)
+        return 0
 
     by_date = aggregate_by_date(sessions)
 
@@ -402,7 +415,4 @@ def main():
     print(
         f"\n{DIM}Note: Costs are API-equivalent estimates, not actual billing.{RESET}\n"
     )
-
-
-if __name__ == "__main__":
-    main()
+    return 0

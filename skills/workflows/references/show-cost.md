@@ -19,17 +19,17 @@ show-cost 2026-04-01   # Since a specific date
 
 ## Steps
 
-### 1. Run the Aggregation Script
+### 1. Run the Report
 
 ```bash
-python3 <toolkit-root>/scripts/show-cost.py <period>
+bin/aitk cost <period>
 ```
 
 Where `<period>` is the argument from the user (default: `7d`).
 
 ### 2. Present the Output
 
-The script handles all formatting. Present its output directly — do not reformat or summarize.
+The command handles all formatting. Present its output directly — do not reformat or summarize.
 
 ## Notes
 - Costs shown are **API-equivalent estimates**, not actual billing. Subscription users pay a flat rate regardless of token usage. These numbers indicate relative usage weight.

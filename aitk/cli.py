@@ -20,6 +20,7 @@ from .checkpoint import (
     validate as validate_checkpoint,
 )
 from .conformance import contracts_by_name, route_workflow, workflow_dependencies
+from .cost import main as cost_report
 from .deliver import DeliverOptions, deliver as run_delivery, render as render_delivery
 from .doctor import run_doctor
 from .installer import resolve_paths, run_lifecycle
@@ -667,6 +668,10 @@ def _observe(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _cost(arguments: argparse.Namespace) -> int:
+    return cost_report(arguments.period)
+
+
 def _pgm_preflight(arguments: argparse.Namespace) -> int:
     result = pgm_preflight(
         arguments.workflow,
@@ -1255,6 +1260,18 @@ def parser() -> argparse.ArgumentParser:
     metrics_emit.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
     metrics_emit.add_argument("--json", action="store_true")
     metrics.set_defaults(handler=_metrics)
+
+    cost = subparsers.add_parser(
+        "cost",
+        help="summarize Claude Code token usage and estimated cost",
+        description="Summarize token usage and API-equivalent cost from the Claude Code session "
+        "transcripts under ~/.claude/projects (subagent transcripts included, repeated usage records "
+        "counted once). Claude-only: Codex keeps no equivalent usage records. Unknown models stay unpriced.",
+    )
+    cost.add_argument(
+        "period", nargs="?", default="7d", help="today, <N>d, month, all, or a YYYY-MM-DD start (default 7d)"
+    )
+    cost.set_defaults(handler=_cost)
 
     review = subparsers.add_parser(
         "review", help="plan a review's lanes, or merge their findings (local-review.md)"

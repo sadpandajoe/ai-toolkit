@@ -1,24 +1,35 @@
 from __future__ import annotations
 
+from datetime import timedelta
+import importlib
 import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
-import sys
 import tempfile
 import unittest
 
-from aitk.pricing import PRICING
+from aitk.pricing import PRICING, PROMOTIONS, get_pricing
 from aitk.workflows import load_workflows
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# The cost report is `aitk.cost` (`bin/aitk cost`); optimize-cost is still a
+# standalone script until it is retired.
+SOURCES = {
+    "aitk/cost.py": ROOT / "aitk" / "cost.py",
+    "optimize-cost.py": ROOT / "scripts" / "optimize-cost.py",
+}
+
+
 def load_script(name: str):
-    path = ROOT / "scripts" / name
+    if name == "aitk/cost.py":
+        return importlib.import_module("aitk.cost")
+    path = SOURCES[name]
     spec = importlib.util.spec_from_file_location(name.replace("-", "_"), path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -29,7 +40,7 @@ def load_script(name: str):
 class CostScriptTests(unittest.TestCase):
     def test_unknown_models_are_never_mispriced(self) -> None:
         usage = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
-        for script in ("show-cost.py", "optimize-cost.py"):
+        for script in ("aitk/cost.py", "optimize-cost.py"):
             module = load_script(script)
             self.assertIsNone(module.get_pricing("unknown-provider-model"), script)
             self.assertEqual(
@@ -47,7 +58,7 @@ class CostScriptTests(unittest.TestCase):
                     self.assertIn(model["selector"], PRICING)
 
     def test_current_model_families_have_explicit_pricing(self) -> None:
-        module = load_script("show-cost.py")
+        module = load_script("aitk/cost.py")
         timestamp = "2026-07-16T12:00:00Z"
         self.assertEqual(5.0, module.get_pricing("claude-opus-4-8", timestamp)["input"])
         self.assertEqual(
@@ -116,7 +127,7 @@ class CostScriptTests(unittest.TestCase):
             "cache_read_input_tokens": 50_000,
             "cache_creation_input_tokens": 50_000,
         }
-        for script in ("show-cost.py", "optimize-cost.py"):
+        for script in ("aitk/cost.py", "optimize-cost.py"):
             module = load_script(script)
             with self.subTest(script=script):
                 self.assertEqual(
@@ -159,7 +170,7 @@ class CostScriptTests(unittest.TestCase):
             "2026-11-21T20:00:00-04:00": 5.0,
         }
         usage = {"input_tokens": 1_000_000}
-        for script in ("show-cost.py", "optimize-cost.py"):
+        for script in ("aitk/cost.py", "optimize-cost.py"):
             module = load_script(script)
             for model, boundaries in (
                 ("claude-sonnet-5", sonnet_boundaries),
@@ -178,7 +189,7 @@ class CostScriptTests(unittest.TestCase):
 
     def test_newer_selectors_never_inherit_an_older_models_promotion(self) -> None:
         """A promotion matches its selector or dated form only, never a longer name."""
-        module = load_script("show-cost.py")
+        module = load_script("aitk/cost.py")
         october = "2026-10-05T12:00:00Z"
         self.assertEqual(
             {"input": 2.0, "output": 10.0, "cache_read": 0.1, "cache_create": 2.5},
@@ -198,7 +209,7 @@ class CostScriptTests(unittest.TestCase):
         )
 
     def test_long_prompt_tiers(self) -> None:
-        module = load_script("show-cost.py")
+        module = load_script("aitk/cost.py")
         # Haiku 5.5: a prompt over 100K tokens, cache included, bills the higher tier.
         self.assertEqual(
             {"input": 0.1, "output": 0.5, "cache_read": 0.01, "cache_create": 0.125},
@@ -235,7 +246,7 @@ class CostScriptTests(unittest.TestCase):
         self,
     ) -> None:
         usage = {"input_tokens": 1_000_000}
-        for script in ("show-cost.py", "optimize-cost.py"):
+        for script in ("aitk/cost.py", "optimize-cost.py"):
             module = load_script(script)
             for timestamp in (None, "", "not-a-time", "2026-08-31T23:59:59"):
                 with self.subTest(script=script, timestamp=timestamp):
@@ -252,7 +263,7 @@ class CostScriptTests(unittest.TestCase):
                     )
 
     def test_session_parser_prices_records_individually_across_boundary(self) -> None:
-        module = load_script("show-cost.py")
+        module = load_script("aitk/cost.py")
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "session.jsonl"
             records = [
@@ -279,8 +290,8 @@ class CostScriptTests(unittest.TestCase):
             self.assertEqual(0, session["models"]["claude-sonnet-5"]["unpriced"])
 
     def test_project_shortening_has_no_personal_username_constant(self) -> None:
-        for script in ("show-cost.py", "optimize-cost.py"):
-            text = (ROOT / "scripts" / script).read_text()
+        for script in ("aitk/cost.py", "optimize-cost.py"):
+            text = SOURCES[script].read_text()
             self.assertNotIn("joeli", text.lower())
 
     def test_cost_attribution_recognizes_canonical_and_legacy_invocations(self) -> None:
@@ -305,6 +316,39 @@ class CostScriptTests(unittest.TestCase):
             ["review-code-adversarial"],
             module.extract_commands("$workflows review-code-adversarial"),
         )
+
+
+class PricingMechanismTests(unittest.TestCase):
+    """One case per lookup mechanism in aitk.pricing, independent of rates."""
+
+    def test_exact_selector_returns_its_own_rates(self) -> None:
+        for selector in PRICING:
+            if any(selector == promoted for promoted, _, _ in PROMOTIONS):
+                continue
+            with self.subTest(selector=selector):
+                self.assertEqual(PRICING[selector], get_pricing(selector))
+
+    def test_dated_form_prices_as_its_selector(self) -> None:
+        self.assertEqual(PRICING["claude-opus-5-5"], get_pricing("claude-opus-5-5-20261001"))
+        for selector, standard_from, _ in PROMOTIONS:
+            with self.subTest(selector=selector):
+                before = (standard_from - timedelta(seconds=1)).isoformat()
+                self.assertEqual(
+                    get_pricing(selector, before), get_pricing(f"{selector}-20260101", before)
+                )
+
+    def test_prefix_fallback_takes_the_longest_known_selector(self) -> None:
+        # claude-opus-5-5-preview starts with both claude-opus-5 and
+        # claude-opus-5-5; the longer key wins.
+        self.assertEqual(PRICING["claude-opus-5-5"], get_pricing("claude-opus-5-5-preview"))
+        self.assertIsNone(get_pricing("claude-unknown-family"))
+
+    def test_each_promotion_switches_exactly_at_its_boundary(self) -> None:
+        for selector, standard_from, standard in PROMOTIONS:
+            with self.subTest(selector=selector):
+                before = (standard_from - timedelta(seconds=1)).isoformat()
+                self.assertEqual(PRICING[selector], get_pricing(selector, before))
+                self.assertEqual(standard, get_pricing(selector, standard_from.isoformat()))
 
 
 def usage_record(message_id, request_id, usage, session="session-1"):
@@ -348,7 +392,7 @@ def write_sample_projects(home: Path) -> Path:
 
 class ShowCostCountingTests(unittest.TestCase):
     def test_repeated_usage_records_are_counted_once(self) -> None:
-        module = load_script("show-cost.py")
+        module = load_script("aitk/cost.py")
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "session.jsonl"
             million_in = {"input_tokens": 1_000_000}
@@ -366,7 +410,7 @@ class ShowCostCountingTests(unittest.TestCase):
         self.assertEqual(8.0, session["total_cost"])
 
     def test_subagent_transcripts_count_toward_their_session(self) -> None:
-        module = load_script("show-cost.py")
+        module = load_script("aitk/cost.py")
         with tempfile.TemporaryDirectory() as temporary:
             base = write_sample_projects(Path(temporary))
             sessions = module.parse_sessions(str(base))
@@ -375,7 +419,7 @@ class ShowCostCountingTests(unittest.TestCase):
         self.assertEqual(44.0, sessions[0]["total_cost"])
 
     def test_documented_invocation_runs_from_root_and_elsewhere(self) -> None:
-        """`python3 scripts/show-cost.py` and an absolute path from another cwd."""
+        """`bin/aitk cost` from the toolkit root and by absolute path from another cwd."""
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary) / "home"
             elsewhere = Path(temporary) / "elsewhere"
@@ -384,13 +428,13 @@ class ShowCostCountingTests(unittest.TestCase):
             env = {**os.environ, "HOME": str(home)}
             env.pop("PYTHONPATH", None)
             invocations = (
-                (ROOT, "scripts/show-cost.py"),
-                (elsewhere, str(ROOT / "scripts" / "show-cost.py")),
+                (ROOT, "bin/aitk"),
+                (elsewhere, str(ROOT / "bin" / "aitk")),
             )
-            for cwd, script in invocations:
+            for cwd, command in invocations:
                 with self.subTest(cwd=str(cwd)):
                     result = subprocess.run(
-                        [sys.executable, script, "all"],
+                        [command, "cost", "all"],
                         cwd=cwd,
                         env=env,
                         capture_output=True,

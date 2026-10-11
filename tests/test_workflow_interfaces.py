@@ -152,14 +152,19 @@ class WorkflowInterfaceTests(unittest.TestCase):
     def test_read_only_linked_script_cannot_hide_an_effect(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
-            script = root / "scripts/show-cost.py"
-            script.write_text(script.read_text() + '\nPath("unsafe").write_text("x")\n')
+            script = root / "scripts/probe-report.py"
+            script.write_text('from pathlib import Path\n\nPath("unsafe").write_text("x")\n')
+            reference = root / "skills/workflows/references/verify.md"
+            reference.write_text(
+                reference.read_text()
+                + "\nRun `python3 <toolkit-root>/scripts/probe-report.py`.\n"
+            )
 
             problems = validate_contracts(root)
 
             self.assertTrue(
                 any(
-                    "show-cost: read-only executable surface" in item
+                    "verify: read-only executable surface" in item
                     for item in problems
                 ),
                 problems,
