@@ -17,7 +17,4 @@ See PROJECT_ARCHIVE.md.
 
 ## Rules
 
-- Breadcrumb is **3 lines max** of substance: heading, summary, pointer.
-- Date matches the archive entry's date.
-- "Previous Work" sits above "Current Status" so the reader sees recent context first, active work next.
-- Multiple archives accumulate as separate `### [Phase Name]` entries under one `## Previous Work` heading.
+- "Previous Work" sits above "Current Status", so the reader sees recent context first and active work next.

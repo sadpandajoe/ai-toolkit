@@ -141,6 +141,13 @@ git and blocked by the safety hook. Resume uses durable files, never chat:
 when the snapshot predates the workflow's contract, and continues at the
 recorded gate.
 
+The checkpoint API is the only writer of its machine block: it renders
+`skills/reporting/templates/workflow-checkpoint.md` from the selected v2
+contract, validates phase transitions, increments the generation, and records
+pending and applied effect operations. Human-readable status follows the
+block, with ISO timestamps. A workflow adds a summary template under
+`skills/reporting/templates/` only when it needs structured domain output.
+
 ### Two Records, One Truth
 
 The routing snapshot (`bin/aitk project-state gate`) records every gate

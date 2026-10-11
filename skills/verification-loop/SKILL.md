@@ -76,5 +76,4 @@ worker and grade the handoff here.
 ## Output
 
 The `## Gate: verification` block `verify --run` printed, with its `Strength`
-line, followed by a one-line `Reviewer yield` or `Fix summary` only when fixes
-were applied.
+line, followed by a one-line `Fix summary` only when fixes were applied.
