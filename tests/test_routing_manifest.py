@@ -11,6 +11,7 @@ from pathlib import Path
 import json
 import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -517,6 +518,64 @@ class RoutingManifestTests(RoutingTestCase):
                 item for item in problems if "unmarked model dispatch boundary" in item
             ]
             self.assertEqual(2, len(unmarked), problems)
+
+    def test_a_route_family_must_exist_in_the_provider_catalog(self) -> None:
+        """A route names a model family; one the catalog lacks fails closed."""
+        cases = (("codex", "nova"), ("claude", "haiku"), ("codex", "opus"))
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            for provider, family in cases:
+                with self.subTest(provider=provider, family=family):
+                    mutated = json.loads(pristine)
+                    route = mutated["routes"][0]
+                    route["providers"][provider]["model"] = family
+                    manifest.write_text(json.dumps(mutated))
+                    expected = f"{route['name']}/{provider}: invalid route controls"
+                    self.assertIn(expected, validate_model_routing(root))
+            manifest.write_text(pristine)
+            self.assertEqual([], validate_model_routing(root))
+
+    def test_model_selectors_live_only_in_their_owned_homes(self) -> None:
+        """Standing rule 6: a volatile selector is written down in few places.
+
+        The catalog's selectors may appear in the manifest, the pricing table,
+        tests, the changelog, the migration notes and the generated Codex agent
+        files; anywhere else is a copy that drifts on the next model change.
+        """
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        selectors = sorted(
+            model["selector"]
+            for provider in payload["providers"].values()
+            for model in provider["models"].values()
+        )
+        allowed = re.compile(
+            r"(interfaces/model-routing\.json|aitk/pricing\.py|tests/.*|CHANGELOG\.md"
+            r"|docs/MIGRATION\.md|agents/codex/[^/]+\.toml)"
+        )
+        try:
+            listing = subprocess.run(
+                ["git", "-C", str(ROOT), "ls-files", "-z"],
+                capture_output=True,
+                check=True,
+            ).stdout.decode()
+            names = [name for name in listing.split("\0") if name]
+        except (OSError, subprocess.CalledProcessError):
+            skipped = {".git", "build", "__pycache__"}
+            names = [
+                path.relative_to(ROOT).as_posix()
+                for path in ROOT.rglob("*")
+                if path.is_file() and not skipped & set(path.relative_to(ROOT).parts)
+            ]
+        copies = []
+        for name in sorted(names):
+            path = ROOT / name
+            if allowed.fullmatch(name) or not path.is_file():
+                continue
+            text = path.read_bytes().decode(errors="replace")
+            copies.extend(f"{name}: {item}" for item in selectors if item in text)
+        self.assertEqual([], copies)
 
 
 if __name__ == "__main__":
