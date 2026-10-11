@@ -10,9 +10,8 @@ import unittest
 
 from aitk import claude_hooks
 from aitk.build import expected_build
-from aitk.conformance import workflow_dependency_resources
 from aitk.interfaces import load_skill_interfaces
-from aitk.workflows import load_workflows, validate_workflows
+from aitk.workflows import load_workflows, validate_workflows, workflow_dependency_resources
 
 
 ROOT = Path(__file__).resolve().parents[1]

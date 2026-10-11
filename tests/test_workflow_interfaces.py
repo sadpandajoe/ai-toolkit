@@ -16,8 +16,8 @@ from aitk.workflows import (
     validate_extension_workflows,
     validate_workflows,
 )
-from aitk.conformance import validate_contracts, workflow_dependency_resources
-from aitk.workflows import load_workflows
+from aitk.conformance import validate_contracts
+from aitk.workflows import load_workflows, workflow_dependency_resources
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -462,6 +462,30 @@ class WorkflowInterfaceTests(unittest.TestCase):
                 problems = validate_contracts(root)
 
                 self.assertTrue(any(expected in item for item in problems), problems)
+
+    def test_dependency_resolution_fails_closed_in_the_router_loader(self) -> None:
+        # `list --details` resolves dependencies through aitk.workflows, so the
+        # loader itself refuses a missing, unclassified or escaping link.
+        cases = {
+            "missing": ("[missing](../../qa/references/not-present.md)", "missing or not a file"),
+            "unclassified": ("[unclassified](../../unclassified/resource.md)", "not classified"),
+            "escape": ("[escape](../../../../outside.md)", "escapes repository"),
+        }
+        for name, (link, expected) in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = self.fixture(temporary)
+                reference = root / "skills/workflows/references/verify.md"
+                if name == "unclassified":
+                    target = root / "skills/unclassified/resource.md"
+                    target.parent.mkdir()
+                    target.write_text("# Resource\n")
+                elif name == "escape":
+                    (root.parent / "outside.md").write_text("# Outside\n")
+                reference.write_text(reference.read_text() + f"\n{link}\n")
+                workflow = next(item for item in load_workflows(root) if item.name == "verify")
+
+                with self.assertRaisesRegex(ValueError, expected):
+                    workflow_dependency_resources(root, workflow)
 
     def test_every_named_inline_skill_resource_is_resolved_exactly(self) -> None:
         # Two channels name skill resources: a bare skill-relative path in

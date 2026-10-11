@@ -19,7 +19,7 @@ from .checkpoint import (
     reserve as reserve_checkpoint,
     validate as validate_checkpoint,
 )
-from .conformance import contracts_by_name, route_workflow, workflow_dependencies
+from .conformance import route_workflow
 from .cost import main as cost_report
 from .deliver import DeliverOptions, deliver as run_delivery, render as render_delivery
 from .doctor import run_doctor
@@ -89,7 +89,7 @@ from .project_state import (
     verify_run,
     working_tree_sha,
 )
-from .workflows import load_workflows
+from .workflows import contracts_by_name, load_workflows, workflow_dependencies
 
 
 def _root(value: str | None) -> Path:
