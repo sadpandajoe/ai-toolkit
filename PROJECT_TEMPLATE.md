@@ -40,7 +40,7 @@
 
 ## Development Log
 <!-- Real-time updates of what's being done, discoveries, etc. -->
-<!-- Update before each major action (git operations, file changes, etc.) -->
+<!-- Log decisions, failed approaches and handoffs -->
 
 ### [Timestamp] - Session Start
 - 

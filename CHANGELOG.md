@@ -167,6 +167,8 @@
   (Opus) plans only COMPLEX work, `review`/`rca` are independent specialists
   preferring the other provider, Fable stays a read-only deep advisor. Catalog
   moved to the Claude 5 family (Opus 5, Sonnet 5, Fable 5.1) and GPT-5.6 Sol.
+  (The `planning` route's Opus selector here was superseded by the "Fable is
+  the Claude planner" entry above.)
 - Added the native worker roster (`agents/claude/*.md`, `agents/codex/*.toml`,
   installed to `~/.claude/agents` and `$CODEX_HOME/agents`) and the
   provider-neutral specialist contracts in `agents/specialists/` that the route

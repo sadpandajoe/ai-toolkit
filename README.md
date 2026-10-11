@@ -58,12 +58,6 @@ changes one catalog entry. Routes never fall back to a weaker model, never
 select `max` automatically, and a rejected request is unavailable rather than
 downgraded. See `rules/model-assignment.md`.
 
-Suggested parent-session settings for Claude Code: `/model sonnet` (the
-orchestrator policy; `opusplan` would put Opus in the parent for every plan),
-`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`, and a lower
-`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` if the parent grows quickly. No workflow ever
-requires a manual clear.
-
 Quota: every subagent spends the limit of the provider it runs on. The
 independent review lane and the deep lenses run on Codex (Sol, then Astra for
 the deep routes) from a Claude parent and spend no Claude quota; the Fable
@@ -93,7 +87,7 @@ bin/aitk doctor --installed --strict
 | `${CODEX_HOME:-~/.codex}/AGENTS.md` | Codex personal instructions with the same managed block |
 | `~/.claude/skills/<skill>` | Per-skill Claude links for public skills |
 | `~/.agents/skills/<skill>` | Cross-provider Agent Skill links used by Codex |
-| `~/.claude/agents/aitk-*.md` | Native Claude agents: planner (Fable), implementer, debugger, tester (Sonnet), reviewer fallback (Opus) |
+| `~/.claude/agents/aitk-*.md` | Native Claude agents: planner (Fable), implementer, debugger, tester (Sonnet) |
 | `${CODEX_HOME:-~/.codex}/agents/aitk-*.toml` | Native Codex agents with pinned effort and sandbox |
 | `~/.ai-toolkit/install-state.json` | Mode-0600 ownership ledger and one-level rollback record |
 
@@ -116,12 +110,12 @@ Codex CLI's custom-agent documentation after upgrades.
 ```
 ai-toolkit/
 ├── .codex-plugin/          # Codex plugin manifest (plugin.json)
-├── bin/aitk                # Build, doctor, routing, state, evidence, delivery, review and metrics CLI
+├── bin/aitk                # Build, doctor, routing, state, evidence, delivery, review, metrics and cost CLI
 ├── aitk/                   # Standard-library implementation
 ├── agents/
 │   ├── claude/             # Native Claude subagents (aitk-planner, aitk-implementer, aitk-debugger, aitk-tester)
 │   ├── codex/              # Native Codex custom agents (TOML)
-│   └── specialists/        # Provider-neutral contracts: reviewer.md, rca.md, plan-validator.md, finding-verifier.md
+│   └── specialists/        # Provider-neutral contracts: planner.md, reviewer.md, rca.md, plan-validator.md, finding-verifier.md
 ├── interfaces/
 │   ├── workflows.json      # Stable core workflow manifest
 │   ├── contracts.json      # Safety, state, resume, and verification contracts
@@ -160,8 +154,8 @@ ai-toolkit/
 │   └── shortcut/ superset-local/ preset-rbac-setup/   # Domain integrations
 ├── evals/                  # Judgment and deterministic eval cases
 ├── hooks/                  # Provider-neutral safety hooks + Codex hook adapter
-├── scripts/                # Cost reports, Preset host classifier and RBAC seeding, QA recorder, superset-local start
-├── statusline/             # Claude Code status line command
+├── scripts/                # Cost optimizer, Preset host classifier and RBAC seeding, QA recorder, superset-local start
+├── statusline/             # Optional Claude Code status line (not installed)
 ├── extensions/pgm/         # Optional program-management extension
 └── tests/                  # Deterministic guarantees
 ```
@@ -196,6 +190,7 @@ CLI:
 | `bin/aitk deliver [--title T] [--body-file F] [--no-pr]` | Commit, push and open (or reuse) a draft PR, only when a review record and a passing `STRONG` run hold on the current tree |
 | `bin/aitk review plan\|merge` | Compute a review's lanes from the diff, or merge the lanes' findings with coverage gaps |
 | `bin/aitk metrics [--period P] [--format summary\|project]` / `metrics emit --workflow W --status S` | Summarize `.ai-toolkit/metrics.jsonl`, or append one event filled from the snapshot; metrics never gate |
+| `bin/aitk cost [today\|<N>d\|month\|all\|YYYY-MM-DD]` | Token usage and API-equivalent cost from Claude Code sessions; Claude-only, unpriced rather than guessed |
 | `bin/aitk observe --kind <kind> --detail "<one sentence>"` | Append one line to the reflection queue (`.ai-toolkit/observations.jsonl`) |
 | `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Durable phases and idempotent effects; `reserve` refuses a `verification`- or `review`-gated effect unless the snapshot shows that gate `PASS` |
 | `bin/aitk lane-yield [--metrics PATH] [--json]` | Apply the review-lane yield thresholds to `.ai-toolkit/metrics.jsonl` and list demotions |
@@ -207,9 +202,10 @@ CLI:
 | `bin/aitk install [--with-pgm] [--no-hooks]` / `uninstall` / `rollback` | Transactional lifecycle; install also registers the hooks in Claude Code settings |
 | `bin/aitk check` | Build drift, doctor, tests, hook smoke tests |
 
-See [Architecture](docs/ARCHITECTURE.md), [migration guidance](docs/MIGRATION.md),
-[telemetry](docs/TELEMETRY.md), the [completion audit](docs/COMPLETION_AUDIT.md),
-and the [changelog](CHANGELOG.md).
+See [Architecture](docs/ARCHITECTURE.md) (including
+[cost and metrics data](docs/ARCHITECTURE.md#cost-and-metrics-data)),
+[migration guidance](docs/MIGRATION.md), the
+[completion audit](docs/COMPLETION_AUDIT.md), and the [changelog](CHANGELOG.md).
 
 ## Migrating from Slash Commands
 
@@ -309,13 +305,31 @@ refreshes the managed block idempotently.
 - **Change a model**: edit the catalog entry in `interfaces/model-routing.json`.
 - **Add an eval**: append a case to `evals/<family>/cases.jsonl`.
 
-## Environment Variables
+## Recommended Settings
 
 ```bash
 export GITHUB_TOKEN="your-github-token"
 export OPENAI_API_KEY="your-openai-key"          # For Codex CLI
 export CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2    # goal skill → worker → one exceptional child
+export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50        # optional: compact earlier when the parent grows quickly
 ```
+
+Run the Claude Code parent on `/model sonnet`, the orchestrator policy
+(`opusplan` would put Opus in the parent for every plan). No workflow ever
+requires a manual clear.
+
+## Status Line (optional)
+
+`statusline/statusline-command.sh` shows the model and live effort, session
+length, message count, cost, context and rate-limit bars, and the directory,
+branch and repo. `aitk` does not install it; to use it, point Claude Code's
+`statusLine` setting in `~/.claude/settings.json` at it:
+
+```json
+"statusLine": {"type": "command", "command": "bash ~/opt/code/ai-toolkit/statusline/statusline-command.sh"}
+```
+
+It needs `jq`, and runs on macOS and Linux.
 
 ## Uninstall and Rollback
 

@@ -55,5 +55,5 @@ After presenting the analysis, offer to:
 - Costs are API-equivalent estimates for subscription users
 - Command attribution is approximate (session cost split across commands detected in that session)
 - The script parses the same JSONL files as `show-cost`
-- The exact provider/session source supported by this release is documented in [telemetry support](../../../docs/TELEMETRY.md); the workflow does not claim cross-provider cost telemetry.
+- The exact provider/session source supported by this release is documented in [cost data](../../../docs/ARCHITECTURE.md#cost-and-metrics-data); the workflow does not claim cross-provider cost telemetry.
 - Promotional pricing uses each record's timezone-aware timestamp; missing or invalid timestamps remain unpriced.

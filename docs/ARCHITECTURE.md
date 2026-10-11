@@ -17,11 +17,13 @@ the control plane in the cheapest capable model.
 3. `agents/` holds the worker roster. `agents/claude/*.md` and
    `agents/codex/*.toml` are native subagent definitions the installer links
    into the user's provider directories: planner (Fable, read-only),
-   implementer, debugger, tester (Sonnet), and a same-provider reviewer
-   fallback. Each provider has a workhorse family and a deep family (Sonnet and
-   Opus with Fable; Sol with Astra); deep routes run only on the deep family. `agents/specialists/*.md` are provider-neutral contracts
-   (reviewer, RCA, plan validator, finding verifier) the route runner inlines
-   into cross-provider specialists.
+   implementer, debugger and tester (Sonnet). There is no native reviewer: the
+   second-family review and its single-family fallback run through
+   `bin/aitk model-run`. Each provider has a workhorse family and a deep family
+   (Sonnet and Opus with Fable; Sol with Astra); deep routes run only on the
+   deep family. `agents/specialists/*.md` are provider-neutral contracts
+   (planner, reviewer, RCA, plan validator, finding verifier) the route runner
+   inlines into cross-provider specialists.
 4. `interfaces/` makes everything machine-checkable: workflow identity and
    triggers, v2 durable contracts, skill classification, provider capability
    bindings, model routing (catalog, routes, dispatch boundaries, lens floors),
@@ -96,18 +98,9 @@ adversarial lens reroutes once to the other provider, recorded in the result. Pr
 not attest the internal serving model, so backend substitution stays outside
 the toolkit's evidence boundary.
 
-Review is one independent lane by default, validated by the parent before any
-fix, with one delta pass after substantive remediation and at most two
-`deep-review` lenses (adversarial, deep quality, architecture) on classifier
-flags. COMPLEX and CORE-impact diffs add a second cold lane on the other model
-family, merged by convergence; on other diffs a `[major]` only one lane raised
-is confirmed by a fresh verifier on the other model family before it blocks, and a security-sensitive, `--deep`, or
-adversarial review is `BLOCKED (degraded)` rather than downgraded when the
-other provider is unreachable. `bin/aitk review plan` computes which lanes run
-(`aitk/review_plan.py`) and `review merge` dedupes their findings and lists the
-majors to verify; the parent keeps the judgment. Plan validation is one worker returning `APPROVE / CHANGES_REQUIRED /
-REPLAN`; the RCA gate is an evidence checklist the parent grades for STANDARD
-bugs and a specialist grades for COMPLEX or uncertain ones.
+Review policy lives in `rules/code-review.md`. `bin/aitk review plan` computes
+which lanes run (`aitk/review_plan.py`) and `review merge` dedupes their
+findings and lists the majors to verify; the parent keeps the judgment.
 
 A boundary's contract list is the worker's whole closure, so it carries only
 what that lane grades with. Posting rules stay out of the batch reviewer's
@@ -189,6 +182,20 @@ lanes) append to `.ai-toolkit/observations.jsonl`. `reflect` clusters them,
 proposes rule or skill changes for human approval, and writes eval candidates
 under `evals/`. Tests protect invariants and deterministic transitions; evals
 protect model judgment.
+
+## Cost and metrics data
+
+`bin/aitk cost [period]` (`aitk/cost.py`) reads Claude Code session JSONL
+files under `~/.claude/projects/`, so cost data is Claude-only: it reads no
+Codex or other provider telemetry and never infers their usage. Costs are API-equivalent estimates from
+`aitk/pricing.py`, not bills, and unpriced beats guessed. A promotional price
+is chosen from the record's timezone-aware timestamp, so a missing, invalid or
+timezone-free timestamp leaves that record unpriced, as does an unknown model
+family; token and message counts stay visible either way.
+
+Workflow metrics are separate, provider-neutral events in
+`.ai-toolkit/metrics.jsonl` (`bin/aitk metrics`), read from the legacy
+`.claude/metrics.jsonl` only when the canonical file does not exist.
 
 ## Install ownership
 
