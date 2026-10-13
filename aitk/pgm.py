@@ -10,7 +10,6 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Callable, TypeVar
 
 
 WORKFLOWS = {"create-status-report", "create-velocity-report"}
@@ -28,7 +27,6 @@ THRESHOLD_DEFAULTS: dict[str, float] = {
     "team_wip_multiplier": 2,
     "member_wip_max": 3,
 }
-T = TypeVar("T")
 
 
 class PGMPreflightError(RuntimeError):
@@ -331,35 +329,3 @@ def preflight(
         str(config.resolve(strict=False)),
         tuple(findings),
     )
-
-
-def run_after_preflight(
-    workflow: str,
-    pgm_dir: Path | None,
-    effect: Callable[[dict[str, object]], T],
-    **options: object,
-) -> T:
-    result = preflight(workflow, pgm_dir, **options)  # type: ignore[arg-type]
-    if result.status != "ready":
-        raise PGMPreflightError("; ".join(result.findings))
-    second = preflight(workflow, pgm_dir, **options)  # type: ignore[arg-type]
-    if second.status != "ready":
-        raise PGMPreflightError(
-            "PGM prerequisites changed: " + "; ".join(second.findings)
-        )
-    environment = options.get("environment")
-    selected_environment = environment if isinstance(environment, dict) else os.environ
-    selected = pgm_dir or Path(str(selected_environment.get("PGM_DIR", "")))
-    config = selected.expanduser() / "config.json"
-    if config.is_symlink() or not config.is_file():
-        raise PGMPreflightError("PGM config changed after preflight")
-    try:
-        payload = json.loads(config.read_text())
-    except (OSError, json.JSONDecodeError) as error:
-        raise PGMPreflightError("PGM config changed after preflight") from error
-    problems = _validate_config(workflow, payload)
-    if problems:
-        raise PGMPreflightError(
-            "PGM config changed after preflight: " + "; ".join(problems)
-        )
-    return effect(payload)

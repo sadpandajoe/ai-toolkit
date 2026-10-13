@@ -6,9 +6,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest import mock
 
-from aitk.pgm import PGMPreflightError, preflight, run_after_preflight, thresholds
+from aitk.pgm import PGMPreflightError, preflight, thresholds
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,20 +62,11 @@ class PGMPreflightTests(unittest.TestCase):
         }
 
     def test_missing_and_malformed_configuration_stop_before_effects(self) -> None:
-        calls: list[dict[str, object]] = []
         result = preflight("create-status-report", self.pgm_dir, **self.options())
         self.assertEqual("blocked", result.status)
         self.assertTrue(
             any("config.json is missing" in item for item in result.findings)
         )
-        with self.assertRaises(PGMPreflightError):
-            run_after_preflight(
-                "create-status-report",
-                self.pgm_dir,
-                calls.append,
-                **self.options(),
-            )
-        self.assertEqual([], calls)
 
         (self.pgm_dir / "config.json").write_text("not json\n")
         result = preflight("create-status-report", self.pgm_dir, **self.options())
@@ -144,48 +134,12 @@ class PGMPreflightTests(unittest.TestCase):
         ):
             self.assertIn(expected, text)
 
-    def test_valid_status_configuration_allows_exactly_one_guarded_effect(self) -> None:
-        config = valid_config()
-        (self.pgm_dir / "config.json").write_text(json.dumps(config))
-        calls: list[dict[str, object]] = []
-        returned = run_after_preflight(
-            "create-status-report",
-            self.pgm_dir,
-            lambda payload: calls.append(payload) or "collected",
-            **self.options(),
-        )
-        self.assertEqual("collected", returned)
-        self.assertEqual([config], calls)
+    def test_valid_status_configuration_is_ready(self) -> None:
+        (self.pgm_dir / "config.json").write_text(json.dumps(valid_config()))
         self.assertEqual(
             "ready",
             preflight("create-status-report", self.pgm_dir, **self.options()).status,
         )
-
-    def test_guard_rechecks_prerequisites_at_the_effect_boundary(self) -> None:
-        config = self.pgm_dir / "config.json"
-        config.write_text(json.dumps(valid_config()))
-        calls: list[dict[str, object]] = []
-        original = preflight
-        checks = 0
-
-        def changing_preflight(*args: object, **kwargs: object):
-            nonlocal checks
-            result = original(*args, **kwargs)
-            checks += 1
-            if checks == 1:
-                config.unlink()
-            return result
-
-        with mock.patch("aitk.pgm.preflight", side_effect=changing_preflight):
-            with self.assertRaisesRegex(PGMPreflightError, "config.json is missing"):
-                run_after_preflight(
-                    "create-status-report",
-                    self.pgm_dir,
-                    calls.append,
-                    **self.options(),
-                )
-
-        self.assertEqual([], calls)
 
     def test_velocity_requires_dates_and_complete_safe_pipeline(self) -> None:
         (self.pgm_dir / "config.json").write_text(json.dumps(valid_config()))
