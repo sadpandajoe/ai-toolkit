@@ -93,31 +93,12 @@ specialist grades the root cause and the fix plan is validated before code.
     action when verification is `PASS` at `STRONG` strength (the regression
     test and targeted tests ran locally; `PASS (downstream: CI)` is `PARTIAL`
     and pauses), a regression test was added or the gap explicitly accepted,
-    the review gate is `PASS`, and the target is the current feature branch on
-    the expected remote: deliver before any `project-state advance`, never from
-    `main`. Pause for amend, rebase, force-push, an ambiguous push target,
-    `PARTIAL` or `WEAK` verification. In order:
-    1. `--no-pr`: commit and push per step 2, then stop, recording
-       `pushed — awaiting PR request`.
-    2. Create a new commit and push it. When the branch
-       already has an upstream, require
-       `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal
-       `<remote>/<branch>` (the upstream's own remote), else pause (ambiguous
-       push target); then push with
-       `git push "<remote>" "HEAD:refs/heads/<branch>"` (never a bare `git push`,
-       never `-u`). With no upstream, run `git push -u <remote> HEAD` (`<remote>` is
-       `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`;
-       pause on an ambiguous push target).
-    3. Run `create-pr --draft [--base <branch>]`. `## PR Exists` records
-       `PR #n (existing, draft|ready)` (from its `Draft:` value) with no
-       reservation; `## PR Not Opened` records its `pushed — awaiting PR request
-       (<reason>)` line.
-    4. On `## PR Ready`, run `bin/aitk checkpoint reserve --workflow fix-bug
-       --key published_pr --operation-id phase:<name>` (`phase:single` for a
-       SINGLE_PHASE fix), resume `create-pr` at its step 7, then `bin/aitk
-       checkpoint apply --workflow fix-bug --key published_pr --operation-id
-       phase:<name> --result-digest sha256:<sha256 of the PR URL>`, and finish
-       `create-pr` steps 8-9.
+    and the review gate is `PASS`: deliver before any `project-state
+    advance`. Draft the title and body with `create-pr` steps 2-5, then run
+    `bin/aitk deliver --workflow fix-bug --phase <name> --title "<title>"
+    --body-file <file> [--no-pr]` and paste the block it prints; it refuses
+    without the recorded review and verification run and holds on an
+    ambiguous push target. Pause for amend, rebase or force-push.
 
     The PR is a draft only; promotion, reviewers, and merge need the user's
     words. With `--watch`, chain into `watch-pr` once the PR exists.

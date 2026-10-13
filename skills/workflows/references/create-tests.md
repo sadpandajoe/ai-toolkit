@@ -44,7 +44,13 @@ return compact handoffs.
   independent review, fix the accepted findings, one delta pass over the fix.
   A finding still open after the delta is `ESCALATE` (or `USER_DECISION` when
   it needs a product call), not a third round.
-- With strong verification and a passing `review-code`, commit the tests as a `test:` commit, push (when the branch already has an upstream, require `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal `<remote>/<branch>`, else pause as an ambiguous push target, then push with `git push "<remote>" "HEAD:refs/heads/<branch>"`, never a bare `git push`, never `-u`; with no upstream, `git push -u <remote> HEAD`, where `<remote>` is `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`, pausing on an ambiguous push target), then open a draft PR with `create-pr --draft` straight through, with no checkpoint reservation. All without asking, never from `main`. `--no-pr` stops after the push and records `pushed — awaiting PR request`. Promoting the draft to ready for review, requesting reviewers, and merging need the user's words. Stop before committing when verification is partial or blocked.
+- With strong verification and a passing `review-code`, deliver the tests as
+  a `test:` commit without asking: draft the title and body with `create-pr`
+  steps 2-5, then run `bin/aitk deliver --workflow create-tests --title
+  "<title>" --body-file <file> --message "test: <scope>" [--no-pr]` and paste
+  the block it prints. It refuses below a recorded `STRONG` run or without the
+  review record, and never delivers from the default branch. Promoting the
+  draft, reviewers, and merge need the user's words.
 - PROJECT.md has a `## Tests Created` entry before the chat summary, so a
   fresh session or [`archive-project-file`](../../archive-project-file/SKILL.md)
   after `create-tests` keeps the record:

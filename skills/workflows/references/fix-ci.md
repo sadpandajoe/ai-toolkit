@@ -61,33 +61,15 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    outcome with `bin/aitk project-state gate --gate review --result
    <envelope>` (`--exception zero-logic|micro-fix` for an exception) and paste
    the block it prints.
-8. **Commit action.** `STRONG` verification, review gate `PASS`, and the
-   current feature branch on the expected remote (never `main`) → deliver
-   before any `project-state advance`. Amend, rebase, force-push, an ambiguous
-   push target, `PARTIAL` or `WEAK` verification (a downstream `PASS` is never
-   `STRONG`), or a COMPLEX hold → present the diagnosis and stop. Detect a
-   cherry-pick flow before recommending an amend target. In order:
-   1. `--no-pr`: commit and push per step 2, then stop, recording
-      `pushed — awaiting PR request`.
-   2. Create a new commit and push it. When the branch
-      already has an upstream, require
-      `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal
-      `<remote>/<branch>` (the upstream's own remote), else pause (ambiguous
-      push target); then push with
-      `git push "<remote>" "HEAD:refs/heads/<branch>"` (never a bare `git push`,
-      never `-u`). With no upstream, run `git push -u <remote> HEAD` (`<remote>` is
-      `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`;
-      pause on an ambiguous push target).
-   3. Run `create-pr --draft`. `## PR Exists` records
-      `PR #n (existing, draft|ready)` (from its `Draft:` value) with no
-      reservation; `## PR Not Opened` records its `pushed — awaiting PR request
-      (<reason>)` line.
-   4. On `## PR Ready`, run `bin/aitk checkpoint reserve --workflow fix-ci --key
-      published_pr --operation-id phase:<name>` (`phase:single` for a
-      SINGLE_PHASE fix), resume `create-pr` at its step 7, then `bin/aitk
-      checkpoint apply --workflow fix-ci --key published_pr --operation-id
-      phase:<name> --result-digest sha256:<sha256 of the PR URL>`, and finish
-      `create-pr` steps 8-9.
+8. **Deliver.** `STRONG` verification and review gate `PASS` → draft the
+   title and body with `create-pr` steps 2-5, then run `bin/aitk deliver
+   --workflow fix-ci --title "<title>" --body-file <file> [--no-pr]` before
+   any `project-state advance`, and paste the block it prints; it refuses
+   without the recorded review and verification run and holds on an
+   ambiguous push target. Amend, rebase, force-push, `PARTIAL` or `WEAK`
+   verification (a downstream `PASS` is never `STRONG`), or a COMPLEX hold →
+   present the diagnosis and stop. Detect a cherry-pick flow before
+   recommending an amend target.
 
    The PR is a draft only; promotion, reviewers, and merge need the user's
    words.

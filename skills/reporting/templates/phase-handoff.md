@@ -38,7 +38,7 @@ Next phase: <name, reclassified as <complexity>/<size>, or "done">
 `Tree` is recorded in the snapshot too: `bin/aitk project-state phase --name
 <phase> --status done --sha <sha>` refuses `done` without it, so the next
 review's base is data rather than memory. `Delivered as` names the draft PR once
-one exists; with `--no-pr`, or when `create-pr` holds, the phase is committed
+one exists; with `--no-pr`, or when `deliver` holds, the phase is committed
 and pushed and the loop continues.
 
 The roadmap check answers two questions with what this phase learned: does the

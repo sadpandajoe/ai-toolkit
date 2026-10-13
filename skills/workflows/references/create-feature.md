@@ -107,53 +107,32 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    the roadmap check: `holds` advances to step 4 for the next phase, and
    anything else records `--gate phase-exit --status RECLASSIFY` and
    revalidates the decomposition before the next phase is planned.
-   For MULTI_PHASE work the phase is then **prepared** as its own commit in
-   the roadmap's delivery order (`decompose-work.md`). The commit is pushed to
-   the feature branch without asking and opened as a draft PR by the delivery
-   sequence in step 11, before the phase is marked advanced. Phases on the same
-   branch reuse the one draft PR (no new reservation); a phase on a separate
-   branch does its own lookup and reservation. With `--no-pr` the phase stays
-   `pushed — awaiting PR request` and the loop continues.
+   For MULTI_PHASE work the phase is then delivered as its own commit in the
+   roadmap's delivery order (`decompose-work.md`) with step 11's `deliver`
+   line, without asking and before the phase is marked advanced. Phases on one
+   branch share one draft PR (`deliver` finds it); a phase on a separate
+   branch gets its own. With `--no-pr` the phase stays `pushed — awaiting PR
+   request` and the loop continues.
 10. **Integrated review** (MULTI_PHASE and BATCHED only; hard gate before
     `## Feature Complete`). After the last unit's checkpoint, run one more
     `review-code` pass over the recorded **branch base** to HEAD, with its own
     `## Gate: review (integrated)` block, as `review/references/local-review.md`
     (Integrated Review) defines it.
-11. **Finish.** Write the `## Feature Complete` entry, emit the summary from
-    `reporting/templates/create-feature-summary.md`, record metrics with
-    `bin/aitk metrics emit --workflow create-feature --status <status>`.
-    Deliver after the review gate is `PASS` and before any `project-state
-    advance`, never from `main`, in this order:
-    1. `--no-pr`: commit and push per step 2, then stop, recording
-       `pushed — awaiting PR request`.
-    2. Commit and push the current feature branch. When the branch
-       already has an upstream, require
-       `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal
-       `<remote>/<branch>` (the upstream's own remote), else pause (ambiguous
-       push target); then push with
-       `git push "<remote>" "HEAD:refs/heads/<branch>"` (never a bare `git push`,
-       never `-u`). With no upstream, run `git push -u <remote> HEAD` (`<remote>` is
-       `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`;
-       pause on an ambiguous push target).
-    3. Run `create-pr --draft [--base <branch>]`. Its `## PR Exists` result is
-       recorded as `PR #n (existing, draft|ready)` (from its `Draft:` value)
-       with no reservation; `## PR Not
-       Opened` records its `pushed — awaiting PR request (<reason>)` line.
-    4. On `## PR Ready`, reserve the effect with `bin/aitk checkpoint reserve
-       --workflow create-feature --key published_pr --operation-id
-       phase:<name>` (`phase:single` for SINGLE_PHASE), resume `create-pr` at
-       its step 7, then record it with `bin/aitk checkpoint apply --workflow
-       create-feature --key published_pr --operation-id phase:<name>
-       --result-digest sha256:<sha256 of the PR URL>`, and finish `create-pr`
-       steps 8-9.
-    5. Write the completion entry.
+11. **Finish.** Deliver after the review gate is `PASS` and before any
+    `project-state advance`: draft the title and body with `create-pr` steps
+    2-5, then run `bin/aitk deliver --workflow create-feature --phase <name>
+    --title "<title>" --body-file <file> [--no-pr]` and paste the block it
+    prints. It commits, pushes and opens or reuses the draft PR only on the
+    recorded review and verification run, never from the default branch; a
+    refusal names the missing gate, and a hold (`## PR Not Opened`) is
+    recorded as printed. Then write the `## Feature Complete` entry, emit the
+    summary from `reporting/templates/create-feature-summary.md`, and record
+    metrics with `bin/aitk metrics emit --workflow create-feature --status
+    <status>`.
 
     The PR is a draft only: promotion to ready for review, reviewers, and merge
-    need the user's explicit words, and a non-draft PR needs them too.
-    MULTI_PHASE phases that share a branch share one draft PR, opened by the
-    first phase that completes; a separate PR per phase exists only for phases
-    on separate branches. With `--watch`, chain into `watch-pr` once the PR
-    exists.
+    need the user's explicit words, and a non-draft PR needs them too. With
+    `--watch`, chain into `watch-pr` once the PR exists.
 
 ## User Intervention Points
 
@@ -167,10 +146,8 @@ plan-validation findings and review findings are handled in the loop.
 - MULTI_PHASE and BATCHED work: integrated review gate `PASS` over the branch
   base before `## Feature Complete`.
 
-Delivery is the contract's `publish-explicit` gate, satisfied by the
-`create-pr --draft` step: each draft PR is its own `published_pr` record with
-operation ID `phase:<name>` (`phase:single` for SINGLE_PHASE), reserved
-before creation and applied after.
+Delivery is the contract's `publish-explicit` gate, satisfied by
+`bin/aitk deliver`, which opens drafts only.
 
 `## Feature Complete` in `PROJECT.md` carries the fields the summary
 (`reporting/templates/create-feature-summary.md`) does not:

@@ -29,13 +29,6 @@ AITK = str(ROOT / "bin" / "aitk")
 PR_CREATE = 'gh pr create --draft --title "t" --body "b"'
 READY_PR_CREATE = 'gh pr create --title "t" --body "b"'
 DRAFT_PR_CREATE = "gh pr create --draft --base main --head o:feat/x --title t --body b"
-# The lookup exactly as create-pr.md fences it, env prefix included.
-PR_LOOKUP = (
-    'BRANCH="$branch" HEAD_REPO="$head_repo" gh api --paginate -X GET "repos/$base_repo/pulls" \\\n'
-    '  -f state=open -f per_page=100 -f head="$head_owner:$branch" \\\n'
-    "  --jq '.[] | select(.head.ref == env.BRANCH and ((.head.repo.full_name // \"\") | ascii_downcase) == env.HEAD_REPO)"
-    " | [.number, .draft, .base.ref, .html_url] | @tsv'"
-)
 REPO_VIEW = "gh repo view --json nameWithOwner,defaultBranchRef,isFork"
 DIGEST = "sha256:" + "a" * 64
 
@@ -398,7 +391,7 @@ class ReviewGateHookTests(unittest.TestCase):
         self.assertEqual(0, run_hook(PR_CREATE, nested).returncode)
 
     def test_ignores_the_draft_pr_identity_and_lookup_commands(self) -> None:
-        for command in (PR_LOOKUP, REPO_VIEW, "git push -u origin HEAD"):
+        for command in (REPO_VIEW, "git push -u origin HEAD"):
             with self.subTest(command=command):
                 result = run_hook(command, self.repo)
                 self.assertEqual(0, result.returncode, result.stderr)
