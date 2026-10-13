@@ -58,3 +58,5 @@ review-pr --all-open
   chat summary; batches also write `## Review-PR Batch Wave N` per wave.
 - Never describe a review as cross-provider when the same-provider fallback
   ran; the record names the lane.
+- No per-PR review gate is recorded: the explicit grant and the PII scrub gate
+  posting.

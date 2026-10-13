@@ -537,13 +537,18 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(1, path.read_text().count(BEGIN))
         self.assertIn("aitk-project-state", path.read_text())
         # Every durable effect is gated on verification or review, so there is
-        # no reservation the snapshot check does not cover.
+        # no reservation the snapshot check does not cover. review-pr is the
+        # one exception: it records no per-PR gate (an `--all-open` batch
+        # cannot share one snapshot), so the explicit grant and the PII scrub
+        # gate its posting instead.
         for contract in self.contracts.values():
             if contract["resumable"] and contract["idempotency_keys"]:
-                self.assertTrue(
-                    set(SNAPSHOT_GATES) & set(contract["authorization"]["gates"]),
-                    contract["name"],
-                )
+                gates = set(contract["authorization"]["gates"])
+                if contract["name"] == "review-pr":
+                    self.assertEqual("explicit", contract["authorization"]["mode"])
+                    self.assertEqual({"publish-explicit", "pii-scrub"}, gates)
+                    continue
+                self.assertTrue(set(SNAPSHOT_GATES) & gates, contract["name"])
         # A workflow gated on one of the two needs only that one.
         single = self.directory / "watch.md"
         initialize(ROOT, "watch-pr", single)
