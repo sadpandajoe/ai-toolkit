@@ -19,7 +19,6 @@ from .checkpoint import (
     reserve as reserve_checkpoint,
     validate as validate_checkpoint,
 )
-from .conformance import route_workflow
 from .cost import main as cost_report
 from .deliver import DeliverOptions, deliver as run_delivery, render as render_delivery
 from .doctor import run_doctor
@@ -235,31 +234,6 @@ def _list(arguments: argparse.Namespace) -> int:
             arguments_hint = f" {workflow.arguments}" if workflow.arguments else ""
             print(f"{workflow.name}{arguments_hint}\n  {workflow.summary}")
     return 0
-
-
-def _route(arguments: argparse.Namespace) -> int:
-    request = " ".join(arguments.request)
-    match = route_workflow(
-        _root(arguments.root), request, include_pgm=arguments.with_pgm
-    )
-    payload: dict[str, object] = {"command": "route", "request": request, "match": None}
-    if match is not None:
-        payload["match"] = {
-            "workflow": match.workflow.name,
-            "summary": match.workflow.summary,
-            "trigger": match.trigger,
-            "invoke": f"Use ${match.workflow.owner_skill} in {match.workflow.name} mode for: {request}",
-        }
-    if arguments.json:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-    elif match is None:
-        print("No toolkit workflow matched; handle the request directly.")
-    else:
-        print(f"{match.workflow.name}: {match.workflow.summary}")
-        print(
-            f"Invoke: Use ${match.workflow.owner_skill} in {match.workflow.name} mode for: {request}"
-        )
-    return 0 if match is not None else 1
 
 
 def _model_route(arguments: argparse.Namespace) -> int:
@@ -1072,16 +1046,6 @@ def parser() -> argparse.ArgumentParser:
         "--details", action="store_true", help="include contract and ownership details"
     )
     listing.set_defaults(handler=_list)
-
-    route = subparsers.add_parser("route", help="match a request to a public workflow")
-    route.add_argument("request", nargs="+", help="natural-language request")
-    route.add_argument(
-        "--json", action="store_true", help="emit machine-readable output"
-    )
-    route.add_argument(
-        "--with-pgm", action="store_true", help="include optional PGM workflows"
-    )
-    route.set_defaults(handler=_route)
 
     model_route = subparsers.add_parser(
         "model-route", help="resolve a stable worker route to model and effort"

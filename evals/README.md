@@ -19,9 +19,9 @@ reflection queue).
 ## Running
 
 - `mode: deterministic` cases run in `tests/test_evals.py` through the
-  toolkit's own code (`aitk route`, `aitk.project_state`), so they are part of
-  `bin/aitk check`. The request-to-workflow cases in `skill_routing/` are among
-  them; questions that must not start an editing workflow are judgment cases.
+  toolkit's own code (`aitk.project_state`), so they are part of
+  `bin/aitk check`. Every `skill_routing/` case is a judgment case: the router
+  is the model reading `bin/aitk list --details --json`, not a matcher.
 - `mode: judgment` cases run with `bin/aitk eval`, which calls a provider and
   costs money; they are not run in CI. A case whose `expected` names
   `covered_by` is skipped: a test already covers it.

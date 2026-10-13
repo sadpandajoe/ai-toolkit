@@ -210,7 +210,6 @@ CLI:
 | Command | Purpose |
 |---|---|
 | `bin/aitk list [--with-pgm] [--details] [--json]` | List workflows and contracts; the workflows router reads `--details --json` |
-| `bin/aitk route "<request>"` | Deterministically suggest a workflow |
 | `bin/aitk project-state init\|show\|set\|gate\|advance\|phases\|phase\|op` | Read and update the `PROJECT.md` routing snapshot and gate budget; `--format block` on `init`, `set` and `gate` prints the block to paste, `gate --gate review --result <envelope>` records a reviewer result, `op --id/--check` records provider operations so a resumed run skips them |
 | `bin/aitk verify --run "<cmd>" [--strength STRONG\|PARTIAL\|WEAK]` | Run a check and record command, exit code, output tail and tree on the verification gate (`PASS` only on exit 0) |
 | `bin/aitk deliver [--title T] [--body-file F] [--no-pr]` | Commit, push and open (or reuse) a draft PR, only when a review record and a passing `STRONG` run hold on the current tree |

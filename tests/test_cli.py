@@ -101,12 +101,14 @@ class CliTests(unittest.TestCase):
         usage = re.search(r"\{([a-z,-]+)\}", self.run_cli("--help").stdout)
         self.assertIsNotNone(usage)
         subcommands = set(usage.group(1).split(","))
+        # The router reads `list --details --json`; there is no matcher command.
+        self.assertNotIn("route", subcommands)
         for item in items.values():
             if "command" in item:
                 with self.subTest(workflow=item["name"]):
                     self.assertIn(item["command"].split()[1], subcommands)
 
-    def test_optional_workflows_are_listed_and_routed_explicitly(self) -> None:
+    def test_optional_workflows_are_listed_with_their_contracts(self) -> None:
         listing = self.run_cli("list", "--with-pgm", "--details", "--json")
         self.assertEqual(0, listing.returncode, listing.stderr)
         items = json.loads(listing.stdout)["workflows"]
@@ -116,20 +118,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual("pgm", pgm["owner_skill"])
         self.assertEqual("local_mutation", pgm["effect"])
         self.assertTrue(pgm["resumable"])
-
-        routed = self.run_cli("route", "--with-pgm", "program health report", "--json")
-        self.assertEqual(0, routed.returncode, routed.stderr)
-        match = json.loads(routed.stdout)["match"]
-        self.assertEqual("create-status-report", match["workflow"])
-        self.assertIn("Use $pgm", match["invoke"])
-
-        explicit = self.run_cli(
-            "route", "--with-pgm", "$pgm", "create-velocity-report", "--json"
-        )
-        self.assertEqual(0, explicit.returncode, explicit.stderr)
-        self.assertEqual(
-            "create-velocity-report", json.loads(explicit.stdout)["match"]["workflow"]
-        )
 
     def test_root_is_discovered_from_a_repository_subdirectory(self) -> None:
         result = subprocess.run(

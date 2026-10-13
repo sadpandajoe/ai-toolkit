@@ -1,8 +1,7 @@
-"""Behavioral contracts and deterministic workflow routing."""
+"""Behavioral contracts: validation of interfaces/contracts.json."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -10,80 +9,12 @@ import re
 
 from .interfaces import load_skill_interfaces
 from .workflows import (
-    Workflow,
     contracts_by_name,
     load_contract_document,
     load_workflows,
     workflow_dependencies,
     workflow_dependency_resources,
 )
-
-
-@dataclass(frozen=True)
-class RouteMatch:
-    workflow: Workflow
-    trigger: str
-    score: tuple[int, int]
-
-
-def _normalize(value: str) -> str:
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", value.lower()).split())
-
-
-def _ordered_tokens_match(trigger: str, request: str) -> bool:
-    request_tokens = iter(request.split())
-    return all(
-        any(token == candidate for candidate in request_tokens)
-        for token in trigger.split()
-    )
-
-
-def route_workflow(
-    root: Path, request: str, include_pgm: bool = False
-) -> RouteMatch | None:
-    explicit = re.match(
-        r"^\s*\$(workflows|pgm)\s+([a-z0-9]+(?:-[a-z0-9]+)*)\b", request, re.I
-    )
-    if explicit:
-        owner, name = explicit.groups()
-        for workflow in load_workflows(root, include_pgm=include_pgm):
-            if workflow.owner_skill == owner.lower() and workflow.name == name.lower():
-                return RouteMatch(
-                    workflow=workflow,
-                    trigger=f"${owner.lower()} {name.lower()}",
-                    score=(10_000, 10_000),
-                )
-        return None
-    normalized = _normalize(request)
-    matches: list[RouteMatch] = []
-    for workflow in load_workflows(root, include_pgm=include_pgm):
-        for trigger in workflow.triggers:
-            normalized_trigger = _normalize(trigger)
-            if normalized_trigger and _ordered_tokens_match(
-                normalized_trigger, normalized
-            ):
-                matches.append(
-                    RouteMatch(
-                        workflow=workflow,
-                        trigger=trigger,
-                        score=(
-                            len(normalized_trigger.split()),
-                            len(normalized_trigger),
-                        ),
-                    )
-                )
-    if not matches:
-        return None
-    ordered = sorted(
-        matches, key=lambda match: (match.score, match.workflow.name), reverse=True
-    )
-    best = ordered[0]
-    if any(
-        match.workflow.name != best.workflow.name and match.score == best.score
-        for match in ordered[1:]
-    ):
-        return None
-    return best
 
 
 CONTRACT_KEYS = {

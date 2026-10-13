@@ -92,7 +92,11 @@ class StubModelRun:
         self.calls: list[tuple[str, str, str]] = []
 
     def __call__(self, route, prompt: str) -> tuple[int, dict[str, object]]:
-        case_id = prompt.split("`", 2)[1]
+        if route.boundary == "eval.grade":
+            case_id = prompt.split("`", 2)[1]
+        else:
+            # The answer prompt carries the situation, never the case id.
+            (case_id,) = [case.id for case in load_cases(ROOT)[0] if answer_prompt(case) == prompt]
         self.calls.append((route.boundary, route.selector, case_id))
         if route.boundary == "eval.grade":
             decided, findings = self.verdicts[case_id]

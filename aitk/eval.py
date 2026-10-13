@@ -291,10 +291,13 @@ def answer_keys(case: Case) -> list[str]:
 
 
 def answer_prompt(case: Case) -> str:
-    """The task for the model under test: the situation and the keys, never the values."""
+    """The task for the model under test: the situation and the keys, never the values.
+
+    The case id stays out: ids such as `route-fix-bug` name the answer.
+    """
     keys = ", ".join(f"`{key}`" for key in answer_keys(case))
     return (
-        f"Evaluation case `{case.id}` (family `{case.family}`).\n\n"
+        f"Evaluation case (family `{case.family}`).\n\n"
         f"Situation:\n{_situation(case)}\n\n"
         "Decide what the toolkit's parent session does in this situation, following "
         "the contracts in your instructions. Do not ask questions; decide from what "
