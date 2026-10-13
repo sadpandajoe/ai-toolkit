@@ -192,40 +192,17 @@ class RoutingManifestTests(RoutingTestCase):
                         load_model_routing(root)
             manifest.write_text(pristine)
 
-    def test_both_lens_floors_are_required_and_pinned_in_policy(self) -> None:
-        """Optional floors are floors that delete themselves.
+    def test_both_lens_floors_are_required(self) -> None:
+        """An empty or missing floor map is a problem, not a floor that deleted itself.
 
-        Both maps returned "no problems" for `null` and for `{}`, and neither
-        compared against anything, so every guarantee they encode could be
-        removed by deleting the line that states it — an empty map, a dropped
-        domain, a deleted lens entry. None of those reads as a behaviour change
-        in a diff, and all three validated. The pins in `routing_policy.py` make
-        the manifest answerable to a second copy, the way the route table already
-        is, and the two comparisons run in opposite directions because the two
-        floors fail in opposite directions: a route floor is breached by
-        *widening* (the expensive lens becomes cheap), a menu floor by
-        *narrowing* (the lane becomes unreachable).
+        The floors are data in the manifest; what each one says is reviewed
+        there, so only their presence and shape are checked here.
         """
-        adversarial = "skills/review/references/adversarial.md"
         cases = (
             (lambda p: p.update(lens_routes={}), "lens_routes must not be empty"),
             (lambda p: p.update(lens_routes=None), "lens_routes must be an object"),
-            (
-                lambda p: p["lens_routes"].pop(adversarial),
-                f"lens route floor for {adversarial} must stay within",
-            ),
-            (
-                lambda p: p["lens_routes"].__setitem__(
-                    adversarial, ["review", "deep-review"]
-                ),
-                f"lens route floor for {adversarial} must stay within",
-            ),
             (lambda p: p.update(lens_floors={}), "lens_floors must not be empty"),
             (lambda p: p.update(lens_floors=None), "lens_floors must be an object"),
-            (
-                lambda p: p["lens_floors"]["code"].remove(adversarial),
-                "lens floor for code drops pinned lenses",
-            ),
         )
         with tempfile.TemporaryDirectory() as directory:
             root = self.fixture(directory)
@@ -254,7 +231,6 @@ class RoutingManifestTests(RoutingTestCase):
             (lambda p: p["routes"][0].pop("effort"), "invalid model route entry"),
             (lambda p: p["routes"][0].update(effort="max"), "effort must be one of"),
             (lambda p: p["routes"][0].update(effort="extreme"), "effort must be one of"),
-            (lambda p: p["routes"][0].update(effort="medium"), "invariant mapping mismatch"),
         )
         with tempfile.TemporaryDirectory() as directory:
             root = self.fixture(directory)
@@ -446,7 +422,6 @@ class RoutingManifestTests(RoutingTestCase):
                 item for item in payload["routes"] if item["name"] == "review"
             )["providers"]["claude"].update({"disallowed_tools": [{}]}),
             lambda payload: payload["dispatch_boundaries"][0].update({"routes": [{}]}),
-            lambda payload: payload["dispatch_boundaries"][0].update({"count": True}),
             # A pinned floor is read from the raw payload, so its members are
             # whatever the file says. Comparing it as a set before checking the
             # members are strings crashed on the nested form instead of

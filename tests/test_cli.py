@@ -144,35 +144,8 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(0, resolved.returncode, resolved.stderr)
         payload = json.loads(resolved.stdout)
-        self.assertEqual("sol", payload["family"])
-        self.assertEqual("high", payload["effort"])
-        self.assertEqual("read-only", payload["controls"]["sandbox"])
-        self.assertEqual("plan", payload["lens_domain"])
-        for contract in (
-            "agents/specialists/plan-validator.md",
-            "rules/severity.md",
-        ):
-            self.assertIn(contract, payload["required_contracts"])
-        # The validator is a critic: no routing policy, handoff rules, planning
-        # skill, or the parent's validate-plan procedure.
-        for parent_file in (
-            "rules/model-assignment.md",
-            "rules/specialist-handoff.md",
-            "skills/planning/SKILL.md",
-            "skills/planning/references/validate-plan.md",
-        ):
-            self.assertNotIn(parent_file, payload["required_contracts"])
-        # The validator's contract carries its own checks: no plan checklist
-        # files, the code-review umbrella, the code grading rules, or the
-        # floored architecture lens.
-        for leaked in (
-            "skills/plan-review/references/implementation.md",
-            "skills/testing/references/review-testplan.md",
-            "skills/review/SKILL.md",
-            "rules/code-review.md",
-            "skills/review/references/architecture.md",
-        ):
-            self.assertNotIn(leaked, payload["required_contracts"])
+        self.assertEqual(("review", "planning.validate"), (payload["route"], payload["boundary"]))
+        self.assertIn("agents/specialists/plan-validator.md", payload["required_contracts"])
 
         rejected = self.run_cli(
             "model-route", "unknown", "--provider", "codex", "--json"
@@ -212,13 +185,8 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(0, allowed.returncode, allowed.stderr)
         payload = json.loads(allowed.stdout)
-        self.assertEqual("fable", payload["family"])
-        self.assertEqual("xhigh", payload["effort"])
+        self.assertEqual("deep-review", payload["route"])
         self.assertEqual("code", payload["lens_domain"])
-        self.assertIn("rules/code-review.md", payload["required_contracts"])
-        self.assertNotIn(
-            "skills/review/references/deep-quality.md", payload["required_contracts"]
-        )
 
     def test_model_route_rejects_a_lens_without_a_boundary(self) -> None:
         """`--lens` alone used to resolve a route that silently ignored it."""

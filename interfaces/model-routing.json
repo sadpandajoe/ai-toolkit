@@ -5,8 +5,6 @@
       "standard": "high",
       "deep": "xhigh"
     },
-    "automatic_max": false,
-    "fallback": "forbidden",
     "orchestrator": {
       "codex": "sol",
       "claude": "sonnet"
@@ -56,7 +54,6 @@
         "Implement only the bounded task contract.",
         "Do not commit, push, publish, or widen scope."
       ],
-      "explicit_only": false,
       "providers": {
         "codex": {
           "model": "sol",
@@ -87,7 +84,6 @@
         "Produce a bounded plan, decomposition, or phase plan from the supplied context.",
         "Do not implement, edit product files, or mutate external state."
       ],
-      "explicit_only": false,
       "providers": {
         "codex": {
           "model": "sol",
@@ -122,7 +118,6 @@
         "Perform an independent read-only review.",
         "Do not edit files or mutate external state."
       ],
-      "explicit_only": false,
       "providers": {
         "codex": {
           "model": "sol",
@@ -157,7 +152,6 @@
         "Perform an independent read-only architecture, security, adversarial, or cold review.",
         "Do not edit files or mutate external state."
       ],
-      "explicit_only": false,
       "providers": {
         "codex": {
           "model": "astra",
@@ -192,7 +186,6 @@
         "Synthesize root cause from supplied evidence.",
         "Do not edit files, decide implementation scope, or mutate external state."
       ],
-      "explicit_only": false,
       "providers": {
         "codex": {
           "model": "sol",
@@ -227,7 +220,6 @@
         "Synthesize ambiguous, intermittent, history-dependent, or cross-system root cause from supplied evidence.",
         "Do not edit files, decide implementation scope, or mutate external state."
       ],
-      "explicit_only": false,
       "providers": {
         "codex": {
           "model": "astra",
@@ -258,7 +250,6 @@
         "Collect read-only evidence, produce deterministic reports, or prepare already-authored API, ticket, or Playwright steps for parent execution.",
         "Do not perform external mutations, execute tests, design tests, diagnose failures, perform RCA, review, decide fixes, or modify product code."
       ],
-      "explicit_only": false,
       "providers": {
         "codex": {
           "model": "sol",
@@ -280,7 +271,6 @@
     {
       "id": "workflows.create-feature-planning",
       "path": "skills/workflows/references/create-feature.md",
-      "count": 1,
       "routes": [
         "planning"
       ],
@@ -293,7 +283,6 @@
     {
       "id": "workflows.create-feature-implementation",
       "path": "skills/workflows/references/create-feature.md",
-      "count": 1,
       "routes": [
         "implementation"
       ],
@@ -305,7 +294,6 @@
     {
       "id": "workflows.fix-bug-implementation",
       "path": "skills/workflows/references/fix-bug.md",
-      "count": 1,
       "routes": [
         "implementation"
       ],
@@ -317,7 +305,6 @@
     {
       "id": "workflows.feedback-fix-wave",
       "path": "skills/workflows/references/address-feedback.md",
-      "count": 1,
       "routes": [
         "implementation"
       ],
@@ -329,7 +316,6 @@
     {
       "id": "workflows.watch-pr-fix",
       "path": "skills/workflows/references/watch-pr.md",
-      "count": 1,
       "routes": [
         "implementation"
       ],
@@ -341,7 +327,6 @@
     {
       "id": "workflows.adversarial-primary",
       "path": "skills/workflows/references/review-code.md",
-      "count": 1,
       "routes": [
         "deep-review"
       ],
@@ -355,7 +340,6 @@
     {
       "id": "workflows.adversarial-second-opinion",
       "path": "skills/workflows/references/review-code.md",
-      "count": 1,
       "routes": [
         "deep-review"
       ],
@@ -369,7 +353,6 @@
     {
       "id": "planning.validate",
       "path": "skills/planning/references/validate-plan.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -383,7 +366,6 @@
     {
       "id": "planning.validate-second-family",
       "path": "skills/planning/references/validate-plan.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -397,7 +379,6 @@
     {
       "id": "debug.rca-specialist",
       "path": "skills/debug/references/review-rca.md",
-      "count": 1,
       "routes": [
         "rca",
         "deep-rca"
@@ -409,7 +390,6 @@
     {
       "id": "debug.ci-triage",
       "path": "skills/workflows/references/fix-ci.md",
-      "count": 1,
       "routes": [
         "rca",
         "deep-rca"
@@ -421,7 +401,6 @@
     {
       "id": "review.independent",
       "path": "skills/review/references/local-review.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -436,7 +415,6 @@
     {
       "id": "review.second-family",
       "path": "skills/review/references/local-review.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -451,7 +429,6 @@
     {
       "id": "review.deep-lenses",
       "path": "skills/review/references/local-review.md",
-      "count": 1,
       "routes": [
         "deep-review"
       ],
@@ -469,7 +446,6 @@
     {
       "id": "review.delta",
       "path": "skills/review/references/local-review.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -484,7 +460,6 @@
     {
       "id": "review.verify-major",
       "path": "skills/review/references/local-review.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -499,7 +474,6 @@
     {
       "id": "review.pr-independent",
       "path": "skills/review/references/pr-review.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -514,7 +488,6 @@
     {
       "id": "review.pr-second-family",
       "path": "skills/review/references/pr-review.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -529,7 +502,6 @@
     {
       "id": "review.pr-deep-lenses",
       "path": "skills/review/references/pr-review.md",
-      "count": 1,
       "routes": [
         "deep-review"
       ],
@@ -547,7 +519,6 @@
     {
       "id": "review.pr-batch",
       "path": "skills/review/references/pr-batch.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -564,7 +535,6 @@
     {
       "id": "review.code-judo",
       "path": "skills/review/references/code-judo.md",
-      "count": 1,
       "routes": [
         "deep-review"
       ],
@@ -576,7 +546,6 @@
     {
       "id": "cherry-pick.unblock-discovery",
       "path": "skills/cherry-pick/SKILL.md",
-      "count": 1,
       "routes": [
         "review"
       ],
@@ -587,7 +556,6 @@
     {
       "id": "cherry-pick.validate-scope-leak",
       "path": "skills/cherry-pick/references/validate.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -599,7 +567,6 @@
     {
       "id": "cherry-pick.validate-scope-leak-rerun",
       "path": "skills/cherry-pick/references/validate.md",
-      "count": 1,
       "routes": [
         "review",
         "deep-review"
@@ -611,7 +578,6 @@
     {
       "id": "feedback.comment-fix-groups",
       "path": "skills/feedback/SKILL.md",
-      "count": 1,
       "routes": [
         "implementation"
       ],
@@ -623,7 +589,6 @@
     {
       "id": "testing.test-authoring",
       "path": "skills/testing/SKILL.md",
-      "count": 1,
       "routes": [
         "implementation"
       ],
@@ -636,7 +601,6 @@
     {
       "id": "qa.fresh-validation",
       "path": "skills/qa/SKILL.md",
-      "count": 1,
       "routes": [
         "review",
         "operations"
@@ -648,7 +612,6 @@
     {
       "id": "pgm.status-collection",
       "path": "extensions/pgm/skills/pgm/references/create-status-report.md",
-      "count": 1,
       "routes": [
         "operations"
       ],

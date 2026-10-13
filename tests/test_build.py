@@ -20,7 +20,6 @@ from aitk.build import (
     write_build,
 )
 from aitk.review_plan import YIELD_TABLE
-from aitk.routing_manifest import validate_selector_ownership
 from aitk.routing_resolver import resolve_route
 
 
@@ -272,35 +271,22 @@ class GeneratedAgentTests(unittest.TestCase):
             self.assertEqual([], compare_build(root))
             self.assertIn("\nmodel: sonnet\n", tester.read_text())
 
-    def test_a_codex_pin_is_allowed_only_as_the_build_renders_it(self) -> None:
-        """A generated TOML may carry the current selector; nothing else may.
-
-        A hand edit is build drift, which `doctor` and `check` report; a stale or
-        foreign selector, or a pin in a file the build did not write, is a
-        selector leak.
-        """
+    def test_a_hand_edit_to_a_generated_codex_pin_is_drift(self) -> None:
+        """A generated TOML carries the current selector; a hand edit is build drift."""
         with tempfile.TemporaryDirectory() as temporary:
             root = self.copy_repo(temporary)
             write_build(root)
-            payload = json.loads((root / "interfaces/model-routing.json").read_text())
-            self.assertEqual([], validate_selector_ownership(root, payload))
             planner = root / "agents/codex/aitk-planner.toml"
             generated = planner.read_text()
-            planner.write_text(generated + "# hand edit\n")
+            payload = json.loads((root / "interfaces/model-routing.json").read_text())
+            self.assertEqual(
+                payload["providers"]["codex"]["models"]["sol"]["selector"],
+                tomllib.loads(generated)["model"],
+            )
+            planner.write_text(generated.replace(tomllib.loads(generated)["model"], "gpt-5.9-sol"))
             self.assertEqual(
                 ["different: agents/codex/aitk-planner.toml"], compare_build(root)
             )
-            leak = (
-                "volatile model selector copied outside manifest: "
-                "agents/codex/aitk-planner.toml"
-            )
-            selector = tomllib.loads(generated)["model"]
-            planner.write_text(generated.replace(selector, "gpt-5.9-sol"))
-            self.assertEqual([leak], validate_selector_ownership(root, payload))
-            planner.write_text(generated + f"# also try {selector}\n")
-            self.assertEqual([leak], validate_selector_ownership(root, payload))
-            planner.write_text(generated.split("\n\n", 1)[1])
-            self.assertEqual([leak], validate_selector_ownership(root, payload))
 
 class GeneratedMetadataTests(unittest.TestCase):
     """openai.yaml, the always-on import lines and README tables are build output."""

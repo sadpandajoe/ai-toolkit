@@ -235,8 +235,7 @@ mutation and preserve user conflicts.
    total v2 entry to `interfaces/contracts.json`.
 3. Put an `aitk-model-route:` marker before each worker dispatch and declare the
    boundary (routes, contracts, lens menu when it fans out) in
-   `interfaces/model-routing.json`; pin its route ceiling in
-   `aitk/routing_manifest.py`.
+   `interfaces/model-routing.json`, which is the whole route table.
 4. Add routing, classification, and gate eval cases under `evals/`.
 5. Run `bin/aitk check`.
 

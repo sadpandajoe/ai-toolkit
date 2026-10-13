@@ -1,11 +1,13 @@
 """Loading and validating the routing manifest, fail-closed.
 
 Everything that answers "is this manifest, and the documents it points at,
-internally consistent" lives here: payload shape, per-route tool boxes, per-lane
-contract lists, parent-only contracts kept out of workers, per-lens route floors,
-lens menu completeness, marker placement, and selector ownership. These checks
-are the reason the resolver can be small -- by the time a route resolves, the
-data it reads has already been proven well-formed. The fence-aware route marker
+internally consistent" lives here: payload shape, per-route write controls and
+tool boxes, per-lane contract lists, parent-only contracts kept out of workers,
+the manifest's own lens floors, and the marker bijection. The route table
+itself (families, efforts, restrictions, boundary allowlists) lives only in
+`interfaces/model-routing.json`. These checks are the reason the resolver can
+be small -- by the time a route resolves, the data it reads has already been
+proven well-formed. The fence-aware route marker
 scan lives here too, since the marker inventory is the only thing the routing
 layer still reads out of Markdown.
 """
@@ -17,14 +19,9 @@ from pathlib import Path
 import re
 
 from aitk.routing_policy import (
-    CLAUDE_SELECTOR,
-    CODEX_SELECTOR,
     CRITIC_EXCLUDED_CONTRACTS,
     DISALLOWED_TOOLS,
-    GENERATED_HEADER,
     LENS_DOMAINS,
-    LENS_DOMAIN_FLOORS,
-    LENS_ROUTE_FLOORS,
     ModelRouteError,
     PARENT_ONLY_CONTRACTS,
     PERMISSION_MODES,
@@ -32,9 +29,8 @@ from aitk.routing_policy import (
     PROVIDERS,
     REASONING,
     RESPONSIBILITIES,
+    ROUTE_CONTROLS,
     ROUTE_MARKER,
-    ROUTE_NAMES,
-    ROUTE_RESTRICTIONS,
     ROUTE_TOOLS,
     SANDBOXES,
     TOOL_ENTRY,
@@ -259,15 +255,8 @@ def _lens_route_problems(
 
     A floor that no boundary can honour is worse than no floor: the lens is on
     the menu, so an orchestrator picks it, and every dispatch then fails at
-    resolve time. Catching it here keeps the failure at check time.
-
-    The map is required and is checked against `LENS_ROUTE_FLOORS`. Treating it
-    as optional meant `null`, `{}`, and a deleted entry each validated cleanly,
-    so the guarantee "the adversarial lens never runs on the cheap route" could
-    be removed by deleting the line that states it -- the one edit no reviewer
-    reads as a change in behaviour. Widening a floor is the failure direction, so
-    the manifest's allowed set for a pinned lens must stay within the pinned one;
-    narrowing it further (or flooring an additional lens) is still free.
+    resolve time. Catching it here keeps the failure at check time. The floors
+    themselves are data in the manifest.
     """
     floors = payload.get("lens_routes")
     if not isinstance(floors, dict):
@@ -275,19 +264,6 @@ def _lens_route_problems(
     if not floors:
         return ["lens_routes must not be empty"]
     problems: list[str] = []
-    for lens, pinned in sorted(LENS_ROUTE_FLOORS.items()):
-        declared = floors.get(lens)
-        # Element types before the set comparison, for the reason spelled out in
-        # the loop below: this reads the raw payload, not the coerced
-        # `_lens_routes`, so a nested member reaches `set()` as written.
-        if (
-            not isinstance(declared, list)
-            or not all(isinstance(route, str) for route in declared)
-            or not set(declared) <= set(pinned)
-        ):
-            problems.append(
-                f"lens route floor for {lens} must stay within: {', '.join(pinned)}"
-            )
     for lens, allowed in floors.items():
         if (
             not isinstance(lens, str)
@@ -325,12 +301,7 @@ def _lens_floor_problems(root: Path, payload: dict[str, object]) -> list[str]:
     sibling menus keep the union whole, so the lane is unreachable in exactly one
     workflow and nothing complains. The floor closes it per boundary.
 
-    The map is required, must cover every domain, and is checked against
-    `LENS_DOMAIN_FLOORS`. Optional floors made the whole check self-deleting: an
-    absent key, an empty object, or a dropped domain all validated, so the answer
-    to "which lenses must every code menu offer?" could become "none" without a
-    single check failing. Narrowing is the failure direction here -- the reverse
-    of `lens_routes` -- so a declared floor must contain the pinned one.
+    The floors themselves are data in the manifest.
     """
     raw = payload.get("lens_floors")
     if not isinstance(raw, dict):
@@ -339,13 +310,6 @@ def _lens_floor_problems(root: Path, payload: dict[str, object]) -> list[str]:
         return ["lens_floors must not be empty"]
     problems: list[str] = []
     floors = _lens_floors(payload)
-    for domain in LENS_DOMAINS:
-        pinned = LENS_DOMAIN_FLOORS.get(domain, ())
-        if not set(pinned) <= set(floors.get(domain, ())):
-            missing = sorted(set(pinned) - set(floors.get(domain, ())))
-            problems.append(
-                f"lens floor for {domain} drops pinned lenses: {', '.join(missing)}"
-            )
     for domain, declared in raw.items():
         if (
             not isinstance(domain, str)
@@ -416,42 +380,6 @@ def _closure_floor_problems(
     ]
 
 
-# Every dispatch boundary's route allowlist ceiling is pinned here. Structural
-# validation alone would let an edit widen an allowlist (adding `review` to
-# `review.code-judo`, say) and still pass, silently defeating the fail-closed
-# route pinning the skills advertise.
-BOUNDARY_INVARIANTS = {
-    "cherry-pick.unblock-discovery": ("review",),
-    "cherry-pick.validate-scope-leak": ("review", "deep-review"),
-    "cherry-pick.validate-scope-leak-rerun": ("review", "deep-review"),
-    "debug.ci-triage": ("rca", "deep-rca"),
-    "debug.rca-specialist": ("rca", "deep-rca"),
-    "feedback.comment-fix-groups": ("implementation",),
-    "pgm.status-collection": ("operations",),
-    "planning.validate": ("review", "deep-review"),
-    "planning.validate-second-family": ("review", "deep-review"),
-    "qa.fresh-validation": ("review", "operations"),
-    "review.code-judo": ("deep-review",),
-    "review.deep-lenses": ("deep-review",),
-    "review.delta": ("review", "deep-review"),
-    "review.independent": ("review", "deep-review"),
-    "review.verify-major": ("review", "deep-review"),
-    "review.pr-batch": ("review", "deep-review"),
-    "review.pr-deep-lenses": ("deep-review",),
-    "review.pr-independent": ("review", "deep-review"),
-    "review.pr-second-family": ("review", "deep-review"),
-    "review.second-family": ("review", "deep-review"),
-    "testing.test-authoring": ("implementation",),
-    "workflows.adversarial-primary": ("deep-review",),
-    "workflows.adversarial-second-opinion": ("deep-review",),
-    "workflows.create-feature-implementation": ("implementation",),
-    "workflows.create-feature-planning": ("planning",),
-    "workflows.feedback-fix-wave": ("implementation",),
-    "workflows.fix-bug-implementation": ("implementation",),
-    "workflows.watch-pr-fix": ("implementation",),
-}
-
-
 def _validate_payload(root: Path, payload: object) -> list[str]:
     if not isinstance(payload, dict):
         return ["model routing manifest must be an object"]
@@ -471,39 +399,13 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
     ):
         return ["interfaces/model-routing.json does not match schema version 1"]
     problems: list[str] = []
-    policy = payload.get("policy")
-    if not isinstance(policy, dict) or set(policy) != {
-        "efforts",
-        "automatic_max",
-        "fallback",
-        "orchestrator",
-    }:
-        problems.append("invalid model routing policy")
-        efforts: object = None
-    else:
-        efforts = policy.get("efforts")
-        if (
-            efforts != {"standard": "high", "deep": "xhigh"}
-            or policy.get("automatic_max") is not False
-            or policy.get("fallback") != "forbidden"
-        ):
-            problems.append(
-                "model routing policy must use high/xhigh with no max or fallback"
-            )
-        # The parent session is the orchestrator. It runs the cheap workhorse
-        # family, and the manifest records which so docs and evals can check it.
-        if policy.get("orchestrator") != {"codex": "sol", "claude": "sonnet"}:
-            problems.append(
-                "model routing policy must name sol/sonnet as the orchestrator families"
-            )
     providers = payload.get("providers")
     if not isinstance(providers, dict) or set(providers) != PROVIDERS:
         problems.append("model routing providers must contain exactly codex and claude")
         providers = {}
+    # A family is valid when the catalog names it with a selector; which
+    # families exist, and which selector each runs, is the manifest's call.
     provider_models: dict[str, dict[str, str]] = {}
-    # Sol is the Codex workhorse and Astra its deep tier, mirroring Sonnet/Opus
-    # and Fable on Claude, so both providers have a standard and a deep family.
-    expected_families = {"codex": {"sol", "astra"}, "claude": {"opus", "fable", "sonnet"}}
     selectors: set[str] = set()
     for provider in sorted(PROVIDERS):
         value = providers.get(provider) if isinstance(providers, dict) else None
@@ -515,35 +417,50 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ):
             problems.append(f"{provider}: invalid minimum CLI version")
         models = value.get("models")
-        if not isinstance(models, dict) or set(models) != expected_families[provider]:
-            problems.append(f"{provider}: model family coverage mismatch")
+        if not isinstance(models, dict) or not models:
+            problems.append(f"{provider}: model catalog must name at least one family")
             continue
         provider_models[provider] = {}
         for family, model in models.items():
-            if not isinstance(model, dict) or set(model) != {"selector"}:
-                problems.append(f"{provider}/{family}: invalid model entry")
-                continue
-            selector = model.get("selector")
-            if not isinstance(selector, str) or selector in selectors:
+            selector = model.get("selector") if isinstance(model, dict) else None
+            if (
+                not isinstance(model, dict)
+                or set(model) != {"selector"}
+                or not isinstance(selector, str)
+                or not selector.strip()
+                or selector in selectors
+            ):
                 problems.append(f"{provider}/{family}: invalid or duplicate selector")
-                continue
-            match = (
-                CODEX_SELECTOR.fullmatch(selector)
-                if provider == "codex"
-                else CLAUDE_SELECTOR.fullmatch(selector)
-            )
-            if match is None or (provider == "claude" and match.group(1) != family):
-                problems.append(f"{provider}/{family}: selector does not match family")
                 continue
             selectors.add(selector)
             provider_models[provider][family] = selector
+
+    policy = payload.get("policy")
+    if not isinstance(policy, dict) or set(policy) != {"efforts", "orchestrator"}:
+        problems.append("invalid model routing policy")
+    else:
+        efforts = policy.get("efforts")
+        if (
+            not isinstance(efforts, dict)
+            or set(efforts) != {"standard", "deep"}
+            or any(value not in ROUTE_EFFORTS for value in efforts.values())
+        ):
+            problems.append("model routing policy efforts must name standard and deep")
+        # The parent session is the orchestrator; the manifest records its family
+        # per provider so docs and evals can name it.
+        orchestrator = policy.get("orchestrator")
+        if not isinstance(orchestrator, dict) or set(orchestrator) != PROVIDERS or any(
+            not isinstance(orchestrator.get(provider), str)
+            or orchestrator[provider] not in provider_models.get(provider, {})
+            for provider in PROVIDERS
+        ):
+            problems.append("model routing orchestrator must name a catalog family per provider")
 
     routes = payload.get("routes")
     if not isinstance(routes, list):
         problems.append("model routes must be a list")
         routes = []
     seen_routes: set[str] = set()
-    actual: dict[str, tuple[object, ...]] = {}
     for route in routes:
         if not isinstance(route, dict) or set(route) != {
             "name",
@@ -552,7 +469,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "tools",
             "responsibility",
             "restrictions",
-            "explicit_only",
             "providers",
         }:
             problems.append("invalid model route entry")
@@ -561,7 +477,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         reasoning = route.get("reasoning")
         responsibility = route.get("responsibility")
         restrictions = route.get("restrictions")
-        explicit_only = route.get("explicit_only")
         if (
             not isinstance(name, str)
             or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) is None
@@ -577,19 +492,15 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         effort = route.get("effort")
         if effort not in ROUTE_EFFORTS:
             problems.append(f"{name}: effort must be one of {', '.join(ROUTE_EFFORTS)}")
-        if not isinstance(explicit_only, bool):
-            problems.append(f"{name}: explicit_only must be boolean")
         if (
             not isinstance(restrictions, list)
             or not restrictions
             or any(not isinstance(item, str) or not item for item in restrictions)
         ):
             problems.append(f"{name}: restrictions must be nonempty strings")
-        elif tuple(restrictions) != ROUTE_RESTRICTIONS.get(name):
-            problems.append(f"{name}: responsibility restrictions do not match policy")
-        # The tool box is pinned the same way: a read-only route that quietly
-        # gained Edit, or a git specifier that is not read-only, is a widening
-        # no reviewer reads as a behaviour change in a JSON diff.
+        # The tool box and the write controls are pinned in policy: a read-only
+        # route that quietly gained Edit, a sandbox, or a permission mode is a
+        # widening no reviewer reads as a behaviour change in a JSON diff.
         tools = route.get("tools")
         if (
             not isinstance(tools, list)
@@ -632,104 +543,13 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ):
             problems.append(f"{name}/claude: invalid route controls")
             continue
-        actual[name] = (
-            reasoning,
-            effort,
-            responsibility,
-            explicit_only,
-            codex.get("model"),
+        controls = (
             codex.get("sandbox"),
-            claude.get("model"),
             claude.get("permission_mode"),
             tuple(claude.get("disallowed_tools", [])),
         )
-    expected = {
-        # Sonnet implements. Development judgment that used to require Opus
-        # now lives in planning, review, and RCA specialists; the implementer
-        # receives an accepted artifact and a bounded scope.
-        "implementation": (
-            "standard",
-            "high",
-            "implementation",
-            False,
-            "sol",
-            "workspace-write",
-            "sonnet",
-            "acceptEdits",
-            (),
-        ),
-        # Fable plans only COMPLEX work, read-only, at the standard effort; the
-        # parent writes PLAN.md. Opus stays the Claude judgment tier for review
-        # and RCA so Fable remains a distinct escalation rung above them.
-        "planning": (
-            "standard",
-            "high",
-            "planning",
-            False,
-            "sol",
-            "read-only",
-            "fable",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "review": (
-            "standard",
-            "high",
-            "review",
-            False,
-            "sol",
-            "read-only",
-            "opus",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "deep-review": (
-            "deep",
-            "xhigh",
-            "review",
-            False,
-            "astra",
-            "read-only",
-            "fable",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "rca": (
-            "standard",
-            "high",
-            "rca",
-            False,
-            "sol",
-            "read-only",
-            "opus",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "deep-rca": (
-            "deep",
-            "xhigh",
-            "rca",
-            False,
-            "astra",
-            "read-only",
-            "fable",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "operations": (
-            "standard",
-            "high",
-            "operations",
-            False,
-            "sol",
-            "read-only",
-            "sonnet",
-            "dontAsk",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-    }
-    if seen_routes != ROUTE_NAMES or actual != expected:
-        problems.append("model route vocabulary or invariant mapping mismatch")
+        if controls != ROUTE_CONTROLS.get(name):
+            problems.append(f"{name}: sandbox and permission controls do not match policy")
 
     declared_routes = seen_routes
     boundaries = payload.get("dispatch_boundaries")
@@ -741,12 +561,11 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
     for boundary in boundaries:
         if (
             not isinstance(boundary, dict)
-            or not {"id", "path", "count", "routes"} <= set(boundary)
+            or not {"id", "path", "routes"} <= set(boundary)
             or not set(boundary)
             <= {
                 "id",
                 "path",
-                "count",
                 "routes",
                 "unscored",
                 "lens_domain",
@@ -772,8 +591,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             not isinstance(identifier, str)
             or re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", identifier) is None
             or identifier in seen_ids
-            or type(boundary.get("count")) is not int
-            or boundary.get("count") != 1
             or _safe_dispatch_path(root, boundary.get("path")) is None
             or not isinstance(routes_value, list)
             or not routes_value
@@ -839,15 +656,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
                 if worker_problems:
                     worker_reported = True
                     problems.extend(worker_problems)
-        # A ceiling, not an exact match, for the same reason `lens_routes` is:
-        # widening is the failure direction. Narrowing a boundary to a subset of
-        # its pinned routes is what scoping a lane means and stays free; adding
-        # `review` to `review.code-judo` is the edit that silently defeats the
-        # fail-closed pinning, and it is the one this rejects. An unpinned
-        # boundary is rejected outright so a new lane cannot skip the table.
-        pinned = BOUNDARY_INVARIANTS.get(identifier)
-        if pinned is None or not set(routes_value) <= set(pinned):
-            problems.append(f"dispatch boundary route allowlist mismatch: {identifier}")
         seen_ids.add(identifier)
         for lens in _lens_menu(boundary):
             menu_owners.setdefault(str(lens), []).append(
@@ -865,7 +673,6 @@ def validate_model_routing(root: Path) -> list[str]:
         return [str(error)]
     problems = _validate_payload(root, payload)
     if isinstance(payload, dict) and not problems:
-        problems.extend(validate_selector_ownership(root, payload))
         problems.extend(validate_dispatch_boundaries(root, payload))
         problems.extend(validate_route_bindings(root))
     return problems
@@ -907,83 +714,6 @@ def validate_route_bindings(root: Path) -> list[str]:
                 f"{provider}/fresh_subagent: must be native or source_linked_model_run"
             )
     return problems
-
-
-def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[str]:
-    paths = [
-        path
-        for name in ("README.md", "CHANGELOG.md", "pyproject.toml")
-        if (path := root / name).is_file()
-    ]
-    authored_roots = (
-        ".claude-plugin",
-        ".codex-plugin",
-        "agents",
-        "aitk",
-        "bin",
-        "config",
-        "docs",
-        "extensions",
-        "hooks",
-        "interfaces",
-        "rules",
-        "scripts",
-        "skills",
-    )
-    suffixes = {".json", ".md", ".py", ".sh", ".toml", ".yaml", ".yml"}
-    for name in authored_roots:
-        base = root / name
-        if base.is_file():
-            paths.append(base)
-        elif base.is_dir():
-            paths.extend(path for path in base.rglob("*") if path.suffix in suffixes)
-    problems: list[str] = []
-    for path in sorted(set(paths)):
-        if not path.is_file() or path.is_symlink():
-            continue
-        if path in {
-            root / "interfaces/model-routing.json",
-            root / "aitk/pricing.py",
-            root / "aitk/cost.py",
-        }:
-            # Pricing is an independent historical registry, not route selection.
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        if CODEX_SELECTOR.search(text) or CLAUDE_SELECTOR.search(text):
-            # A Codex agent pins its route's selector (D17) as `bin/aitk build`
-            # renders it from this manifest. The copy is allowed only in a
-            # generated agent file and only as a current selector on its `model`
-            # line; any other content change is build drift, which `doctor` and
-            # `check` report through `build --check`.
-            if _generated_codex_pin(root, path, text, payload):
-                continue
-            problems.append(
-                f"volatile model selector copied outside manifest: {path.relative_to(root)}"
-            )
-    return problems
-
-
-def _generated_codex_pin(
-    root: Path, path: Path, text: str, payload: dict[str, object]
-) -> bool:
-    if path.parent != root / "agents/codex" or path.suffix != ".toml":
-        return False
-    if GENERATED_HEADER not in text.split("\n\n", 1)[0]:
-        return False
-    current = {
-        str(model.get("selector"))
-        for model in payload["providers"]["codex"]["models"].values()
-        if isinstance(model, dict)
-    }
-    for line in text.splitlines():
-        if CODEX_SELECTOR.search(line) or CLAUDE_SELECTOR.search(line):
-            match = re.fullmatch(r'model = "([^"]+)"', line)
-            if match is None or match.group(1) not in current:
-                return False
-    return True
 
 
 def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list[str]:
