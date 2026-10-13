@@ -20,7 +20,8 @@ reflection queue).
 
 - `mode: deterministic` cases run in `tests/test_evals.py` through the
   toolkit's own code (`aitk route`, `aitk.project_state`), so they are part of
-  `bin/aitk check`.
+  `bin/aitk check`. The request-to-workflow cases in `skill_routing/` are among
+  them; questions that must not start an editing workflow are judgment cases.
 - `mode: judgment` cases run with `bin/aitk eval`, which calls a provider and
   costs money; they are not run in CI. A case whose `expected` names
   `covered_by` is skipped: a test already covers it.
@@ -53,6 +54,21 @@ effort. `--model` (repeatable, a family from the provider's catalog) and
 `--effort` replace those for the whole run; they change what the run measures,
 never what a workflow dispatches. `--dry-run` lists the dispatches and the
 contracts without calling a provider; run it first.
+
+## Replay set
+
+Cases test one decision at a time; the replay set tests whole tasks.
+`evals/replay/` holds 5-10 tasks already completed with the toolkit (at least
+two trivial, three standard and two complex, including one bug fix and one
+feature), one file per task: its starting commit, the request text, the
+expected outcome and scoring notes. `evals/replay/baseline.md` scores each task
+on correctness, interventions (each time the user had to step in) and cost
+(`bin/aitk cost`), first on the toolkit before a change and then once more
+after each phase, one row per task and run, so a phase is compared task by
+task. Every file is scrubbed under `rules/pii-scrub.md` before it is committed;
+a task that cannot be scrubbed stays outside the repository and only its scores
+appear in `baseline.md`. The maintainer picks the tasks; until then the
+directory does not exist and no replay comparison has been made.
 
 ## Results
 

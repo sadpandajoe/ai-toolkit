@@ -8,3 +8,27 @@
 {"id": "route-unrelated", "mode": "deterministic", "input": "what does this regex match?", "expected": {"workflow": null}, "source": "plan"}
 {"id": "route-review-only", "mode": "judgment", "input": "review this; don't change anything", "expected": {"workflow": "review-code", "remediation": false}, "source": "plan"}
 {"id": "route-rca-only", "mode": "judgment", "input": "investigate why exports time out; do not modify code", "expected": {"skill": "debug", "mutation": false}, "source": "plan"}
+{"id": "daily-create-feature", "mode": "deterministic", "input": "Please build a feature for bulk editing dashboards", "expected": {"workflow": "create-feature"}, "source": "migration"}
+{"id": "daily-fix-bug", "mode": "deterministic", "input": "Diagnose and fix this broken behavior", "expected": {"workflow": "fix-bug"}, "source": "migration"}
+{"id": "daily-fix-ci", "mode": "deterministic", "input": "GitHub Actions failing on my PR", "expected": {"workflow": "fix-ci"}, "source": "migration"}
+{"id": "daily-address-feedback", "mode": "deterministic", "input": "Address the review comments on PR 42", "expected": {"workflow": "address-feedback"}, "source": "migration"}
+{"id": "daily-review-code-adversarial", "mode": "deterministic", "input": "Run an adversarial code review", "expected": {"workflow": "review-code-adversarial"}, "source": "migration"}
+{"id": "daily-review-code", "mode": "deterministic", "input": "Review my code before I push", "expected": {"workflow": "review-code"}, "source": "migration"}
+{"id": "daily-review-plan", "mode": "deterministic", "input": "Review the technical plan", "expected": {"workflow": "review-plan"}, "source": "migration"}
+{"id": "daily-review-pr", "mode": "deterministic", "input": "Review pull request 42", "expected": {"workflow": "review-pr"}, "source": "migration"}
+{"id": "daily-test-pr", "mode": "deterministic", "input": "Manually test PR 42 in the browser", "expected": {"workflow": "test-pr"}, "source": "migration"}
+{"id": "daily-run-test-plan", "mode": "deterministic", "input": "Execute the test plan for SQL Lab", "expected": {"workflow": "run-test-plan"}, "source": "migration"}
+{"id": "daily-watch-pr", "mode": "deterministic", "input": "Babysit PR 42 until CI is green", "expected": {"workflow": "watch-pr"}, "source": "migration"}
+{"id": "daily-checkpoint", "mode": "deterministic", "input": "Save a checkpoint before I clear context", "expected": {"workflow": "checkpoint"}, "source": "migration"}
+{"id": "daily-metrics", "mode": "deterministic", "input": "Show me the workflow metrics", "expected": {"workflow": "metrics"}, "source": "migration"}
+{"id": "daily-toolkit-doctor", "mode": "deterministic", "input": "Validate toolkit health", "expected": {"workflow": "toolkit-doctor"}, "source": "migration"}
+{"id": "daily-update-tests", "mode": "deterministic", "input": "Improve the existing test suite", "expected": {"workflow": "update-tests"}, "source": "migration"}
+{"id": "daily-create-tests", "mode": "deterministic", "input": "Create the first tests for this package", "expected": {"workflow": "create-tests"}, "source": "migration"}
+{"id": "daily-create-pr", "mode": "deterministic", "input": "Open a pull request for these changes", "expected": {"workflow": "create-pr"}, "source": "migration"}
+{"id": "daily-show-cost", "mode": "deterministic", "input": "Show the current session cost", "expected": {"workflow": "show-cost"}, "source": "migration"}
+{"id": "daily-check-resources", "mode": "deterministic", "input": "Check local capacity before the test run", "expected": {"workflow": "check-resources"}, "source": "migration"}
+{"id": "daily-start", "mode": "deterministic", "input": "Resume session from saved state", "expected": {"workflow": "start"}, "source": "migration"}
+{"id": "question-explain-ci-failure", "mode": "judgment", "input": "explain this CI failure", "expected": {"workflow": null, "edits": false}, "source": "prompt-audit"}
+{"id": "question-how-review-works", "mode": "judgment", "input": "how does code review work here", "expected": {"workflow": null, "edits": false}, "source": "prompt-audit"}
+{"id": "question-what-pr-changes", "mode": "judgment", "input": "what does PR 123 change", "expected": {"workflow": null, "edits": false}, "source": "prompt-audit"}
+{"id": "direct-commit-request", "mode": "judgment", "input": "commit this", "expected": {"workflow": null}, "source": "prompt-audit"}

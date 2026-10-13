@@ -47,6 +47,8 @@ FAMILY_CONTRACTS: dict[str, tuple[str, ...]] = {
         "rules/severity.md",
         "rules/specialist-handoff.md",
         "skills/review/references/local-review.md",
+        "skills/review/references/classify-diff.md",
+        "skills/review/references/pr-posting.md",
     ),
     "planning": ALWAYS_ON
     + (

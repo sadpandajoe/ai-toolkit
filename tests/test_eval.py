@@ -49,6 +49,23 @@ from routing_fixtures import CLAUDE_HELP, CODEX_HELP
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 10, 11, 14, 3, 22, tzinfo=timezone.utc)
+COVERED_CASE = {
+    "id": "phase-done-without-tree",
+    "mode": "judgment",
+    "input": "Mark phase 2 done without recording its tree SHA",
+    "expected": {"error": "without --sha", "covered_by": "tests/test_project_state.py"},
+    "source": "test",
+}
+
+
+def with_covered_case(directory: str) -> Path:
+    """A copy of the toolkit whose gates family holds one test-covered case."""
+    root = Path(directory) / "repo"
+    if not root.exists():
+        shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns(".git", "build", "__pycache__"))
+        with (root / "evals/gates/cases.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(COVERED_CASE) + "\n")
+    return root
 PAYLOAD = load_model_routing(ROOT)
 
 
@@ -97,9 +114,15 @@ class CaseSelectionTests(unittest.TestCase):
         ids = {case.id for case in cases}
         self.assertNotIn("same-failure-once-retries", ids, "deterministic cases run in test_evals")
         self.assertIn("existing-pattern-form-field", ids)
+        # No shipped case is test-covered today; a seeded one shows the skip.
+        self.assertEqual([], skipped)
+        with tempfile.TemporaryDirectory() as directory:
+            seeded, _ = load_cases(with_covered_case(directory))
+            _, covered = load_cases(with_covered_case(directory), ["gates"])
+        self.assertNotIn(COVERED_CASE["id"], {case.id for case in seeded})
         self.assertEqual(
-            [("phase-done-requires-tree", "covered by tests/test_project_state.py")],
-            [(case.id, reason) for case, reason in skipped],
+            [(COVERED_CASE["id"], "covered by tests/test_project_state.py")],
+            [(case.id, reason) for case, reason in covered],
         )
         only, _ = load_cases(ROOT, ["complexity"], ["unknown-root-cause-is-complex"])
         self.assertEqual(["unknown-root-cause-is-complex"], [case.id for case in only])
@@ -265,11 +288,12 @@ class RunnerTests(unittest.TestCase):
         )
 
     def test_skipped_cases_are_listed(self) -> None:
-        run = run_eval(ROOT, "codex", ["gates"], ["phase-done-requires-tree"],
-                       dispatch=StubModelRun({}, {}), now=NOW)
+        with tempfile.TemporaryDirectory() as directory:
+            run = run_eval(with_covered_case(directory), "codex", ["gates"], [COVERED_CASE["id"]],
+                           dispatch=StubModelRun({}, {}), now=NOW)
         self.assertEqual((), run.outcomes)
         self.assertIn(
-            "- `phase-done-requires-tree` (gates): covered by tests/test_project_state.py", render(run)
+            f"- `{COVERED_CASE['id']}` (gates): covered by tests/test_project_state.py", render(run)
         )
 
 
