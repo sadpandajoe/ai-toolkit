@@ -265,8 +265,8 @@ names so the table cannot imply manifest wiring that does not exist.
 | `rules/ci-evidence.md` | CI Evidence | `fix-ci`, `watch-pr` | skills: debug, workflows |
 | `rules/code-review.md` | Code Review | none | skills: review, testing; 11 routed worker contract lists |
 | `rules/complexity-gate.md` | Complexity Gate | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` | skills: cherry-pick, feedback, review, workflows |
-| `rules/durable-workflows.md` | Durable Workflow Runtime | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `tests`, `watch-pr` | none |
-| `rules/gates.md` | Gates | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `tests` | skills: debug, feedback, planning, qa, review, verification-loop, workflows |
+| `rules/durable-workflows.md` | Durable Workflow Runtime | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `tests`, `watch-pr` | none |
+| `rules/gates.md` | Gates | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-plan`, `review-pr`, `tests` | skills: debug, feedback, planning, qa, review, verification-loop, workflows |
 | `rules/implementation.md` | Implementation | `address-feedback`, `create-feature`, `fix-bug`, `tests` | skills: implement-change, testing; 6 routed worker contract lists |
 | `rules/input-detection.md` | Input Detection | `create-feature`, `fix-bug`, `run-test-plan`, `test-pr` | skills: qa, shortcut, workflows |
 | `rules/model-assignment.md` | Model and Effort Assignment | none | skills: workflows |

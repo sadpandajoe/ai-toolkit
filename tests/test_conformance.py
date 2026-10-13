@@ -334,9 +334,8 @@ class ConformanceTests(unittest.TestCase):
         # pre-existing and can re-diagnose when the fix did not hold.
         self.assertIn(("verify", "diagnose"), bug_edges)
         self.assertIn(("verify", "plan"), feature_edges)
-        for name in ("review-code", "review-code-adversarial"):
-            edges = {(e["from"], e["to"]) for e in by_name[name]["transitions"]}
-            self.assertIn(("verify", "review"), edges, name)
+        edges = {(e["from"], e["to"]) for e in by_name["review-code"]["transitions"]}
+        self.assertIn(("verify", "review"), edges)
         ci_edges = {(e["from"], e["to"]) for e in by_name["fix-ci"]["transitions"]}
         self.assertIn(("verify", "diagnose"), ci_edges)
         self.assertIn(("diagnose", "$terminal"), ci_edges)

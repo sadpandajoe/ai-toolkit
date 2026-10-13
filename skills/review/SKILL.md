@@ -31,5 +31,5 @@ review and never self-review are owned by `rules/specialist-handoff.md`
 ## Sibling umbrellas
 
 `planning/` validates plans; `testing/` owns test authoring; `qa/` owns
-scenario-level critique. The `review-code`, `review-pr`, and
-`review-code-adversarial` workflows are the public entry points.
+scenario-level critique. The `review-code` (with `--adversarial`) and
+`review-pr` workflows are the public entry points.

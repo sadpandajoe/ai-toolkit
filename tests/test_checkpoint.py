@@ -112,7 +112,7 @@ class CheckpointTests(unittest.TestCase):
             for workflow in load_workflows(ROOT, include_pgm=True)
             if workflow.execution_class == "durable"
         ]
-        self.assertEqual(14, len(durable))
+        self.assertEqual(13, len(durable))
         for workflow in durable:
             contract = self.contracts[workflow.name]
             for phase in contract["resume_from"]:

@@ -12,7 +12,7 @@
 {"id": "daily-fix-bug", "mode": "judgment", "input": "Diagnose and fix this broken behavior", "expected": {"workflow": "fix-bug"}, "source": "migration"}
 {"id": "daily-fix-ci", "mode": "judgment", "input": "GitHub Actions failing on my PR", "expected": {"workflow": "fix-ci"}, "source": "migration"}
 {"id": "daily-address-feedback", "mode": "judgment", "input": "Address the review comments on PR 42", "expected": {"workflow": "address-feedback"}, "source": "migration"}
-{"id": "daily-review-code-adversarial", "mode": "judgment", "input": "Run an adversarial code review", "expected": {"workflow": "review-code-adversarial"}, "source": "migration"}
+{"id": "daily-adversarial-review", "mode": "judgment", "input": "Run an adversarial code review", "expected": {"workflow": "review-code", "adversarial": true}, "source": "migration"}
 {"id": "daily-review-code", "mode": "judgment", "input": "Review my code before I push", "expected": {"workflow": "review-code"}, "source": "migration"}
 {"id": "daily-review-plan", "mode": "judgment", "input": "Review the technical plan", "expected": {"workflow": "review-plan"}, "source": "migration"}
 {"id": "daily-review-pr", "mode": "judgment", "input": "Review pull request 42", "expected": {"workflow": "review-pr"}, "source": "migration"}

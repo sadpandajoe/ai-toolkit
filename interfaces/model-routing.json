@@ -340,7 +340,7 @@
     },
     {
       "id": "workflows.adversarial-primary",
-      "path": "skills/workflows/references/review-code-adversarial.md",
+      "path": "skills/workflows/references/review-code.md",
       "count": 1,
       "routes": [
         "deep-review"
@@ -354,7 +354,7 @@
     },
     {
       "id": "workflows.adversarial-second-opinion",
-      "path": "skills/workflows/references/review-code-adversarial.md",
+      "path": "skills/workflows/references/review-code.md",
       "count": 1,
       "routes": [
         "deep-review"

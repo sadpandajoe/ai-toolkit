@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `review-code --adversarial` replaces the `review-code-adversarial` workflow:
+  the same primary and second-vote adversarial lanes, `--allow-degraded`, and
+  the adversarial rating, run from `review-code`.
+
 - One `tests` workflow replaces `create-tests` and `update-tests`: it improves
   an existing suite, or switches to writing the first suite when there is no
   real one (`--step` stops at the switch). Delivery runs `bin/aitk deliver
