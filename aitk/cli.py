@@ -16,6 +16,7 @@ from .doctor import run_doctor
 from .installer import resolve_paths, run_lifecycle
 from .routing_policy import ModelRouteError
 from .routing_resolver import resolve_route
+from .routing_experiment import EXPERIMENTS, experiment as reviewer_experiment
 from .routing_transport import run_model
 from .eval import (
     EvalError,
@@ -303,6 +304,7 @@ def _model_run(arguments: argparse.Namespace) -> int:
             arguments.dry_run,
             lens=arguments.lens,
             reviewed_tree=reviewed_tree,
+            experiment=reviewer_experiment(arguments.experiment, arguments.test_command),
         )
     except ModelRouteError as error:
         print(
@@ -999,6 +1001,20 @@ def parser() -> argparse.ArgumentParser:
     model_run.add_argument(
         "--lens",
         help="repo-relative reviewer lens to narrow a fan-out boundary to",
+    )
+    model_run.add_argument(
+        "--experiment",
+        choices=EXPERIMENTS,
+        help="D11 measurement: the independent reviewer may run one test from "
+        "--test-command, in a disposable scratch copy of --cwd (evals/README.md)",
+    )
+    model_run.add_argument(
+        "--test-command",
+        action="append",
+        default=[],
+        metavar="CMD",
+        help="an allowed test command, as plain words; a trailing ' *' lets the "
+        "reviewer add the test to run (repeatable; needs --experiment)",
     )
     model_run.set_defaults(handler=_model_run)
 
