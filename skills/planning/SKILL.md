@@ -22,8 +22,6 @@ Each plan is a reasoning unit with the retry budget in `rules/gates.md`.
 
 Split a phase once more before implementation when any of these hold:
 
-- its plan names more than 10 files, or its projected diff exceeds 500 changed
-  lines (generated files and lockfiles excluded);
 - it is a horizontal layer (all models, then all APIs, then all UI) rather
   than a vertical slice;
 - it would leave the system broken if deployed alone;

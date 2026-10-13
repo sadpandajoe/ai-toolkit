@@ -29,8 +29,9 @@ provider syntax.
   --provider claude --boundary review.second-family`. When Codex is
   unreachable, `bin/aitk review plan --unreachable codex` lists the lanes that
   still run and the `Independent review: same-provider` disclosure; the
-  single-finding verifier runs on `deep-review` (Fable) or the finding stays
-  `[minor]` with `Verifier: unavailable — single family`. Never review inline.
+  single-finding verifier runs on `deep-review` (the other Claude family) or
+  the finding stays `[minor]` with `Verifier: unavailable — single family`.
+  Never review inline.
 - `routed_subagent`: `<toolkit-root>/bin/aitk model-run <route> --provider
   <codex|claude> --boundary <marker-id>` pins the route's model and effort,
   inlines the boundary's contract list and fails closed; never substitute a
