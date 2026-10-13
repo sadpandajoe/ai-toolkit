@@ -17,7 +17,6 @@ import unittest
 
 from aitk.routing_manifest import (
     load_model_routing,
-    validate_dispatch_boundaries,
     validate_model_routing,
 )
 from aitk.routing_policy import ModelRouteError
@@ -35,9 +34,9 @@ class RoutingManifestTests(RoutingTestCase):
 
     def test_missing_marker_fails_closed_on_the_dispatch_path(self) -> None:
         # `validate_dispatch_boundaries` catches a missing marker at check time,
-        # but `resolve_route` is the dispatch path. Without its own guard the
-        # closure silently shrinks to the seeds and still hands back a
-        # launchable route, so a worker runs without the contracts it needs.
+        # but `resolve_route` is the dispatch path. Without its own guard it
+        # would hand back a launchable route for a lane the prose no longer
+        # dispatches.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copytree(ROOT / "rules", root / "rules")
@@ -52,61 +51,35 @@ class RoutingManifestTests(RoutingTestCase):
             with self.assertRaisesRegex(ModelRouteError, "missing route marker"):
                 resolve_route(root, "deep-review", "claude", "review.code-judo")
 
-    def test_declared_lens_menu_and_dispatch_prose_must_agree(self) -> None:
-        # The menu used to be implicit: whatever the span linked was a lens.
-        # Declaring it in the manifest only helps if the two are held together,
-        # and each direction of drift fails differently — a manifest-only lens
-        # cannot be dispatched, a prose-only lens is silently demoted to a
-        # shared dependency and reaches every worker at once. Neither shows up
-        # in a passing route resolution.
+    def test_route_markers_and_boundaries_stay_a_bijection(self) -> None:
+        """Each boundary's marker appears once at its path; fenced examples do not count."""
+        marker = "<!-- aitk-model-route:review.code-judo -->"
+        relative = "skills/review/references/code-judo.md"
         with tempfile.TemporaryDirectory() as directory:
             root = self.fixture(directory)
-            manifest = root / "interfaces/model-routing.json"
-            payload = json.loads(manifest.read_text())
-            boundary = next(
-                item
-                for item in payload["dispatch_boundaries"]
-                if item["id"] == "review.pr-deep-lenses"
-            )
-            self.assertEqual([], validate_dispatch_boundaries(root, payload))
-            lens = "skills/review/references/adversarial.md"
-
-            declared_only = json.loads(manifest.read_text())
-            document = root / "skills/review/references/pr-review.md"
+            document = root / relative
             original = document.read_text()
-            unlinked, count = re.subn(r"\[([^\]]*)\]\(adversarial\.md\)", r"\1", original)
-            self.assertTrue(count, "pr-review.md no longer links the adversarial lens")
-            document.write_text(unlinked)
-            problems = validate_dispatch_boundaries(root, declared_only)
-            self.assertIn(
-                f"declared lens is not linked in the dispatch span: "
-                f"review.pr-deep-lenses/{lens}",
-                problems,
-            )
-            document.write_text(original)
-
-            prose_only = json.loads(manifest.read_text())
-            for item in prose_only["dispatch_boundaries"]:
-                if item["id"] == "review.pr-deep-lenses":
-                    item["lenses"] = [
-                        value for value in item["lenses"] if value != lens
-                    ]
-            problems = validate_dispatch_boundaries(root, prose_only)
-            self.assertIn(
-                f"reviewer lens linked in the dispatch span but not declared: "
-                f"review.pr-deep-lenses/{lens}",
-                problems,
-            )
-            # And the menu is what `--lens` resolves against: a lens missing from
-            # it is unroutable rather than mis-scoped.
-            with self.assertRaisesRegex(ModelRouteError, "is not named at boundary"):
-                resolve_route(
-                    root,
-                    "deep-review",
-                    "claude",
-                    boundary["id"],
-                    lens="skills/plan-review/references/implementation.md",
-                )
+            self.assertEqual(1, original.count(marker))
+            cases = {
+                "duplicate": (
+                    original + f"\n{marker}\n",
+                    f"unknown, misplaced, or duplicate route marker: {relative}/review.code-judo",
+                ),
+                "unknown": (
+                    original + "\n<!-- aitk-model-route:review.not-declared -->\n",
+                    f"unknown, misplaced, or duplicate route marker: {relative}/review.not-declared",
+                ),
+                "fenced only": (
+                    original.replace(marker, f"```markdown\n{marker}\n```"),
+                    f"missing route marker: {relative}/review.code-judo",
+                ),
+            }
+            for name, (text, expected) in cases.items():
+                with self.subTest(case=name):
+                    document.write_text(text)
+                    self.assertIn(expected, validate_model_routing(root))
+            document.write_text(original + f"\n```markdown\n{marker}\n```\n")
+            self.assertEqual([], validate_model_routing(root))
 
     def test_a_menu_may_not_quietly_drop_a_floor_lens(self) -> None:
         """Per-boundary, not union-wide.

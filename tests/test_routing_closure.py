@@ -1,9 +1,11 @@
 """What one dispatch actually receives.
 
 The closure is the security-relevant half of routing: a lane that reads a contract
-it was not granted, or is starved of the one it was, fails in ways no passing route
-resolution shows. These tests pin both directions plus the marker-span scanning the
-closure is derived from.
+it was not granted, or lacks the one it grades by, fails in ways no passing route
+resolution shows. The closure is the lane's declared `contracts` plus the selected
+lens, so these tests check the lists themselves: no cross-contamination, the
+grading contracts on every grading lane, no parent file in a worker, and files
+that exist.
 """
 
 from __future__ import annotations
@@ -14,13 +16,11 @@ import tempfile
 import unittest
 
 from aitk.routing_manifest import validate_model_routing
-from aitk.routing_markdown import _marker_span_text
 from aitk.routing_policy import _safe_path
 from aitk.routing_resolver import resolve_route
 
 from routing_fixtures import (
     ROOT,
-    _declared_at,
     _lenses_named_at,
     _a_lens_named_at,
     _routes_for,
@@ -58,118 +58,14 @@ class RoutingClosureTests(RoutingTestCase):
                         self.assertNotIn(judo_lens, contracts)
         self.assertTrue(checked_judo, "review.code-judo left the boundary manifest")
 
-    def test_no_marker_span_is_starved_of_a_contract_it_names(self) -> None:
-        # Whatever a boundary declares its worker must read has to reach that
-        # worker, for every boundary, including ones added later.
-        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
-        for boundary in payload["dispatch_boundaries"]:
-            linked = set(_declared_at(boundary))
-            if not linked:
-                continue
-            menu = set(_lenses_named_at(boundary))
-            fanout = bool(menu)
-            if not fanout:
-                for route in _routes_for(boundary, None):
-                    with self.subTest(boundary=boundary["id"], route=route):
-                        contracts = set(
-                            resolve_route(
-                                ROOT, route, "claude", boundary=boundary["id"]
-                            ).required_contracts
-                        )
-                        self.assertEqual(set(), linked - contracts)
-                continue
-            # A fan-out marker names a menu, and one dispatch takes one item off
-            # it. The starvation invariant still has to hold per lens: every lens
-            # the span offers must be selectable and must arrive when selected.
-            # Asserting only the union would go green on a filter that silently
-            # dropped the choice.
-            #
-            # The document-level and per-lane declarations are the other half.
-            # They apply to every lane, so narrowing must leave them alone -- the
-            # failure this catches is a filter that treats every seed as a sibling
-            # to drop and starves all eight workers of the same contract at once.
-            for lens in sorted(menu):
-                routes = _routes_for(boundary, lens)
-                # A floor that leaves a lens with no route at all is starvation
-                # of a different kind: the lane is on the menu and nothing can
-                # dispatch it.
-                self.assertTrue(routes, f"{lens} has no route left at {boundary['id']}")
-                for route in routes:
-                    with self.subTest(boundary=boundary["id"], route=route, lens=lens):
-                        contracts = set(
-                            resolve_route(
-                                ROOT,
-                                route,
-                                "claude",
-                                boundary=boundary["id"],
-                                lens=lens,
-                            ).required_contracts
-                        )
-                        self.assertIn(lens, contracts)
-                        self.assertEqual(set(), (menu - {lens}) & contracts)
-                        self.assertEqual(set(), (linked - menu) - contracts)
-
-    def test_marker_span_scopes_dependencies_to_one_dispatch(self) -> None:
-        document = "\n".join(
-            [
-                "# Doc",
-                "",
-                "<!-- aitk-model-route:demo.first -->",
-                "Dispatch reviewers with [alpha.md](alpha.md).",
-                "",
-                "<!-- aitk-model-route:demo.second -->",
-                "Dispatch reviewers with [beta.md](beta.md).",
-                "",
-                "## Later",
-                "",
-                "Unscoped prose naming [gamma.md](gamma.md).",
-            ]
-        )
-        first = _marker_span_text(document, "demo.first")
-        self.assertIn("alpha.md", first)
-        self.assertNotIn("beta.md", first)
-        second = _marker_span_text(document, "demo.second")
-        self.assertIn("beta.md", second)
-        self.assertNotIn("gamma.md", second)
-        self.assertNotIn("alpha.md", second)
-        self.assertEqual("", _marker_span_text(document, "demo.missing").strip())
-
-    def test_marker_span_ignores_headings_inside_fenced_examples(self) -> None:
-        # A span that stops at a fenced heading silently truncates: every
-        # contract the marker names after its own illustrative code block
-        # vanishes from the closure without any error.
-        document = "\n".join(
-            [
-                "<!-- aitk-model-route:demo.first -->",
-                "Dispatch reviewers with [alpha.md](alpha.md). Emit:",
-                "",
-                "```markdown",
-                "## Review Gate",
-                "Status: clean",
-                "```",
-                "",
-                "Then also read [beta.md](beta.md).",
-                "",
-                "## Real Heading",
-                "",
-                "Unscoped prose naming [gamma.md](gamma.md).",
-            ]
-        )
-        span = _marker_span_text(document, "demo.first")
-        self.assertIn("alpha.md", span)
-        self.assertIn("beta.md", span)
-        self.assertNotIn("gamma.md", span)
-
     def test_every_grading_lane_carries_the_code_review_contract(self) -> None:
         """A lane that emits severity-tagged findings must ship its calibration.
 
         The grading contracts were deliberately pulled out of the review
         umbrella so plan, PM, QA, and scope-leak lanes stop inheriting them.
         That trade is only safe while every lane that *does* grade shipped code
-        reaches `rules/code-review.md` some other way — through a reviewer lens,
-        the boundary's own span, or its document's Required Context. Nothing
-        else in the suite checks that direction: the closure assertions above
-        would happily record a lane that quietly lost its calibration.
+        lists `rules/code-review.md` and `rules/severity.md` in its own
+        `contracts`. Nothing else in the suite checks that direction.
         """
         grading_boundaries = {
             # Deep-lens fan-outs: every lens the marker names.
@@ -211,7 +107,7 @@ class RoutingClosureTests(RoutingTestCase):
         The closure used to start from structural seeds -- the routing policy,
         the owning workflow skill and the boundary document -- so every worker
         was handed the orchestration it must never perform. It is now exactly the
-        boundary's `contracts` plus what they declare.
+        boundary's `contracts`.
         """
         resolved = resolve_route(
             ROOT,
@@ -221,7 +117,7 @@ class RoutingClosureTests(RoutingTestCase):
         )
         self.assertEqual(
             ("skills/implement-change/SKILL.md", "rules/implementation.md"),
-            resolved.required_contracts[:2],
+            resolved.required_contracts,
         )
         for contract in (
             "rules/model-assignment.md",
@@ -294,28 +190,6 @@ class RoutingClosureTests(RoutingTestCase):
                 ),
                 problems,
             )
-
-    def test_missing_or_misspelled_transitive_contract_fails_validation(self) -> None:
-        for mutation in ("missing", "misspelled"):
-            with self.subTest(
-                mutation=mutation
-            ), tempfile.TemporaryDirectory() as temporary:
-                root = self.fixture(temporary)
-                if mutation == "missing":
-                    (root / "rules/implementation.md").unlink()
-                else:
-                    path = root / "skills/implement-change/SKILL.md"
-                    path.write_text(
-                        path.read_text().replace(
-                            "`rules/implementation.md`",
-                            "`rules/implementation-typo.md`",
-                        )
-                    )
-                problems = validate_model_routing(root)
-                self.assertTrue(
-                    any("missing contract dependency" in item for item in problems),
-                    problems,
-                )
 
     def test_contract_paths_reject_symlinked_parent_components(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -37,9 +37,8 @@ lens. The parent adds the semantic flags that paths cannot show
      `interfaces/model-routing.json`, `aitk/routing_*.py`, `agents/`,
      `aitk/build.py` (renders the native agents' model, tools, and sandbox),
      hook and MCP config: `hooks/`, `aitk/hooks/`), worker context assembly
-     (`aitk/routing_closure.py`, `aitk/routing_markdown.py`), or
-     trust-boundary changes (publish or push authorization, sandbox
-     enforcement, fail-closed checks becoming advisory:
+     (`aitk/routing_closure.py`), or trust-boundary changes (publish or push
+     authorization, sandbox enforcement, fail-closed checks becoming advisory:
      `aitk/routing_manifest.py`, `aitk/routing_resolver.py`,
      `aitk/routing_transport.py`, `aitk/installer.py`, `aitk/deliver.py`,
      `aitk/review_plan.py`). `review plan` flags these paths itself (its

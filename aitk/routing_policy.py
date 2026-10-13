@@ -294,8 +294,6 @@ LENS_DOMAIN_FLOORS: dict[str, tuple[str, ...]] = {
 }
 
 
-LENS_CATALOG = "skills/review/references/classify-diff.md"
-
 
 ROUTE_ERROR = "MODEL_ROUTE_INVALID"
 
@@ -360,10 +358,6 @@ CLAUDE_SELECTOR = re.compile(r"claude-(opus|fable|sonnet)-[0-9]+(?:-[0-9]+)*")
 ROUTE_MARKER = re.compile(r"^<!-- aitk-model-route:([a-z0-9]+(?:[.-][a-z0-9]+)*) -->$")
 
 
-MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
-
-
-BACKTICK_MARKDOWN_PATH = re.compile(r"`([^`\n]+\.md(?:#[^`\n]+)?)`")
 
 
 WORKER_SCHEMA: dict[str, object] = {
@@ -498,13 +492,12 @@ def _boundary_contracts(boundary: dict[str, object]) -> tuple[str, ...]:
     """Return the contracts this one dispatch lane declares for itself.
 
     This list is the worker's contract. The boundary document is the parent's
-    procedure and is never inlined, and no structural seed (the routing policy,
-    the handoff rules, the owning skill) rides along: a worker receives exactly
-    these files, the one selected lens on a fan-out, and what their own
-    `## Required Context` names. Several documents host more than one boundary
-    (`local-review.md` hosts five), so the list is per lane: the adversarial
-    lane can require the adversarial lens without the lanes beside it
-    inheriting it.
+    procedure and is never inlined, and nothing else (the routing policy, the
+    handoff rules, the owning skill) rides along: a worker receives exactly
+    these files and the one selected lens on a fan-out. Several documents host
+    more than one boundary (`local-review.md` hosts five), so the list is per
+    lane: the adversarial lane can require the adversarial lens without the
+    lanes beside it inheriting it.
     """
     contracts = boundary.get("contracts")
     return tuple(str(item) for item in contracts) if isinstance(contracts, list) else ()

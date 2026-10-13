@@ -64,10 +64,8 @@ def resolve_route(
         # it without naming the lens would hand that worker the whole menu, so
         # require the selection rather than defaulting to the union. The guard
         # runs both ways: a boundary that does not fan out has no menu to
-        # narrow, and its span names ordinary dependencies rather than lenses,
-        # so accepting `--lens` there would silently drop every span dependency
-        # the flag does not match -- the same quiet-shrink failure the fan-out
-        # requirement exists to prevent.
+        # narrow, so accepting `--lens` there would resolve a lane that silently
+        # ignored the flag.
         menu = _lens_menu(boundary_item)
         fans_out = bool(menu)
         if fans_out and lens is None:
@@ -99,13 +97,7 @@ def resolve_route(
                 f"{route} is below its declared floor"
             )
         required_contracts = _required_contract_paths(
-            root,
-            boundary_item["path"],
-            str(item["responsibility"]),
-            boundary,
-            lens,
-            menu,
-            _boundary_contracts(boundary_item),
+            _boundary_contracts(boundary_item), lens, menu
         )
         unscored = bool(boundary_item.get("unscored", False))
         lens_domain = _lens_domain(boundary_item)
