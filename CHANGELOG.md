@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Workflows deliver through `bin/aitk deliver`: `create-feature`, `fix-bug`,
+  `fix-ci`, `tests` and `create-pr` no longer carry their own push and PR
+  procedure. `bin/aitk route` is gone; the router is the model reading
+  `bin/aitk list --details --json`. The `metrics-emit` skill is retired
+  (`bin/aitk metrics emit` fills the event). The lane-yield table in
+  `docs/ARCHITECTURE.md` is generated from `aitk/review_plan.py`. A routed
+  selector without an exact price now warns in the test suite instead of
+  failing it.
+
 - `review-code --adversarial` replaces the `review-code-adversarial` workflow:
   the same primary and second-vote adversarial lanes, `--allow-degraded`, and
   the adversarial rating, run from `review-code`.
