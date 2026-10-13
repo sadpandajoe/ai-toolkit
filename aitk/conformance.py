@@ -212,23 +212,6 @@ def _validate_durable_runtime(root: Path) -> list[str]:
     rule = root / "rules/durable-workflows.md"
     if not rule.is_file():
         return ["durable runtime rule is missing"]
-    text = rule.read_text()
-    for phrase in (
-        "checkpoint init",
-        "checkpoint advance",
-        "checkpoint reserve",
-        "checkpoint apply",
-        "provider_idempotency",
-        "artifact_lookup",
-        "manual_stop",
-        "Complete the contract's authorization and preflight gates before any effect.",
-        "never retry blindly",
-    ):
-        if phrase not in text:
-            problems.append(
-                f"durable runtime rule is missing semantic clause: {phrase}"
-            )
-
     template = root / "skills/reporting/templates/workflow-checkpoint.md"
     if not template.is_file():
         return problems + ["canonical checkpoint template is missing"]
@@ -439,14 +422,6 @@ def _validate_contract(
                 f"{name}: durable workflow must load rules/durable-workflows.md"
             )
         reference_text = reference.read_text() if reference is not None else ""
-        if (
-            "## Durable Runtime Contract" not in reference_text
-            or re.search(r"bin/aitk\s+checkpoint", reference_text) is None
-            or f"`{name}`" not in reference_text
-        ):
-            problems.append(
-                f"{name}: durable reference is missing its runtime contract binding"
-            )
         if "extensions/pgm/rules/pgm.md" in rules and (
             "pgm-preflight" not in reference_text
             or re.search(

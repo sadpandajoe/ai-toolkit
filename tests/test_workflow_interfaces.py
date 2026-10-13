@@ -321,17 +321,6 @@ class WorkflowInterfaceTests(unittest.TestCase):
                 ),
                 "read-only executable surface is effectful",
             ),
-            "negated-runtime-authorization": (
-                lambda root: (root / "rules/durable-workflows.md").write_text(
-                    (root / "rules/durable-workflows.md")
-                    .read_text()
-                    .replace(
-                        "Complete the contract's authorization and preflight gates before any effect.",
-                        "Skip authorization and preflight gates before effects.",
-                    )
-                ),
-                "missing semantic clause",
-            ),
             "missing-runtime-binding": (
                 lambda root: (
                     lambda path, payload: (

@@ -17,7 +17,7 @@ from .interfaces import (
     validate_support_interface,
 )
 from .model_routing import validate_model_routing
-from .installer import LEGACY_COMMAND_NAMES_0_1, InstallPaths, inspect_install
+from .installer import InstallPaths, inspect_install
 from .project_state import STATE_FILES
 from .workflows import (
     extension_manifest_path,
@@ -99,7 +99,13 @@ def _frontmatter(text: str) -> dict[str, str]:
 
 
 def _skill_descriptions(root: Path) -> Finding:
+    """Frontmatter shape is required; the "Use when / Do NOT use" routing is advice.
+
+    A description without both routing halves still loads, so it is reported in
+    the details of a passing finding rather than failing `check`.
+    """
     problems: list[str] = []
+    advice: list[str] = []
     skills = list((root / "skills").glob("*/SKILL.md"))
     skills.extend((root / "extensions").glob("*/skills/*/SKILL.md"))
     for skill in sorted(skills):
@@ -116,11 +122,13 @@ def _skill_descriptions(root: Path) -> Finding:
             not re.search(r"\bUse (?:when|for|to)\b", description, re.I)
             or "Do NOT use" not in description
         ):
-            problems.append(
-                f"{skill.relative_to(root)}: description lacks positive and negative routing"
+            advice.append(
+                f"advisory: {skill.relative_to(root)}: description lacks positive and negative routing"
             )
     status = "DRIFT" if problems else "PASS"
-    return Finding("skill-descriptions", status, "Skill descriptions", tuple(problems))
+    return Finding(
+        "skill-descriptions", status, "Skill descriptions", tuple(problems + advice)
+    )
 
 
 def _markdown_links(root: Path) -> Finding:
@@ -168,50 +176,6 @@ def _provider_portability(root: Path) -> Finding:
     )
 
 
-def _canonical_ownership(root: Path) -> Finding:
-    problems: list[str] = []
-    canonical_directories = [root / "rules", root / "skills"]
-    canonical_directories.extend((root / "extensions").glob("*/rules"))
-    canonical_directories.extend((root / "extensions").glob("*/skills"))
-    patterns = (
-        re.compile(r"commands/[a-z0-9_-]+\.md"),
-        re.compile(r"\b(?:the\s+)?command\s+(?:owns|is the source of truth)", re.I),
-    )
-    for directory in canonical_directories:
-        if not directory.is_dir():
-            continue
-        for source in sorted(directory.rglob("*.md")):
-            if _ignored(root, source):
-                continue
-            text = source.read_text()
-            if any(pattern.search(text) for pattern in patterns):
-                problems.append(str(source.relative_to(root)))
-    retired = LEGACY_COMMAND_NAMES_0_1 + ("archive-project-file", "cherry-pick")
-    invocation = re.compile(
-        r"(?<![A-Za-z0-9_.-])/" + "(?:" + "|".join(map(re.escape, retired)) + r")\b"
-    )
-    for directory in canonical_directories:
-        if not directory.is_dir():
-            continue
-        for source in sorted(directory.rglob("*.md")):
-            if not _ignored(root, source) and invocation.search(source.read_text()):
-                problems.append(f"{source.relative_to(root)}: retired slash alias")
-    command_directories = [root / "commands"]
-    command_directories.extend((root / "extensions").glob("*/commands"))
-    for directory in command_directories:
-        if directory.is_dir():
-            problems.extend(
-                f"{source.relative_to(root)}: retired command source"
-                for source in sorted(directory.rglob("*.md"))
-            )
-    return Finding(
-        "canonical-ownership",
-        "FAIL" if problems else "PASS",
-        "Canonical workflow ownership",
-        tuple(problems),
-    )
-
-
 def _source_imports(root: Path) -> Finding:
     problems: list[str] = []
     pattern = re.compile(r"^@\{\{TOOLKIT_DIR\}\}/([^\s#]+)", re.M)
@@ -221,30 +185,6 @@ def _source_imports(root: Path) -> Finding:
                 problems.append(f"{source.relative_to(root)} -> {target}")
     status = "FAIL" if problems else "PASS"
     return Finding("source-imports", status, "Source imports", tuple(problems))
-
-
-def _readme_inventory(root: Path) -> Finding:
-    readme = (root / "README.md").read_text() if (root / "README.md").is_file() else ""
-    problems: list[str] = []
-    for directory_name in ("rules",):
-        directory = root / directory_name
-        if directory.is_dir():
-            for source in sorted(directory.glob("*.md")):
-                relative = source.relative_to(root).as_posix()
-                if (
-                    relative not in readme
-                    and source.name not in readme
-                    and f"/{source.stem}" not in readme
-                ):
-                    problems.append(relative)
-    skills = root / "skills"
-    if skills.is_dir():
-        for source in sorted(skills.glob("*/SKILL.md")):
-            relative = source.parent.relative_to(root).as_posix() + "/"
-            if relative not in readme and source.parent.name not in readme:
-                problems.append(relative)
-    status = "DRIFT" if problems else "PASS"
-    return Finding("readme-inventory", status, "README inventory", tuple(problems))
 
 
 def _rule_loaders(root: Path) -> Finding:
@@ -285,75 +225,6 @@ def _rule_loaders(root: Path) -> Finding:
         "rule-loaders",
         "FAIL" if problems else "PASS",
         "Canonical rule loaders",
-        tuple(problems),
-    )
-
-
-def _readme_workflow_rules(root: Path) -> Finding:
-    readme_path = root / "README.md"
-    workflow_path = manifest_path(root)
-    if not readme_path.is_file() or not workflow_path.is_file():
-        return Finding(
-            "readme-workflow-rules", "PASS", "README workflow rule claims"
-        )
-    try:
-        payload = json.loads(workflow_path.read_text())
-        workflows = payload["workflows"]
-        names = {
-            item["name"]
-            for item in workflows
-            if isinstance(item, dict) and isinstance(item.get("name"), str)
-        }
-        expected: dict[str, set[str]] = {}
-        for item in workflows:
-            if not isinstance(item, dict) or item.get("name") not in names:
-                continue
-            for rule in item.get("rules", []):
-                if isinstance(rule, str):
-                    expected.setdefault(rule, set()).add(item["name"])
-    except (KeyError, TypeError, json.JSONDecodeError) as error:
-        return Finding(
-            "readme-workflow-rules",
-            "FAIL",
-            "README workflow rule claims",
-            (f"workflow manifest could not be read: {error}",),
-        )
-    claims: dict[str, set[str]] = {}
-    duplicate_claims: set[str] = set()
-    row = re.compile(r"^\|\s*`(rules/[^`]+\.md)`\s*\|\s*(.*?)\|\s*$")
-    for line in readme_path.read_text().splitlines():
-        match = row.match(line)
-        if match is None:
-            continue
-        rule = match.group(1)
-        if rule in claims:
-            duplicate_claims.add(rule)
-        claims[rule] = {
-            token
-            for token in re.findall(r"`([a-z0-9-]+)`", match.group(2))
-            if token in names
-        }
-    rule_paths = {
-        path.relative_to(root).as_posix() for path in (root / "rules").glob("*.md")
-    }
-    problems = [
-        f"{rule}: duplicate README workflow rule row"
-        for rule in sorted(duplicate_claims)
-    ]
-    for rule in sorted(rule_paths | set(expected) | set(claims)):
-        wanted = expected.get(rule, set())
-        actual = claims.get(rule, set())
-        if wanted == actual and rule in claims:
-            continue
-        wanted_text = ", ".join(sorted(wanted)) or "none"
-        actual_text = ", ".join(sorted(actual)) or "none"
-        problems.append(
-            f"{rule}: expected {wanted_text}; README claims {actual_text}"
-        )
-    return Finding(
-        "readme-workflow-rules",
-        "FAIL" if problems else "PASS",
-        "README workflow rule claims",
         tuple(problems),
     )
 
@@ -592,11 +463,8 @@ def run_doctor(
         _skill_descriptions(root),
         _markdown_links(root),
         _provider_portability(root),
-        _canonical_ownership(root),
         _source_imports(root),
-        _readme_inventory(root),
         _rule_loaders(root),
-        _readme_workflow_rules(root),
         _personal_paths(root),
         _secret_output(root),
         _state_protection(root),

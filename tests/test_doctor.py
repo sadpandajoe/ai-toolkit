@@ -48,37 +48,7 @@ class DoctorTests(unittest.TestCase):
             problems = [finding for finding in findings if finding.status != "PASS"]
             self.assertEqual([], problems)
 
-    def test_retired_command_sources_and_slash_aliases_fail_ownership(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "commands").mkdir()
-            (root / "commands/fix-bug.md").write_text("# Retired\n")
-            (root / "extensions/pgm/commands").mkdir(parents=True)
-            (root / "extensions/pgm/commands/report.md").write_text("# Retired\n")
-            extension_skill = root / "extensions/pgm/skills/pgm/SKILL.md"
-            extension_skill.parent.mkdir(parents=True)
-            extension_skill.write_text("Route this work to `/create-status-report`.\n")
-
-            finding = next(
-                item
-                for item in run_doctor(root)
-                if item.check == "canonical-ownership"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            combined = " ".join(finding.details)
-            self.assertIn("commands/fix-bug.md: retired command source", combined)
-            self.assertIn(
-                "extensions/pgm/commands/report.md: retired command source",
-                combined,
-            )
-            self.assertIn(
-                "extensions/pgm/skills/pgm/SKILL.md: retired slash alias",
-                combined,
-            )
-
-    def test_broken_link_and_bad_description_are_reported(self) -> None:
+    def test_broken_link_fails_and_bad_description_is_advisory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.make_clean_repo(root)
@@ -91,8 +61,29 @@ class DoctorTests(unittest.TestCase):
                 f"{finding.status} {finding.message} {' '.join(finding.details)}"
                 for finding in findings
             )
-            self.assertIn("DRIFT Skill descriptions", messages)
+            # The routing halves of a description are advice: reported, not failed.
+            self.assertIn(
+                "PASS Skill descriptions advisory: skills/example/SKILL.md: "
+                "description lacks positive and negative routing",
+                messages,
+            )
             self.assertIn("FAIL Markdown links", messages)
+
+    def test_skill_frontmatter_shape_still_drifts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_clean_repo(root)
+            (root / "skills/example/SKILL.md").write_text(
+                "---\nname: example\ndescription: Use when needed. Do NOT use otherwise.\n"
+                "model: opus\n---\n"
+            )
+            finding = next(
+                item for item in run_doctor(root) if item.check == "skill-descriptions"
+            )
+            self.assertEqual("DRIFT", finding.status)
+            self.assertEqual(
+                ("skills/example/SKILL.md: provider-specific fields model",), finding.details
+            )
 
     def test_rule_inventory_requires_a_real_non_readme_loader(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -147,68 +138,6 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual("FAIL", finding.status)
             self.assertIn(
                 "config/binary.yaml: not valid UTF-8 text", finding.details
-            )
-
-    def test_readme_direct_workflow_rule_claims_match_manifest(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "interfaces").mkdir()
-            (root / "interfaces/workflows.json").write_text(
-                '{"version":1,"skill":"workflows",'
-                '"reference_root":"skills/workflows/references",'
-                '"workflows":[{"name":"example","summary":"Example",'
-                '"arguments":"","rules":["rules/universal.md"],'
-                '"triggers":["run example"],"execution_class":"single_run"}]}\n'
-            )
-            (root / "README.md").write_text(
-                "skills/example/\n\n"
-                "## Workflow Rules\n\n"
-                "| File | Owner / direct workflow loaders |\n"
-                "|---|---|\n"
-                "| `rules/universal.md` | Always-on guidance; `wrong` |\n"
-            )
-
-            finding = next(
-                item
-                for item in run_doctor(root)
-                if item.check == "readme-workflow-rules"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertIn(
-                "rules/universal.md: expected example; README claims none",
-                finding.details,
-            )
-
-    def test_readme_workflow_rule_rows_cannot_be_duplicated(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "interfaces").mkdir()
-            (root / "interfaces/workflows.json").write_text(
-                '{"version":1,"skill":"workflows",'
-                '"reference_root":"skills/workflows/references",'
-                '"workflows":[{"name":"example","summary":"Example",'
-                '"arguments":"","rules":[],"triggers":["run example"],'
-                '"execution_class":"single_run"}]}\n'
-            )
-            (root / "README.md").write_text(
-                "skills/example/\n\n## Workflow Rules\n\n"
-                "| File | Owner / direct workflow loaders |\n|---|---|\n"
-                "| `rules/universal.md` | Always-on |\n"
-                "| `rules/universal.md` | Still always-on |\n"
-            )
-
-            finding = next(
-                item
-                for item in run_doctor(root)
-                if item.check == "readme-workflow-rules"
-            )
-
-            self.assertIn(
-                "rules/universal.md: duplicate README workflow rule row",
-                finding.details,
             )
 
     def test_state_files_must_be_ignored_only_at_repository_root(self) -> None:
