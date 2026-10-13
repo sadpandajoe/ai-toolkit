@@ -80,6 +80,44 @@ LANE_WINDOW = 10
 # verifier actually judged in the window, not an absolute count of confirmations.
 VERIFIER_CONFIRMED_PER_TEN = 3
 NEVER_DEMOTED = ("independent",)
+LENS_CONSEQUENCE = (
+    "opt-in only: run on an explicit ask until reflect reviews it; "
+    "record the classifier flag as deferred (low yield)"
+)
+SECOND_FAMILY_CONSEQUENCE = "COMPLEX only: drop the CORE trigger"
+VERIFY_MAJOR_CONSEQUENCE = (
+    "single-source majors from the raising lane default to [minor]; "
+    "write a low-yield-lane observation for that lane"
+)
+DELTA_CONSEQUENCE = "delta pass runs only after a [major] fix"
+# (lanes, window, demoted when, consequence): the table `evaluate` applies and
+# `bin/aitk build` renders into docs/ARCHITECTURE.md.
+YIELD_TABLE = (
+    (
+        DEEP_LENSES,
+        LENS_WINDOW,
+        "no accepted finding, or fewer than 1 accepted per 4 raised",
+        LENS_CONSEQUENCE,
+    ),
+    (
+        ("second-family",),
+        LANE_WINDOW,
+        "no accepted finding the other lanes missed, and none refuted",
+        SECOND_FAMILY_CONSEQUENCE,
+    ),
+    (
+        ("verify-major",),
+        LANE_WINDOW,
+        f"CONFIRMED on fewer than {VERIFIER_CONFIRMED_PER_TEN} in 10 verified majors",
+        VERIFY_MAJOR_CONSEQUENCE,
+    ),
+    (
+        ("delta",),
+        LANE_WINDOW,
+        "no not-fixed and no introduced finding",
+        DELTA_CONSEQUENCE,
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -161,8 +199,7 @@ def evaluate(events: list[dict[str, object]]) -> list[Demotion]:
                         LENS_WINDOW,
                         len(window),
                         {"raised": raised, "accepted": accepted},
-                        "opt-in only: run on an explicit ask until reflect reviews it; "
-                        "record the classifier flag as deferred (low yield)",
+                        LENS_CONSEQUENCE,
                     )
                 )
             continue
@@ -179,7 +216,7 @@ def evaluate(events: list[dict[str, object]]) -> list[Demotion]:
                         LANE_WINDOW,
                         len(window),
                         {"unique_accepted": unique, "refuted": refuted},
-                        "COMPLEX only: drop the CORE trigger",
+                        SECOND_FAMILY_CONSEQUENCE,
                     )
                 )
         elif lane == "verify-major":
@@ -192,8 +229,7 @@ def evaluate(events: list[dict[str, object]]) -> list[Demotion]:
                         LANE_WINDOW,
                         len(window),
                         {"confirmed": confirmed, "refuted": refuted, "verified": verified},
-                        "single-source majors from the raising lane default to [minor]; "
-                        "write a low-yield-lane observation for that lane",
+                        VERIFY_MAJOR_CONSEQUENCE,
                     )
                 )
         elif lane == "delta":
@@ -205,7 +241,7 @@ def evaluate(events: list[dict[str, object]]) -> list[Demotion]:
                         LANE_WINDOW,
                         len(window),
                         {"not_fixed": not_fixed, "introduced": introduced},
-                        "delta pass runs only after a [major] fix",
+                        DELTA_CONSEQUENCE,
                     )
                 )
     return demotions

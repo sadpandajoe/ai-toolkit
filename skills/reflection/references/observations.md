@@ -17,7 +17,7 @@ those.
 | Same gate fails twice for the same reason | `gate-repeat` | Shows a missing capability or escalation rule |
 | A specialist invalidates an RCA or plan assumption | `specialist-invalidation` | High-value reasoning failure |
 | A manual workaround repeated in the same or another session | `workaround` | Candidate for a reusable skill |
-| A review lane crossed a yield threshold and was demoted (`aitk/review_plan.py`, the Yield Thresholds) | `low-yield-lane` | Candidate for a durable trigger change or removal; `reflect` restores or retires it |
+| A review lane crossed a yield threshold and was demoted (the lane-yield table in `docs/ARCHITECTURE.md`) | `low-yield-lane` | Candidate for a durable trigger change or removal; `reflect` restores or retires it |
 
 Do not log routine progress, successful gates, or opinions.
 

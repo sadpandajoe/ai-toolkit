@@ -12,12 +12,14 @@ from aitk.build import (
     AGENTS,
     compare_build,
     expected_agents,
+    expected_architecture,
     expected_build,
     expected_guidance_imports,
     expected_readme,
     expected_skill_metadata,
     write_build,
 )
+from aitk.review_plan import YIELD_TABLE
 from aitk.routing_manifest import validate_selector_ownership
 from aitk.routing_resolver import resolve_route
 
@@ -394,6 +396,20 @@ class GeneratedMetadataTests(unittest.TestCase):
             workflows.write_text(json.dumps(manifest))
             readme = expected_readme(root)[Path("README.md")]
             self.assertRegex(readme, r"(?m)^\| `rules/severity.md` \| Severity \| `verify` \|")
+
+    def test_lane_yield_table_follows_the_review_plan_thresholds(self) -> None:
+        architecture = (ROOT / "docs/ARCHITECTURE.md").read_text()
+        self.assertEqual(
+            architecture, expected_architecture(ROOT)[Path("docs/ARCHITECTURE.md")]
+        )
+        for lanes, window, condition, consequence in YIELD_TABLE:
+            with self.subTest(lanes=lanes):
+                self.assertIn(f"| {window} | {condition} | {consequence} |", architecture)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repo(temporary)
+            path = root / "docs/ARCHITECTURE.md"
+            path.write_text(path.read_text().replace("| 5 |", "| 3 |", 1))
+            self.assertIn("different: docs/ARCHITECTURE.md", compare_build(root))
 
     def test_a_hand_edit_to_generated_metadata_is_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

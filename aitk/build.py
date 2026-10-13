@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import tempfile
 
+from .review_plan import NEVER_DEMOTED, YIELD_TABLE
 from .routing_policy import GENERATED_HEADER
 from .workflows import (
     extension_manifest_path,
@@ -25,6 +26,7 @@ SKILLS = Path("interfaces/skills.json")
 GUIDANCE = Path("interfaces/guidance.json")
 WORKFLOWS = Path("interfaces/workflows.json")
 README = Path("README.md")
+ARCHITECTURE = Path("docs/ARCHITECTURE.md")
 # Words a generated display name keeps upper-case.
 ACRONYMS = {"ai", "pgm", "pm", "pr", "qa", "rbac"}
 
@@ -164,6 +166,7 @@ def expected_build(root: Path, include_pgm: bool = False) -> dict[Path, str]:
     expected.update(expected_agents(root))
     expected.update(expected_skill_metadata(root))
     expected.update(expected_readme(root))
+    expected.update(expected_architecture(root))
     return expected
 
 
@@ -477,6 +480,24 @@ def expected_agents(root: Path) -> dict[Path, str]:
         (TESTER_SOURCE.as_posix(),),
     )
     return expected
+
+
+def _yield_table() -> str:
+    rows = ["| Lane | Window (runs) | Demoted when | Consequence |", "|---|---|---|---|"]
+    for lanes, window, condition, consequence in YIELD_TABLE:
+        names = ", ".join(f"`{lane}`" for lane in lanes)
+        rows.append(f"| {names} | {window} | {condition} | {consequence} |")
+    never = ", ".join(f"`{lane}`" for lane in NEVER_DEMOTED)
+    return "\n".join(rows) + f"\n\n{never} is never demoted.\n"
+
+
+def expected_architecture(root: Path) -> dict[Path, str]:
+    """Regenerate the lane-yield table from `aitk/review_plan.py`'s thresholds."""
+    if not (root / ARCHITECTURE).is_file():
+        return {}
+    text = (root / ARCHITECTURE).read_text()
+    replaced = _generated_block(text, "lane-yield", _yield_table())
+    return {} if replaced is None else {ARCHITECTURE: replaced}
 
 
 def compare_build(root: Path, include_pgm: bool = False) -> list[str]:
