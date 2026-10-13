@@ -404,7 +404,7 @@ class ReviewGateHookTests(unittest.TestCase):
         self.assertEqual(0, run_hook(DRAFT_PR_CREATE, self.repo).returncode)
 
     def test_test_workflows_open_a_draft_on_review_pass_without_a_checkpoint(self) -> None:
-        for workflow in ("create-tests", "update-tests"):
+        for workflow in ("tests",):
             with self.subTest(workflow=workflow):
                 (self.repo / "PROJECT.md").unlink(missing_ok=True)
                 self.classify(workflow=workflow)

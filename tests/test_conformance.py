@@ -372,7 +372,7 @@ class ConformanceTests(unittest.TestCase):
     def test_test_workflows_never_publish_and_delivery_takes_no_pr(self) -> None:
         """Contract data only: the PR and push procedure is `deliver`'s to test."""
         contracts = contracts_by_name(ROOT)
-        for name in ("create-tests", "update-tests"):
+        for name in ("tests",):
             with self.subTest(contract=name):
                 serialized = json.dumps(contracts[name])
                 self.assertNotIn("publish-explicit", serialized)
@@ -381,7 +381,7 @@ class ConformanceTests(unittest.TestCase):
             item["name"]: item
             for item in json.loads((ROOT / "interfaces/workflows.json").read_text())["workflows"]
         }
-        for name in ("create-feature", "fix-bug", "fix-ci", "create-tests", "update-tests"):
+        for name in ("create-feature", "fix-bug", "fix-ci", "tests"):
             with self.subTest(arguments=name):
                 self.assertIn("[--no-pr]", workflows[name]["arguments"])
 

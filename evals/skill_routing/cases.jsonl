@@ -22,8 +22,8 @@
 {"id": "daily-checkpoint", "mode": "judgment", "input": "Save a checkpoint before I clear context", "expected": {"workflow": "checkpoint"}, "source": "migration"}
 {"id": "daily-metrics", "mode": "judgment", "input": "Show me the workflow metrics", "expected": {"workflow": "metrics"}, "source": "migration"}
 {"id": "daily-toolkit-doctor", "mode": "judgment", "input": "Validate toolkit health", "expected": {"workflow": "toolkit-doctor"}, "source": "migration"}
-{"id": "daily-update-tests", "mode": "judgment", "input": "Improve the existing test suite", "expected": {"workflow": "update-tests"}, "source": "migration"}
-{"id": "daily-create-tests", "mode": "judgment", "input": "Create the first tests for this package", "expected": {"workflow": "create-tests"}, "source": "migration"}
+{"id": "daily-update-tests", "mode": "judgment", "input": "Improve the existing test suite", "expected": {"workflow": "tests"}, "source": "migration"}
+{"id": "daily-create-tests", "mode": "judgment", "input": "Create the first tests for this package", "expected": {"workflow": "tests"}, "source": "migration"}
 {"id": "daily-create-pr", "mode": "judgment", "input": "Open a pull request for these changes", "expected": {"workflow": "create-pr"}, "source": "migration"}
 {"id": "daily-show-cost", "mode": "judgment", "input": "Show the current session cost", "expected": {"workflow": "show-cost"}, "source": "migration"}
 {"id": "daily-check-resources", "mode": "judgment", "input": "Check local capacity before the test run", "expected": {"workflow": "check-resources"}, "source": "migration"}

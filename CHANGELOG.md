@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- One `tests` workflow replaces `create-tests` and `update-tests`: it improves
+  an existing suite, or switches to writing the first suite when there is no
+  real one (`--step` stops at the switch). Delivery runs `bin/aitk deliver
+  --workflow tests`. The testing skill's create and update references are
+  folded into it.
+
 - Plugin preview: the repository root is also a Claude Code plugin
   (`.claude-plugin/plugin.json`, served with the Codex plugin by the one-plugin
   marketplace in `.claude-plugin/marketplace.json`), and the Codex plugin now

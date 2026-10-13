@@ -34,7 +34,7 @@ This workflow writes the PR text; `bin/aitk deliver` pushes and opens the PR.
 It does not review or rewrite code. Keep context bounded: gather enough diff
 and PROJECT.md context to write the PR, summarize large diffs by area, and do
 not paste full diffs unless blocked. Owning workflows (`create-feature`,
-`fix-bug`, `fix-ci`, `create-tests`, `update-tests`) run steps 2-5 for the
+`fix-bug`, `fix-ci`, `tests`) run steps 2-5 for the
 text and then their own `deliver --workflow` line.
 
 ### 1. Gates
