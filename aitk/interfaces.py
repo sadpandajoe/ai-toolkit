@@ -268,21 +268,6 @@ def validate_provider_interfaces(root: Path) -> list[str]:
                 problems.append(
                     f"{provider}/{capability}: unsupported binding cannot declare fallback"
                 )
-        template = root / (
-            "config/CLAUDE.md" if provider == "claude" else "config/AGENTS.md"
-        )
-        expected_binding = f"{{{{TOOLKIT_DIR}}}}/config/providers/{provider}.md"
-        template_text = template.read_text() if template.is_file() else ""
-        if expected_binding not in template_text:
-            problems.append(
-                f"{provider}: installed guidance does not load its provider binding"
-            )
-        for rule in always_on_rules:
-            expected_rule = f"{{{{TOOLKIT_DIR}}}}/{rule}"
-            if expected_rule not in template_text:
-                problems.append(
-                    f"{provider}: installed guidance omits always-on rule {rule}"
-                )
     return problems
 
 

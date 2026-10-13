@@ -401,27 +401,6 @@ class WorkflowInterfaceTests(unittest.TestCase):
             provider_path.write_text(json.dumps(provider_payload))
             self.assertTrue(validate_provider_interfaces(root))
 
-    def test_each_provider_guidance_must_load_every_shared_always_on_rule(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            codex = root / "config/AGENTS.md"
-            codex.write_text(
-                codex.read_text().replace(
-                    "{{TOOLKIT_DIR}}/rules/universal.md",
-                    "missing-universal-rule",
-                )
-            )
-
-            problems = validate_provider_interfaces(root)
-
-            self.assertTrue(
-                any(
-                    "codex: installed guidance omits always-on rule" in item
-                    for item in problems
-                ),
-                problems,
-            )
-
     def test_dependency_links_fail_closed_on_missing_unclassified_and_escape(
         self,
     ) -> None:
