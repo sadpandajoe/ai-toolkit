@@ -557,6 +557,33 @@ class EvidenceRecordTests(unittest.TestCase):
         self.assertEqual(edited, working_tree_sha(self.repo / ".ai-toolkit"))
         self.assertIsNone(working_tree_sha(self.base))
 
+    def test_working_tree_sha_sees_a_racily_clean_edit(self) -> None:
+        """A same-size edit made in the second the index recorded the file.
+
+        Git re-reads such an entry only because it is as new as the index file
+        itself; the throwaway index must keep that timestamp, or the stale blob
+        is written into the tree. The timestamps are pinned so this does not
+        depend on how fast the machine is.
+        """
+        import os
+
+        from aitk.project_state import working_tree_sha
+
+        git(self.repo, "config", "core.trustctime", "false")
+        app = self.repo / "app.py"
+        index = self.repo / ".git" / "index"
+        recorded = app.stat().st_mtime_ns - 100 * 10**9
+        os.utime(app, ns=(recorded, recorded))
+        git(self.repo, "add", "app.py")
+        os.utime(index, ns=(recorded, recorded))
+        app.write_text("print('two')\n")
+        os.utime(app, ns=(recorded, recorded))
+        edited = working_tree_sha(self.repo)
+        git(self.repo, "add", "app.py")
+        git(self.repo, "commit", "-q", "-m", "two")
+        self.assertIn("two", git(self.repo, "show", "HEAD:app.py"))
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD^{tree}").strip(), edited)
+
     def test_verify_run_records_pass_only_on_exit_zero(self) -> None:
         from aitk.project_state import gate_blockers, verify_run, working_tree_sha
 

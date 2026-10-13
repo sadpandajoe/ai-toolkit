@@ -1001,7 +1001,12 @@ def working_tree_sha(directory: Path) -> str | None:
     with tempfile.TemporaryDirectory(prefix="aitk-tree-") as scratch:
         temporary_index = Path(scratch) / "index"
         if real_index.is_file():
-            shutil.copyfile(real_index, temporary_index)
+            # copy2 keeps the index file's mtime. Git trusts a cached entry
+            # whose stat matches unless the entry is as new as the index file
+            # ("racily clean"); a copy stamped with the current time made a
+            # same-size edit, written in the second the entry was recorded,
+            # look clean, so the old blob went into the tree.
+            shutil.copy2(real_index, temporary_index)
         environment = {**os.environ, "GIT_INDEX_FILE": str(temporary_index)}
         try:
             added = subprocess.run(
