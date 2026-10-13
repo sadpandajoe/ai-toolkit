@@ -103,10 +103,26 @@ are emitted.
    review and merge, then deploy; everything merged → deploy to staging or
    production; no code changes → nothing further. Merging and deploying are
    the user's actions; suggest them, never run them.
-9. **Summarize and record metrics.** Use
-   [skills/reporting/templates/complete-project-summary.md](../../reporting/templates/complete-project-summary.md)
-   under the structural rules in [skills/reporting/SKILL.md](../../reporting/SKILL.md),
-   then record metrics with `bin/aitk metrics emit --workflow
+9. **Summarize and record metrics.** Summarize under the structural rules in
+   [skills/reporting/SKILL.md](../../reporting/SKILL.md), leading with the
+   project name and final status:
+
+   ```markdown
+   ## Complete-Project Done
+   [One line: project name, goal, and final status]
+   ### Accomplished
+   - [Key deliverables — 3-5 bullets]
+   ### Metrics
+   - Commands: [N] | Pass rate: [N%] | Avg rounds: [N.N]
+   ### Memories
+   - Promoted: [N] | Kept: [N] | Pruned: [N]
+   ### Archived
+   - [Sections moved to PROJECT_ARCHIVE.md]
+   ### What to do next
+   - [The recommended final action from step 8]
+   ```
+
+   Then record metrics with `bin/aitk metrics emit --workflow
    complete-project --status <clean | blocked>` (`blocked` when step 6 left
    services running, and similar), passing the memory-promotion decisions as
    `--extra 'decisions={…}'` and worker counts as `--workers`.

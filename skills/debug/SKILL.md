@@ -14,7 +14,7 @@ plausible story. Before diagnosing a flake or an API-boundary bug, read
 
 | Phase | When | Shape | Reference |
 |---|---|---|---|
-| Investigate change | Open-ended investigation of a bug or regression | Parent inline, or the debugger worker when logs are noisy | [references/investigate-change.md](references/investigate-change.md) |
+| Investigate change | Open-ended investigation of a bug or regression | Parent inline, or the debugger worker when logs are noisy | `agents/specialists/rca.md` (its steps and RCA record), plus the existing-fix check below |
 | RCA gate | Investigation produced a hypothesis | Parent grades STANDARD; specialist grades COMPLEX or uncertain | [references/review-rca.md](references/review-rca.md) |
 | Check existing fix | Is this already fixed upstream or pending in a PR? | Parallel git and gh search | [references/check-existing-fix.md](references/check-existing-fix.md) |
 | Recover Git state | A failed Git operation needs bounded recovery | Parent inline | [references/recover-git-state.md](references/recover-git-state.md) |

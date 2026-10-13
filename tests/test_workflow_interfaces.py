@@ -511,8 +511,8 @@ class WorkflowInterfaceTests(unittest.TestCase):
             root = self.fixture(temporary)
             reference = root / "skills/workflows/references/complete-project.md"
             linked = (
-                "[skills/reporting/templates/complete-project-summary.md]"
-                "(../../reporting/templates/complete-project-summary.md)"
+                "[skills/reflection/references/observations.md]"
+                "(../../reflection/references/observations.md)"
             )
             self.assertIn(linked, reference.read_text())
             reference.write_text(
@@ -529,8 +529,8 @@ class WorkflowInterfaceTests(unittest.TestCase):
 
             self.assertNotIn(
                 (
-                    "reporting",
-                    "skills/reporting/templates/complete-project-summary.md",
+                    "reflection",
+                    "skills/reflection/references/observations.md",
                 ),
                 dependencies,
             )

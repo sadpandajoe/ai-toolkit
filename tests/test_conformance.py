@@ -262,10 +262,7 @@ class ConformanceTests(unittest.TestCase):
         ):
             self.assertIn(item, flat)
         self.assertNotIn("/10", rca)
-        for path in (
-            "skills/debug/references/review-rca.md",
-            "skills/debug/references/investigate-change.md",
-        ):
+        for path in ("skills/debug/references/review-rca.md",):
             text = (ROOT / path).read_text()
             with self.subTest(path=path):
                 self.assertIn("agents/specialists/rca.md", text)

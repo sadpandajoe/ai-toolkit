@@ -16,7 +16,7 @@ and emits its output block.
 | Validate | Post-implementation: confirm a fix or acceptance criteria in the user-visible flow | [references/validate.md](references/validate.md) |
 | Impact assessment | Code review: classify changeset as CORE / STANDARD / PERIPHERAL | [references/assess-impact.md](references/assess-impact.md) |
 | PR smoke scenarios | Derive focused scenarios from a PR | [references/pr-smoke-scenarios.md](references/pr-smoke-scenarios.md) |
-| Manual PR test | Verify a PR in a running browser app | [references/test-pr/setup.md](references/test-pr/setup.md), [scenarios](references/test-pr/scenarios.md), [execute](references/test-pr/execute.md), [report](references/test-pr/report.md) |
+| Manual PR test | Verify a PR in a running browser app | [references/test-pr/setup.md](references/test-pr/setup.md), [scenarios](references/pr-smoke-scenarios.md), [execute](references/test-pr/execute.md), [report](references/test-pr/report.md) |
 | Browser recording | Record UI evidence | [references/browser-recording.md](references/browser-recording.md) |
 | File bug | Strong failure signal needs a clean handoff | [references/file-bug.md](references/file-bug.md) |
 | Write report | QA results go to a Shortcut/PR/Slack/email destination | [references/write-report.md](references/write-report.md) |

@@ -237,10 +237,6 @@ class ProviderAdapterTests(unittest.TestCase):
                         "skills/reflection/references/observations.md",
                     ),
                     ("reporting", "skills/reporting/SKILL.md"),
-                    (
-                        "reporting",
-                        "skills/reporting/templates/complete-project-summary.md",
-                    ),
                 },
                 set(resolved[source_root.name]["complete-project"]),
             )

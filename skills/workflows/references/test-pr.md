@@ -39,7 +39,7 @@ destructive or production actions remain refused.
 Use the `qa` skill and load only the needed references:
 
 1. Resolve PR, checkout, URL, and auth with [skills/qa/references/test-pr/setup.md](../../qa/references/test-pr/setup.md).
-2. Assess impact and derive smoke scenarios with [skills/qa/references/test-pr/scenarios.md](../../qa/references/test-pr/scenarios.md).
+2. Run [assess-impact.md](../../qa/references/assess-impact.md) against the PR diff, then derive smoke scenarios with [pr-smoke-scenarios.md](../../qa/references/pr-smoke-scenarios.md).
 3. Execute browser scenarios with [skills/qa/references/test-pr/execute.md](../../qa/references/test-pr/execute.md).
 4. Report or post results with [skills/qa/references/test-pr/report.md](../../qa/references/test-pr/report.md).
 

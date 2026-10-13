@@ -42,8 +42,8 @@ specialist grades the root cause and the fix plan is validated before code.
 3. **Existing fix.** Run `debug/references/check-existing-fix.md` unless the fix
    is TRIVIAL mechanical work. `FIXED_UPSTREAM` routes to `$cherry-pick`;
    `FIX_PENDING_PR` stops with adopt, monitor, or supersede choices.
-4. **Investigate** with `debug/references/investigate-change.md`: inline for
-   STANDARD when logs are small, otherwise in the toolkit's debugger agent so
+4. **Investigate** by `agents/specialists/rca.md` (steps and RCA record): inline
+   for STANDARD when logs are small, otherwise in the toolkit's debugger agent so
    raw logs stay out of the parent. Reproduce when practical
    (`qa/references/triage-bug.md` when the report is weak).
 5. **RCA gate** (`debug/references/review-rca.md`). STANDARD: the parent
