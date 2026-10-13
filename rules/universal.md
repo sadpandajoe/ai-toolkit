@@ -25,6 +25,8 @@ when this text is missed.
   dispatch and after each handoff, so a fresh session or worker can continue
   from the files alone and no workflow needs, or asks for, a cleared context.
   Resume from the files, never from remembered chat, which compaction loses.
+  State lives in the `PROJECT.md` block that `bin/aitk project-state` writes;
+  never hand-edit it.
   To edit one that is a symlink, write to its
   `readlink -f` target: Claude Code's Write and Edit refuse to write through a
   symlink.

@@ -300,21 +300,18 @@ def workflow_dependencies(root: Path, workflow: Workflow) -> tuple[str, ...]:
 
 
 def load_contract_document(root: Path) -> dict[str, object]:
-    """Load the strict version-2 contract document."""
+    """Load the version-3 contract document: effect, authorization and state."""
     path = root / "interfaces/contracts.json"
     payload = json.loads(path.read_text())
     if (
         not isinstance(payload, dict)
-        or set(payload) != {"version", "vocabularies", "contracts"}
-        or payload.get("version") != 2
+        or set(payload) != {"version", "contracts"}
+        or payload.get("version") != 3
+        or not isinstance(payload.get("contracts"), list)
     ):
         raise ValueError(
-            "interfaces/contracts.json must use version 2 with exactly vocabularies and contracts; version 1 is no longer supported"
+            "interfaces/contracts.json must use version 3 with exactly version and contracts"
         )
-    if not isinstance(payload.get("vocabularies"), dict) or not isinstance(
-        payload.get("contracts"), list
-    ):
-        raise ValueError("interfaces/contracts.json has invalid version-2 containers")
     return payload
 
 

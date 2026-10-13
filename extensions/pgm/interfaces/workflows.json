@@ -7,7 +7,7 @@
       "name": "create-status-report",
       "summary": "Create a live program-health report from current delivery signals",
       "arguments": "[team] [--epic <name>] [--audience <mode>]",
-      "rules": ["rules/durable-workflows.md", "extensions/pgm/rules/pgm.md"],
+      "rules": ["extensions/pgm/rules/pgm.md"],
       "triggers": ["program status report", "program health report", "current delivery health"],
       "execution_class": "durable"
     },
@@ -15,7 +15,7 @@
       "name": "create-velocity-report",
       "summary": "Create a historical program-velocity report for a configured month",
       "arguments": "[--month YYYY-MM] [--summary-only] [--audience <mode>]",
-      "rules": ["rules/durable-workflows.md", "extensions/pgm/rules/pgm.md"],
+      "rules": ["extensions/pgm/rules/pgm.md"],
       "triggers": ["program velocity report", "monthly delivery metrics", "historical velocity"],
       "execution_class": "durable"
     }

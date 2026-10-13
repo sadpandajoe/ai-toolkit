@@ -25,7 +25,7 @@ requirement.
 ## What to Write
 
 The workflow and phase come from `bin/aitk project-state show`, the record
-`start` resumes from; `bin/aitk checkpoint` owns the machine block. Create
+`start` resumes from. Create
 PROJECT.md if it does not exist. The model writes only Current Status, in
 place:
 

@@ -31,4 +31,4 @@ procedure, fields, and stop conditions.
 ## Durable Checkpoint
 
 The CLI renders workflow status (`bin/aitk project-state show`) and
-`bin/aitk checkpoint` writes the machine block; do not hand-edit either.
+`bin/aitk project-state` writes the state block; never hand-edit it.

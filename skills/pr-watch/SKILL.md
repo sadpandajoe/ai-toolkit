@@ -21,8 +21,8 @@ the checkpoint. A fresh context must resume from those artifacts alone.
    `rca`/`deep-rca` worker.
 2. Classify deltas on the main reasoning tier. Use bounded workers for fix
    engines and return compact SHAs, verification, replies, and residual risk.
-3. When context thresholds fire, finish the iteration, update `WATCH.md`, use
-   the checkpoint API, and continue in a fresh worker or session.
+3. When context thresholds fire, finish the iteration, update `WATCH.md` and
+   Current Status, and continue in a fresh worker or session.
 4. A provider `recurrence` binding may reinvoke the workflow. It must resume
    from `WATCH.md`, increment the durable iteration count, and preserve the same
    authorization and stop rules.

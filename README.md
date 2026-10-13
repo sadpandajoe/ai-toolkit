@@ -14,9 +14,8 @@ Claude Code and Codex CLI.
   (`agents/specialists/`) for independent review, RCA, and plan validation.
 - **Interfaces** declare the stable public workflow names, contracts, routes,
   and dispatch boundaries.
-- **`aitk`** builds guidance, validates every manifest, owns the `PROJECT.md`
-  routing snapshot and checkpoint, and turns structural drift into
-  deterministic failures.
+- **`aitk`** builds guidance, loads every manifest, owns the `PROJECT.md`
+  state block, and turns structural drift into deterministic failures.
 
 ## How a Request Runs
 
@@ -169,7 +168,6 @@ ai-toolkit/
 │   ├── complexity-gate.md  # Complexity, size, and execution shape
 │   ├── orchestration.md    # Goal loop, isolation mechanisms, batch rules
 │   ├── model-assignment.md # Roles and routes
-│   ├── durable-workflows.md    # Snapshot, checkpoint, and effect protocol
 │   ├── code-review.md      # How a review lane grades: scope, locking assertion, calibration
 │   ├── implementation.md   # Test-first modes; fix the invariant, not the test
 │   ├── pii-scrub.md        # What to scrub from public PR text, replies, and commits
@@ -227,7 +225,6 @@ CLI:
 | `bin/aitk metrics [--period P] [--format summary\|project]` / `metrics emit --workflow W --status S` | Summarize `.ai-toolkit/metrics.jsonl`, or append one event filled from the snapshot; metrics never gate |
 | `bin/aitk cost [today\|<N>d\|month\|all\|YYYY-MM-DD]` | Token usage and API-equivalent cost from Claude Code sessions; Claude-only, unpriced rather than guessed |
 | `bin/aitk observe --kind <kind> --detail "<one sentence>" [--rule rules/<file>.md]` | Append one line to the reflection queue (`.ai-toolkit/observations.jsonl`) |
-| `bin/aitk checkpoint init\|validate\|advance\|reserve\|apply` | Durable phases and idempotent effects; `reserve` refuses a `verification`- or `review`-gated effect unless the snapshot shows that gate `PASS` |
 | `bin/aitk lane-yield [--metrics PATH] [--json]` | Apply the review-lane yield thresholds to `.ai-toolkit/metrics.jsonl` and list demotions |
 | `bin/aitk rule-yield [--runs N] [--json]` | List the rule files no observation named over the last N workflow runs (default 20): deletion candidates for `reflect` |
 | `bin/aitk eval --provider <p> [--family F] [--model M] [--effort E] [--dry-run]` | Run the judgment eval cases through `model-run`, grade them with `evals/grader.md`, and append `evals/results/<date>-<provider>.md`; calls a provider and costs money |
@@ -275,7 +272,6 @@ names so the table cannot imply manifest wiring that does not exist.
 | `rules/ci-evidence.md` | CI Evidence | `fix-ci`, `watch-pr` | skills: debug, workflows |
 | `rules/code-review.md` | Code Review | none | skills: review, testing; 11 routed worker contract lists |
 | `rules/complexity-gate.md` | Complexity Gate | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` | skills: cherry-pick, feedback, review, workflows |
-| `rules/durable-workflows.md` | Durable Workflow Runtime | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `tests`, `watch-pr` | none |
 | `rules/gates.md` | Gates | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-plan`, `review-pr`, `tests` | skills: debug, feedback, planning, qa, review, verification-loop, workflows |
 | `rules/implementation.md` | Implementation | `address-feedback`, `create-feature`, `fix-bug`, `tests` | skills: implement-change, testing; 6 routed worker contract lists |
 | `rules/input-detection.md` | Input Detection | `create-feature`, `fix-bug`, `run-test-plan`, `test-pr` | skills: qa, shortcut, workflows |

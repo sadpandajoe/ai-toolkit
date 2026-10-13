@@ -10,15 +10,6 @@ import subprocess
 import sys
 
 from .build import compare_build, write_build
-from .checkpoint import (
-    CheckpointError,
-    advance as advance_checkpoint,
-    apply as apply_checkpoint,
-    checkpoint_file,
-    initialize as initialize_checkpoint,
-    reserve as reserve_checkpoint,
-    validate as validate_checkpoint,
-)
 from .cost import main as cost_report
 from .deliver import DeliverOptions, deliver as run_delivery, render as render_delivery
 from .doctor import run_doctor
@@ -214,7 +205,6 @@ def _list(arguments: argparse.Namespace) -> int:
                     "authorization": authorization,
                     "state": contract.get("state"),
                     "resumable": contract.get("resumable", False),
-                    "phases": contract.get("phases", []),
                     "gates": authorization.get("gates", []),
                 }
             )
@@ -354,70 +344,6 @@ def _lifecycle(arguments: argparse.Namespace) -> int:
             print(f"  {value}", file=sys.stderr)
         print(f"  ledger: {result.ledger}")
     return result.exit_code
-
-
-def _checkpoint(arguments: argparse.Namespace) -> int:
-    root = _root(arguments.root)
-    try:
-        path = checkpoint_file(
-            root,
-            arguments.workflow,
-            Path(arguments.file) if arguments.file else None,
-            arguments.with_pgm,
-        )
-        if arguments.checkpoint_action == "init":
-            result = initialize_checkpoint(
-                root,
-                arguments.workflow,
-                path,
-                arguments.with_pgm,
-                arguments.replace,
-            )
-        elif arguments.checkpoint_action == "validate":
-            result = validate_checkpoint(
-                root, arguments.workflow, path, arguments.with_pgm
-            )
-        elif arguments.checkpoint_action == "advance":
-            result = advance_checkpoint(
-                root,
-                arguments.workflow,
-                path,
-                arguments.to,
-                arguments.with_pgm,
-            )
-        elif arguments.checkpoint_action == "reserve":
-            result = reserve_checkpoint(
-                root,
-                arguments.workflow,
-                path,
-                arguments.key,
-                arguments.operation_id,
-                arguments.with_pgm,
-            )
-        else:
-            result = apply_checkpoint(
-                root,
-                arguments.workflow,
-                path,
-                arguments.key,
-                arguments.operation_id,
-                arguments.result_digest,
-                arguments.with_pgm,
-            )
-    except (CheckpointError, OSError, json.JSONDecodeError) as error:
-        print(f"aitk checkpoint: {error}", file=sys.stderr)
-        return 1
-    payload = result.as_dict()
-    if arguments.json:
-        print(json.dumps(payload, indent=2, sort_keys=True))
-    else:
-        disposition = "updated" if result.changed else "unchanged"
-        print(
-            f"{result.workflow}: phase={result.phase} generation={result.generation} "
-            f"({disposition})"
-        )
-        print(f"  checkpoint: {result.file}")
-    return 0
 
 
 def _read_envelopes(paths: list[str]) -> list[object]:
@@ -1075,35 +1001,6 @@ def parser() -> argparse.ArgumentParser:
         help="repo-relative reviewer lens to narrow a fan-out boundary to",
     )
     model_run.set_defaults(handler=_model_run)
-
-    checkpoint = subparsers.add_parser(
-        "checkpoint", help="manage durable workflow checkpoints"
-    )
-    checkpoint_actions = checkpoint.add_subparsers(
-        dest="checkpoint_action", required=True
-    )
-    for action in ("init", "validate", "advance", "reserve", "apply"):
-        checkpoint_action = checkpoint_actions.add_parser(
-            action, help=f"{action} a durable workflow checkpoint"
-        )
-        checkpoint_action.add_argument("--workflow", required=True)
-        checkpoint_action.add_argument("--file")
-        checkpoint_action.add_argument("--with-pgm", action="store_true")
-        checkpoint_action.add_argument("--json", action="store_true")
-        if action == "init":
-            checkpoint_action.add_argument(
-                "--replace",
-                action="store_true",
-                help="replace completed or stale checkpoint state; pending effects refuse",
-            )
-        if action == "advance":
-            checkpoint_action.add_argument("--to", required=True)
-        if action in {"reserve", "apply"}:
-            checkpoint_action.add_argument("--key", required=True)
-            checkpoint_action.add_argument("--operation-id", required=True)
-        if action == "apply":
-            checkpoint_action.add_argument("--result-digest", required=True)
-        checkpoint_action.set_defaults(handler=_checkpoint)
 
     project_state = subparsers.add_parser(
         "project-state", help="read or update the PROJECT.md v2 routing snapshot"

@@ -19,8 +19,8 @@ provider syntax or the declared fallback.
   its own route and agent controls.
 - `isolated_worktree`: create and enter a fresh Git worktree manually.
 - `context_reset`: not required; fresh agents are the phase boundary, and a
-  session that must end resumes through `start` from the `PROJECT.md` snapshot
-  and checkpoint.
+  session that must end resumes through `start` from the `PROJECT.md` state
+  block and Current Status.
 - `recurrence`: reinvoke the monitored workflow manually until a stop
   condition, subject to the repository reachability gate.
 - `independent_review`: `<toolkit-root>/bin/aitk model-run review --provider

@@ -13,10 +13,8 @@ Two checks apply to every `gh pr create` (or `gh pr new`) the command runs:
   or micro-fix diff, rules/gates.md) backed by this phase's passing
   verification run. A PASS typed without either does not count. This is the
   `gate_blockers` check `bin/aitk deliver` applies, so the hook and deliver
-  cannot disagree. A `published_pr` checkpoint reservation no longer stands
-  in for a review: deliver opens the PR in the phase whose review it read. A
-  missing, unreadable or malformed PROJECT.md or snapshot, and a missing
-  gate, block. `SKIP_PR_GATE=1` (a command prefix or the session env) is the
+  cannot disagree. A missing, unreadable or malformed PROJECT.md or
+  snapshot, and a missing gate, block. `SKIP_PR_GATE=1` (a command prefix or the session env) is the
   user's override for work outside a workflow and lifts this check only.
 - **Draft.** The PR must be opened with `--draft`. `AITK_PR_READY=1` (a command
   prefix or the session env, set only when the user asked for a ready PR in

@@ -21,8 +21,10 @@ phaseability judgement itself is model work recorded in ``phaseability``.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import fcntl
 from functools import wraps
 import hashlib
 import json
@@ -34,12 +36,10 @@ import stat
 import subprocess
 import tempfile
 
-from .artifact_lock import artifact_lock
-
 
 # Local workflow state: written into the target repository, never committed.
 # The git guard (aitk.hooks.git_guard) imports this list, so this module keeps
-# to the standard library and artifact_lock.
+# to the standard library.
 STATE_FILES = (
     "PROJECT.md",
     "PROJECT_ARCHIVE.md",
@@ -105,11 +105,10 @@ SNAPSHOT_KEYS = {
 # validation.
 # ``gates`` maps a gate name to ``{"status", "phase", "units"}``: the aggregate
 # outcome, the phase it was recorded in, and the latest outcome per reasoning
-# unit. The checkpoint runtime reads it before reserving an effect the contract
-# gates on verification or review, which is what makes "two records, one
-# truth" a machine invariant. A record is scoped to its phase: ``advance``
+# unit. `bin/aitk deliver` and the review gate hook read it before an effect
+# gated on verification or review. A record is scoped to its phase: ``advance``
 # clears the phase-scoped gates, and a record from another phase never
-# satisfies a reservation.
+# satisfies a later gate check.
 OPTIONAL_SNAPSHOT_KEYS = {"escalations": dict, "gates": dict, "operations": dict}
 # A gate record may carry the evidence behind its latest outcome: ``run`` for a
 # verification run (``bin/aitk verify --run``) and ``review`` for the reviewer
@@ -178,7 +177,7 @@ def normalize_complexity(value: object) -> str:
     v1 MODERATE was "real contained work", which is v2 STANDARD, so it reads as
     STANDARD. A bare "STANDARD" is ambiguous between v1 (durable planning and
     review waves, now COMPLEX) and v2, so it is accepted as v2 STANDARD; the
-    `start` workflow re-runs classification on resume when the checkpoint
+    `start` workflow re-runs classification on resume when the saved state
     predates the snapshot.
     """
     if not isinstance(value, str):
@@ -324,8 +323,7 @@ def gate_blockers(
     the run `bin/aitk verify --run` recorded, and a review PASS needs the
     reviewer results (`--result`) or a review exception. A PASS someone typed
     by hand does not count. `bin/aitk deliver` and the review gate hook read
-    the gates this way. The checkpoint runtime, which nothing reserves through
-    any more and which phase 5 deletes, passes ``require_records=False``.
+    the gates this way.
     """
     phase = snapshot["current_phase"]
     recorded = snapshot["gates"]
@@ -356,14 +354,54 @@ def gate_blockers(
     return blockers
 
 
+LOCK_ROOT_NAME = "ai-toolkit-artifact-locks"
+
+
+def lock_root() -> Path:
+    return Path(tempfile.gettempdir()) / f"{LOCK_ROOT_NAME}-{os.getuid()}"
+
+
+@contextmanager
+def state_lock(path: Path):
+    """Hold an exclusive lock keyed by the state file's path.
+
+    Every writer rewrites the whole file, so `gate`, `observe` and the other
+    writers landing at the same moment would otherwise drop each other's
+    update. The lock directory and file must be this user's own regular
+    entries, never a symlink.
+    """
+    root = lock_root()
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    metadata = root.lstat()
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid() or root.is_symlink():
+        raise ProjectStateError("artifact lock directory is unsafe")
+    os.chmod(root, 0o700)
+    identity = hashlib.sha256(str(path).encode()).hexdigest()
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(root / f"{identity}.lock", flags, 0o600)
+    try:
+        lock_metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(lock_metadata.st_mode)
+            or lock_metadata.st_uid != os.getuid()
+            or lock_metadata.st_nlink != 1
+        ):
+            raise ProjectStateError("artifact lock file is unsafe")
+        os.fchmod(descriptor, 0o600)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
 def _serialized(function):
-    """Hold the artifact lock shared with the checkpoint runtime; see
-    ``aitk.artifact_lock`` for why both blocks lock the same identity."""
+    """Run one state write under the file's lock (see ``state_lock``)."""
 
     @wraps(function)
     def wrapped(path: Path, *args, **kwargs):
         _reject_unsafe_path(path)
-        with artifact_lock(path, ProjectStateError):
+        with state_lock(path):
             return function(path, *args, **kwargs)
 
     return wrapped
@@ -710,7 +748,7 @@ def record_gate(
     two already escalates the second attempt.
 
     Every outcome is also written to ``gates[gate]`` as ``{status, phase,
-    units}``: the record the checkpoint runtime reads before reserving a gated
+    units}``: the record `deliver` and the review gate hook read before a gated
     effect. The record is scoped to the current phase (a record from an
     earlier phase is replaced, not merged) and tracks the latest outcome per
     reasoning unit, so a ``PASS`` on slice one cannot hide a ``RETRY`` on slice

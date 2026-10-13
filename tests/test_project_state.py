@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from aitk.project_state import (
     ATTEMPT_BUDGET,
@@ -18,6 +20,7 @@ from aitk.project_state import (
     ProjectStateError,
     advance_phase,
     classify_complexity,
+    gate_blockers,
     derive_execution_shape,
     ensure_excluded,
     exclude_entries,
@@ -159,8 +162,8 @@ class SnapshotLifecycleTests(unittest.TestCase):
         passed = record_gate(self.path, "verification", "PASS", "implementation")
         self.assertEqual("PASS", passed.snapshot["gate_status"])
         self.assertEqual({}, passed.snapshot["escalations"])
-        # Every outcome lands in the per-gate record the checkpoint runtime
-        # reads, scoped to the phase and tracking the unit.
+        # Every outcome lands in the per-gate record `deliver` and the review
+        # gate hook read, scoped to the phase and tracking the unit.
         self.assertEqual(
             {
                 "classification": {"status": "PASS", "phase": "intake", "units": {}},
@@ -348,6 +351,82 @@ class SnapshotLifecycleTests(unittest.TestCase):
         }
         self.path.write_text(f"{BEGIN}\n{json.dumps(snapshot)}\n{END}\n")
         with self.assertRaisesRegex(ProjectStateError, "does not follow"):
+            show(self.path)
+
+
+class StateFileSafetyTests(unittest.TestCase):
+    """Ported from the checkpoint runtime: concurrency and fail-closed reads."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        # Resolved: on macOS the temp dir is under the /var -> /private/var link.
+        self.directory = Path(self.temporary.name).resolve()
+        self.path = self.directory / "PROJECT.md"
+
+    def test_concurrent_gate_writers_keep_every_update(self) -> None:
+        initialize(self.path, "create-feature", "STANDARD", "M")
+        commands = [
+            [str(ROOT / "bin/aitk"), "project-state", "gate", "--file", str(self.path),
+             "--gate", "rca", "--status", "PASS", "--unit", unit]
+            for unit in ("unit-a", "unit-b", "unit-c", "unit-d", "unit-e", "unit-f")
+        ]
+        processes = [
+            subprocess.Popen(
+                command, cwd=self.directory, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            for command in commands
+        ]
+        results = [process.communicate(timeout=30) for process in processes]
+        self.assertEqual([0] * len(commands), [p.returncode for p in processes], results)
+        snapshot = parse_project_state(self.path.read_text())
+        assert snapshot is not None
+        self.assertEqual(
+            {f"unit-{name}": "PASS" for name in "abcdef"},
+            snapshot["gates"]["rca"]["units"],
+        )
+        self.assertEqual(1, self.path.read_text().count(BEGIN))
+
+    def test_lock_directory_cannot_be_a_symlink(self) -> None:
+        fake_tmp = self.directory / "tmp"
+        outside = self.directory / "outside-lock"
+        fake_tmp.mkdir()
+        outside.mkdir()
+        outside.chmod(0o755)
+        (fake_tmp / f"ai-toolkit-artifact-locks-{os.getuid()}").symlink_to(
+            outside, target_is_directory=True
+        )
+        with mock.patch(
+            "aitk.project_state.tempfile.gettempdir", return_value=str(fake_tmp)
+        ):
+            with self.assertRaisesRegex(ProjectStateError, "lock directory is unsafe"):
+                initialize(self.path, "create-feature", "STANDARD", "M")
+        self.assertFalse(self.path.exists())
+        self.assertEqual(0o755, outside.stat().st_mode & 0o777)
+
+    def test_gate_blockers_name_each_unpassed_gate_and_unit(self) -> None:
+        snapshot = initialize(self.path, "create-feature", "STANDARD", "M").snapshot
+        self.assertEqual(
+            ["verification=unrecorded", "review=unrecorded"],
+            gate_blockers(snapshot, ["verification", "review"], require_records=False),
+        )
+        record_gate(self.path, "verification", "PASS")
+        snapshot = record_gate(self.path, "review", "RETRY", "slice-1").snapshot
+        self.assertEqual(
+            ["review=RETRY (unit slice-1)"],
+            gate_blockers(snapshot, ["verification", "review"], require_records=False),
+        )
+        snapshot = record_gate(self.path, "review", "PASS", "slice-1").snapshot
+        self.assertEqual(
+            [], gate_blockers(snapshot, ["verification", "review"], require_records=False)
+        )
+
+    def test_an_unreadable_gate_record_fails_closed(self) -> None:
+        initialize(self.path, "create-feature", "STANDARD", "M")
+        record_gate(self.path, "verification", "PASS")
+        self.path.write_text(self.path.read_text().replace('"gates":', '"gates":"x",', 1))
+        with self.assertRaises(ProjectStateError):
             show(self.path)
 
 

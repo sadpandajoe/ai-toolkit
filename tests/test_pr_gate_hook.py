@@ -30,7 +30,6 @@ PR_CREATE = 'gh pr create --draft --title "t" --body "b"'
 READY_PR_CREATE = 'gh pr create --title "t" --body "b"'
 DRAFT_PR_CREATE = "gh pr create --draft --base main --head o:feat/x --title t --body b"
 REPO_VIEW = "gh repo view --json nameWithOwner,defaultBranchRef,isFork"
-DIGEST = "sha256:" + "a" * 64
 
 
 def run_hook(command: str, cwd: Path, **env: str) -> subprocess.CompletedProcess[str]:
@@ -93,23 +92,12 @@ def pass_review(repo: Path, *args: str) -> None:
     )
 
 
-def checkpoint(
-    repo: Path, action: str, *args: str, workflow: str = "create-feature"
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [AITK, "checkpoint", action, "--workflow", workflow, "--file", str(repo / "PROJECT.md"), *args],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-
 class ReviewGateHookTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self._temporary.cleanup)
-        # macOS temp dirs sit under the /var -> /private/var symlink, which
-        # `aitk checkpoint` refuses; resolve like tests/test_checkpoint.py.
+        # macOS temp dirs sit under the /var -> /private/var symlink; resolve
+        # so the hook and the state writer agree on the path.
         self.repo = Path(self._temporary.name).resolve()
         subprocess.run(["git", "-C", str(self.repo), "init", "-q", "-b", "main"], check=True)
 
@@ -301,12 +289,10 @@ class ReviewGateHookTests(unittest.TestCase):
         )
         self.assertEqual(0, run_hook(f"{PR_CREATE}; git status", self.repo).returncode)
 
-    def test_pending_reservation_from_another_workflow_does_not_count(self) -> None:
+    def test_a_review_from_another_workflow_does_not_count(self) -> None:
         self.classify()
-        checkpoint(self.repo, "init")
         project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
         self.record_review("PASS")
-        checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase-one")
         project_state(
             self.repo,
             "init", "--replace",
@@ -363,23 +349,19 @@ class ReviewGateHookTests(unittest.TestCase):
         )
         self.assert_blocked(run_hook(PR_CREATE, self.repo), "unreadable")
 
-    def test_pending_publish_reservation_no_longer_stands_in_after_a_phase_advance(self) -> None:
-        # deliver opens the PR in the phase whose review it read, so a
-        # reservation no longer stands in for a review `advance` cleared.
+    def test_a_phase_advance_clears_the_review_for_a_pr(self) -> None:
+        # deliver opens the PR in the phase whose review it read, so nothing
+        # stands in for a review `advance` cleared.
         self.classify()
-        checkpoint(self.repo, "init")
         project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
         self.record_review("PASS")
-        checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase-one")
         project_state(self.repo, "advance", "--to", "next-phase")
         self.assert_blocked(run_hook(PR_CREATE, self.repo), "review=unrecorded")
 
-    def test_pending_reservation_never_overrides_a_later_retry(self) -> None:
+    def test_a_later_retry_blocks_the_pr(self) -> None:
         self.classify()
-        checkpoint(self.repo, "init")
         project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
         self.record_review("PASS")
-        checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase-one")
         self.record_review("RETRY", unit="slice-two")
         self.assert_blocked(run_hook(PR_CREATE, self.repo), "review=RETRY")
 
@@ -403,7 +385,7 @@ class ReviewGateHookTests(unittest.TestCase):
         self.record_review("PASS")
         self.assertEqual(0, run_hook(DRAFT_PR_CREATE, self.repo).returncode)
 
-    def test_test_workflows_open_a_draft_on_review_pass_without_a_checkpoint(self) -> None:
+    def test_test_workflows_open_a_draft_on_review_pass(self) -> None:
         for workflow in ("tests",):
             with self.subTest(workflow=workflow):
                 (self.repo / "PROJECT.md").unlink(missing_ok=True)
@@ -413,25 +395,10 @@ class ReviewGateHookTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertNotIn("published_pr", (self.repo / "PROJECT.md").read_text())
 
-    def test_applied_reservation_no_longer_covers_a_phase_advance(self) -> None:
+    def test_a_phase_advance_clears_the_review_for_a_draft(self) -> None:
         self.classify()
-        checkpoint(self.repo, "init")
         project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
         self.record_review("PASS")
-        checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase:single")
-        checkpoint(
-            self.repo, "apply", "--key", "published_pr", "--operation-id", "phase:single",
-            "--result-digest", DIGEST,
-        )
-        project_state(self.repo, "advance", "--to", "next-phase")
-        self.assert_blocked(run_hook(DRAFT_PR_CREATE, self.repo), "review=unrecorded")
-
-    def test_pending_reservation_no_longer_covers_a_draft_after_a_phase_advance(self) -> None:
-        self.classify()
-        checkpoint(self.repo, "init")
-        project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
-        self.record_review("PASS")
-        checkpoint(self.repo, "reserve", "--key", "published_pr", "--operation-id", "phase:single")
         project_state(self.repo, "advance", "--to", "next-phase")
         self.assert_blocked(run_hook(DRAFT_PR_CREATE, self.repo), "review=unrecorded")
 
@@ -464,15 +431,6 @@ class ReviewGateHookTests(unittest.TestCase):
         subprocess.run(exception, cwd=self.repo, capture_output=True, text=True, check=True)
         result = run_hook(PR_CREATE, self.repo)
         self.assertEqual(0, result.returncode, result.stderr)
-
-    def test_opt_out_leaves_no_effect_and_allows_restarting_the_checkpoint(self) -> None:
-        self.classify()
-        checkpoint(self.repo, "init")
-        project_state(self.repo, "gate", "--gate", "verification", "--status", "PASS")
-        self.record_review("PASS")
-        # `--no-pr`: the owner never reserves, so a fresh run can replace the checkpoint.
-        replaced = checkpoint(self.repo, "init", "--replace", "--json")
-        self.assertEqual([], json.loads(replaced.stdout)["effects"])
 
     def test_allows_outside_a_git_repository(self) -> None:
         with tempfile.TemporaryDirectory() as outside:

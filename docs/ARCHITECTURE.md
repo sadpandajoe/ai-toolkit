@@ -24,12 +24,12 @@ the control plane in the cheapest capable model.
    deep family. `agents/specialists/*.md` are provider-neutral contracts
    (planner, reviewer, RCA, plan validator, finding verifier) the route runner
    inlines into cross-provider specialists.
-4. `interfaces/` makes everything machine-checkable: workflow identity and
-   triggers, v2 durable contracts, skill classification, provider capability
+4. `interfaces/` declares workflow identity and triggers, each workflow's
+   effect and authorization, skill classification, provider capability
    bindings, model routing (catalog, routes, dispatch boundaries, lens floors),
-   always-on guidance, and the support matrix.
-5. `aitk/` and `bin/aitk` build, route, validate, install transactionally,
-   serialize checkpoints, and own the `PROJECT.md` routing snapshot.
+   and always-on guidance.
+5. `aitk/` and `bin/aitk` build, route, install transactionally, and own the
+   `PROJECT.md` state block.
 
 Context model: rules are short always-on constraints and routing hints; skills
 own workflow context and load only at phase entry, and their descriptions are
@@ -136,62 +136,48 @@ A watch keeps the same isolation: a fix runs in an `implementation` worker
 that returns a compact handoff, classification and diagnosis stay with the
 parent or an `rca`/`deep-rca` worker, and check JSON, CI logs, diffs, and
 review rounds stay out of the parent, so an idle iteration costs only a
-heartbeat. `WATCH.md` and the checkpoint are current after every iteration,
+heartbeat. `WATCH.md` and the state block are current after every iteration,
 so a session that ends for any reason resumes from them through `start`.
 
 ## Source-of-truth flow
 
 ```text
-workflow manifest + v2 contract + canonical skill reference
+workflow manifest + contract + canonical skill reference
                  │
        ┌─────────┴──────────┐
        │                    │
- routing/validation   snapshot + checkpoint runtime
+    routing          bin/aitk project-state
                             │
-                   PROJECT.md machine blocks
+                   PROJECT.md state block
 ```
 
 ## State and recovery
 
-Long-running workflows write human state plus two machine blocks in
-`PROJECT.md`: the `aitk-project-state:v2` routing snapshot and the
-`aitk-checkpoint:v1` phase and effect record. `bin/aitk checkpoint` owns phase
-transitions, the generation counter, and pending/applied effect records with
-stable operation IDs. Focused manifests (`PLAN.md`, `WATCH.md`, `CI_FIX.md`,
-`CHERRY_PICK.md`) supplement it. All local workflow-state files are ignored by
-git and blocked by the safety hook. Resume uses durable files, never chat:
-`start` reads the routing snapshot and checkpoint, re-runs classification only
-when the snapshot predates the workflow's contract, and continues at the
-recorded gate.
-
-The checkpoint API is the only writer of its machine block: it renders
-`skills/reporting/templates/workflow-checkpoint.md` from the selected v2
-contract, validates phase transitions, increments the generation, and records
-pending and applied effect operations. Human-readable status follows the
+Long-running workflows write human state plus one machine block in
+`PROJECT.md`: the `aitk-project-state:v2` state block, which only
+`bin/aitk project-state` writes. It holds the classification, the current
+phase and gate, the attempt budget and escalation ladder, the per-gate record
+with its evidence (`gates`), the phase table and the operation log. Focused
+manifests (`PLAN.md`, `WATCH.md`, `CI_FIX.md`, `CHERRY_PICK.md`) supplement it.
+All local workflow-state files are ignored by git and blocked by the safety
+hook. Resume uses durable files, never chat: `start` reads the state block,
+re-runs classification only when the recorded complexity predates the current
+tiers, and continues at the recorded gate. Human-readable status follows the
 block, with ISO timestamps. A workflow adds a summary template under
 `skills/reporting/templates/` only when it needs structured domain output.
 
-### Two Records, One Truth
-
-The routing snapshot (`bin/aitk project-state gate`) records every gate
-outcome and owns the attempt budget and ladder. The checkpoint machine block
-(`bin/aitk checkpoint`) records phase edges and effect reservations for
-durable workflows and lists `verification` and `review` as preconditions for
-effects. They never disagree by construction: a workflow records the outcome
-in the snapshot first, and an effect that `interfaces/contracts.json` gates on
-`verification` or `review` may be reserved only while the snapshot shows that
-gate `PASS`. `bin/aitk checkpoint reserve` enforces this: it reads the
-snapshot's per-gate record (`gates`) from the same `PROJECT.md` and refuses
-the reservation, with the gate and its recorded status named, when either
-required gate is not `PASS` or no snapshot exists. The record is scoped: each
-gate entry carries the phase it was recorded in and the latest outcome per
-reasoning unit, `advance` clears `verification` and `review`, and a `PASS`
-recorded in another phase or alongside an open `RETRY` on another unit does
-not count. Both runtimes rewrite the same file under one lock per path, so a
-gate record and a reservation cannot overwrite each other and the check inside
-`reserve` is atomic with its write. A workflow without a snapshot has no gate
-history, so every workflow that records a gate runs `project-state init`
-first, including standalone `review-plan` and `fix-ci`.
+Effects read the gates from the same block. `bin/aitk deliver` and the review
+gate hook apply one check (`gate_blockers`): verification and review must be
+`PASS` in the current phase, each backed by its evidence. The record is
+scoped: each gate entry carries the phase it was recorded in and the latest
+outcome per reasoning unit, `advance` clears `verification` and `review`, and
+a `PASS` recorded in another phase or alongside an open `RETRY` on another
+unit does not count. A repeated reply or rerun is caught by
+`project-state op --check`. Every write takes one lock per state file, so a
+gate record and an operation record cannot overwrite each other. A workflow
+without a snapshot has no gate history, so every workflow that records a gate
+runs `project-state init` first, including standalone `review-plan` and
+`fix-ci`.
 
 ## Learning loop
 
@@ -231,8 +217,9 @@ mutation and preserve user conflicts.
 
 1. Add `skills/workflows/references/<name>.md` in the goal-loop shape used by
    `fix-bug.md` and `create-feature.md`.
-2. Register it in `interfaces/workflows.json` (rules, triggers, class) and add a
-   total v2 entry to `interfaces/contracts.json`.
+2. Register it in `interfaces/workflows.json` (rules, triggers, class) and add
+   its entry (effect, authorization, state, verification strength) to
+   `interfaces/contracts.json`.
 3. Put an `aitk-model-route:` marker before each worker dispatch and declare the
    boundary (routes, contracts, lens menu when it fans out) in
    `interfaces/model-routing.json`, which is the whole route table.
