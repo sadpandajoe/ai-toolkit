@@ -1,8 +1,8 @@
 """Running a resolved route as a provider CLI worker.
 
-Owns prompt assembly, argv construction, preflight capability checks, and result
+Owns prompt assembly, argv construction, the CLI version floor, and result
 parsing for each provider. It is the only layer that shells out, and it refuses to
-soften anything the resolver pinned: no fallback model, no missing required flag, no
+soften anything the resolver pinned: no fallback model, no CLI below the floor, no
 result that fails the worker schema.
 """
 
@@ -353,50 +353,6 @@ def _version_tuple(value: str) -> tuple[int, int, int, int]:
     return major, minor, patch, stable
 
 
-def _required_flags(route: ResolvedRoute) -> tuple[str, ...]:
-    if route.provider == "codex":
-        return (
-            "--ephemeral",
-            "--strict-config",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--skip-git-repo-check",
-            "--disable",
-            "--model",
-            "--config",
-            "--sandbox",
-            "--cd",
-            "--add-dir",
-            "--output-schema",
-            "--output-last-message",
-            "--json",
-        )
-    flags = [
-        "--print",
-        "--no-session-persistence",
-        "--safe-mode",
-        "--restricted",
-        "--strict-mcp-config",
-        "--mcp-config",
-        "--model",
-        "--effort",
-        "--permission-mode",
-        "--permission-prompts",
-        "--json-schema",
-        "--output-format",
-        "--tools",
-        # `--append-system-prompt-file` is the channel, but `--help` lists only
-        # its inline sibling, so the scan checks for that.
-        "--append-system-prompt",
-        "--max-budget-usd",
-    ]
-    if route.controls.get("disallowed_tools"):
-        flags.append("--disallowedTools")
-    if _claude_tool_rules(route):
-        flags.append("--allowedTools")
-    return tuple(flags)
-
-
 def _claude_tool_box(route: ResolvedRoute) -> list[str]:
     """The bare built-in tools a Claude worker may use, in manifest order.
 
@@ -414,17 +370,13 @@ def _claude_tool_rules(route: ResolvedRoute) -> list[str]:
     return [entry for entry in route.tools if "(" in entry]
 
 
-def _has_flag(help_text: str, flag: str) -> bool:
-    return (
-        re.search(rf"(?:^|\s){re.escape(flag)}(?=\s|[=,\[]|$)", help_text) is not None
-    )
-
-
 def _preflight(
     route: ResolvedRoute,
     executable: str,
     run: Callable[..., subprocess.CompletedProcess[str]],
 ) -> None:
+    # The floor is the release that carries every flag `_argv` passes; a CLI
+    # that rejects one of them fails the run like any other provider error.
     version = run(
         [executable, "--version"],
         text=True,
@@ -439,25 +391,6 @@ def _preflight(
         raise ModelRouteError(
             f"{route.provider} CLI does not meet minimum {route.minimum_cli}",
             UNAVAILABLE_ERROR,
-        )
-    help_argv = (
-        [executable, "exec", "--help"]
-        if route.provider == "codex"
-        else [executable, "--help"]
-    )
-    help_result = run(
-        help_argv,
-        text=True,
-        capture_output=True,
-        timeout=PREFLIGHT_TIMEOUT,
-        check=False,
-    )
-    help_text = help_result.stdout + help_result.stderr
-    if help_result.returncode or any(
-        not _has_flag(help_text, flag) for flag in _required_flags(route)
-    ):
-        raise ModelRouteError(
-            f"{route.provider} CLI lacks required routing flags", UNAVAILABLE_ERROR
         )
 
 

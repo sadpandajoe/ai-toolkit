@@ -32,8 +32,6 @@ from aitk.routing_transport import (
 
 from routing_fixtures import (
     ROOT,
-    CLAUDE_HELP,
-    CODEX_HELP,
     MODEL_CATALOG,
     _claude_runner,
     _codex_runner,
@@ -146,8 +144,7 @@ class RoutingTransportTests(RoutingTestCase):
             calls.append(argv)
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
-            flags = CODEX_HELP
-            return subprocess.CompletedProcess(argv, 0, flags, "")
+            raise AssertionError("a dry run asks the CLI only for its version")
 
         with tempfile.TemporaryDirectory() as cwd, tempfile.NamedTemporaryFile(
             "w", encoding="utf-8"
@@ -175,7 +172,7 @@ class RoutingTransportTests(RoutingTestCase):
                     runner=runner,
                 )
         self.assertEqual(0, code)
-        self.assertEqual(2, len(calls))
+        self.assertEqual(1, len(calls))
         argv = payload["argv"]
         # The deep route on Codex is Astra, never the Sol workhorse.
         self.assertIn(MODEL_CATALOG["codex"]["models"]["astra"]["selector"], argv)
@@ -226,7 +223,6 @@ class RoutingTransportTests(RoutingTestCase):
 
     def test_cli_one_release_below_the_provider_floor_fails_closed(self) -> None:
         """GPT-6.1 Sol needs Codex 0.159.3 and Sonnet 5.5 needs Claude Code 2.1.284."""
-        ALL_FLAGS = CODEX_HELP + " " + CLAUDE_HELP
         cases = (
             ("codex", "/bin/codex", "codex-cli 0.159.2\n"),
             ("claude", "/bin/claude", "2.1.283\n"),
@@ -237,11 +233,9 @@ class RoutingTransportTests(RoutingTestCase):
                 def runner(
                     argv: list[str], version: str = version, **_: object
                 ) -> subprocess.CompletedProcess[str]:
-                    # Only the version is stale; every flag probe succeeds, so a
-                    # rejection can come from nothing but the floor.
                     if "--version" in argv:
                         return subprocess.CompletedProcess(argv, 0, version, "")
-                    return subprocess.CompletedProcess(argv, 0, ALL_FLAGS, "")
+                    raise AssertionError("the worker must not start")
 
                 with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
                     prompt.write("Review this change.")
@@ -268,8 +262,7 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-            flags = CLAUDE_HELP
-            return subprocess.CompletedProcess(argv, 0, flags, "")
+            raise AssertionError("a dry run asks the CLI only for its version")
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
             prompt.write("Review this change.")
@@ -337,9 +330,6 @@ class RoutingTransportTests(RoutingTestCase):
             nonlocal worker_input, instructions, instruction_mode
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-            if "--help" in argv:
-                flags = CLAUDE_HELP
-                return subprocess.CompletedProcess(argv, 0, flags, "")
             worker_input = str(kwargs["input"])
             path = Path(argv[argv.index("--append-system-prompt-file") + 1])
             instructions = path.read_text()
@@ -403,9 +393,6 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
-            if "--help" in argv:
-                flags = CODEX_HELP
-                return subprocess.CompletedProcess(argv, 0, flags, "")
             output_path = Path(argv[argv.index("--output-last-message") + 1])
             output_path.write_bytes(b"\xff")
             return subprocess.CompletedProcess(argv, 0, "", "")
@@ -433,9 +420,6 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
-            if "--help" in argv:
-                flags = CODEX_HELP
-                return subprocess.CompletedProcess(argv, 0, flags, "")
             output_path = Path(argv[argv.index("--output-last-message") + 1])
             output_path.write_text(json.dumps(RESULT))
             return subprocess.CompletedProcess(
@@ -477,9 +461,6 @@ class RoutingTransportTests(RoutingTestCase):
             def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
                 if "--version" in argv:
                     return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
-                if "--help" in argv:
-                    flags = CODEX_HELP
-                    return subprocess.CompletedProcess(argv, 0, flags, "")
                 root = Path(argv[argv.index("--cd") + 1])
                 self.assertEqual(root, Path(str(options["cwd"])))
                 if stray == "src/":
@@ -524,9 +505,6 @@ class RoutingTransportTests(RoutingTestCase):
             def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
                 if "--version" in argv:
                     return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-                if "--help" in argv:
-                    flags = CLAUDE_HELP
-                    return subprocess.CompletedProcess(argv, 0, flags, "")
                 return subprocess.CompletedProcess(
                     argv,
                     0,
@@ -951,9 +929,6 @@ class RoutingTransportTests(RoutingTestCase):
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
                         return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-                    if "--help" in argv:
-                        flags = CLAUDE_HELP
-                        return subprocess.CompletedProcess(argv, 0, flags, "")
                     if failure == "timeout":
                         raise subprocess.TimeoutExpired(argv, 1)
                     return subprocess.CompletedProcess(argv, 17, "", "rejected")
@@ -991,9 +966,6 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-            if "--help" in argv:
-                flags = CLAUDE_HELP
-                return subprocess.CompletedProcess(argv, 0, flags, "")
             return subprocess.CompletedProcess(argv, 1, "", "x" * 5000)
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
@@ -1023,9 +995,6 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-            if "--help" in argv:
-                flags = CLAUDE_HELP
-                return subprocess.CompletedProcess(argv, 0, flags, "")
             return subprocess.CompletedProcess(
                 argv,
                 1,
@@ -1128,9 +1097,6 @@ class RoutingTransportTests(RoutingTestCase):
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
                         return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-                    if "--help" in argv:
-                        flags = CLAUDE_HELP
-                        return subprocess.CompletedProcess(argv, 0, flags, "")
                     value = {**RESULT, "status": status}
                     envelope = {
                         "type": "result",
@@ -1291,28 +1257,42 @@ class InstructionChannelAndRefusalTests(RoutingTestCase):
         self.assertEqual("high", argv[argv.index("--effort") + 1])
         self.assertEqual("5", argv[argv.index("--max-budget-usd") + 1])
 
-    def test_a_cli_without_a_required_control_fails_closed(self) -> None:
-        for flag in (
-            "--append-system-prompt",
-            "--max-budget-usd",
-            "--restricted",
-            "--permission-prompts",
+    def test_a_cli_without_a_readable_version_fails_closed(self) -> None:
+        """The version floor is the only preflight, so every way of missing it stops the run."""
+        for label, completed in (
+            ("no version in the output", (0, "claude code\n", "")),
+            ("version command fails", (1, "", "unknown option --version")),
+            ("prerelease of the floor", (0, "2.1.284-beta.2\n", "")),
         ):
-            def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            def runner(
+                argv: list[str], completed: tuple[int, str, str] = completed, **_: object
+            ) -> subprocess.CompletedProcess[str]:
                 if "--version" in argv:
-                    return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-                if "--help" in argv:
-                    help_text = " ".join(
-                        item for item in CLAUDE_HELP.split() if item != flag
-                    )
-                    return subprocess.CompletedProcess(argv, 0, help_text, "")
+                    return subprocess.CompletedProcess(argv, *completed)
                 raise AssertionError("the worker must not start")
 
-            with self.subTest(flag=flag):
+            with self.subTest(case=label):
                 code, payload = self.run_lane(runner, "review", "claude", "review.independent")
                 self.assertEqual(3, code)
                 self.assertFalse(payload["transport"]["started"])
-                self.assertIn("lacks required routing flags", payload["error"]["message"])
+                self.assertEqual("MODEL_ROUTE_UNAVAILABLE", payload["error"]["code"])
+
+    def test_a_cli_at_or_above_the_floor_starts_the_worker(self) -> None:
+        for version in ("2.1.284\n", "2.1.285\n", "2.2.0\n", "3.0.0\n"):
+            started: list[list[str]] = []
+
+            def runner(
+                argv: list[str], version: str = version, **options: object
+            ) -> subprocess.CompletedProcess[str]:
+                if "--version" in argv:
+                    return subprocess.CompletedProcess(argv, 0, version, "")
+                started.append(argv)
+                return _claude_runner(RESULT)(argv, **options)
+
+            with self.subTest(version=version.strip()):
+                code, payload = self.run_lane(runner, "review", "claude", "review.independent")
+                self.assertEqual(0, code, payload)
+                self.assertEqual(1, len(started))
 
     def test_a_refusal_is_recorded_apart_from_an_outage(self) -> None:
         cases = (
@@ -1329,7 +1309,7 @@ class InstructionChannelAndRefusalTests(RoutingTestCase):
                 self.assertEqual(provider, payload["provider"])
         # An ordinary failure event is still an outage, not a refusal.
         def failing(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
-            if "--version" in argv or "--help" in argv:
+            if "--version" in argv:
                 return _codex_runner(None)(argv, **options)
             event = {"type": "error", "error": {"code": "server_error"}}
             return subprocess.CompletedProcess(argv, 0, json.dumps(event), "")
@@ -1347,7 +1327,7 @@ class InstructionChannelAndRefusalTests(RoutingTestCase):
         ) -> Callable[..., subprocess.CompletedProcess[str]]:
             def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
                 provider = "codex" if argv[0].endswith("codex") else "claude"
-                if "--version" not in argv and "--help" not in argv:
+                if "--version" not in argv:
                     started.append(provider)
                 return (codex if provider == "codex" else claude)(argv, **options)
 
@@ -1402,7 +1382,7 @@ class InstructionChannelAndRefusalTests(RoutingTestCase):
 
     def test_the_envelope_records_what_the_provider_reported_spending(self) -> None:
         def claude(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
-            if "--version" in argv or "--help" in argv:
+            if "--version" in argv:
                 return _claude_runner(RESULT)(argv, **options)
             output = {
                 "type": "result", "subtype": "success", "is_error": False,
@@ -1422,7 +1402,7 @@ class InstructionChannelAndRefusalTests(RoutingTestCase):
 
         def codex(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
             completed = _codex_runner(RESULT)(argv, **options)
-            if "--version" in argv or "--help" in argv:
+            if "--version" in argv:
                 return completed
             turns = [
                 {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 60, "output_tokens": 9}},

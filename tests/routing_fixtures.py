@@ -30,28 +30,6 @@ MODEL_ROUTE_FLOORS = {
 }
 
 
-# Every flag the runner's preflight looks for in each provider's help text. One
-# copy, so a test stub cannot drift from the flags `_required_flags` demands.
-CLAUDE_HELP = " ".join(
-    (
-        "--print --no-session-persistence --safe-mode --restricted",
-        "--strict-mcp-config --mcp-config --model --effort",
-        "--permission-mode --permission-prompts --json-schema --output-format",
-        "--disallowedTools --allowedTools --tools --append-system-prompt",
-        "--max-budget-usd",
-    )
-)
-
-
-CODEX_HELP = " ".join(
-    (
-        "--ephemeral --strict-config --ignore-user-config --ignore-rules",
-        "--skip-git-repo-check --disable --model --config --sandbox --cd",
-        "--add-dir --output-schema --output-last-message --json",
-    )
-)
-
-
 def _claude_runner(
     worker: dict[str, object],
     calls: list[dict[str, object]] | None = None,
@@ -67,8 +45,6 @@ def _claude_runner(
     def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
         if "--version" in argv:
             return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-        if "--help" in argv:
-            return subprocess.CompletedProcess(argv, 0, CLAUDE_HELP, "")
         if calls is not None:
             path = Path(argv[argv.index("--append-system-prompt-file") + 1])
             calls.append(
@@ -116,8 +92,6 @@ def _codex_runner(
     def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
         if "--version" in argv:
             return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
-        if "--help" in argv:
-            return subprocess.CompletedProcess(argv, 0, CODEX_HELP, "")
         environment = dict(options.get("env") or {})
         if calls is not None:
             home = environment.get("CODEX_HOME")

@@ -44,7 +44,6 @@ from aitk.routing_manifest import load_model_routing
 from aitk.routing_policy import CODEX_INSTRUCTIONS_LIMIT
 from aitk.routing_transport import _toml_string, worker_instructions
 
-from routing_fixtures import CLAUDE_HELP, CODEX_HELP
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -318,8 +317,6 @@ class TransportRunnerTests(unittest.TestCase):
         def runner(argv, **options):
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
-            if "--help" in argv:
-                return subprocess.CompletedProcess(argv, 0, CLAUDE_HELP, "")
             instructions = Path(argv[argv.index("--append-system-prompt-file") + 1]).read_text()
             calls.append({"argv": list(argv), "input": options["input"], "instructions": instructions})
             grading = "boundary=eval.grade\n" in instructions
@@ -353,8 +350,6 @@ class TransportRunnerTests(unittest.TestCase):
         def runner(argv, **options):
             if "--version" in argv:
                 return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
-            if "--help" in argv:
-                return subprocess.CompletedProcess(argv, 0, CODEX_HELP, "")
             overrides = [argv[i + 1] for i, item in enumerate(argv) if item == "--config"]
             grading = any("boundary=eval.grade" in item for item in overrides)
             result = worker("Verdict: FAIL", ["size: expected M; answer L"]) if grading else worker('{"size": "L"}')
@@ -382,9 +377,6 @@ args = sys.argv[1:]
 if "--version" in args:
     print("2.1.284" if Path(sys.argv[0]).name == "claude" else "codex-cli 0.159.3")
     raise SystemExit(0)
-if "--help" in args:
-    print({help!r} if Path(sys.argv[0]).name == "claude" else {codex_help!r})
-    raise SystemExit(0)
 Path({marker!r}).write_text("a provider was asked to answer")
 instructions = Path(args[args.index("--append-system-prompt-file") + 1]).read_text()
 if "boundary=eval.grade" in instructions:
@@ -406,8 +398,7 @@ class CliTests(unittest.TestCase):
         self.marker = self.directory / "provider-called"
         for name in ("claude", "codex"):
             path = self.stubs / name
-            path.write_text(STUB.format(python=sys.executable, help=CLAUDE_HELP,
-                                        codex_help=CODEX_HELP, marker=str(self.marker)))
+            path.write_text(STUB.format(python=sys.executable, marker=str(self.marker)))
             path.chmod(0o755)
         self.environment = {
             "PATH": f"{self.stubs}{os.pathsep}/usr/bin{os.pathsep}/bin",
