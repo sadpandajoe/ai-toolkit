@@ -98,11 +98,12 @@ adversarial lens reroutes once to the other provider, recorded in the result. Pr
 not attest the internal serving model, so backend substitution stays outside
 the toolkit's evidence boundary.
 
-Review policy (lanes, tier shapes, yield thresholds) lives in
-`skills/review/references/local-review.md`, and the grading calibration every
-review lane receives in `rules/code-review.md`. `bin/aitk review plan` computes
-which lanes run (`aitk/review_plan.py`) and `review merge` dedupes their
-findings and lists the majors to verify; the parent keeps the judgment.
+Review policy is code: `bin/aitk review plan` computes which lanes run, by
+tier, flags and yield thresholds (`aitk/review_plan.py`), and `review merge`
+dedupes their findings and lists the majors to verify. The parent's judgment
+(validating findings, what counts as substantive, locking tests, disputes)
+lives in `skills/review/references/local-review.md`, and the grading
+calibration every review lane receives in `rules/code-review.md`.
 
 A boundary's contract list is the worker's whole closure, so it carries only
 what that lane grades with. Posting rules stay out of the batch reviewer's

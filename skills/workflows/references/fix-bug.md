@@ -76,8 +76,8 @@ specialist grades the root cause and the fix plan is validated before code.
    plus targeted tests plus repo checks, each through `bin/aitk verify --run`. Two failed implementation attempts, or
    an RCA that materially changed, reopen the RCA gate (rabbit-hole guardrail).
 9. **Review** through `review-code` (`review/references/local-review.md`): one
-   independent review, validate findings, fix, delta pass if substantive, by
-   its tier table (a TRIVIAL fix gets no delta;
+   independent review, validate findings, fix, delta pass if substantive, as
+   `bin/aitk review plan` prints (a TRIVIAL fix gets no delta;
    BATCHED fixes review the transformation on wave one; MULTI_PHASE fixes pass
    the phase base recorded with `project-state phase --sha`).
 10. **Validate** user-visible behavior with `qa/references/validate.md`
