@@ -1,7 +1,3 @@
----
-tier: Heavy
----
-
 # Test PR Execution
 
 ## Recording
@@ -26,9 +22,6 @@ On `BLOCKED`, record the missing prerequisite: auth, data, feature flag, environ
 
 ## Evidence Naming
 
-Use stable names:
-
-- `scenario-<N>-<short-name>.png`
-- `scenario-<N>-fail.png`
-
-Keep all generated evidence paths for the report phase.
+Screenshots use the QA naming shared with [../write-report.md](../write-report.md):
+`<source-id>-scenario-<N>-<label>.png`, with `fail` as the label for a failure
+state. Keep every evidence path for the report phase.

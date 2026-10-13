@@ -7,14 +7,6 @@
 
 Effect: `git_mutation`.
 
-## Durable Runtime Contract
-
-Follow the [durable workflow runtime](../../../rules/durable-workflows.md). The
-phase graph, authorization gates, and effect keys are the `fix-bug` entry in
-`interfaces/contracts.json`; use `bin/aitk checkpoint` for every durable
-transition and effect record, and `bin/aitk project-state` for the routing
-snapshot and gates.
-
 ## Usage
 
 ```bash
@@ -26,13 +18,13 @@ fix-bug <report> --watch    # chain into watch-pr once the PR exists
 
 ## Bug Complexity Signals
 
-Workflow-specific signals for `rules/complexity-gate.md`; any hard signal there
-still forces COMPLEX.
+Workflow-specific signals for `rules/complexity-gate.md`, the one complexity
+definition; any hard signal there still forces COMPLEX.
 
 | Signal | TRIVIAL | STANDARD | COMPLEX |
 |--------|---------|----------|---------|
 | Root cause | Obvious from the error or diff | Confirmed by focused investigation | Unknown, or competing causes still live |
-| Files touched | 1-2 | 2-4, one subsystem | 3+ across systems, or unclear ownership |
+| Ownership | One clear owner | One subsystem, clear owner | Unclear ownership, or crosses a public contract |
 | Regression risk | Mechanical, local | Contained functional fix | Cross-cutting workflow, data, auth, or migration risk |
 | Repro and validation | Cheap targeted check | Targeted test or local repro | Needs RCA validation, an app flow, or broad scenario validation |
 
@@ -44,18 +36,20 @@ specialist grades the root cause and the fix plan is validated before code.
 1. **Intake.** Normalize input, fetch ticket context, restate the symptom in
    code-level terms with a first look at the code path.
 2. **Classify** complexity, size, and shape (`rules/complexity-gate.md`) and
-   persist: `bin/aitk project-state init --workflow fix-bug ...`. Emit the
-   Complexity Gate. Unknown or competing root causes are COMPLEX.
+   persist: `bin/aitk project-state init --workflow fix-bug ... --format
+   block`, and paste the Complexity Gate it prints. Unknown or competing root
+   causes are COMPLEX.
 3. **Existing fix.** Run `debug/references/check-existing-fix.md` unless the fix
    is TRIVIAL mechanical work. `FIXED_UPSTREAM` routes to `$cherry-pick`;
    `FIX_PENDING_PR` stops with adopt, monitor, or supersede choices.
-4. **Investigate** with `debug/references/investigate-change.md`: inline for
-   STANDARD when logs are small, otherwise in the toolkit's debugger agent so
+4. **Investigate** by `agents/specialists/rca.md` (steps and RCA record): inline
+   for STANDARD when logs are small, otherwise in the toolkit's debugger agent so
    raw logs stay out of the parent. Reproduce when practical
    (`qa/references/triage-bug.md` when the report is weak).
 5. **RCA gate** (`debug/references/review-rca.md`). STANDARD: the parent
-   grades the evidence checklist. COMPLEX, confidence below 8/10, or a prior
-   failed attempt: the independent RCA specialist grades it. `PASS` records the
+   grades the PASS list. COMPLEX work, or an RCA not reproduced, alternatives
+   not ruled out, or a prior failed attempt: the independent RCA specialist
+   grades it. `PASS` records the
    root cause and regression check in `PROJECT.md`; `REVISE` closes the named
    gaps once; `ESCALATE` moves to `deep-rca` then `USER_DECISION`. Every step
    is one `project-state gate --gate rca --unit rca` record; the runtime climbs
@@ -73,51 +67,32 @@ specialist grades the root cause and the fix plan is validated before code.
    acceptance command; it returns the compact handoff and never commits.
    TRIVIAL and contained STANDARD fixes are implemented inline.
 8. **Verify** with `skills/verification-loop/SKILL.md`: the regression test
-   plus targeted tests plus repo checks. Two failed implementation attempts, or
+   plus targeted tests plus repo checks, each through `bin/aitk verify --run`. Two failed implementation attempts, or
    an RCA that materially changed, reopen the RCA gate (rabbit-hole guardrail).
 9. **Review** through `review-code` (`review/references/local-review.md`): one
-   independent review, validate findings, fix, delta pass if substantive, by
-   the tier table in `rules/code-review.md` (a TRIVIAL fix gets no delta;
+   independent review, validate findings, fix, delta pass if substantive, as
+   `bin/aitk review plan` prints (a TRIVIAL fix gets no delta;
    BATCHED fixes review the transformation on wave one; MULTI_PHASE fixes pass
    the phase base recorded with `project-state phase --sha`).
-10. **Validate** user-visible behavior with `qa/references/validate-fix.md`
+10. **Validate** user-visible behavior with `qa/references/validate.md`
     when the app runs; otherwise record why not.
-    For BATCHED or MULTI_PHASE fixes, per-unit reviews in step 9 use the phase
-    base, and after the last unit's `## Phase Complete` run one **integrated
-    review**: a `review-code` pass over the full recorded branch base to HEAD
-    plus end-to-end validation against the decomposition's exit goals and
-    invariants, with its own `## Gate: review (integrated)` block and Review
-    Record entry. It is a hard gate before `## Bug Fix Complete`.
+    BATCHED or MULTI_PHASE fixes end, after the last unit's `## Phase
+    Complete`, with one integrated review over the recorded branch base and
+    its own `## Gate: review (integrated)` block
+    (`review/references/local-review.md`, Integrated Review); it is a hard gate
+    before `## Bug Fix Complete`.
 11. **Finish.** Write `## Bug Fix Complete`, emit
-    `reporting/templates/fix-bug-summary.md`, record `metrics-emit`. Default
+    `reporting/templates/fix-bug-summary.md`, record metrics with `bin/aitk
+    metrics emit --workflow fix-bug --status <status>`. Default
     action when verification is `PASS` at `STRONG` strength (the regression
     test and targeted tests ran locally; `PASS (downstream: CI)` is `PARTIAL`
     and pauses), a regression test was added or the gap explicitly accepted,
-    the review gate is `PASS`, and the target is the current feature branch on
-    the expected remote: deliver before any `project-state advance`, never from
-    `main`. Pause for amend, rebase, force-push, an ambiguous push target,
-    `PARTIAL` or `WEAK` verification, or any COMPLEX-path hold. In order:
-    1. `--no-pr`: commit and push per step 2, then stop, recording
-       `pushed — awaiting PR request`.
-    2. Create a new commit and push it. When the branch
-       already has an upstream, require
-       `git rev-parse --abbrev-ref "<branch>@{upstream}"` to equal
-       `<remote>/<branch>` (the upstream's own remote), else pause (ambiguous
-       push target); then push with
-       `git push "<remote>" "HEAD:refs/heads/<branch>"` (never a bare `git push`,
-       never `-u`). With no upstream, run `git push -u <remote> HEAD` (`<remote>` is
-       `branch.<name>.pushRemote`, else `remote.pushDefault`, else `origin`;
-       pause on an ambiguous push target).
-    3. Run `create-pr --draft [--base <branch>]`. `## PR Exists` records
-       `PR #n (existing, draft|ready)` (from its `Draft:` value) with no
-       reservation; `## PR Not Opened` records its `pushed — awaiting PR request
-       (<reason>)` line.
-    4. On `## PR Ready`, run `bin/aitk checkpoint reserve --workflow fix-bug
-       --key published_pr --operation-id phase:<name>` (`phase:single` for a
-       SINGLE_PHASE fix), resume `create-pr` at its step 7, then `bin/aitk
-       checkpoint apply --workflow fix-bug --key published_pr --operation-id
-       phase:<name> --result-digest sha256:<sha256 of the PR URL>`, and finish
-       `create-pr` steps 8-9.
+    and the review gate is `PASS`: deliver before any `project-state
+    advance`. Draft the title and body with `create-pr` steps 2-5, then run
+    `bin/aitk deliver --workflow fix-bug --phase <name> --title "<title>"
+    --body-file <file> [--no-pr]` and paste the block it prints; it refuses
+    without the recorded review and verification run and holds on an
+    ambiguous push target. Pause for amend, rebase or force-push.
 
     The PR is a draft only; promotion, reviewers, and merge need the user's
     words. With `--watch`, chain into `watch-pr` once the PR exists.
@@ -131,7 +106,8 @@ environment only the user holds, or a safety or effect boundary.
 
 - Classification persisted before investigation or implementation.
 - RCA gate `PASS` before any COMPLEX fix plan; a bug fix is never `PASS` at
-  verification on inspection alone.
+  verification on inspection alone: the verification gate counts only with a
+  `bin/aitk verify --run` record of the regression command exiting 0.
 - No commit without an added or updated regression test unless the gap is
   explicitly accepted by the user; no auto-push below `STRONG` verification.
 - BATCHED or MULTI_PHASE fixes write the `## Phase Complete` block from
@@ -140,17 +116,17 @@ environment only the user holds, or a safety or effect boundary.
 - `PROJECT.md` entries at every gate; `## Bug Fix Complete` before the chat
   summary.
 
+`## Bug Fix Complete` in `PROJECT.md` carries the fields the summary
+(`reporting/templates/fix-bug-summary.md`) does not:
+
 ```markdown
 ## Bug Fix Complete
 Bug: <one line or ticket>
 Complexity/Size/Shape: <from snapshot>
-Root cause: <one line> (RCA gate: <parent | specialist>, confidence <n>/10)
-Files changed: <list>
+RCA gate: <parent | specialist>
 Regression test: <added | updated | accepted gap: reason>
 Verification: <PASS evidence>
-Review: <lane, accepted/raised findings>
 Integrated review: <gate, lane | not applicable (SINGLE_PHASE)>
 QA: <pass | fail | skipped — reason>
-Residual risk: <one line or none>
 Commit: <SHA or "no commit">
 ```

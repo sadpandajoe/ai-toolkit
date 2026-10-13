@@ -1,0 +1,20 @@
+{
+  "name": "ai-toolkit",
+  "displayName": "AI Toolkit",
+  "version": "0.3.0",
+  "description": "Provider-portable workflows for AI-assisted software delivery",
+  "author": {
+    "name": "Joe Li",
+    "url": "https://github.com/sadpandajoe"
+  },
+  "homepage": "https://github.com/sadpandajoe/ai-toolkit",
+  "repository": "https://github.com/sadpandajoe/ai-toolkit",
+  "keywords": ["software-delivery", "workflows", "skills", "hooks"],
+  "skills": ["./extensions/pgm/skills/"],
+  "agents": [
+    "./agents/claude/aitk-debugger.md",
+    "./agents/claude/aitk-implementer.md",
+    "./agents/claude/aitk-planner.md",
+    "./agents/claude/aitk-tester.md"
+  ]
+}

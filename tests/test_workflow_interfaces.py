@@ -2,22 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import re
 import shutil
 import tempfile
 import unittest
 
-from aitk.interfaces import (
-    validate_provider_interfaces,
-    validate_skill_interfaces,
-    validate_support_interface,
-)
-from aitk.model_routing import validate_model_routing
-from aitk.workflows import (
-    validate_extension_workflows,
-    validate_workflows,
-)
-from aitk.conformance import validate_contracts, workflow_dependency_resources
-from aitk.workflows import load_workflows
+from aitk.workflows import load_workflows, workflow_dependency_resources
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,281 +23,101 @@ class WorkflowInterfaceTests(unittest.TestCase):
         )
         return root
 
-    def test_manifest_is_complete_and_references_canonical_workflows(self) -> None:
-        self.assertEqual([], validate_workflows(ROOT))
+    def test_every_workflow_reference_resolves(self) -> None:
+        workflows = load_workflows(ROOT, include_pgm=True)
+        self.assertEqual(len({item.name for item in workflows}), len(workflows))
+        for workflow in workflows:
+            with self.subTest(workflow=workflow.name):
+                if not workflow.command:
+                    self.assertTrue((ROOT / workflow.reference).is_file())
+                for rule in workflow.rules:
+                    self.assertTrue((ROOT / rule).is_file(), rule)
+                workflow_dependency_resources(ROOT, workflow)
 
-    def test_optional_pgm_manifest_references_canonical_workflows(self) -> None:
-        self.assertEqual([], validate_extension_workflows(ROOT, "pgm"))
-
-    def test_skill_provider_and_support_interfaces_are_total(self) -> None:
-        self.assertEqual([], validate_skill_interfaces(ROOT))
-        self.assertEqual([], validate_provider_interfaces(ROOT))
-        self.assertEqual([], validate_model_routing(ROOT))
-        self.assertEqual([], validate_support_interface(ROOT))
-
-    def test_public_skills_require_openai_metadata(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            (root / "skills/cherry-pick/agents/openai.yaml").unlink()
-
-            problems = validate_skill_interfaces(root)
-
-            self.assertIn(
-                "cherry-pick: public skill is missing agents/openai.yaml", problems
-            )
-
-    def test_contract_version_one_is_rejected_with_migration_error(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            (root / "interfaces/contracts.json").write_text(
-                json.dumps({"version": 1, "contracts": {}})
-            )
-            problems = validate_contracts(root)
-            self.assertTrue(
-                any("version 2" in problem for problem in problems), problems
-            )
-
-    def test_manifest_execution_class_cannot_hide_a_durable_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            path = root / "interfaces/workflows.json"
-            payload = json.loads(path.read_text())
-            workflow = next(
-                item
-                for item in payload["workflows"]
-                if item["name"] == "create-feature"
-            )
-            workflow["execution_class"] = "single_run"
-            path.write_text(json.dumps(payload))
-            problems = validate_contracts(root)
-            self.assertTrue(
-                any("create-feature: single_run" in problem for problem in problems),
-                problems,
-            )
-
-    def test_effect_and_authorization_markers_are_contract_bound(self) -> None:
-        cases = {
-            "effect-marker": (
-                "skills/workflows/references/show-cost.md",
-                "Effect: `read_only`.",
-                "Effect: `local_mutation`.",
-                "effect boundary marker",
-            ),
-            "authorization-marker": (
-                "skills/workflows/references/address-feedback.md",
-                "Authorization mode: `invocation`.",
-                "Authorization mode: `explicit`.",
-                "authorization marker",
-            ),
+    def test_command_only_entries_run_one_command_and_keep_no_reference(self) -> None:
+        commands = {
+            workflow.name: workflow.command
+            for workflow in load_workflows(ROOT)
+            if workflow.command
         }
-        for name, (relative, old, new, expected) in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
-                root = self.fixture(temporary)
-                path = root / relative
-                path.write_text(path.read_text().replace(old, new))
-
-                problems = validate_contracts(root)
-
-                self.assertTrue(any(expected in item for item in problems), problems)
-
-    def test_read_only_linked_script_cannot_hide_an_effect(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            script = root / "scripts/show-cost.py"
-            script.write_text(script.read_text() + '\nPath("unsafe").write_text("x")\n')
-
-            problems = validate_contracts(root)
-
-            self.assertTrue(
-                any(
-                    "show-cost: read-only executable surface" in item
-                    for item in problems
-                ),
-                problems,
-            )
-
-    def test_semantic_contract_failures_are_not_accepted_as_structural_success(
-        self,
-    ) -> None:
-        def mutate_contract(root: Path, callback) -> None:
-            path = root / "interfaces/contracts.json"
-            payload = json.loads(path.read_text())
-            callback(payload)
-            path.write_text(json.dumps(payload))
-
-        cases = {
-            "missing-phases": (
-                lambda root: mutate_contract(
-                    root,
-                    lambda payload: next(
-                        item
-                        for item in payload["contracts"]
-                        if item["name"] == "create-feature"
-                    ).update({"phases": []}),
-                ),
-                "phases must be unique",
-            ),
-            "missing-authorization": (
-                lambda root: mutate_contract(
-                    root,
-                    lambda payload: next(
-                        item
-                        for item in payload["contracts"]
-                        if item["name"] == "create-feature"
-                    )["authorization"].update({"mode": "none"}),
-                ),
-                "requires authorization",
-            ),
-            "missing-idempotency": (
-                lambda root: mutate_contract(
-                    root,
-                    lambda payload: next(
-                        item
-                        for item in payload["contracts"]
-                        if item["name"] == "create-feature"
-                    ).update({"idempotency_keys": []}),
-                ),
-                "requires an idempotency key",
-            ),
-            "read-only-executable-effect": (
-                lambda root: (
-                    root / "skills/workflows/references/show-cost.md"
-                ).write_text(
-                    (root / "skills/workflows/references/show-cost.md").read_text()
-                    + "\n```sh\ngit commit -am unsafe\n```\n"
-                ),
-                "read-only executable surface is effectful",
-            ),
-            "negated-runtime-authorization": (
-                lambda root: (root / "rules/durable-workflows.md").write_text(
-                    (root / "rules/durable-workflows.md")
-                    .read_text()
-                    .replace(
-                        "Complete the contract's authorization and preflight gates before any effect.",
-                        "Skip authorization and preflight gates before effects.",
-                    )
-                ),
-                "missing semantic clause",
-            ),
-            "missing-runtime-binding": (
-                lambda root: (
-                    lambda path, payload: (
-                        next(
-                            item
-                            for item in payload["workflows"]
-                            if item["name"] == "create-feature"
-                        )["rules"].remove("rules/durable-workflows.md"),
-                        path.write_text(json.dumps(payload)),
-                    )
-                )(
-                    root / "interfaces/workflows.json",
-                    json.loads((root / "interfaces/workflows.json").read_text()),
-                ),
-                "must load rules/durable-workflows.md",
-            ),
-        }
-        for name, (mutate, expected) in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
-                root = self.fixture(temporary)
-                mutate(root)
-                problems = validate_contracts(root)
-                self.assertTrue(
-                    any(expected in problem for problem in problems),
-                    problems,
+        self.assertEqual(
+            {
+                "custom-skills-info": "bin/aitk list",
+                "metrics": "bin/aitk metrics",
+                "show-cost": "bin/aitk cost",
+                "toolkit-doctor": "bin/aitk doctor --strict",
+            },
+            commands,
+        )
+        for name in commands:
+            with self.subTest(workflow=name):
+                self.assertFalse(
+                    (ROOT / f"skills/workflows/references/{name}.md").exists()
                 )
+                self.assertEqual(
+                    (), workflow_dependency_resources(ROOT, next(
+                        item for item in load_workflows(ROOT) if item.name == name
+                    ))
+                )
+        for command in ("aitk cost", "bin/aitk", "bin/aitk cost\nrm -rf /", ""):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as temporary:
+                root = self.fixture(temporary)
+                manifest = root / "interfaces/workflows.json"
+                payload = json.loads(manifest.read_text())
+                next(
+                    item for item in payload["workflows"] if item["name"] == "show-cost"
+                )["command"] = command
+                manifest.write_text(json.dumps(payload))
+                with self.assertRaisesRegex(
+                    ValueError, "command must be one `bin/aitk <subcommand>` line"
+                ):
+                    load_workflows(root)
 
-    def test_malformed_nested_contract_values_are_reported_without_crashing(
-        self,
-    ) -> None:
+    def test_malformed_manifest_values_fail_the_load(self) -> None:
         mutations = {
-            "phase-object": lambda contract, payload: contract.update({"phases": [{}]}),
-            "authorization-gate-object": lambda contract, payload: contract[
-                "authorization"
-            ].update({"gates": [{}]}),
-            "idempotency-strategy-object": lambda contract, payload: contract.update(
-                {"idempotency_keys": [{"key": "commit", "strategy": {}}]}
+            "rule-object": lambda payload: payload["workflows"][0].update(rules=[{}]),
+            "duplicate": lambda payload: payload["workflows"].append(
+                dict(payload["workflows"][0])
             ),
-            "evidence-object": lambda contract, payload: contract[
-                "verification"
-            ].update({"evidence": [{}]}),
-            "vocabulary-object": lambda contract, payload: payload[
-                "vocabularies"
-            ].update({"gates": [{}]}),
+            "unsafe-rule": lambda payload: payload["workflows"][0].update(
+                rules=["../outside.md"]
+            ),
         }
         for name, mutate in mutations.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
                 root = self.fixture(temporary)
-                path = root / "interfaces/contracts.json"
-                payload = json.loads(path.read_text())
-                contract = next(
-                    item
-                    for item in payload["contracts"]
-                    if item["name"] == "create-feature"
-                )
-                mutate(contract, payload)
-                path.write_text(json.dumps(payload))
-                self.assertTrue(validate_contracts(root))
+                manifest = root / "interfaces/workflows.json"
+                payload = json.loads(manifest.read_text())
+                mutate(payload)
+                manifest.write_text(json.dumps(payload))
+                with self.assertRaises(ValueError):
+                    load_workflows(root)
 
-    def test_malformed_manifest_and_provider_values_are_reported_without_crashing(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            workflow_path = root / "interfaces/workflows.json"
-            workflow_payload = json.loads(workflow_path.read_text())
-            workflow_payload["workflows"][0]["rules"] = [{}]
-            workflow_path.write_text(json.dumps(workflow_payload))
-            self.assertTrue(validate_workflows(root))
+    def test_memory_store_is_bound_on_both_providers(self) -> None:
+        payload = json.loads((ROOT / "interfaces/providers.json").read_text())
+        self.assertIn({"name": "memory_store", "required": True}, payload["capabilities"])
+        claude = payload["providers"]["claude"]["bindings"]["memory_store"]
+        codex = payload["providers"]["codex"]["bindings"]["memory_store"]
+        self.assertEqual("native", claude["mode"])
+        self.assertEqual(
+            ("fallback", "repository_memory_directory"), (codex["mode"], codex["fallback"])
+        )
+        self.assertIn(
+            ".ai-toolkit/memory/", (ROOT / "config/providers/codex.md").read_text()
+        )
 
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            provider_path = root / "interfaces/providers.json"
-            provider_payload = json.loads(provider_path.read_text())
-            provider_payload["providers"]["codex"]["bindings"]["planning_boundary"][
-                "mode"
-            ] = {}
-            provider_path.write_text(json.dumps(provider_payload))
-            self.assertTrue(validate_provider_interfaces(root))
-
-    def test_each_provider_guidance_must_load_every_shared_always_on_rule(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            codex = root / "config/AGENTS.md"
-            codex.write_text(
-                codex.read_text().replace(
-                    "{{TOOLKIT_DIR}}/rules/context-management.md",
-                    "missing-context-rule",
-                )
-            )
-
-            problems = validate_provider_interfaces(root)
-
-            self.assertTrue(
-                any(
-                    "codex: installed guidance omits always-on rule" in item
-                    for item in problems
-                ),
-                problems,
-            )
-
-    def test_dependency_links_fail_closed_on_missing_unclassified_and_escape(
-        self,
-    ) -> None:
+    def test_dependency_resolution_fails_closed_in_the_router_loader(self) -> None:
+        # `list --details` resolves dependencies through aitk.workflows, so the
+        # loader itself refuses a missing, unclassified or escaping link.
         cases = {
-            "missing": (
-                "[missing](../../qa/references/not-present.md)",
-                "missing or not a file",
-            ),
-            "unclassified": (
-                "[unclassified](../../unclassified/resource.md)",
-                "not classified",
-            ),
+            "missing": ("[missing](../../qa/references/not-present.md)", "missing or not a file"),
+            "unclassified": ("[unclassified](../../unclassified/resource.md)", "not classified"),
             "escape": ("[escape](../../../../outside.md)", "escapes repository"),
         }
         for name, (link, expected) in cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
                 root = self.fixture(temporary)
-                reference = root / "skills/workflows/references/show-cost.md"
+                reference = root / "skills/workflows/references/verify.md"
                 if name == "unclassified":
                     target = root / "skills/unclassified/resource.md"
                     target.parent.mkdir()
@@ -315,52 +125,49 @@ class WorkflowInterfaceTests(unittest.TestCase):
                 elif name == "escape":
                     (root.parent / "outside.md").write_text("# Outside\n")
                 reference.write_text(reference.read_text() + f"\n{link}\n")
+                workflow = next(item for item in load_workflows(root) if item.name == "verify")
 
-                problems = validate_contracts(root)
-
-                self.assertTrue(any(expected in item for item in problems), problems)
+                with self.assertRaisesRegex(ValueError, expected):
+                    workflow_dependency_resources(root, workflow)
 
     def test_every_named_inline_skill_resource_is_resolved_exactly(self) -> None:
         # Two channels name skill resources: a bare skill-relative path in
         # backticks (`fix-bug` names the existing-fix check) and a Markdown link
-        # (`review-code` links the classifier). Both must fail closed when the
-        # target vanishes, and they report through different checks.
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            (root / "skills/debug/references/check-existing-fix.md").unlink()
-            problems = validate_contracts(root)
-            self.assertTrue(
-                any(
-                    "fix-bug: named skill resource is missing or unsafe: "
-                    "debug/references/check-existing-fix.md" in item
-                    for item in problems
-                ),
-                problems,
-            )
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            (root / "skills/review/references/classify-diff.md").unlink()
-            problems = validate_contracts(root)
-            self.assertTrue(
-                any(
-                    "review-code: dependency link target is missing or not a file: "
-                    "../../review/references/classify-diff.md" in item
-                    for item in problems
-                ),
-                problems,
-            )
+        # (`review-code` links the classifier). Both fail closed when the target
+        # vanishes.
+        cases = (
+            (
+                "skills/debug/references/check-existing-fix.md",
+                "fix-bug",
+                "named skill resource is missing or unsafe: "
+                "debug/references/check-existing-fix.md",
+            ),
+            (
+                "skills/review/references/classify-diff.md",
+                "review-code",
+                "dependency link target is missing or not a file: "
+                "../../review/references/classify-diff.md",
+            ),
+        )
+        for removed, name, expected in cases:
+            with self.subTest(workflow=name), tempfile.TemporaryDirectory() as temporary:
+                root = self.fixture(temporary)
+                (root / removed).unlink()
+                workflow = next(item for item in load_workflows(root) if item.name == name)
+                with self.assertRaisesRegex(ValueError, re.escape(expected)):
+                    workflow_dependency_resources(root, workflow)
 
     def test_removing_a_known_link_changes_the_exact_dependency_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
             reference = root / "skills/workflows/references/complete-project.md"
             linked = (
-                "[skills/reporting/templates/complete-project-metrics.md]"
-                "(../../reporting/templates/complete-project-metrics.md)"
+                "[skills/reflection/references/observations.md]"
+                "(../../reflection/references/observations.md)"
             )
             self.assertIn(linked, reference.read_text())
             reference.write_text(
-                reference.read_text().replace(linked, "metrics template")
+                reference.read_text().replace(linked, "summary template")
             )
             workflow = next(
                 item for item in load_workflows(root) if item.name == "complete-project"
@@ -373,11 +180,12 @@ class WorkflowInterfaceTests(unittest.TestCase):
 
             self.assertNotIn(
                 (
-                    "reporting",
-                    "skills/reporting/templates/complete-project-metrics.md",
+                    "reflection",
+                    "skills/reflection/references/observations.md",
                 ),
                 dependencies,
             )
+
 
 
 if __name__ == "__main__":

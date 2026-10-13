@@ -11,8 +11,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 import json
-import os
-import re
 import shutil
 import subprocess
 import unittest
@@ -34,82 +32,102 @@ MODEL_ROUTE_FLOORS = {
 
 def _claude_runner(
     worker: dict[str, object],
+    calls: list[dict[str, object]] | None = None,
+    refusal: str | None = None,
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
-    """A stub `claude` that passes preflight and returns one worker envelope."""
+    """A stub `claude` that passes preflight and returns one worker envelope.
 
-    def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+    `calls` collects each worker invocation's argv, stdin and the instruction
+    file's text and mode, read while the file still exists. A `refusal` stop
+    reason makes the worker decline instead of answering.
+    """
+
+    def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
         if "--version" in argv:
-            return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
-        if "--help" in argv:
-            flags = " ".join(
-                (
-                    "--print --no-session-persistence --safe-mode ",
-                    "--strict-mcp-config --mcp-config --model --effort ",
-                    "--permission-mode --json-schema --output-format ",
-                    "--disallowedTools --tools",
-                )
-            )
-            return subprocess.CompletedProcess(argv, 0, flags, "")
-        return subprocess.CompletedProcess(
-            argv,
-            0,
-            json.dumps(
+            return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
+        if calls is not None:
+            path = Path(argv[argv.index("--append-system-prompt-file") + 1])
+            calls.append(
                 {
-                    "type": "result",
-                    "subtype": "success",
-                    "is_error": False,
-                    "structured_output": worker,
+                    "argv": list(argv),
+                    "input": options.get("input"),
+                    "instructions": path.read_text(),
+                    "instructions_mode": path.stat().st_mode & 0o777,
                 }
-            ),
-            "",
+            )
+        if refusal is not None:
+            envelope: dict[str, object] = {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "stop_reason": refusal,
+                "result": "",
+            }
+        else:
+            envelope = {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "structured_output": worker,
+            }
+        return subprocess.CompletedProcess(argv, 0, json.dumps(envelope), "")
+
+    return runner
+
+
+def _codex_runner(
+    worker: dict[str, object] | None,
+    calls: list[dict[str, object]] | None = None,
+    refusal: str | None = None,
+) -> Callable[..., subprocess.CompletedProcess[str]]:
+    """A stub `codex` that passes preflight and writes one final worker message.
+
+    `calls` collects each worker invocation's argv, environment, stdin, the
+    schema file's content and what its `CODEX_HOME` held (name to mode), read
+    while those still exist, so a test can check what actually reached the
+    worker. A `None` worker writes no final message at all; a `refusal` code
+    emits an error event carrying it instead of a result.
+    """
+
+    def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
+        environment = dict(options.get("env") or {})
+        if calls is not None:
+            home = environment.get("CODEX_HOME")
+            calls.append(
+                {
+                    "argv": list(argv),
+                    "env": environment,
+                    "input": options.get("input"),
+                    "cwd": options.get("cwd"),
+                    "schema": json.loads(
+                        Path(argv[argv.index("--output-schema") + 1]).read_text()
+                    ),
+                    "codex_home": {
+                        path.name: path.stat().st_mode & 0o777
+                        for path in sorted(Path(home).iterdir())
+                    }
+                    if home
+                    else None,
+                }
+            )
+        if refusal is not None:
+            event = {"type": "error", "error": {"code": refusal, "message": "declined"}}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(event), "")
+        if worker is not None:
+            Path(argv[argv.index("--output-last-message") + 1]).write_text(
+                json.dumps(worker)
+            )
+        return subprocess.CompletedProcess(
+            argv, 0, json.dumps({"type": "turn.completed"}), ""
         )
 
     return runner
 
 
-def _declared_at(boundary: dict[str, object]) -> list[str]:
-    """What this lane is *told* to read: manifest `contracts` + Required Context.
-
-    Deliberately not "every Markdown link in the span". A link is navigation, and
-    treating one as a contract dependency is the defect that shipped the
-    deep-quality gate into every closure whose span happened to link the
-    classifier. Starvation is therefore measured against declarations -- the two
-    channels a document actually uses to say a worker needs something -- so this
-    check keeps catching workers starved of their instructions without reviving
-    "linked from" as a dependency edge.
-    """
-    document = Path(str(boundary["path"]))
-    section = re.search(
-        r"^## Required Context.*?(?=^## |\Z)",
-        (ROOT / document).read_text(),
-        re.MULTILINE | re.DOTALL,
-    )
-    named: set[str] = set()
-    if section is not None:
-        # Both spellings are declarations here. Backticks name a repo-relative
-        # path; a Markdown link inside this section is document-relative and is
-        # how a reference points at its siblings without the reader guessing the
-        # path. Only *inside* this section -- the same link in running prose below
-        # is navigation.
-        named |= set(re.findall(r"`([^`]+\.md)`", section.group(0)))
-        named |= {
-            os.path.normpath((document.parent / target).as_posix())
-            for target in re.findall(r"\]\(([^)]+\.md)\)", section.group(0))
-        }
-    contracts = boundary.get("contracts")
-    if isinstance(contracts, list):
-        named |= {str(item) for item in contracts}
-    return sorted(path for path in named if (ROOT / path).is_file())
-
-
 def _lenses_named_at(boundary: dict[str, object]) -> list[str]:
-    """The boundary's declared reviewer menu -- the manifest, not the prose.
-
-    A span link is no longer proof of lens-hood: the manifest declares the menu
-    and `validate_dispatch_boundaries` holds the prose to it, which is what lets
-    a fan-out span link an ordinary shared reference without that reference
-    becoming a selectable lane.
-    """
+    """The boundary's declared reviewer menu -- the manifest, not the prose."""
     lenses = boundary.get("lenses")
     return sorted(lenses) if isinstance(lenses, list) else []
 

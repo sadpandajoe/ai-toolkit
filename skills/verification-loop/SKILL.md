@@ -7,7 +7,6 @@ description: Use when a goal workflow needs to run its required checks, decide P
 
 ## Before Starting
 
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
 Read and apply `rules/gates.md`.
 
 The shared loop every goal workflow chains after an implementation attempt, a
@@ -29,13 +28,20 @@ worker and grade the handoff here.
 
 ## Loop
 
-1. **Run the required checks.** Quote commands and results in one line each.
+1. **Run the required checks** through `bin/aitk verify --run "<cmd>" --unit
+   <unit>`, which runs the command and records the command, exit code, output
+   tail and tree on the verification gate. A syntax-only check, or a check
+   command that failed to start, did not run; grade it as a check that cannot
+   run.
 2. **Grade.**
-   - All required checks ran locally and pass → `PASS` at `STRONG`. Record
-     it: `bin/aitk project-state gate --gate verification --status PASS`.
+   - All required checks ran locally and pass → `PASS` at `STRONG`: run the
+     acceptance command last with `verify --run`, which defaults to `STRONG`
+     only for the acceptance command named in the plan or RCA record
+     (`--strength` records anything else).
    - A check fails and the current owner can plausibly fix it → attempt the
-     fix, then record `--status RETRY --unit <unit>` (add `--same-failure` when
-     the reason repeats). The runtime returns `RETRY` or `ESCALATE`; obey it.
+     fix; the failed `verify --run` already recorded `RETRY` on `--unit` (add
+     `--same-failure` when the reason repeats). The runtime returns `RETRY` or
+     `ESCALATE`; obey it.
    - `ESCALATE` → stop fixing. For implementation failures, reclassify upward
      if a hard signal appeared, otherwise route the unresolved question to the
      RCA specialist (bugs) or the planner (features) with a compact
@@ -52,7 +58,8 @@ worker and grade the handoff here.
    - The failure exposes a product or scope choice → `USER_DECISION`.
 3. **Recheck after every fix** with the same required set; a fix that passes
    only its own test is not `PASS`.
-4. **Emit the gate block** from `rules/gates.md` and hand control back to the
+4. **Paste the gate block** that `bin/aitk verify --run` or `bin/aitk
+   project-state gate --format block` prints, and hand control back to the
    workflow. The workflow decides what follows; this loop never commits,
    pushes, or reviews.
 
@@ -68,5 +75,5 @@ worker and grade the handoff here.
 
 ## Output
 
-The `## Gate: verification` block with its `Strength` line, followed by a
-one-line `Reviewer yield` or `Fix summary` only when fixes were applied.
+The `## Gate: verification` block `verify --run` printed, with its `Strength`
+line, followed by a one-line `Fix summary` only when fixes were applied.

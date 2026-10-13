@@ -1,7 +1,3 @@
----
-tier: Standard
----
-
 # Release Audit — What Hasn't Reached the Release Branch
 
 Answers "what is on `<source>` that isn't on `<release-branch>`?" — backport-candidate discovery before any cherry list exists. This is discovery, not application: every candidate it surfaces still runs the full investigate/gate flow.
@@ -13,7 +9,7 @@ Comparing raw commit logs between branches produces noise: a branch diff of "1,4
 ## Methodology (three rules)
 
 1. **First-parent only, both sides, since the merge-base.** Each first-parent commit on the source branch is one PR (merge commit or squash). Inner commits of merged branches are never units of backporting — exclude them from the universe entirely.
-2. **"Already on target" requires exact evidence.** Either the same PR number in the *target's own* first-parent history, or a `cherry picked from commit <sha>` (`-x`) marker pointing at the exact source SHA. A PR-title or subject grep alone is advisory — same rule as the batch pre-flight in SKILL.md.
+2. **"Already on target" requires exact evidence.** Either the same PR number in the *target's own* first-parent history, or a `cherry picked from commit <sha>` (`-x`) marker pointing at the exact source SHA. A PR-title or subject grep alone is advisory. This is the one evidence rule of the batch pre-flight ([batch.md](batch.md), `scripts/batch-preflight.sh`).
 3. **Verify candidates with `gh pr view` before queuing.** For each MISSING row: `gh pr view <n> --json state,mergedAt,baseRefName,title,labels`. This confirms the PR is actually merged, targeted the expected base, and the extracted `#N` wasn't a revert/issue cross-reference in the subject.
 
 ## Run It

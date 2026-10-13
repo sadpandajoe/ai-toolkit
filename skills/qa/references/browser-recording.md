@@ -1,142 +1,114 @@
----
-name: browser-recording
-description: Canonical recipe for QA scenario execution — drive the browser via a standalone Playwright script with recordVideo + an injected cursor dot, producing a .webm of just the browser viewport
-tier: Standard
----
-
 # Browser Recording for QA
 
-When a QA scenario needs to verify UI behavior, drive the browser via a **standalone Playwright script** with `recordVideo` enabled and a cursor-dot visualizer injected via `addInitScript`. The output is a clean `.webm` of just the browser viewport — independent of window placement, desktop spaces, or which window is foreground.
+When a QA scenario needs to verify UI behavior, record it with the toolkit's
+recorder, `<toolkit-root>/scripts/qa/record.mjs`: a standalone Playwright run
+with `recordVideo` and an injected cursor dot, producing a `.webm` of just the
+browser viewport, whatever the window placement or foreground app. Do not
+write a recording script; write only the flow.
 
-## Why this shape
+Make one recording per run; split only when the setup differs (another host,
+role, or data fixture).
 
-- **Deterministic capture.** `recordVideo` writes the browser viewport directly via Playwright's CDP. The recording always shows the test, regardless of monitor configuration, multiple displays, or background apps.
-- **Visible cursor + clicks.** Playwright drives input via CDP without rendering an OS cursor. An `addInitScript` injects a small fixed-position dot that follows `mousemove` and pulses on `click`, so the recording shows agent actions clearly.
-- **Cheap to produce.** The script is the test; running it produces the artifact as a side effect. No second process, no race between recorder startup and first action.
-- **MCP is for exploration, not recording.** The Playwright MCP plugin (`mcp__plugin_playwright_playwright__browser_*`) is great for interactive agent-driven browsing — snapshot, click, evaluate. It does **not** expose `recordVideo` configuration. When a recorded artifact is needed, switch to a standalone script.
+## Paths
 
-## Recipe
-
-### 1. Choose paths
-
-Recordings go in `~/qa-recordings/` (outside any repo, so `git status` stays clean):
+Recordings go in `~/qa-recordings/`, outside any repo, so `git status` stays
+clean:
 
 ```
 ~/qa-recordings/<source-id>-<short-name>-<UTC-timestamp>.webm
 ```
 
-Examples:
-- `~/qa-recordings/sc-102410-explore-link-20260505T210000Z.webm`
-- `~/qa-recordings/pr-3760-smoke-20260505T210000Z.webm`
+The recorder renames Playwright's hashed file to this name. Reuse one
+Playwright install through `~/.qa-runner/` (symlink a project's
+`node_modules` there); the browser cache is shared across installs
+(macOS: `~/Library/Caches/ms-playwright/`).
 
-Playwright writes the file with a hash name; the script should rename it to the canonical name on completion.
+## Flow and Run
 
-### 2. Set up a runner
-
-Reuse an existing Playwright install rather than installing fresh per run. A persistent `~/.qa-runner/` works well:
-
-```bash
-mkdir -p ~/.qa-runner
-# Symlink to a known good Playwright install for the current project
-ln -sfn <path-to-playwright-project>/node_modules ~/.qa-runner/node_modules
-```
-
-The browser binaries cache at `~/Library/Caches/ms-playwright/` is shared across installs, so no extra download.
-
-### 3. Write the script
-
-A standalone ESM script that:
-1. Launches Chromium in headed mode
-2. Creates a context with `recordVideo: { dir, size }`
-3. Calls `context.addInitScript` with the cursor-dot visualizer
-4. Drives auth, navigation, and interactions
-5. Closes the context (which finalizes the video file)
-6. Renames the file to the canonical name
-
-Starter template: [browser-recording/record-flow.template.mjs](browser-recording/record-flow.template.mjs). Copy and adapt per run.
-
-### 4. Cursor + click visualizer
-
-Inject before any page loads via `context.addInitScript`. The visualizer is a small fixed-position dot that:
-- Follows `mousemove` (so the path is visible in the recording)
-- Scales up briefly on `mousedown` and resets on `mouseup` (so each click reads as a distinct action)
-- Lives at `z-index: 2147483647` so it stays visible over modals and overlays
-
-The template script bundles this; don't reinvent.
-
-### 5. Auth
-
-Per `rules/preset-environments.md`:
-- Stage: read `$PRESET_STG_BOT_LOGIN` / `$PRESET_STG_BOT_PASSWORD`. Abort with a clear message if either is unset.
-- For multi-role / RBAC runs, source role-specific credentials from your team's secrets vault (e.g. `Agor-Test-Vault`) — never hard-code per-role passwords here.
-- Local: try `admin`/`admin` then `admin`/`general`.
-- Production: refuse.
-
-#### Asserting login completion — the `next=` trap
-
-After clicking *Log in*, do **not** assert with `page.waitForURL(new RegExp(workspaceHost))`. The Preset manager IdP redirects to `https://manage.app-stg.preset.io/login/?next=https%3A%2F%2F<workspaceHost>%2Fsuperset%2Fwelcome%2F` — a URL that *contains the workspace host inside the `next=` query parameter*. A naive host-substring regex matches that intermediate URL and the assertion fires while we're still on the login page, so subsequent steps (find chatbot trigger, etc.) fail with confusing timeouts.
-
-Correct pattern:
+A flow is a module whose default export drives the scenario after login:
 
 ```js
-await page.getByRole('button', { name: /log in/i }).click();
-for (let i = 0; i < 30; i++) {
-  await page.waitForTimeout(1000);
-  const url = page.url();
-  if (url.includes(WORKSPACE_HOST) && !url.includes('/login')) break;
-}
-if (page.url().includes('/login')) throw new Error('login did not complete');
+// ~/.qa-runner/flows/sc-NNNNN-explore-link.mjs
+export default async ({ page, context, url, role }) => {
+  await page.getByRole('link', { name: /dashboards/i }).click();
+  // ... the scenario's steps and checks
+};
+```
+
+```bash
+node <toolkit-root>/scripts/qa/record.mjs \
+  --url https://<ws>.us1a.app-stg.preset.io/ --role viewer \
+  --source-id sc-NNNNN --name explore-link \
+  --flow ~/.qa-runner/flows/sc-NNNNN-explore-link.mjs
+```
+
+The recorder refuses production and unknown hosts
+(`rules/preset-environments.md`), runs headed (`--headless` to hide it),
+injects the cursor dot (follows `mousemove`, pulses on click, top `z-index`),
+logs in when needed, calls the flow, and prints the final path once
+`context.close()` finalizes the video. It exits 2 on a usage error, a refused
+host, missing credentials or a missing Playwright, and 1 when the flow or
+login fails.
+
+Credentials follow `rules/preset-environments.md`: `QA_LOGIN` / `QA_PASSWORD`
+win on any allowed host (role-specific values come from the team's secrets
+vault, never hard-coded); staging uses `$PRESET_STG_BOT_LOGIN` /
+`$PRESET_STG_BOT_PASSWORD`; dev needs `QA_LOGIN` / `QA_PASSWORD`; local stacks
+use `admin`/`admin`. The login is email, then *Next*, then password.
+
+## Traps
+
+**The `next=` trap.** After *Log in*, do not assert with
+`page.waitForURL(new RegExp(workspaceHost))`: the IdP redirect URL carries the
+workspace host inside its `next=` parameter, so the regex matches while still
+on the login page. The recorder's check, for any flow that logs in again:
+
+```js
+const loggedIn = () => {
+  const url = new URL(page.url());
+  return url.hostname === WORKSPACE_HOST && !url.pathname.startsWith('/login');
+};
+for (let i = 0; i < 30 && !loggedIn(); i++) await page.waitForTimeout(1000);
+if (!loggedIn()) throw new Error('login did not complete');
 await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
 ```
 
-The two-clause condition (host present **and** `/login` absent) is what disambiguates the IdP redirect from the post-auth landing.
+Both clauses matter: the page's own host is the workspace **and** its path is
+not `/login`.
 
-#### Persisting `storageState`
+**Key `storageState` by host AND role.** The recorder stores logins at
+`~/.qa-runner/storage/<host>-<role>.json` (delete it to force a fresh login). A
+host-only file is overwritten by a second role and then reused for the first
+role with the wrong cookies, so requests run as the wrong user and the verdict
+is invalid.
 
-For repeated runs, persist `storageState` between runs to skip the login leg:
+**No unscoped OS recording.** An unscoped OS-level screen recording captured
+the desktop instead of the browser window because the window was not on the
+active space. When an OS-level interaction must be captured (file picker,
+extension popup, OS notification), scope it to the browser window (macOS:
+`screencapture -v -l<windowid>`).
 
-```js
-// First run, after successful login:
-await context.storageState({ path: '~/.qa-runner/storage/<host>-<role>.json' });
-// Subsequent runs:
-const context = await browser.newContext({
-  storageState: '~/.qa-runner/storage/<host>-<role>.json',
-  recordVideo: { dir, size: VIEWPORT },
-});
-```
+**No webdriver spoofing in product code.** `navigator.webdriver` overrides
+stay in the test browser, never in init scripts that ship.
 
-**Key the storage path by host AND role**, not by host alone. When the same workspace is exercised under multiple roles in one session (e.g. Dashboard Viewer + Primary Contributor for an RBAC verification), a host-only storage file gets overwritten by the second role's session and then silently reused for the first role's *next* run with the wrong cookies — so login is skipped, requests fire as the wrong user, and the verdict is invalid. Always include the role in the filename.
+## Playwright MCP
 
-### 6. Run the script
+Playwright MCP is for interactive exploration. Recent releases can also record
+(`browser_start_video` / `browser_stop_video`, enabled with `--caps=devtools`);
+check the installed version's tool list first. When it can, MCP with
+`--init-script` (the cursor dot), `--storage-state` (a host-and-role file) and
+`--output-dir` is an alternative; `record.mjs` stays the primary recorder.
 
-```bash
-node ~/.qa-runner/record-sc-NNNNN.mjs
-```
+## Transcode and Post
 
-The video is written when `context.close()` resolves. The script should print the final path on exit.
-
-### 7. Optional: transcode
-
-Shortcut accepts `.webm` directly without practical limits. GitHub PR comments cap attachments around 10 MB; transcode to MP4 for size or compatibility:
+Shortcut accepts `.webm`. GitHub PR comments cap attachments around 10 MB;
+transcode for size or compatibility:
 
 ```bash
 ffmpeg -y -i <file>.webm -vcodec h264 -crf 28 -preset fast -an <file>.mp4
 ```
 
-### 8. Post (only if requested)
-
-Routing by destination:
-- **Shortcut** — `skills/qa/references/write-report.md` for body shape; `skills/shortcut/references/report.md` for `/files` upload + comment posting mechanics.
-- **GitHub PR** — `skills/qa/references/write-report.md` for body shape; post via `gh pr comment <pr> --body-file <path>`.
-- **Local only (default)** — surface the path in the terminal summary.
-
-## Anti-patterns
-
-- ❌ Unscoped OS-level screen recording (`screencapture -v` / `ffmpeg avfoundation`) when the goal is to capture in-browser actions — the recording is hostage to window placement, desktop spaces, and foreground state. We tried this; the recording captured the desktop instead of the Playwright Chrome window because the window wasn't on the active space. Use Playwright `recordVideo` instead.
-- ❌ Driving a recorded run via the Playwright MCP plugin — the MCP server doesn't expose `recordVideo`. MCP is for interactive exploration; recording belongs to a standalone script.
-- ❌ Spoofing `navigator.webdriver` via product-code init scripts that ship outside the test session.
-- ❌ Recording into the working repo — pollutes `git status`. Always use `~/qa-recordings/`.
-
-## When OS-level recording is still appropriate
-
-If the scenario requires capturing OS-level interactions that the page can't see — file picker dialogs, browser extension popups, OS notifications, multi-tab orchestration outside the recorded context — use `screencapture -v -l<windowid>` to record only the Playwright Chrome window. The window-id scope keeps the recording focused even when other apps pop up. Do not use unscoped `screencapture -v`; it captures the entire display and breaks when the browser isn't foreground.
+Post only when asked: body shape from [write-report.md](write-report.md);
+Shortcut upload and comment from `skills/shortcut/references/report.md`;
+GitHub with `gh pr comment <pr> --body-file <path>`. By default, surface the
+local path in the summary.

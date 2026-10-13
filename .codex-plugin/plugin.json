@@ -9,7 +9,8 @@
   "homepage": "https://github.com/sadpandajoe/ai-toolkit",
   "repository": "https://github.com/sadpandajoe/ai-toolkit",
   "keywords": ["codex", "software-delivery", "workflows", "skills"],
-  "skills": "./skills/",
+  "skills": ["./skills/", "./extensions/pgm/skills/"],
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "AI Toolkit",
     "shortDescription": "Portable software delivery workflows",

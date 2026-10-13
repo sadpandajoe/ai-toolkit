@@ -1,8 +1,8 @@
 """Resolving one (route, provider, boundary, lens) request to a pinned dispatch.
 
 The narrow waist of the subsystem: it reads a validated manifest, applies the
-lens route floor, and returns the selector, effort, controls, and contract closure a
-worker will run under. It never falls back to another model and never widens a
+lens route floor, and returns the selector, effort, tool box, controls, and contract
+list a worker will run under. It never falls back to another model and never widens a
 closure -- an unroutable request is an error, not a downgrade.
 """
 
@@ -13,6 +13,7 @@ from pathlib import Path
 from aitk.routing_policy import (
     ModelRouteError,
     PROVIDERS,
+    REROUTABLE_REFUSAL_CONTRACTS,
     ResolvedRoute,
     _boundary_contracts,
     _lens_domain,
@@ -63,10 +64,8 @@ def resolve_route(
         # it without naming the lens would hand that worker the whole menu, so
         # require the selection rather than defaulting to the union. The guard
         # runs both ways: a boundary that does not fan out has no menu to
-        # narrow, and its span names ordinary dependencies rather than lenses,
-        # so accepting `--lens` there would silently drop every span dependency
-        # the flag does not match -- the same quiet-shrink failure the fan-out
-        # requirement exists to prevent.
+        # narrow, so accepting `--lens` there would resolve a lane that silently
+        # ignored the flag.
         menu = _lens_menu(boundary_item)
         fans_out = bool(menu)
         if fans_out and lens is None:
@@ -98,13 +97,7 @@ def resolve_route(
                 f"{route} is below its declared floor"
             )
         required_contracts = _required_contract_paths(
-            root,
-            boundary_item["path"],
-            str(item["responsibility"]),
-            boundary,
-            lens,
-            menu,
-            _boundary_contracts(boundary_item),
+            _boundary_contracts(boundary_item), lens, menu
         )
         unscored = bool(boundary_item.get("unscored", False))
         lens_domain = _lens_domain(boundary_item)
@@ -124,7 +117,7 @@ def resolve_route(
         provider=provider,
         family=family,
         selector=provider_config["models"][family]["selector"],
-        effort=payload["policy"]["efforts"][item["reasoning"]],
+        effort=item["effort"],
         responsibility=item["responsibility"],
         restrictions=tuple(item["restrictions"]),
         controls=dict(mapping),
@@ -133,4 +126,21 @@ def resolve_route(
         lens=lens,
         lens_domain=lens_domain,
         summary_form=summary_form,
+        tools=tuple(str(tool) for tool in item["tools"]),
     )
+
+
+def refusal_reroute(root: Path, route: ResolvedRoute) -> ResolvedRoute | None:
+    """The one other-provider dispatch a refused lane may take, or None (D15).
+
+    Only a dispatch carrying the adversarial lens reroutes, and only to the
+    same route, boundary and lens on the other provider: a reroute is not a
+    downgrade, so nothing about the lane changes but who answers it. The caller
+    records it and never reroutes the reroute.
+    """
+    if route.boundary is None or not REROUTABLE_REFUSAL_CONTRACTS & set(
+        route.required_contracts
+    ):
+        return None
+    other = next(provider for provider in PROVIDERS if provider != route.provider)
+    return resolve_route(root, route.name, other, route.boundary, route.lens)

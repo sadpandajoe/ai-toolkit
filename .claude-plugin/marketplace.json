@@ -1,0 +1,16 @@
+{
+  "name": "ai-toolkit",
+  "owner": {
+    "name": "Joe Li",
+    "url": "https://github.com/sadpandajoe"
+  },
+  "description": "The AI Toolkit plugin for Claude Code and Codex",
+  "plugins": [
+    {
+      "name": "ai-toolkit",
+      "source": "./",
+      "description": "Provider-portable workflows for AI-assisted software delivery",
+      "category": "development"
+    }
+  ]
+}

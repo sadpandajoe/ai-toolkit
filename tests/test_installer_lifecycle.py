@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 from aitk.doctor import run_doctor
+from aitk import claude_hooks
 from aitk.installer import (
     FAILPOINT_ENV,
     _legacy_command_targets,
@@ -18,6 +19,7 @@ from aitk.installer import (
     install,
     resolve_paths,
     rollback,
+    run_lifecycle,
     uninstall,
 )
 
@@ -916,6 +918,359 @@ class InstallerLifecycleTests(unittest.TestCase):
                     {"operation", "status", "changed", "conflicts", "ledger"},
                     set(json.loads(lifecycle.stdout)),
                 )
+
+
+def settings_entries() -> dict:
+    """hooks.json as Claude Code settings carry it: no plugin-only SessionStart
+    hook, and the absolute toolkit root in place of the plugin variables."""
+    source = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
+    source.pop("SessionStart")
+    return json.loads(
+        json.dumps(source).replace("${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}", str(ROOT))
+    )
+
+
+class ClaudeHookRegistrationTests(unittest.TestCase):
+    """`install` registers hooks/hooks.json in Claude Code settings by default."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.home = Path(self.temporary.name).resolve() / "home"
+        self.home.mkdir()
+        self.paths = resolve_paths(ROOT, self.home, self.home / ".codex", self.home / ".agents")
+        self.settings = self.home / ".claude/settings.json"
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def run_cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                str(ROOT / "bin/aitk"),
+                *arguments,
+                "--home",
+                str(self.home),
+                "--codex-home",
+                str(self.home / ".codex"),
+                "--agents-dir",
+                str(self.home / ".agents"),
+                "--json",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def toolkit_commands(self) -> list[str]:
+        settings = json.loads(self.settings.read_text())
+        return [
+            handler["command"]
+            for groups in settings.get("hooks", {}).values()
+            for group in groups
+            for handler in group.get("hooks", [])
+            if f"{ROOT}/hooks/" in handler.get("command", "")
+        ]
+
+    def seed(self, settings: dict, indent: int = 2) -> bytes:
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        content = (json.dumps(settings, indent=indent) + "\n").encode()
+        self.settings.write_bytes(content)
+        return content
+
+    def test_install_registers_hooks_json_with_the_absolute_root(self) -> None:
+        result = self.run_cli("install")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(str(self.settings), json.loads(result.stdout)["changed"])
+        settings = json.loads(self.settings.read_text())
+        self.assertEqual(settings_entries(), settings["hooks"])
+        self.assertNotIn("SessionStart", settings["hooks"])
+        for command in self.toolkit_commands():
+            self.assertNotIn("PLUGIN_ROOT", command)
+        self.assertEqual(list(claude_hooks.DENY_RULES), settings["permissions"]["deny"])
+        again = self.run_cli("install")
+        self.assertEqual("noop", json.loads(again.stdout)["status"], again.stdout)
+
+    def test_written_command_blocks_with_plugin_root_unset(self) -> None:
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        guard = next(
+            command for command in self.toolkit_commands() if "prevent-project-commit.sh" in command
+        )
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT"}
+        }
+        payload = json.dumps(
+            {"tool_input": {"command": "git commit --no-verify -m x"}, "cwd": str(self.home)}
+        )
+        result = subprocess.run(
+            ["bash", "-c", guard], input=payload, text=True, capture_output=True, env=env, check=False
+        )
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("--no-verify", result.stderr)
+
+    def test_install_sh_passes_no_hooks_through(self) -> None:
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"CODEX_HOME", "AGENTS_DIR"}
+        }
+        env["HOME"] = str(self.home)
+        for arguments in (["--no-hooks"], ["--with-pgm", "--no-hooks"]):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    ["/bin/sh", str(ROOT / "install.sh"), *arguments],
+                    cwd=ROOT,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertFalse(self.settings.exists())
+                self.assertTrue(claude_hooks.opted_out(self.paths.state_dir))
+
+    def test_no_hooks_opts_out_and_removes_an_earlier_registration(self) -> None:
+        result = self.run_cli("install", "--no-hooks")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(self.settings.exists())
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        self.assertTrue(self.toolkit_commands())
+        self.assertEqual("ok", run_lifecycle(self.paths, "install", hooks=False).status)
+        self.assertFalse(self.settings.exists())
+        self.assertTrue(claude_hooks.opted_out(self.paths.state_dir))
+        # A rollback that leaves an install active keeps the opt-out.
+        self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+        self.assertEqual("ok", run_lifecycle(self.paths, "rollback").status)
+        self.assertFalse(self.settings.exists())
+
+    def test_install_replaces_entries_an_older_hook_installer_wrote(self) -> None:
+        def entry(name: str, matcher: str | None = "Bash") -> dict:
+            group = {"hooks": [{"type": "command", "command": f'bash "{ROOT}/hooks/{name}"'}]}
+            if matcher:
+                group["matcher"] = matcher
+            return group
+
+        mine = {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-hook.sh"}]}
+        self.seed(
+            {
+                "model": "opus",
+                "hooks": {
+                    "PreToolUse": [
+                        entry("prevent-project-commit.sh"),
+                        entry("check-resources.sh"),
+                        mine,
+                    ],
+                    "PostToolUse": [entry("agent-setup-edit-reminder.sh", "Edit|Write")],
+                    "Stop": [entry("check-plan-drift.sh", None)],
+                },
+                "permissions": {"deny": ["Bash(git push -f *)", "Bash(rm -rf *)"]},
+            }
+        )
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        settings = json.loads(self.settings.read_text())
+        expected = settings_entries()
+        self.assertEqual([mine, *expected["PreToolUse"]], settings["hooks"]["PreToolUse"])
+        # No toolkit hook runs after a tool any more; the old reminder entry goes.
+        self.assertNotIn("PostToolUse", expected)
+        self.assertEqual([], settings["hooks"].get("PostToolUse", []))
+        self.assertEqual(expected["Stop"], settings["hooks"]["Stop"])
+        self.assertEqual("opus", settings["model"])
+        deny = settings["permissions"]["deny"]
+        self.assertEqual(1, deny.count("Bash(git push -f *)"))
+        for rule in claude_hooks.DENY_RULES:
+            self.assertIn(rule, deny)
+
+        # Uninstall keeps the user's hook and both deny rules the user had.
+        self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+        settings = json.loads(self.settings.read_text())
+        self.assertEqual({"PreToolUse": [mine]}, settings["hooks"])
+        self.assertEqual(["Bash(git push -f *)", "Bash(rm -rf *)"], settings["permissions"]["deny"])
+
+    def test_uninstall_without_the_ledger_removes_only_toolkit_entries(self) -> None:
+        mine = {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-hook.sh"}]}
+        for remove_record in (False, True):
+            with self.subTest(remove_record=remove_record):
+                original = self.seed({"hooks": {"PreToolUse": [mine]}, "permissions": {"allow": ["Bash(ls *)"]}})
+                self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+                self.paths.ledger.unlink()
+                if remove_record:
+                    claude_hooks.record_path(self.paths.state_dir).unlink()
+                result = run_lifecycle(self.paths, "uninstall")
+                self.assertEqual("ok", result.status, result.conflicts)
+                settings = json.loads(self.settings.read_text())
+                self.assertEqual({"PreToolUse": [mine]}, settings["hooks"])
+                self.assertNotIn("deny", settings["permissions"])
+                if not remove_record:
+                    self.assertEqual(original, self.settings.read_bytes())
+                self.assertEqual("noop", run_lifecycle(self.paths, "uninstall").status)
+                shutil.rmtree(self.home)
+                self.home.mkdir()
+
+    def test_round_trip_restores_the_settings_bytes(self) -> None:
+        for indent in (2, 4):
+            with self.subTest(indent=indent):
+                original = self.seed({"env": {"A": "1"}, "permissions": {"deny": []}}, indent)
+                self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+                self.assertNotEqual(original, self.settings.read_bytes())
+                self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+                self.assertEqual(original, self.settings.read_bytes())
+                shutil.rmtree(self.home)
+                self.home.mkdir()
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+        self.assertFalse(self.settings.exists())
+
+    def test_a_symlinked_settings_file_stays_a_link(self) -> None:
+        dotfiles = self.home / "dotfiles/settings.json"
+        dotfiles.parent.mkdir()
+        dotfiles.write_text("{}\n")
+        self.settings.parent.mkdir()
+        self.settings.symlink_to(dotfiles)
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        self.assertTrue(self.settings.is_symlink())
+        self.assertIn("hooks", json.loads(dotfiles.read_text()))
+
+    def test_invalid_settings_refuse_before_any_change(self) -> None:
+        self.settings.parent.mkdir()
+        self.settings.write_text("{ not json")
+        before = tree_state(self.home)
+        result = run_lifecycle(self.paths, "install")
+        self.assertEqual("refused", result.status)
+        self.assertIn("not valid JSON", " ".join(result.conflicts))
+        self.assertEqual(before, tree_state(self.home))
+
+    def test_rollback_of_uninstall_registers_the_hooks_again(self) -> None:
+        self.assertEqual("ok", run_lifecycle(self.paths, "install").status)
+        registered = self.settings.read_bytes()
+        self.assertEqual("ok", run_lifecycle(self.paths, "uninstall").status)
+        self.assertFalse(self.settings.exists())
+        self.assertEqual("ok", run_lifecycle(self.paths, "rollback").status)
+        self.assertEqual(registered, self.settings.read_bytes())
+
+
+class InstallerOwnershipTests(unittest.TestCase):
+    def run_installer(
+        self, home: Path, *arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env["HOME"] = str(home)
+        env["CODEX_HOME"] = str(home / ".codex")
+        return subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh"), *arguments],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_install_is_non_destructive_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            claude = home / ".claude"
+            custom_command = claude / "commands/custom.md"
+            custom_skill = claude / "skills/custom/SKILL.md"
+            custom_command.parent.mkdir(parents=True)
+            custom_skill.parent.mkdir(parents=True)
+            custom_command.write_text("# Custom command\n")
+            custom_skill.write_text("---\nname: custom\ndescription: Custom\n---\n")
+            claude_md = claude / "CLAUDE.md"
+            claude_md.write_text("# Personal instructions\n")
+            codex_md = home / ".codex/AGENTS.md"
+            codex_md.parent.mkdir(parents=True)
+            codex_md.write_text("# Personal Codex instructions\n")
+
+            first = self.run_installer(home)
+            self.assertEqual(0, first.returncode, first.stderr)
+            self.assertEqual("# Custom command\n", custom_command.read_text())
+            self.assertEqual(
+                "---\nname: custom\ndescription: Custom\n---\n",
+                custom_skill.read_text(),
+            )
+            self.assertIn("# Personal instructions", claude_md.read_text())
+            self.assertIn("# Personal Codex instructions", codex_md.read_text())
+            self.assertIn("# >>> ai-toolkit managed guidance >>>", codex_md.read_text())
+            self.assertTrue((home / ".agents/skills/workflows").is_symlink())
+            self.assertTrue((home / ".claude/skills/workflows").is_symlink())
+            self.assertFalse((home / ".agents/skills/debug").exists())
+            self.assertFalse((home / ".codex/skills/debug").exists())
+
+            backups_after_first = sorted(claude.glob("backup-*"))
+            ledger = home / ".ai-toolkit/install-state.json"
+            first_ledger = ledger.read_bytes()
+            first_ledger_mtime = ledger.stat().st_mtime_ns
+            first_snapshot = sorted(
+                str(path.relative_to(home))
+                for path in home.rglob("*")
+                if not path.is_dir()
+            )
+
+            second = self.run_installer(home)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(backups_after_first, sorted(claude.glob("backup-*")))
+            self.assertEqual(first_ledger, ledger.read_bytes())
+            self.assertEqual(first_ledger_mtime, ledger.stat().st_mtime_ns)
+            second_snapshot = sorted(
+                str(path.relative_to(home))
+                for path in home.rglob("*")
+                if not path.is_dir()
+            )
+            self.assertEqual(first_snapshot, second_snapshot)
+
+    def test_install_ignores_personal_legacy_command_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            conflict = home / ".claude/commands/start.md"
+            conflict.parent.mkdir(parents=True)
+            conflict.write_text("# Personal start command\n")
+
+            result = self.run_installer(home)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("# Personal start command\n", conflict.read_text())
+            self.assertTrue((home / ".agents/skills/workflows").is_symlink())
+
+    def test_installer_delegates_generation_to_aitk(self) -> None:
+        installer = (ROOT / "install.sh").read_text()
+        implementation = (ROOT / "aitk/installer.py").read_text()
+        self.assertIn('exec "$ROOT/bin/aitk" install', installer)
+        self.assertIn("write_build(paths.root", implementation)
+        self.assertNotIn('rm -rf "$BUILD_DIR"', installer)
+
+    def test_optional_pgm_skill_is_linked_during_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            result = self.run_installer(home, "--with-pgm")
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertTrue((home / ".claude/skills/pgm").is_symlink())
+            self.assertTrue((home / ".agents/skills/pgm").is_symlink())
+
+            regular = self.run_installer(home)
+            self.assertEqual(0, regular.returncode, regular.stderr)
+            self.assertFalse((home / ".agents/skills/pgm").exists())
+
+    def test_install_migrates_legacy_whole_directory_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            claude = home / ".claude"
+            claude.mkdir(parents=True)
+            (claude / "commands").symlink_to(ROOT / "build/commands")
+            (claude / "skills").symlink_to(ROOT / "skills")
+            (claude / "CLAUDE.md").symlink_to(ROOT / "build/config/CLAUDE.md")
+
+            result = self.run_installer(home)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertFalse((claude / "commands").exists())
+            self.assertTrue((claude / "skills").is_dir())
+            self.assertFalse((claude / "skills").is_symlink())
+            self.assertTrue((claude / "skills/workflows").is_symlink())
+            self.assertFalse((claude / "skills/debug").exists())
+            self.assertIn(
+                "# >>> ai-toolkit managed guidance >>>",
+                (claude / "CLAUDE.md").read_text(),
+            )
 
 
 if __name__ == "__main__":

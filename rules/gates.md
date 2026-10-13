@@ -1,10 +1,9 @@
 # Gates
 
-One gate contract for every quality checkpoint in a workflow: verification,
-RCA, plan validation, review, phase exit. Safety and effect gates (publish,
-destructive, production, PII scrub, failed preflight) are separate, hard, and
-live in `interfaces/contracts.json`; a passing quality gate never satisfies one
-of those.
+One contract for every quality checkpoint: verification, RCA, plan
+validation, review, phase exit. Safety and effect gates (publish, destructive,
+production, PII scrub, failed preflight) are separate and hard, live in
+`interfaces/contracts.json`, and no quality gate satisfies one.
 
 ## Outcomes
 
@@ -14,7 +13,7 @@ of those.
 | `RETRY` | Current owner can still solve it | Same owner continues; attempt counted |
 | `ESCALATE` | Current route or model is insufficient | Fresh or stronger specialist; possibly reclassify |
 | `RECLASSIFY` | New evidence changed complexity, size, or shape | Update the routing snapshot upward, then re-enter the loop |
-| `USER_DECISION` | A product, design, or scope choice only the user can make | Ask, with the compact adjudication package below |
+| `USER_DECISION` | A product, design, or scope choice only the user can make | Ask, with the adjudication package below |
 | `BLOCKED` | Environment or external dependency prevents progress | Record evidence and stop this path |
 
 Only `USER_DECISION`, `BLOCKED`, and the hard safety gates involve the user.
@@ -34,136 +33,84 @@ Answer `USER_DECISION` instead of choosing when any of these hold:
 - A finding survived its delta review and the remaining disagreement is a
   trade-off, not a fact.
 
-Confidence below 8/10 on the current hypothesis is not by itself a user
-decision; it is a `RETRY` or an `ESCALATE` to a specialist.
+An RCA passes when the mechanism is at file:line, no live alternative would
+change the fix, and the regression check is named; otherwise it is `RETRY` or
+`ESCALATE`, not a user decision.
 
 ## Retry Budget
 
 Each reasoning unit (an RCA, a plan, a phase plan, an implementation slice, a
 review round) gets one initial attempt plus one informed retry per owner.
-Record every failed attempt with `bin/aitk project-state gate --status RETRY
---unit <unit>`; the runtime turns the request into `ESCALATE` when the unit is
-exhausted or the same failure repeats. Never keep revising the same artifact
-past that point.
-
-- Same gate fails once for a reason → `RETRY`.
-- Same gate fails twice for the same reason → `ESCALATE`.
-- Editorial fixes (a missing path, a wording gap, a rollback note) do not
-  consume the budget: record them with `--editorial`. Reasoning failures
-  (invalid architecture, disproven assumption, competing designs, incompatible
-  contract) do.
-- `USER_DECISION` and `BLOCKED` are recorded but never charged; waiting is not
-  an attempt.
-
-### The escalation ladder
-
-An `ESCALATE` hands the unit to the next owner and gives that owner a fresh
-budget; the snapshot records the step in `escalations`. Escalate one dimension
-at a time: more effort when depth is missing, a different model when
-perspective is missing, `xhigh` only when both stayed unresolved. The runtime
-caps the ladder at three escalations per unit and answers `USER_DECISION`
-after that, so the RCA ladder (parent retry → RCA specialist `REVISE` →
-`deep-rca` → the user) is recorded on one unit without ever overflowing it.
-
-`RECLASSIFY` resets the named unit's counters (every unit when none is named)
-because the problem itself changed; then the classification moves upward in the
-snapshot and the loop re-enters.
+`bin/aitk project-state gate` (and `bin/aitk verify --run`) enforces the
+budget and the escalation ladder: record every failed attempt with `--status
+RETRY --unit <unit>` (`--same-failure` when the reason repeats, `--editorial`
+for an uncharged wording or path fix) and follow what it prints. An
+`ESCALATE` goes to a fresh specialist on the other model family when
+perspective is missing, or to the deep route when depth is missing; never keep
+revising the same artifact past it.
 
 ## Verification Strength
 
-Every verification gate names its strength. The strength decides what the
-outcome permits, and it is the one vocabulary every workflow uses:
+Every verification gate names its strength:
 
 | Strength | What ran | Gate outcome | Permits |
 |---|---|---|---|
-| `STRONG` | The failing or acceptance command itself (or a close equivalent) ran locally and passes | `PASS` | Everything, including an authorized auto-commit and push |
-| `PARTIAL` | Related checks that exercise the changed code, not the exact command | `PASS (downstream: <verifier>)` when a downstream verifier such as CI on the PR will run the exact check; otherwise `RETRY` | Continue to review and present the diagnosis; never an auto-push |
-| `WEAK` | Inspection only, no local execution | `PASS (downstream: <verifier>)` only with a downstream verifier and only in `fix-ci` and `watch-pr`; otherwise `BLOCKED` | Present the diagnosis with the gap named; never an auto-push |
+| `STRONG` | The failing or acceptance command itself, or a close equivalent, through `bin/aitk verify --run` (CI: `npm run lint`, `pytest tests/...`, `npm run build`) | `PASS` | Everything, including an authorized auto-commit and push |
+| `PARTIAL` | Related checks on the changed code, not the exact command (CI: a type-check for a build failure, targeted unit tests for an integration failure) | `PASS (downstream: <verifier>)` when a downstream verifier such as CI on the PR will run the exact check; otherwise `RETRY` | Review and the diagnosis; never an auto-push |
+| `WEAK` | Inspection only, no local execution (CI: an infra-only change, an env var that needs CI secrets) | `PASS (downstream: <verifier>)` only in `fix-ci` and `watch-pr`; otherwise `BLOCKED` | The diagnosis with the gap named; never an auto-push |
 
-`--gate-strict` removes the `WEAK` carve-out: `WEAK` is `BLOCKED` even with a
-downstream verifier. Callers that commit or push on their own authority
-(`fix-bug`, `fix-ci`, `watch-pr`) require `STRONG`; a downstream `PASS` is a
-reason to keep working, not a reason to publish.
-
-## Evidence Rule
-
-A failed verification never becomes `PASS` from code inspection alone. `PASS`
-names the command or check that ran and its result. When the check cannot run
-locally and a downstream verifier will exercise the change (CI on the PR), say
-`PASS (downstream: <verifier>)` and keep the no-push-after-failed-verification
-invariant.
+`--gate-strict` makes `WEAK` `BLOCKED` even with a downstream verifier.
+Callers that commit or push on their own authority (`fix-bug`, `fix-ci`,
+`watch-pr`) require `STRONG`: a `verify --run` record of the command, its exit
+code, the output tail and the tree it ran on. `bin/aitk deliver` refuses
+without one, and refuses a tree that changed after the run. A failed
+verification never becomes `PASS` from code inspection alone, and a
+downstream `PASS` is a reason to keep working, not to publish.
 
 ## Review Exceptions
 
 A review gate may `PASS` without a reviewer only for a zero-logic diff
-(formatting, import order, whitespace) or a micro-fix of three lines or fewer
-whose relevant checks pass. Anything with logic gets one independent review.
-The exception is unavailable when the impact assessment is CORE: a TRIVIAL diff
-on a CORE path (auth, payment, data integrity, the toolkit's routing or
-installer) is reviewed as STANDARD.
+(formatting, import order, whitespace) or a passing micro-fix of three lines or
+fewer; anything with logic gets one independent review. CORE impact disables
+the exception: a TRIVIAL diff on a CORE path (auth,
+payment, data integrity, the toolkit's routing or installer) is reviewed as
+STANDARD.
 
 ## Independent Judgment
 
-- **Single-source majors are verified before they block.** A `[major]` that
-  only one lane raised is worth investigating but never blocks on the parent's
-  reading alone. Before it is accepted past `[minor]`, either a second
-  independent lane converged on it (the second-family lane runs by default on
-  COMPLEX and CORE-impact diffs), or one fresh verifier on the other model
-  family confirmed it with a concrete failure scenario
-  (`review/references/local-review.md`, Validate). A refuted finding is
-  recorded as rejected with the verifier's evidence. The same verifier hears a
-  `[major]` the parent wants to reject: the rejection stands only on `REFUTED`
-  or `UNVERIFIABLE`, and `CONFIRMED` overrides it. A clean verdict on a
-  STANDARD diff above 200 changed lines or 5 files calls the second family
-  after the fact; size makes silence a claim to check.
-- **Degraded lanes block security work.** When the independent or adversarial
-  lane cannot run on the other provider, a non-security diff proceeds on the
-  same-provider fallback with `Independent review: same-provider` disclosed.
-  A security-sensitive diff, a `--deep` review, or `review-code-adversarial`
-  does not: the gate is `BLOCKED (degraded)` until the other provider is
-  reachable or the user overrides with `--allow-degraded`, which is recorded
-  as a `USER_DECISION`.
+- **Single-source majors are verified before they block.** A `[major]` one
+  lane raised passes `[minor]` only on a converging second lane, a reproduced
+  failure or failing locking assertion, or a fresh other-family verifier's
+  confirmation (`review/references/local-review.md`, Validate). That verifier
+  also hears a `[major]` the parent wants to reject: the rejection stands only
+  on `REFUTED` or `UNVERIFIABLE`, and `CONFIRMED` overrides it. A clean verdict
+  counts only when the lane's verification list covers every changed file
+  except generated files and lockfiles; skipped files get one coverage rerun.
+- **Degraded lanes block security work.** When a lane cannot run on the other
+  provider, a non-security diff proceeds on the same-provider fallback with
+  `Independent review: same-provider` disclosed; a security-sensitive diff, a
+  `--deep` review, or an adversarial review is `BLOCKED (degraded)` until the
+  other provider is reachable or the user overrides with `--allow-degraded`
+  (a recorded `USER_DECISION`).
+- **A refusal is not an outage.** `model-run` reports a refusal as `refused`,
+  with its category, apart from `unavailable`. A refused security or
+  adversarial lens may reroute once to the other provider, recorded in the
+  result and disclosed in the review record; it is not a downgrade. Any other
+  refusal, or a second one, is `BLOCKED`.
 
 ## Continuation
 
-A `PASS` gate is a phase transition, not a stop signal. The workflow continues
-to its next step without asking whether to continue; a passing review, RCA, or
-verification gate never ends the turn. The only pauses are `USER_DECISION`,
-`BLOCKED`, and the hard safety and authorization gates in
-`interfaces/contracts.json`.
-
-## Two Records, One Truth
-
-The routing snapshot (`bin/aitk project-state gate`) records every gate
-outcome and owns the attempt budget and ladder. The checkpoint machine block
-(`bin/aitk checkpoint`) records phase edges and effect reservations for
-durable workflows and lists `verification` and `review` as preconditions for
-effects. They never disagree by construction: a workflow records the outcome
-in the snapshot first, and an effect that `interfaces/contracts.json` gates on
-`verification` or `review` may be reserved only while the snapshot shows that
-gate `PASS`. `bin/aitk checkpoint reserve` enforces this: it reads the
-snapshot's per-gate record (`gates`) from the same `PROJECT.md` and refuses
-the reservation, with the gate and its recorded status named, when either
-required gate is not `PASS` or no snapshot exists. The record is scoped: each
-gate entry carries the phase it was recorded in and the latest outcome per
-reasoning unit, `advance` clears `verification` and `review`, and a `PASS`
-recorded in another phase or alongside an open `RETRY` on another unit does
-not count. Both runtimes rewrite the same file under one lock per path, so a
-gate record and a reservation cannot overwrite each other and the check inside
-`reserve` is atomic with its write. A workflow without a snapshot has no gate
-history, so every workflow that records a gate runs `project-state init`
-first, including standalone `review-plan` and `fix-ci`.
+A `PASS` gate is a phase transition, not a stop signal: the workflow continues
+without asking, and a passing gate never ends the turn. The only pauses are
+`USER_DECISION`, `BLOCKED`, and the hard safety and authorization gates.
 
 ## Block Shape
 
-```markdown
-## Gate: <verification | rca | plan | review | phase-exit>
-Status: PASS | RETRY | ESCALATE | RECLASSIFY | USER_DECISION | BLOCKED
-Attempt: <n>/2 on <unit> (escalation <k>/3 when > 0)
-Strength: STRONG | PARTIAL | WEAK          # verification gates only
-Evidence: <command or check and result, one line>
-Next: <bounded next action, or the decision the user must make>
-```
-
-For `USER_DECISION`, add the adjudication package: the two or three options,
-what each costs, the evidence that could not settle it, and a recommendation.
+Paste the block the CLI prints: `bin/aitk verify --run` prints `## Gate:
+verification`, and `bin/aitk project-state gate --format block` (with
+`--evidence`, `--next`, `--strength`) prints the others. A review `PASS`
+counts only with its evidence: `--result <model-run envelope>` for the
+reviewer lanes, or `--exception zero-logic|micro-fix` on a passing
+verification run. A `USER_DECISION` adds the adjudication package: the two or
+three options, what each costs, the evidence that could not settle it, and a
+recommendation.

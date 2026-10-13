@@ -4,7 +4,7 @@ Follow the structural rules in [../SKILL.md](../SKILL.md). Lead with whether the
 
 ```markdown
 ## Fix-Bug Complete
-[1–2 lines answering the user's original question: what's fixed, confidence level]
+[1–2 lines answering the user's original question: what's fixed]
 
 ### What was fixed
 - [Specific behavior change — what the user or system does differently now]

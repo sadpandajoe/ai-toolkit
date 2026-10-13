@@ -2,7 +2,7 @@
 
 Every case here is a malformed or drifted declaration that must become a problem
 string rather than a traceback or a quiet default: boundary shape, lens menus, the
-per-domain lens floor, the dispatch marker inventory, and the exemption list.
+per-domain lens floor, and the route marker inventory.
 """
 
 from __future__ import annotations
@@ -11,21 +11,35 @@ from pathlib import Path
 import json
 import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 
-from aitk.model_routing import (
-    ModelRouteError,
+from aitk.routing_manifest import (
     load_model_routing,
-    resolve_route,
-    validate_dispatch_boundaries,
     validate_model_routing,
 )
+from aitk.routing_policy import DOMAIN_SEVERITIES, ModelRouteError
+from aitk.routing_resolver import resolve_route
 
 from routing_fixtures import (
     ROOT,
     RoutingTestCase,
 )
+
+
+def _markdown_table_rows(block: str) -> list[list[str]]:
+    """Split a Markdown table into cell lists, dropping the alignment row."""
+    rows = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if all(set(cell) <= {"-", ":"} and cell for cell in cells):
+            continue
+        rows.append(cells)
+    return rows
 
 
 class RoutingManifestTests(RoutingTestCase):
@@ -34,9 +48,9 @@ class RoutingManifestTests(RoutingTestCase):
 
     def test_missing_marker_fails_closed_on_the_dispatch_path(self) -> None:
         # `validate_dispatch_boundaries` catches a missing marker at check time,
-        # but `resolve_route` is the dispatch path. Without its own guard the
-        # closure silently shrinks to the seeds and still hands back a
-        # launchable route, so a worker runs without the contracts it needs.
+        # but `resolve_route` is the dispatch path. Without its own guard it
+        # would hand back a launchable route for a lane the prose no longer
+        # dispatches.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copytree(ROOT / "rules", root / "rules")
@@ -51,61 +65,35 @@ class RoutingManifestTests(RoutingTestCase):
             with self.assertRaisesRegex(ModelRouteError, "missing route marker"):
                 resolve_route(root, "deep-review", "claude", "review.code-judo")
 
-    def test_declared_lens_menu_and_dispatch_prose_must_agree(self) -> None:
-        # The menu used to be implicit: whatever the span linked was a lens.
-        # Declaring it in the manifest only helps if the two are held together,
-        # and each direction of drift fails differently — a manifest-only lens
-        # cannot be dispatched, a prose-only lens is silently demoted to a
-        # shared dependency and reaches every worker at once. Neither shows up
-        # in a passing route resolution.
+    def test_route_markers_and_boundaries_stay_a_bijection(self) -> None:
+        """Each boundary's marker appears once at its path; fenced examples do not count."""
+        marker = "<!-- aitk-model-route:review.code-judo -->"
+        relative = "skills/review/references/code-judo.md"
         with tempfile.TemporaryDirectory() as directory:
             root = self.fixture(directory)
-            manifest = root / "interfaces/model-routing.json"
-            payload = json.loads(manifest.read_text())
-            boundary = next(
-                item
-                for item in payload["dispatch_boundaries"]
-                if item["id"] == "review.pr-deep-lenses"
-            )
-            self.assertEqual([], validate_dispatch_boundaries(root, payload))
-            lens = "skills/review/references/adversarial.md"
-
-            declared_only = json.loads(manifest.read_text())
-            document = root / "skills/review/references/pr-review.md"
+            document = root / relative
             original = document.read_text()
-            document.write_text(
-                original.replace("[adversarial.md](adversarial.md) for security sensitivity", "adversarial for security sensitivity", 1)
-            )
-            problems = validate_dispatch_boundaries(root, declared_only)
-            self.assertIn(
-                f"declared lens is not linked in the dispatch span: "
-                f"review.pr-deep-lenses/{lens}",
-                problems,
-            )
-            document.write_text(original)
-
-            prose_only = json.loads(manifest.read_text())
-            for item in prose_only["dispatch_boundaries"]:
-                if item["id"] == "review.pr-deep-lenses":
-                    item["lenses"] = [
-                        value for value in item["lenses"] if value != lens
-                    ]
-            problems = validate_dispatch_boundaries(root, prose_only)
-            self.assertIn(
-                f"reviewer lens linked in the dispatch span but not declared: "
-                f"review.pr-deep-lenses/{lens}",
-                problems,
-            )
-            # And the menu is what `--lens` resolves against: a lens missing from
-            # it is unroutable rather than mis-scoped.
-            with self.assertRaisesRegex(ModelRouteError, "is not named at boundary"):
-                resolve_route(
-                    root,
-                    "deep-review",
-                    "claude",
-                    boundary["id"],
-                    lens="skills/plan-review/references/implementation.md",
-                )
+            self.assertEqual(1, original.count(marker))
+            cases = {
+                "duplicate": (
+                    original + f"\n{marker}\n",
+                    f"unknown, misplaced, or duplicate route marker: {relative}/review.code-judo",
+                ),
+                "unknown": (
+                    original + "\n<!-- aitk-model-route:review.not-declared -->\n",
+                    f"unknown, misplaced, or duplicate route marker: {relative}/review.not-declared",
+                ),
+                "fenced only": (
+                    original.replace(marker, f"```markdown\n{marker}\n```"),
+                    f"missing route marker: {relative}/review.code-judo",
+                ),
+            }
+            for name, (text, expected) in cases.items():
+                with self.subTest(case=name):
+                    document.write_text(text)
+                    self.assertIn(expected, validate_model_routing(root))
+            document.write_text(original + f"\n```markdown\n{marker}\n```\n")
+            self.assertEqual([], validate_model_routing(root))
 
     def test_a_menu_may_not_quietly_drop_a_floor_lens(self) -> None:
         """Per-boundary, not union-wide.
@@ -125,7 +113,7 @@ class RoutingManifestTests(RoutingTestCase):
             for identifier, dropped in (
                 ("review.pr-deep-lenses", "skills/review/references/adversarial.md"),
                 ("review.deep-lenses", "skills/review/references/deep-quality.md"),
-                ("review.deep-lenses", "skills/plan-review/references/architecture.md"),
+                ("review.deep-lenses", "skills/review/references/architecture.md"),
             ):
                 with self.subTest(boundary=identifier, dropped=dropped):
                     payload = json.loads(pristine)
@@ -197,7 +185,7 @@ class RoutingManifestTests(RoutingTestCase):
                 ("review.pr-deep-lenses", {"lenses": []}),
                 # A well-formed menu on a lane that declares no domain.
                 (
-                    "cherry-pick.scope-leak-review",
+                    "cherry-pick.validate-scope-leak",
                     {
                         "lenses": [
                             "skills/review/references/adversarial.md",
@@ -218,40 +206,17 @@ class RoutingManifestTests(RoutingTestCase):
                         load_model_routing(root)
             manifest.write_text(pristine)
 
-    def test_both_lens_floors_are_required_and_pinned_in_policy(self) -> None:
-        """Optional floors are floors that delete themselves.
+    def test_both_lens_floors_are_required(self) -> None:
+        """An empty or missing floor map is a problem, not a floor that deleted itself.
 
-        Both maps returned "no problems" for `null` and for `{}`, and neither
-        compared against anything, so every guarantee they encode could be
-        removed by deleting the line that states it — an empty map, a dropped
-        domain, a deleted lens entry. None of those reads as a behaviour change
-        in a diff, and all three validated. The pins in `routing_policy.py` make
-        the manifest answerable to a second copy, the way the route table already
-        is, and the two comparisons run in opposite directions because the two
-        floors fail in opposite directions: a route floor is breached by
-        *widening* (the expensive lens becomes cheap), a menu floor by
-        *narrowing* (the lane becomes unreachable).
+        The floors are data in the manifest; what each one says is reviewed
+        there, so only their presence and shape are checked here.
         """
-        adversarial = "skills/review/references/adversarial.md"
         cases = (
             (lambda p: p.update(lens_routes={}), "lens_routes must not be empty"),
             (lambda p: p.update(lens_routes=None), "lens_routes must be an object"),
-            (
-                lambda p: p["lens_routes"].pop(adversarial),
-                f"lens route floor for {adversarial} must stay within",
-            ),
-            (
-                lambda p: p["lens_routes"].__setitem__(
-                    adversarial, ["review", "deep-review"]
-                ),
-                f"lens route floor for {adversarial} must stay within",
-            ),
             (lambda p: p.update(lens_floors={}), "lens_floors must not be empty"),
             (lambda p: p.update(lens_floors=None), "lens_floors must be an object"),
-            (
-                lambda p: p["lens_floors"]["code"].remove(adversarial),
-                "lens floor for code drops pinned lenses",
-            ),
         )
         with tempfile.TemporaryDirectory() as directory:
             root = self.fixture(directory)
@@ -263,6 +228,33 @@ class RoutingManifestTests(RoutingTestCase):
                     payload = json.loads(pristine)
                     mutate(payload)
                     manifest.write_text(json.dumps(payload))
+                    with self.assertRaisesRegex(ModelRouteError, re.escape(expected)):
+                        load_model_routing(root)
+            manifest.write_text(pristine)
+            self.assertEqual([], validate_model_routing(root))
+
+    def test_every_route_pins_an_explicit_effort(self) -> None:
+        """D16: a route names its effort; a missing, unknown or `max` effort fails."""
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        for route in payload["routes"]:
+            with self.subTest(route=route["name"]):
+                self.assertIn(route.get("effort"), ("low", "medium", "high", "xhigh"))
+        resolved = resolve_route(ROOT, "review", provider="codex", boundary="review.independent")
+        self.assertEqual("high", resolved.effort)
+        cases = (
+            (lambda p: p["routes"][0].pop("effort"), "invalid model route entry"),
+            (lambda p: p["routes"][0].update(effort="max"), "effort must be one of"),
+            (lambda p: p["routes"][0].update(effort="extreme"), "effort must be one of"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            for mutate, expected in cases:
+                with self.subTest(expected=expected):
+                    mutated = json.loads(pristine)
+                    mutate(mutated)
+                    manifest.write_text(json.dumps(mutated))
                     with self.assertRaisesRegex(ModelRouteError, re.escape(expected)):
                         load_model_routing(root)
             manifest.write_text(pristine)
@@ -293,7 +285,7 @@ class RoutingManifestTests(RoutingTestCase):
             self.assertEqual([], validate_model_routing(root))
             for identifier, lens in (
                 ("review.pr-batch", "skills/review/references/adversarial.md"),
-                ("review.pr-batch", "skills/plan-review/references/architecture.md"),
+                ("review.pr-batch", "skills/review/references/architecture.md"),
             ):
                 with self.subTest(boundary=identifier, lens=lens):
                     payload = json.loads(pristine)
@@ -321,6 +313,114 @@ class RoutingManifestTests(RoutingTestCase):
             self.assertEqual([], validate_model_routing(root))
             manifest.write_text(pristine)
 
+    def test_every_lane_declares_a_well_formed_contract_list(self) -> None:
+        """The list is the worker's whole contract, so it must exist and be sane.
+
+        Nothing is inherited from the boundary document any more: a lane with no
+        list would dispatch a worker with no instructions, and a list that names
+        a parent-only file hands the worker the orchestration it must never do.
+        """
+        cases = (
+            (lambda b: b.pop("contracts"), "invalid dispatch boundary contracts: review.independent"),
+            (lambda b: b.update(contracts=[]), "invalid dispatch boundary contracts: review.independent"),
+            (
+                lambda b: b.update(contracts=["rules/severity.md", "rules/severity.md"]),
+                "invalid dispatch boundary contracts: review.independent",
+            ),
+            (lambda b: b.update(contracts=["rules/severity.txt"]), "invalid dispatch boundary contracts: review.independent"),
+            (lambda b: b.update(contracts=["../rules/severity.md"]), "invalid dispatch boundary contracts: review.independent"),
+            (lambda b: b.update(contracts=["README.md"]), "invalid dispatch boundary contracts: review.independent"),
+            (
+                lambda b: b.update(contracts=["rules/no-such-contract.md"]),
+                "missing required boundary contract: review.independent: rules/no-such-contract.md",
+            ),
+            (
+                lambda b: b["contracts"].append("rules/model-assignment.md"),
+                "review.independent hands its worker a parent-only contract: rules/model-assignment.md",
+            ),
+            (
+                lambda b: b["contracts"].append("rules/gates.md"),
+                "review.independent hands its worker a parent-only contract: rules/gates.md",
+            ),
+            (
+                lambda b: b["contracts"].append("skills/review/references/local-review.md"),
+                "review.independent hands its worker a parent-only contract: skills/review/references/local-review.md",
+            ),
+            (
+                lambda b: b["contracts"].append("skills/pm/references/project-first.md"),
+                "review.independent hands a critic a contract that sends it to PROJECT.md",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            # No shipped contract tells its reader to open PROJECT.md first any
+            # more, so the fixture carries one.
+            (root / "skills/pm/references/project-first.md").write_text(
+                "# Brief review\n\nIf PROJECT.md exists, read it first.\n"
+            )
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            self.assertEqual([], validate_model_routing(root))
+            for mutate, expected in cases:
+                with self.subTest(expected=expected):
+                    payload = json.loads(pristine)
+                    mutate(
+                        next(
+                            item
+                            for item in payload["dispatch_boundaries"]
+                            if item["id"] == "review.independent"
+                        )
+                    )
+                    manifest.write_text(json.dumps(payload))
+                    with self.assertRaisesRegex(ModelRouteError, re.escape(expected)):
+                        load_model_routing(root)
+            # The routing policy is parent-only on an implementation lane too;
+            # the gate rules are refused only to critics.
+            payload = json.loads(pristine)
+            implementation = next(
+                item
+                for item in payload["dispatch_boundaries"]
+                if item["id"] == "workflows.fix-bug-implementation"
+            )
+            implementation["contracts"].append("rules/specialist-handoff.md")
+            manifest.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(
+                ModelRouteError,
+                "fix-bug-implementation hands its worker a parent-only contract",
+            ):
+                load_model_routing(root)
+            implementation["contracts"][-1] = "rules/gates.md"
+            manifest.write_text(json.dumps(payload))
+            self.assertEqual([], validate_model_routing(root))
+            manifest.write_text(pristine)
+
+    def test_route_tool_boxes_are_pinned(self) -> None:
+        """A tool box is widened by an edit to the policy, never by the manifest alone."""
+        def route(payload: dict[str, object], name: str) -> dict[str, object]:
+            return next(item for item in payload["routes"] if item["name"] == name)
+
+        cases = (
+            (lambda p: route(p, "review").pop("tools"), "invalid model route entry"),
+            (lambda p: route(p, "review")["tools"].append("Edit"), "review: tools do not match policy"),
+            (lambda p: route(p, "planning")["tools"].append("Bash(git push *)"), "planning: tools must be"),
+            (lambda p: route(p, "rca")["tools"].append("Bash"), "rca: tools do not match policy"),
+            (lambda p: route(p, "implementation").update(tools=[]), "implementation: tools must be"),
+            (lambda p: route(p, "operations")["tools"].append("Read"), "operations: tools must be"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            for mutate, expected in cases:
+                with self.subTest(expected=expected):
+                    payload = json.loads(pristine)
+                    mutate(payload)
+                    manifest.write_text(json.dumps(payload))
+                    with self.assertRaisesRegex(ModelRouteError, re.escape(expected)):
+                        load_model_routing(root)
+            manifest.write_text(pristine)
+            self.assertEqual([], validate_model_routing(root))
+
     def test_malformed_manifest_is_a_stable_route_error(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
@@ -336,7 +436,6 @@ class RoutingManifestTests(RoutingTestCase):
                 item for item in payload["routes"] if item["name"] == "review"
             )["providers"]["claude"].update({"disallowed_tools": [{}]}),
             lambda payload: payload["dispatch_boundaries"][0].update({"routes": [{}]}),
-            lambda payload: payload["dispatch_boundaries"][0].update({"count": True}),
             # A pinned floor is read from the raw payload, so its members are
             # whatever the file says. Comparing it as a set before checking the
             # members are strings crashed on the nested form instead of
@@ -356,32 +455,156 @@ class RoutingManifestTests(RoutingTestCase):
                 path.write_text(json.dumps(payload))
                 self.assertTrue(validate_model_routing(root))
 
-    def test_new_dispatch_requires_an_inventoried_marker(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            path = root / "skills/review/references/new-dispatch.md"
-            path.write_text("# New\n\nSpawn reviewer agents now.\n")
-            problems = validate_model_routing(root)
-            self.assertTrue(
-                any("unmarked model dispatch boundary" in item for item in problems),
-                problems,
-            )
+    def test_a_route_family_must_exist_in_the_provider_catalog(self) -> None:
+        """A route names a model family; one the catalog lacks fails closed."""
+        cases = (("codex", "nova"), ("claude", "haiku"), ("codex", "opus"))
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.fixture(directory)
+            manifest = root / "interfaces/model-routing.json"
+            pristine = manifest.read_text()
+            for provider, family in cases:
+                with self.subTest(provider=provider, family=family):
+                    mutated = json.loads(pristine)
+                    route = mutated["routes"][0]
+                    route["providers"][provider]["model"] = family
+                    manifest.write_text(json.dumps(mutated))
+                    expected = f"{route['name']}/{provider}: invalid route controls"
+                    self.assertIn(expected, validate_model_routing(root))
+            manifest.write_text(pristine)
+            self.assertEqual([], validate_model_routing(root))
 
-    def test_mid_sentence_and_extension_dispatches_are_scanned(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            core = root / "skills/review/references/new-mid-sentence.md"
-            core.write_text("# New\n\nThe orchestrator spawns reviewer agents now.\n")
-            extension = root / "extensions/pgm/skills/pgm/references/new-dispatch.md"
-            extension.write_text(
-                "# New\n\nSend this work to implementation subagents.\n"
-            )
-            problems = validate_model_routing(root)
-            unmarked = [
-                item for item in problems if "unmarked model dispatch boundary" in item
+    def test_model_selectors_live_only_in_their_owned_homes(self) -> None:
+        """Standing rule 6: a volatile selector is written down in few places.
+
+        The catalog's selectors may appear in the manifest, the pricing table,
+        tests, the changelog, the migration notes and the generated Codex agent
+        files; anywhere else is a copy that drifts on the next model change.
+        """
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        selectors = sorted(
+            model["selector"]
+            for provider in payload["providers"].values()
+            for model in provider["models"].values()
+        )
+        allowed = re.compile(
+            r"(interfaces/model-routing\.json|aitk/pricing\.py|tests/.*|CHANGELOG\.md"
+            r"|docs/MIGRATION\.md|agents/codex/[^/]+\.toml)"
+        )
+        try:
+            listing = subprocess.run(
+                ["git", "-C", str(ROOT), "ls-files", "-z"],
+                capture_output=True,
+                check=True,
+            ).stdout.decode()
+            names = [name for name in listing.split("\0") if name]
+        except (OSError, subprocess.CalledProcessError):
+            skipped = {".git", "build", "__pycache__"}
+            names = [
+                path.relative_to(ROOT).as_posix()
+                for path in ROOT.rglob("*")
+                if path.is_file() and not skipped & set(path.relative_to(ROOT).parts)
             ]
-            self.assertEqual(2, len(unmarked), problems)
+        copies = []
+        for name in sorted(names):
+            path = ROOT / name
+            if allowed.fullmatch(name) or not path.is_file():
+                continue
+            text = path.read_bytes().decode(errors="replace")
+            copies.extend(f"{name}: {item}" for item in selectors if item in text)
+        self.assertEqual([], copies)
 
+
+    def test_every_classified_deep_lens_is_dispatchable_at_every_fan_out(self) -> None:
+        """The classifier's deep-lens table, the code floor, and every code menu agree.
+
+        v2 runs one independent reviewer by default and fans out only over the
+        conditional deep lenses. A lens the classifier can name but no menu
+        offers is a lane that gets selected and cannot run; a menu entry the
+        classifier never names is dead weight in a worker's closure.
+        """
+        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        table = re.search(
+            r"^\| Review Domain \| Trigger \| Skill \|.*?(?=\n\n)",
+            classifier,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(table, "classify-diff.md lost its Review Domain table")
+        triggerable = {
+            f"skills/{cells[2].strip('`')}"
+            for cells in _markdown_table_rows(table.group(0))
+            if cells[0] != "Review Domain"
+        }
+        for path in sorted(triggerable):
+            self.assertTrue((ROOT / path).is_file(), f"classifier names a missing lens: {path}")
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        code_floor = set(payload["lens_floors"]["code"])
+        self.assertEqual(triggerable, code_floor)
+        fanouts = [b for b in payload["dispatch_boundaries"] if b.get("lenses")]
+        self.assertTrue(fanouts, "no deep-lens fan-out boundaries left")
+        for boundary in fanouts:
+            with self.subTest(boundary=boundary["id"]):
+                self.assertEqual("code", boundary["lens_domain"])
+                self.assertEqual(["deep-review"], boundary["routes"])
+                self.assertEqual(code_floor, set(boundary["lenses"]))
+        # Plan validation is one worker with the validator contract inline; it
+        # never fans out over plan lenses, so no boundary may declare a plan menu.
+        self.assertEqual(
+            [],
+            [b["id"] for b in fanouts if b.get("lens_domain") == "plan"],
+        )
+        validate = next(b for b in payload["dispatch_boundaries"] if b["id"] == "planning.validate")
+        self.assertEqual("plan", validate["lens_domain"])
+        self.assertIn("agents/specialists/plan-validator.md", validate["contracts"])
+
+    def test_lens_finding_templates_lead_with_the_domain_severity(self) -> None:
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        menus: dict[str, set[str]] = {}
+        for boundary in payload["dispatch_boundaries"]:
+            domain = boundary.get("lens_domain")
+            if domain is not None and boundary.get("lenses"):
+                menus.setdefault(domain, set()).update(boundary["lenses"])
+        self.assertTrue(menus, "no fan-out boundary declares a lens menu")
+        checked: set[str] = set()
+        for domain, lenses in sorted(menus.items()):
+            expected = {tag.strip("[]") for tag in DOMAIN_SEVERITIES[domain]}
+            for lens in sorted(lenses):
+                text = (ROOT / lens).read_text()
+                for tag in re.findall(r"^#{2,4} \[([^\]]+)\]", text, re.MULTILINE):
+                    checked.add(lens)
+                    with self.subTest(lens=lens, tag=tag):
+                        self.assertEqual(expected, {option.strip() for option in tag.split("|")})
+        self.assertIn("skills/review/references/adversarial.md", checked)
+
+    def test_security_predicate_covers_agent_capability_surfaces(self) -> None:
+        """A change to the toolkit's own routing must classify as security-sensitive."""
+        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        bullet = re.search(
+            r"^   - \*\*Security-sensitive\*\*.*?(?=^   - \*\*)",
+            classifier,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(bullet, "classify-diff.md lost its security-sensitive flag")
+        body = bullet.group(0)
+        for category in ("agent capability configuration", "worker context assembly", "trust-boundary changes"):
+            self.assertIn(category, body.lower())
+        named = {
+            token
+            for token in re.findall(r"`([^`]+)`", body)
+            if "/" in token or re.search(r"\.[a-z]+$", token)
+        }
+        self.assertTrue(named)
+        covered: set[str] = set()
+        for signal in sorted(named):
+            matches = (
+                sorted(ROOT.glob(signal)) if any(c in signal for c in "*?[") else [ROOT / signal]
+            )
+            with self.subTest(signal=signal):
+                self.assertTrue(matches and all(m.exists() for m in matches), f"{signal} matches no real path")
+            covered |= {m.relative_to(ROOT).as_posix().rstrip("/") for m in matches}
+        for surface in ("interfaces/model-routing.json", "agents", "aitk/installer.py"):
+            self.assertIn(surface, covered)
+        layers = {p.relative_to(ROOT).as_posix() for p in ROOT.glob("aitk/routing_*.py")}
+        self.assertEqual(set(), layers - covered)
 
 if __name__ == "__main__":
     unittest.main()

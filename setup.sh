@@ -27,12 +27,27 @@ esac
 
 info "Detected OS: $OS_TYPE"
 
-# Check for Homebrew (macOS) or apt (Linux)
+# Homebrew changes the machine outside this toolkit, so its installer runs
+# only after the user says yes at a terminal.
+ensure_homebrew() {
+    command -v brew &> /dev/null && return 0
+    local answer=""
+    if [[ -t 0 ]]; then
+        read -r -p "Homebrew is not installed. Run the Homebrew installer from brew.sh now? [y/N] " answer
+    fi
+    if [[ ! "$answer" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        error "Homebrew is required to install $1 on macOS. Install it from https://brew.sh, then re-run ./setup.sh."
+        exit 1
+    fi
+}
+
+# Install a package with Homebrew (macOS) or apt/yum (Linux)
 install_package() {
     local package=$1
     if [[ "$OS_TYPE" == "macos" ]]; then
         if ! command -v brew &> /dev/null; then
-            warn "Homebrew not found. Installing..."
+            ensure_homebrew "$package"
+            warn "Installing Homebrew..."
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             # Add Homebrew to PATH for Apple Silicon
             if [[ -f "/opt/homebrew/bin/brew" ]]; then
@@ -62,14 +77,14 @@ install_node() {
     else
         warn "Node.js not found. Installing..."
         if [[ "$OS_TYPE" == "macos" ]]; then
-            brew install node
+            install_package node
         elif command -v apt-get &> /dev/null; then
-            # Debian/Ubuntu - use NodeSource
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            # Debian/Ubuntu - NodeSource, current LTS line (24.x)
+            curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
             sudo apt-get install -y nodejs
         elif command -v yum &> /dev/null; then
-            # RHEL/CentOS/Fedora - use NodeSource
-            curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+            # RHEL/CentOS/Fedora - NodeSource, current LTS line (24.x)
+            curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
             sudo yum install -y nodejs
         else
             error "No supported package manager found for Node.js"
@@ -84,17 +99,6 @@ install_node() {
         exit 1
     fi
     info "npm available: $(npm --version)"
-}
-
-# Check and install tmux
-install_tmux() {
-    if command -v tmux &> /dev/null; then
-        info "tmux already installed: $(tmux -V)"
-    else
-        warn "tmux not found. Installing..."
-        install_package tmux
-        info "tmux installed: $(tmux -V)"
-    fi
 }
 
 # Check and install Claude Code
@@ -142,7 +146,6 @@ main() {
     info "Checking core dependencies..."
     install_git
     install_node
-    install_tmux
 
     echo ""
 
@@ -154,10 +157,16 @@ main() {
     # Optional dependencies
     echo ""
     info "Checking optional dependencies..."
+    if command -v python3 &>/dev/null; then
+        info "python3 available: $(python3 --version)"
+    else
+        warn "python3 not found. bin/aitk and the git guard need Python 3.11 or newer;"
+        echo "  without it the git guard blocks git and gh commands."
+    fi
     if command -v jq &>/dev/null; then
         info "jq already installed: $(jq --version)"
     else
-        warn "jq not found. Needed for hook installation (install-hooks.sh)."
+        warn "jq not found (optional). The plan-drift and observation reminders stay silent without it."
         echo "  Install with: brew install jq (macOS) or apt-get install jq (Linux)"
     fi
 
@@ -170,10 +179,10 @@ main() {
     echo "  - git:    $(git --version 2>/dev/null || echo 'not found')"
     echo "  - node:   $(node --version 2>/dev/null || echo 'not found')"
     echo "  - npm:    $(npm --version 2>/dev/null || echo 'not found')"
-    echo "  - tmux:   $(tmux -V 2>/dev/null || echo 'not found')"
     echo "  - claude: $(command -v claude &>/dev/null && echo 'installed' || echo 'not found')"
     echo "  - codex:  $(command -v codex &>/dev/null && echo 'installed' || echo 'not found')"
-    echo "  - jq:     $(jq --version 2>/dev/null || echo 'not found (optional, needed for hooks)')"
+    echo "  - python3: $(python3 --version 2>/dev/null || echo 'not found (required)')"
+    echo "  - jq:     $(jq --version 2>/dev/null || echo 'not found (optional)')"
     echo ""
     info "API Key Setup:"
     echo "  - Claude: Run 'claude' and follow authentication prompts"

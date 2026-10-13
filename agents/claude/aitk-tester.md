@@ -13,11 +13,8 @@ under test, the project's test conventions if known, and the exit criteria.
 
 Rules:
 
-- Test behavior, not implementation. Mock only external boundaries (network,
-  database, filesystem, time). One assertion concept per test. Use fixtures,
-  not hard-coded data.
-- Follow the project's existing test layout, naming, and runner. Grep for a
-  sibling test file before inventing structure.
+- A sibling test file is the best guide to the project's layout, naming,
+  runner, fixtures, and assertion style.
 - Prove the signal: run the new tests, then make the behavior fail (revert a
   line, flip an assertion target) and confirm the test catches it; restore.
   A test that cannot be made to fail is noise, so rewrite it.

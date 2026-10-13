@@ -8,10 +8,9 @@ import re
 import tempfile
 import unittest
 
+from aitk import claude_hooks
 from aitk.build import expected_build
-from aitk.conformance import workflow_dependency_resources
-from aitk.interfaces import load_skill_interfaces
-from aitk.workflows import load_workflows, validate_workflows
+from aitk.workflows import load_skill_interfaces, load_workflows, workflow_dependency_resources
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,8 +37,8 @@ class ProviderAdapterTests(unittest.TestCase):
         manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())
         self.assertEqual("ai-toolkit", manifest["name"])
         self.assertRegex(manifest["version"], r"^\d+\.\d+\.\d+$")
-        self.assertEqual("./skills/", manifest["skills"])
-        self.assertNotIn("hooks", manifest)
+        self.assertEqual(["./skills/", "./extensions/pgm/skills/"], manifest["skills"])
+        self.assertEqual("./hooks/hooks.json", manifest["hooks"])
 
         hooks = json.loads((ROOT / "hooks/hooks.json").read_text())
         commands = [
@@ -48,7 +47,9 @@ class ProviderAdapterTests(unittest.TestCase):
             for group in groups
             for hook in group["hooks"]
         ]
-        self.assertTrue(all("$PLUGIN_ROOT/" in command for command in commands))
+        self.assertTrue(
+            all('"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/' in command for command in commands)
+        )
         self.assertTrue(
             any("prevent-project-commit.sh" in command for command in commands)
         )
@@ -58,31 +59,52 @@ class ProviderAdapterTests(unittest.TestCase):
             "prevent-project-commit.sh",
             "pre-push-validate.sh",
             "require-review-gate.sh",
-            "check-resources.sh",
             "check-plan-drift.sh",
             "observation-reminder.sh",
-            "agent-setup-edit-reminder.sh",
+            "session-start.sh",
         }
-        codex = (ROOT / "hooks/hooks.json").read_text()
-        claude = (ROOT / "install-hooks.sh").read_text()
+        on_disk = {
+            path.name
+            for path in (ROOT / "hooks").glob("*.sh")
+            if not path.name.startswith("test-")
+        }
+        self.assertEqual(productive, on_disk)
 
-        for script in productive:
-            with self.subTest(script=script):
-                self.assertIn(script, codex)
-                self.assertIn(script, claude)
+        # hooks/hooks.json is the single registration source: both plugins read
+        # it, and `bin/aitk install` writes the same entries, minus the
+        # plugin-only SessionStart hook, into Claude Code settings with the
+        # absolute toolkit root.
+        hooks = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
+        registered = {
+            re.search(r"/hooks/([\w.-]+\.sh)", handler["command"]).group(1)
+            for groups in hooks.values()
+            for group in groups
+            for handler in group["hooks"]
+        }
+        self.assertEqual(productive, registered)
+        self.assertEqual(
+            ["session-start.sh"],
+            [
+                re.search(r"/hooks/([\w.-]+\.sh)", handler["command"]).group(1)
+                for group in hooks["SessionStart"]
+                for handler in group["hooks"]
+            ],
+        )
+        settings_hooks = {event: groups for event, groups in hooks.items() if event != "SessionStart"}
+        claude = claude_hooks.desired_hooks(ROOT)
+        self.assertEqual(
+            json.loads(
+                json.dumps(settings_hooks).replace("${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}", str(ROOT))
+            ),
+            claude,
+        )
 
-        hooks = json.loads(codex)["hooks"]
-        posttool_matcher = hooks["PostToolUse"][0]["matcher"]
-        for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"):
-            self.assertIn(tool, posttool_matcher)
 
     def test_internal_codex_skills_disable_implicit_routing(self) -> None:
         internal = (
             "debug",
             "feedback",
             "implement-change",
-            "metrics-emit",
-            "plan-review",
             "planning",
             "pm",
             "pr-watch",
@@ -105,26 +127,6 @@ class ProviderAdapterTests(unittest.TestCase):
         public = (ROOT / "skills/workflows/agents/openai.yaml").read_text()
         self.assertIn("$workflows", public)
 
-    def test_edit_reminder_accepts_codex_apply_patch_payloads(self) -> None:
-        payload = json.dumps(
-            {
-                "tool_name": "apply_patch",
-                "tool_input": {
-                    "patch": "*** Update File: /tmp/repo/skills/review/SKILL.md\n"
-                },
-            }
-        )
-        result = subprocess.run(
-            ["bash", str(ROOT / "hooks/agent-setup-edit-reminder.sh")],
-            input=payload,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(0, result.returncode)
-        self.assertIn("systemMessage", result.stdout)
-        self.assertIn("shared skills are canonical", result.stdout)
-
     def test_built_guidance_reaches_each_provider_binding(self) -> None:
         expected = expected_build(ROOT)
         claude = expected[Path("build/config/CLAUDE.md")]
@@ -139,9 +141,7 @@ class ProviderAdapterTests(unittest.TestCase):
                 self.assertIn(expected_rule, claude)
                 self.assertIn(expected_rule, codex)
         for provider in ("claude", "codex"):
-            document = ROOT / f"config/providers/{provider}.md"
-            self.assertTrue(document.is_file())
-            self.assertIn("capability bindings", document.read_text().lower())
+            self.assertTrue((ROOT / f"config/providers/{provider}.md").is_file())
 
     def test_dependencies_resolve_from_source_link_and_isolated_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -193,7 +193,6 @@ class ProviderAdapterTests(unittest.TestCase):
 
             resolved: dict[str, dict[str, tuple[tuple[str, str], ...]]] = {}
             for repository in (source_root, plugin):
-                self.assertEqual([], validate_workflows(repository))
                 workflows = load_workflows(repository)
                 repository_map: dict[str, tuple[tuple[str, str], ...]] = {}
                 for workflow in workflows:
@@ -231,24 +230,11 @@ class ProviderAdapterTests(unittest.TestCase):
                         "archive-project-file",
                         "skills/archive-project-file/SKILL.md",
                     ),
-                    ("metrics-emit", "skills/metrics-emit/SKILL.md"),
                     (
                         "reflection",
                         "skills/reflection/references/observations.md",
                     ),
                     ("reporting", "skills/reporting/SKILL.md"),
-                    (
-                        "reporting",
-                        "skills/reporting/templates/complete-project-final.md",
-                    ),
-                    (
-                        "reporting",
-                        "skills/reporting/templates/complete-project-metrics.md",
-                    ),
-                    (
-                        "reporting",
-                        "skills/reporting/templates/complete-project-summary.md",
-                    ),
                 },
                 set(resolved[source_root.name]["complete-project"]),
             )
@@ -256,47 +242,6 @@ class ProviderAdapterTests(unittest.TestCase):
                 sum(len(items) for items in resolved[source_root.name].values()),
                 0,
             )
-
-    def test_plugin_distribution_matches_public_skill_support_scope(self) -> None:
-        manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())
-        support = json.loads((ROOT / "interfaces/support.json").read_text())
-        plugin_root = ROOT / str(manifest["skills"])
-        public = [
-            entry
-            for entry in load_skill_interfaces(ROOT)
-            if entry["classification"] in {"public_router", "public_direct"}
-        ]
-
-        self.assertIn("codex-plugin", support["distributions"])
-        for entry in public:
-            path = Path(str(entry["path"]))
-            if path.parts[0] == "skills":
-                self.assertTrue(
-                    (plugin_root / path.relative_to("skills") / "SKILL.md").is_file()
-                )
-        pgm = next(entry for entry in public if entry["name"] == "pgm")
-        self.assertEqual("extensions", Path(str(pgm["path"])).parts[0])
-        self.assertEqual(["source-linked"], support["extension_distributions"]["pgm"])
-
-    def test_ci_matrix_exactly_covers_the_declared_support_window(self) -> None:
-        support = json.loads((ROOT / "interfaces/support.json").read_text())
-        workflow = (ROOT / ".github/workflows/validate.yml").read_text()
-        os_match = re.search(r"(?m)^\s*os:\s*\[([^]]+)\]", workflow)
-        python_match = re.search(r"(?m)^\s*python-version:\s*\[([^]]+)\]", workflow)
-        self.assertIsNotNone(os_match)
-        self.assertIsNotNone(python_match)
-        matrix_os = {item.strip().strip("\"'") for item in os_match.group(1).split(",")}
-        matrix_python = {
-            item.strip().strip("\"'") for item in python_match.group(1).split(",")
-        }
-        minimum = int(str(support["python"]["minimum"]).split(".")[1])
-        maximum = int(str(support["python"]["maximum"]).split(".")[1])
-
-        self.assertEqual(set(support["operating_systems"]), matrix_os)
-        self.assertEqual(
-            {f"3.{minor}" for minor in range(minimum, maximum + 1)},
-            matrix_python,
-        )
 
 
 if __name__ == "__main__":

@@ -1,112 +1,107 @@
 # Batch Cherry-Pick Flow
 
-When multiple PRs/SHAs are provided, the main agent acts as a **thin
-orchestrator**. It owns ordering, dependency tracking, user decisions,
-checkpoint boundaries, and final synthesis. It must not accumulate raw
-per-cherry context.
-
-**Invariant: each cherry must start with clean context.** Use isolation that
-prevents cherry N from inheriting earlier diffs and decisions.
+When multiple PRs/SHAs are provided, the main agent is a **thin
+orchestrator**: it owns ordering, dependency tracking, user decisions,
+checkpoints and final synthesis, and does not accumulate raw per-cherry
+context. **Each cherry starts with clean context**, so cherry N never inherits
+earlier diffs and decisions.
 
 ## Deterministic Batch Pre-Flight
 
-Before deep investigation, run a deterministic pre-flight over the full list
-and write compact results into `CHERRY_PICK.md`. Put any unavoidable raw
-sidecar under a workspace-local ignored path and reference it from the manifest.
+Before deep investigation, run the pre-flight over the full list and write its
+rows into `CHERRY_PICK.md`:
 
-Gather, when applicable:
+```bash
+<skill-dir>/scripts/batch-preflight.sh <target-branch> <pr-number | #pr | sha>...
+```
 
-- PR title, merge state, merge commit, and base/head refs
-- source SHA(s) resolved from PRs
-- already-applied evidence on the target branch, preferring exact `-x` markers;
-  PR number/title matches are advisory without source-SHA evidence
-- obvious not-merged or missing-merge-commit cases
-- touched files and overlap signals for dependency ordering
+It prints one TSV row per request (`status`, `request`, `pr`, `sha`, `parents`,
+`evidence`, `title`) from `gh pr view --json` and the target's history. PR rows
+need `gh`; SHA rows need only git.
 
-Sort rows into:
+**The one "already applied" evidence rule:** a request is present on the target
+when the target's first-parent history carries its PR number (not since
+reverted) or a target commit carries its `cherry picked from commit <sha>`
+marker. A matching title is advisory only (`title-match (advisory)`); it never
+skips a row on its own.
 
-- `ALREADY_APPLIED` — skip only with exact source-SHA evidence or an explicit
-  manifest decision
-- `NOT_MERGED` — record `Skipped/NOT_MERGED`, continue independent rows, and
-  report it; never auto-pick an unmerged head
-- `NEEDS_INVESTIGATION` — run investigate/gate
-- `PREFLIGHT_BLOCKED` — missing PR, target, auth, or unambiguous source
+- `ALREADY_APPLIED`: present by that rule; skip, or record an explicit
+  manifest decision to pick it again.
+- `NOT_MERGED`: record `Skipped/NOT_MERGED`, continue independent rows, and
+  report it; never auto-pick an unmerged head.
+- `NEEDS_INVESTIGATION`: run investigate/gate.
+- `PREFLIGHT_BLOCKED`: missing PR, unknown SHA, unfetched merge commit, or a
+  `gh`/git failure.
 
-Do not spend model work re-discovering facts already in the pre-flight table.
+The `parents` column is the source commit's parent count: 2 or more is a merge
+commit ([apply.md](apply.md)). Do not spend model work re-discovering facts
+already in the table.
 
-## Durable Batch Manifest
+## Ordering
 
-For 10+ changes, or any run with meaningful dependencies, expected conflicts,
-or several intervention points, create or update local `CHERRY_PICK.md` from
-[the manifest template](../templates/cherry-pick-manifest.md).
+Run `<skill-dir>/scripts/batch-deps.sh --source <source-branch> --target
+<target-branch> <sha>...` over the `NEEDS_INVESTIGATION` rows. It lists each
+SHA's files (a merge against its first parent), the pairs sharing files, the
+order by position on the source branch's first-parent line, and the fully
+independent SHAs.
 
-`PROJECT.md` points only to the target branch, current phase, next wave, and
-manifest path. `CHERRY_PICK.md` owns the execution table, waves, dependencies,
-per-cherry validation, conflicts, user decisions, and compact handoffs.
+- Build the graph from shared-file pairs and sort topologically in
+  first-parent order.
+- That order is valid only if no later commit reverts or replaces what an
+  earlier one touched. Inspect each pair where the later commit is a
+  `revert`, `chore: remove` or `refactor` of the earlier one's code, and swap
+  them when the hunks allow: if A modifies file F and B later removes it,
+  applying B first lets A apply against the post-removal state. Merge order
+  never shows this; only file overlap does.
+- Flag circular dependencies or ambiguous prerequisite chains for a user
+  decision.
+- Independent rows may be investigated in parallel, by the parent or one
+  `aitk-debugger` agent per independent island; application on the target
+  stays sequential.
 
-Keep rows short (no more than three lines per cell). Store no full diffs, raw
-logs, or worker transcripts. Never commit `CHERRY_PICK.md`; keep it ignored at
-the workspace root. Update it before every checkpoint/reset and resume from its
-active row or wave rather than chat history.
+## Manifest and Waves
 
-## Wave Size Policy
+For 10+ changes, or any run with meaningful dependencies, expected conflicts
+or several intervention points, keep `CHERRY_PICK.md` from
+[the manifest template](../templates/cherry-pick-manifest.md); it is the only
+row schema and holds the handoff format (Subagent Handoffs). `PROJECT.md`
+points only to the target branch, current phase, next wave and manifest path.
+Never commit `CHERRY_PICK.md`; keep it ignored at the workspace root, update it
+before every checkpoint, and resume from its active row or wave.
 
-Wave size never weakens per-cherry validation or publish authorization.
-
-| Case | Wave size |
-|------|----------:|
-| Tiny independent fixes | 5 |
-| Normal bug fixes | 3 |
-| Cross-cutting changes | 1 |
-| Expected conflicts | 1 |
-| Dependency chain | 1 sequentially |
-| Clean mechanical backports | 5-8 only if validation is cheap |
-
-Investigate, gate, or plan independent changes in parallel when useful. Apply
-on the target branch in dependency-safe sequence unless isolated worktrees and
-an explicit fan-in plan make parallel mutation safe.
-
-## Worker Handoff Contract
-
-Each per-cherry or per-wave worker returns only:
-
-- PR/SHA and source commit(s)
-- target commit SHA after apply
-- result: `Applied` / `Partial` / `Blocked` / `Rejected` / `Skipped`
-- conflicts: `none` or a compact summary
-- scope audit: `CLEAN` / `LEAKED-REVERTED` / `ESCALATED`
-- validation label: `Tested` / `Checked` / `Build-only` / `Structural` / `Not run`
-- push status: `pushed` / `pending authorization` / `deferred by request`
-- commands run, residual risk, and dependency implications
-- unblock candidates for blocked/rejected rows, or `none` with a reason
-
-No full diffs or long logs unless blocked. Point to evidence paths or return the
-shortest decisive excerpt.
+Group rows into waves. Prefer small waves, down to one row, when conflicts,
+shared files, dependency manifests, migrations, generated files or API-shape
+changes appear, and for dependency chains; larger waves only for independent,
+cheaply validated backports. Wave size never weakens per-cherry validation or
+the per-cherry push.
 
 ## Execution
 
-1. Run [batch sequence planning](batch-sequence.md).
-2. Dispatch after pre-flight and per-cherry gating:
-   - `ALREADY_APPLIED`, `NOT_MERGED`, and `PREFLIGHT_BLOCKED` get no workers.
-   - TRIVIAL scope audits use `review`; NON-TRIVIAL audits use `deep-review`.
-   - Every other worker uses the stable route at its inventoried dispatch
-     marker; difficulty never selects an undeclared model tier.
-   - Mutating workers use isolated worktrees/branches or return patch-only
-     output. Headless application is limited to TRIVIAL, independent rows with
-     the [headless contract](headless-trivial.md).
-3. Run the full single-cherry flow for each row. Replay any isolated result onto
-   the live target branch in order, then rerun scope audit and assigned
-   validation before marking it Applied or pushing.
-4. Emit the per-cherry push-boundary block before dispatching a dependent row.
-   Stop dependent work when push is pending or deferred; independent islands
-   may continue.
-5. Keep status in the execution table or manifest. Stop dependent rows after a
-   failure; independent rows may continue.
-6. Surface escalations and produce a final report covering both pushed and
+1. `ALREADY_APPLIED`, `NOT_MERGED` and `PREFLIGHT_BLOCKED` rows get no
+   workers.
+2. Run the full single-cherry flow for each row. Mutating work runs in an
+   isolated worktree or returns patch-only output; context isolation alone is
+   not filesystem isolation.
+3. Replay any isolated result onto the live target branch in order, then rerun
+   the scope audit and the assigned validation there before marking it
+   `Applied` or pushing.
+4. Fill each row's Push cell before starting a dependent row; stop dependent
+   rows after a failure or a pending push, while independent rows continue.
+5. Workers never own shared-branch ordering or the push.
+6. Surface escalations and produce one final report covering pushed and
    pending cherries.
 
-Workers never own final shared-branch ordering or push unless a run-specific
-grant says so. Context isolation alone is not filesystem isolation.
+With `--plan-only`, run pre-flight, ordering and per-cherry investigate/gate,
+and produce the table without applying anything.
 
-With `--plan-only`, run sequence plus per-cherry investigate/gate and produce
-the execution table without applying changes.
+## Headless Mode (experimental)
+
+A TRIVIAL, independent row may run on the native implementer agent
+(`aitk-implementer`) headless. Validate the mode on one cherry in a repo before
+fanning out. Preconditions: no dependency chain, shared API, migration,
+generated file, auth, routing or lockfile risk; an isolated worktree or clone,
+or patch-only output; target, source SHA, validation expectation and output
+path recorded in `CHERRY_PICK.md`; for a merge commit, pre-flight confirmed
+parent 1 is the target-base side, otherwise `Blocked: merge parent ambiguous`.
+Any conflict returns `Blocked: conflict`; headless mode never adapts. A
+headless result is a candidate, not success: step 3 above still applies.

@@ -1,0 +1,418 @@
+"""`bin/aitk cost [period]`: token usage and estimated cost from local sessions.
+
+Reads Claude Code transcripts under `~/.claude/projects/` (Codex keeps no
+equivalent usage records, so the report is Claude-only). Rates come from
+`aitk/pricing.py`: a model without a known price, or a promotional model
+without a valid record timestamp, stays unpriced rather than guessed.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from datetime import date as calendar_date, datetime, timedelta
+import glob
+import json
+import os
+from pathlib import Path
+
+from .pricing import compute_cost, get_pricing
+
+__all__ = (
+    "aggregate_by_date",
+    "compute_cost",
+    "get_pricing",
+    "main",
+    "parse_one_session",
+    "parse_sessions",
+    "since_for",
+)
+
+# ANSI colors
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
+
+
+def session_files(proj_path):
+    """Group a project's transcripts by session: the session file first, then
+    its subagent transcripts (`<session-id>/subagents/*.jsonl`)."""
+    groups = defaultdict(list)
+    for path in sorted(glob.glob(os.path.join(proj_path, "*.jsonl"))):
+        groups[Path(path).stem].append(path)
+    for path in sorted(glob.glob(os.path.join(proj_path, "*", "subagents", "*.jsonl"))):
+        groups[Path(path).parent.parent.name].append(path)
+    return groups
+
+
+def parse_sessions(base_dir, since=None):
+    """Parse all session JSONL files, return per-session aggregated data.
+
+    Subagent transcripts count toward their parent session. A usage record
+    repeated under the same `(message.id, requestId)`, in one file or across
+    files, is counted once.
+    """
+    sessions = []
+    seen = set()
+    for proj_dir in sorted(os.listdir(base_dir)):
+        proj_path = os.path.join(base_dir, proj_dir)
+        if not os.path.isdir(proj_path):
+            continue
+        for paths in session_files(proj_path).values():
+            try:
+                session = parse_one_session(
+                    paths[0], proj_dir, since, seen=seen, extra_paths=paths[1:]
+                )
+                if session and session["messages"] > 0:
+                    sessions.append(session)
+            except Exception:
+                pass
+    return sessions
+
+
+def usage_key(obj, msg):
+    """Identity of one API response: `(message.id, requestId)`, or None."""
+    key = (msg.get("id"), obj.get("requestId"))
+    return None if key == (None, None) else key
+
+
+def iter_records(paths):
+    for path in paths:
+        with open(path) as f:
+            for line in f:
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+
+def parse_one_session(path, project, since, seen=None, extra_paths=()):
+    """Parse one session JSONL file plus any extra (subagent) files.
+
+    `seen` holds the usage keys already counted; pass one set across calls to
+    deduplicate across sessions.
+    """
+    if seen is None:
+        seen = set()
+    totals = defaultdict(
+        lambda: {
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "cache_create": 0,
+            "cost": 0.0,
+            "messages": 0,
+            "unpriced": 0,
+        }
+    )
+    dates = set()
+    first_ts = None
+    last_ts = None
+    session_id = None
+    message_count = 0
+
+    for obj in iter_records([path, *extra_paths]):
+        if not isinstance(obj, dict):
+            continue
+        ts_str = obj.get("timestamp", "")
+        if not session_id:
+            session_id = obj.get("sessionId")
+
+        msg = obj.get("message", {})
+        if not isinstance(msg, dict) or "usage" not in msg:
+            continue
+
+        # One API response can be written as several records (one per content
+        # block), each repeating the same usage; count it once.
+        key = usage_key(obj, msg)
+        if key is not None:
+            if key in seen:
+                continue
+            seen.add(key)
+
+        # Parse timestamp
+        date = ts_str[:10] if ts_str else None
+        if date and since and date < since:
+            continue
+
+        if date:
+            dates.add(date)
+        if ts_str:
+            if not first_ts or ts_str < first_ts:
+                first_ts = ts_str
+            if not last_ts or ts_str > last_ts:
+                last_ts = ts_str
+
+        model = msg.get("model", "unknown")
+        usage = msg["usage"]
+        inp = usage.get("input_tokens", 0)
+        out = usage.get("output_tokens", 0)
+        cr = usage.get("cache_read_input_tokens", 0)
+        cc = usage.get("cache_creation_input_tokens", 0)
+        pricing = get_pricing(model, ts_str, require_timestamp=True)
+        cost = compute_cost(usage, model, ts_str)
+
+        totals[model]["input"] += inp
+        totals[model]["output"] += out
+        totals[model]["cache_read"] += cr
+        totals[model]["cache_create"] += cc
+        totals[model]["cost"] += cost
+        totals[model]["messages"] += 1
+        totals[model]["unpriced"] += int(pricing is None)
+        message_count += 1
+
+    if message_count == 0:
+        return None
+
+    total_cost = sum(t["cost"] for t in totals.values())
+    total_input = sum(
+        t["input"] + t["cache_read"] + t["cache_create"] for t in totals.values()
+    )
+    total_output = sum(t["output"] for t in totals.values())
+    cache_read_total = sum(t["cache_read"] for t in totals.values())
+    cache_create_total = sum(t["cache_create"] for t in totals.values())
+
+    return {
+        "session_id": session_id,
+        "project": project,
+        "path": path,
+        "first_ts": first_ts,
+        "last_ts": last_ts,
+        "dates": sorted(dates),
+        "models": dict(totals),
+        "total_cost": total_cost,
+        "total_input": total_input,
+        "total_output": total_output,
+        "cache_read": cache_read_total,
+        "cache_create": cache_create_total,
+        "messages": message_count,
+    }
+
+
+def format_tokens(n):
+    """Format token count with K/M suffix."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.0f}K"
+    return str(n)
+
+
+def format_cost(c):
+    """Format cost in dollars."""
+    if c >= 100:
+        return f"${c:,.0f}"
+    if c >= 1:
+        return f"${c:.2f}"
+    return f"${c:.3f}"
+
+
+def shorten_project(name):
+    """Shorten project dir name for display."""
+    encoded_home = "-" + "-".join(Path.home().parts[1:])
+    if name == encoded_home:
+        name = "~"
+    elif name.startswith(encoded_home + "-"):
+        name = name[len(encoded_home) + 1 :]
+    # Collapse common path separators
+    name = (
+        name.replace("--", "/").replace("-", "/", 2) if name.startswith("opt") else name
+    )
+    if len(name) > 35:
+        name = name[:32] + "..."
+    return name or "~"
+
+
+def aggregate_by_date(sessions):
+    """Roll up sessions into per-date aggregates."""
+    by_date = defaultdict(
+        lambda: {
+            "cost": 0.0,
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "messages": 0,
+            "sessions": 0,
+            "models": defaultdict(lambda: {"cost": 0.0, "messages": 0, "unpriced": 0}),
+            "projects": defaultdict(lambda: {"cost": 0.0, "messages": 0}),
+        }
+    )
+    for s in sessions:
+        for date in s["dates"]:
+            # Approximate: attribute full session to each active date equally
+            n_dates = len(s["dates"]) or 1
+            frac = 1.0 / n_dates
+            d = by_date[date]
+            d["cost"] += s["total_cost"] * frac
+            d["input"] += int(s["total_input"] * frac)
+            d["output"] += int(s["total_output"] * frac)
+            d["cache_read"] += int(s["cache_read"] * frac)
+            d["messages"] += int(s["messages"] * frac)
+            d["sessions"] += 1
+            for model, mdata in s["models"].items():
+                d["models"][model]["cost"] += mdata["cost"] * frac
+                d["models"][model]["messages"] += int(mdata["messages"] * frac)
+                d["models"][model]["unpriced"] += int(mdata["unpriced"] * frac)
+            proj = shorten_project(s["project"])
+            d["projects"][proj]["cost"] += s["total_cost"] * frac
+            d["projects"][proj]["messages"] += int(s["messages"] * frac)
+    return by_date
+
+
+def print_period(label, dates_data, show_details=True):
+    """Print a period summary."""
+    total_cost = sum(d["cost"] for d in dates_data.values())
+    total_msgs = sum(d["messages"] for d in dates_data.values())
+    total_input = sum(d["input"] for d in dates_data.values())
+    total_output = sum(d["output"] for d in dates_data.values())
+    total_cache = sum(d["cache_read"] for d in dates_data.values())
+
+    cache_pct = (total_cache / total_input * 100) if total_input > 0 else 0
+
+    print(f"\n{BOLD}{'=' * 60}{RESET}")
+    print(f"{BOLD}{label}{RESET}")
+    print(f"{'=' * 60}")
+    print(
+        f"  Cost: {CYAN}{format_cost(total_cost)}{RESET}  |  "
+        f"Messages: {total_msgs:,}  |  "
+        f"In: {format_tokens(total_input)}  Out: {format_tokens(total_output)}"
+    )
+    print(f"  Cache hit rate: {GREEN}{cache_pct:.0f}%{RESET}")
+
+    if not show_details:
+        return
+
+    # Daily breakdown
+    print(f"\n  {BOLD}Daily{RESET}")
+    print(f"  {'Date':<12} {'Cost':>8} {'Msgs':>6} {'Input':>8} {'Output':>8}")
+    print(f"  {'-' * 46}")
+    for date in sorted(dates_data.keys()):
+        d = dates_data[date]
+        cost_color = RED if d["cost"] > 5 else YELLOW if d["cost"] > 2 else ""
+        print(
+            f"  {date:<12} {cost_color}{format_cost(d['cost']):>8}{RESET} "
+            f"{d['messages']:>6} {format_tokens(d['input']):>8} {format_tokens(d['output']):>8}"
+        )
+
+    # Model breakdown
+    model_totals = defaultdict(lambda: {"cost": 0.0, "messages": 0, "unpriced": 0})
+    for d in dates_data.values():
+        for model, mdata in d["models"].items():
+            model_totals[model]["cost"] += mdata["cost"]
+            model_totals[model]["messages"] += mdata["messages"]
+            model_totals[model]["unpriced"] += mdata["unpriced"]
+
+    if model_totals:
+        print(f"\n  {BOLD}By Model{RESET}")
+        print(f"  {'Model':<25} {'Cost':>8} {'Msgs':>6} {'% Cost':>8}")
+        print(f"  {'-' * 50}")
+        for model in sorted(
+            model_totals,
+            key=lambda m: (model_totals[m]["cost"], model_totals[m]["messages"]),
+            reverse=True,
+        ):
+            mt = model_totals[model]
+            pct = (mt["cost"] / total_cost * 100) if total_cost > 0 else 0
+            if mt["unpriced"] == mt["messages"]:
+                cost_label = "n/a"
+            elif mt["unpriced"]:
+                cost_label = format_cost(mt["cost"]) + "*"
+            else:
+                cost_label = format_cost(mt["cost"])
+            print(f"  {model:<25} {cost_label:>8} {mt['messages']:>6} {pct:>7.0f}%")
+
+        if any(value["unpriced"] for value in model_totals.values()):
+            print(
+                f"  {DIM}n/a or * records lack known pricing or a valid record timestamp; those costs are excluded.{RESET}"
+            )
+
+    # Project breakdown (top 5)
+    proj_totals = defaultdict(lambda: {"cost": 0.0, "messages": 0})
+    for d in dates_data.values():
+        for proj, pdata in d["projects"].items():
+            proj_totals[proj]["cost"] += pdata["cost"]
+            proj_totals[proj]["messages"] += pdata["messages"]
+
+    if proj_totals:
+        print(f"\n  {BOLD}By Project (top 5){RESET}")
+        print(f"  {'Project':<35} {'Cost':>8} {'Msgs':>6}")
+        print(f"  {'-' * 52}")
+        sorted_projs = sorted(
+            proj_totals, key=lambda p: proj_totals[p]["cost"], reverse=True
+        )[:5]
+        for proj in sorted_projs:
+            pt = proj_totals[proj]
+            print(f"  {proj:<35} {format_cost(pt['cost']):>8} {pt['messages']:>6}")
+
+
+def since_for(period: str, today: calendar_date | None = None) -> str | None:
+    """Return the first ISO date a period covers, or None for all time.
+
+    Periods: `today`, `<N>d`, `month`, `all`, or a `YYYY-MM-DD` start date.
+    Raises ValueError for anything else.
+    """
+    today = today or datetime.now().date()
+    if period == "today":
+        return today.isoformat()
+    if period == "month":
+        return today.replace(day=1).isoformat()
+    if period == "all":
+        return None
+    if period.endswith("d") and period[:-1].isdigit():
+        return (today - timedelta(days=int(period[:-1]))).isoformat()
+    return calendar_date.fromisoformat(period).isoformat()
+
+
+def main(period: str = "7d", base_dir: Path | None = None) -> int:
+    base = base_dir or Path.home() / ".claude" / "projects"
+    if not base.is_dir():
+        print("No Claude Code session data found at ~/.claude/projects/")
+        return 1
+    try:
+        since = since_for(period)
+    except ValueError:
+        print(f"cost: unknown period {period!r} (today, <N>d, month, all, or YYYY-MM-DD)")
+        return 2
+
+    print(f"{DIM}Scanning session files...{RESET}")
+    sessions = parse_sessions(str(base), since)
+
+    if not sessions:
+        print(f"No session data found for period: {period}")
+        return 0
+
+    by_date = aggregate_by_date(sessions)
+
+    # Determine period boundaries
+    all_dates = sorted(by_date.keys())
+    first = all_dates[0] if all_dates else "?"
+    last = all_dates[-1] if all_dates else "?"
+
+    print_period(
+        f"Usage: {first} to {last}  ({len(sessions)} sessions, {len(all_dates)} days)",
+        by_date,
+        show_details=True,
+    )
+
+    # Weekly rollup if more than 7 days
+    if len(all_dates) > 7:
+        print(f"\n{BOLD}Weekly Totals{RESET}")
+        print(f"  {'Week':<20} {'Cost':>8} {'Msgs':>6}")
+        print(f"  {'-' * 36}")
+        week_data = defaultdict(lambda: {"cost": 0.0, "messages": 0})
+        for date, d in by_date.items():
+            dt = datetime.strptime(date, "%Y-%m-%d").date()
+            week_start = (dt - timedelta(days=dt.weekday())).isoformat()
+            week_data[week_start]["cost"] += d["cost"]
+            week_data[week_start]["messages"] += d["messages"]
+        for week in sorted(week_data.keys()):
+            w = week_data[week]
+            print(f"  {week:<20} {format_cost(w['cost']):>8} {w['messages']:>6}")
+
+    print(
+        f"\n{DIM}Note: Costs are API-equivalent estimates, not actual billing.{RESET}\n"
+    )
+    return 0

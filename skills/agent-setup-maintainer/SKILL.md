@@ -7,9 +7,9 @@ description: Review, audit, update, or refactor AI coding-agent setup such as sk
 
 ## Before Starting
 
-1. Read sibling `lessons.md` if present.
-2. Read the relevant provider guidance templates under `config/` and the canonical interface manifest under `interfaces/`.
-3. Inspect relevant source files under `skills/`, `rules/`, `interfaces/`, `hooks/`, and `config/`. Inspect `build/` or installed copies only when validating adapters or install output.
+1. Read the relevant provider guidance templates under `config/` and the canonical interface manifest under `interfaces/`.
+2. Inspect relevant source files under `skills/`, `rules/`, `interfaces/`, `hooks/`, and `config/`. Inspect `build/` or installed copies only when validating adapters or install output.
+3. Before changing how a skill hands work to a worker, read [lessons.md](lessons.md).
 
 ## Core principles
 
@@ -24,6 +24,12 @@ description: Review, audit, update, or refactor AI coding-agent setup such as sk
 - Does each skill have clear use cases and non-use cases?
 - Are broad instructions moved out of global rules?
 - Are routing hints present where skill selection needs reliability?
-- Is `lessons.md` read at the start of each skill that has one?
+- Are sibling files linked from the phase that needs them?
 - Are provider adapters exact, capability-preserving projections of canonical behavior?
 - Are README, installer, and doctor checks updated when skill structure changes?
+
+## Check
+
+Run `bin/aitk check` after any change. It enforces markdown links, the
+route-marker-to-boundary bijection, the `Effect:` and `Authorization mode:`
+lines, and the contract graph.

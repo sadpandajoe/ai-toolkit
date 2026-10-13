@@ -2,6 +2,68 @@
 
 ## Unreleased
 
+- `bin/aitk model-run --experiment reviewer-runs-test --test-command <cmd>`
+  lets the independent reviewer run one test from an allowlist given on the
+  command line, in a disposable copy of its worktree, for the D11
+  measurement. Claude enforces the allowlist with `dontAsk` allow rules and
+  its Bash sandbox; on Codex the allowlist is an instruction and the
+  `workspace-write` sandbox rooted at the copy, with no network, is the
+  boundary. Every `model-run` envelope gains an `experiment` field, `null`
+  without the flag.
+
+- Workflow state is one block: `bin/aitk checkpoint`, `aitk/checkpoint.py`,
+  `aitk/artifact_lock.py`, `rules/durable-workflows.md` and the checkpoint
+  machine-block template are gone. `bin/aitk project-state` writes the only
+  machine block in `PROJECT.md`, under the file lock that used to live in
+  `artifact_lock.py`, and `deliver` and the PR gate read its gates.
+  `interfaces/contracts.json` is version 3: each workflow keeps its effect,
+  authorization, state, resume flag and verification strength, and
+  `list --details` no longer prints phases. An existing `aitk-checkpoint:v1`
+  block in a `PROJECT.md` is now ordinary text and can be deleted.
+- The validators are gone: `aitk/conformance.py` and `aitk/interfaces.py` are
+  deleted, `bin/aitk doctor` checks links, skill descriptions, the routing
+  manifest, personal paths and secret output, and a malformed manifest fails
+  when it is loaded. `interfaces/support.json` becomes README's Support
+  section, and `interfaces/providers.json` drops `document`.
+- The route table lives only in `interfaces/model-routing.json`: the pinned
+  copy, the per-field schema, `count`, `explicit_only`,
+  `policy.automatic_max` and `fallback` are gone. A route's model must be a
+  catalog family, and each route's write controls and tool box stay pinned in
+  `aitk/routing_policy.py`.
+- `model-run` checks the provider CLI against the route's version floor and
+  no longer scans `--help` output for flags.
+
+- Workflows deliver through `bin/aitk deliver`: `create-feature`, `fix-bug`,
+  `fix-ci`, `tests` and `create-pr` no longer carry their own push and PR
+  procedure. `bin/aitk route` is gone; the router is the model reading
+  `bin/aitk list --details --json`. The `metrics-emit` skill is retired
+  (`bin/aitk metrics emit` fills the event). The lane-yield table in
+  `docs/ARCHITECTURE.md` is generated from `aitk/review_plan.py`. A routed
+  selector without an exact price now warns in the test suite instead of
+  failing it.
+
+- `review-code --adversarial` replaces the `review-code-adversarial` workflow:
+  the same primary and second-vote adversarial lanes, `--allow-degraded`, and
+  the adversarial rating, run from `review-code`.
+
+- One `tests` workflow replaces `create-tests` and `update-tests`: it improves
+  an existing suite, or switches to writing the first suite when there is no
+  real one (`--step` stops at the switch). Delivery runs `bin/aitk deliver
+  --workflow tests`. The testing skill's create and update references are
+  folded into it.
+
+- Plugin preview: the repository root is also a Claude Code plugin
+  (`.claude-plugin/plugin.json`, served with the Codex plugin by the one-plugin
+  marketplace in `.claude-plugin/marketplace.json`), and the Codex plugin now
+  ships the PGM skill and declares `hooks/hooks.json`. Hook commands resolve
+  the toolkit as `${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}`; `bin/aitk install`
+  still writes the absolute toolkit root into Claude Code settings, so
+  installed commands do not change. The plugin-only `hooks/session-start.sh`
+  loads the always-on rules and the provider binding pointer, and warns when a
+  `bin/aitk install` is still in place. `./install.sh` stays the supported
+  install until `scripts/plugin-proof.sh` passes on both providers
+  (docs/MIGRATION.md).
+
 - The statusline effort label shows the live session effort (`/effort`,
   `--effort`) instead of the `effortLevel` saved in `settings.json`, which made
   it read the saved default no matter what the session ran. It is omitted when
@@ -167,6 +229,8 @@
   (Opus) plans only COMPLEX work, `review`/`rca` are independent specialists
   preferring the other provider, Fable stays a read-only deep advisor. Catalog
   moved to the Claude 5 family (Opus 5, Sonnet 5, Fable 5.1) and GPT-5.6 Sol.
+  (The `planning` route's Opus selector here was superseded by the "Fable is
+  the Claude planner" entry above.)
 - Added the native worker roster (`agents/claude/*.md`, `agents/codex/*.toml`,
   installed to `~/.claude/agents` and `$CODEX_HOME/agents`) and the
   provider-neutral specialist contracts in `agents/specialists/` that the route

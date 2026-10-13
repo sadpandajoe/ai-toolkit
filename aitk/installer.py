@@ -17,21 +17,10 @@ import tempfile
 import tomllib
 import uuid
 
+from . import claude_hooks
 from .build import write_build
-from .conformance import validate_contracts
-from .interfaces import (
-    load_skill_interfaces,
-    validate_provider_interfaces,
-    validate_skill_interfaces,
-    validate_support_interface,
-)
-from .model_routing import validate_model_routing
-from .workflows import (
-    extension_manifest_path,
-    load_workflows,
-    validate_extension_workflows,
-    validate_workflows,
-)
+from .routing_manifest import validate_model_routing
+from .workflows import extension_manifest_path, load_skill_interfaces, load_workflows
 
 
 BEGIN = "# >>> ai-toolkit managed guidance >>>"
@@ -197,14 +186,18 @@ def resolve_paths(
 
 
 def _validate_source(root: Path) -> None:
-    problems = validate_workflows(root)
-    if extension_manifest_path(root, "pgm").is_file():
-        problems.extend(validate_extension_workflows(root, "pgm"))
-    problems.extend(validate_skill_interfaces(root))
-    problems.extend(validate_provider_interfaces(root))
+    try:
+        load_workflows(root, include_pgm=extension_manifest_path(root, "pgm").is_file())
+        skills = load_skill_interfaces(root)
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise LifecycleError(f"source interface validation failed: {error}") from error
+    # Every linked skill must exist, so an install never writes a dangling link.
+    problems = [
+        f"{entry['name']}: missing {entry['path']}/SKILL.md"
+        for entry in skills
+        if not (root / entry["path"] / "SKILL.md").is_file()
+    ]
     problems.extend(validate_model_routing(root))
-    problems.extend(validate_support_interface(root))
-    problems.extend(validate_contracts(root))
     if problems:
         raise LifecycleError(
             "source interface validation failed: " + "; ".join(problems)
@@ -1714,6 +1707,66 @@ def rollback(paths: InstallPaths) -> LifecycleResult:
     finally:
         shutil.rmtree(rollback_backup, ignore_errors=True)
     return LifecycleResult(operation, "ok", tuple(changed), (), str(paths.ledger))
+
+
+def _sync_claude_hooks(paths: InstallPaths, operation: str, hooks: bool) -> list[str]:
+    """Bring the Claude Code hook registration in line with the operation."""
+    if operation == "install":
+        if hooks:
+            return claude_hooks.register(paths.root, paths.home, paths.state_dir)
+        return claude_hooks.unregister(paths.root, paths.home, paths.state_dir, opted_out=True)
+    if operation == "uninstall":
+        return claude_hooks.unregister(paths.root, paths.home, paths.state_dir)
+    ledger = _load_ledger(paths)
+    if ledger and ledger.get("active") and not claude_hooks.opted_out(paths.state_dir):
+        root = Path(str(ledger["toolkit_root"]))
+        if not (root / "hooks/hooks.json").is_file():
+            root = paths.root
+        return claude_hooks.register(root, paths.home, paths.state_dir)
+    return claude_hooks.unregister(paths.root, paths.home, paths.state_dir)
+
+
+def run_lifecycle(
+    paths: InstallPaths, operation: str, with_pgm: bool = False, hooks: bool = True
+) -> LifecycleResult:
+    """`install`, `uninstall` or `rollback`, then the Claude Code hook registration.
+
+    Both run under the one lifecycle lock, so concurrent runs stay serialized.
+    install registers the hooks.json entries unless `hooks` is False (the CLI's
+    `--no-hooks`), which removes any earlier registration and remembers the
+    opt-out; uninstall removes them even when the ledger is gone; rollback
+    registers them when it leaves an active install. A settings file that is
+    not a JSON object refuses the operation before anything changes.
+    """
+    functions = {"install": install, "uninstall": uninstall, "rollback": rollback}
+    try:
+        _validate_source(paths.root)
+        with _lifecycle_lock(paths):
+            _validate_source(paths.root)
+            claude_hooks.check_settings(paths.home)
+            if operation == "install":
+                result = install.__wrapped__(paths, with_pgm)
+            else:
+                result = functions[operation].__wrapped__(paths)
+            if result.status not in {"ok", "noop"}:
+                return result
+            try:
+                changed = _sync_claude_hooks(paths, operation, hooks)
+            except (LifecycleError, OSError, TypeError, ValueError) as error:
+                return LifecycleResult(
+                    operation,
+                    "drift",
+                    result.changed,
+                    (*result.conflicts, f"Claude Code hooks: {error}"),
+                    result.ledger,
+                )
+    except (LifecycleError, OSError, TypeError, ValueError) as error:
+        return LifecycleResult(operation, "refused", (), (str(error),), str(paths.ledger))
+    if not changed:
+        return result
+    return LifecycleResult(
+        operation, "ok", (*result.changed, *changed), result.conflicts, result.ledger
+    )
 
 
 def inspect_install(paths: InstallPaths, with_pgm: bool = False) -> tuple[str, ...]:

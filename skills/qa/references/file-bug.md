@@ -1,39 +1,31 @@
----
-tier: Heavy
----
-
 # File Bug
 
-Use this phase when QA execution has produced a strong failure signal and the workflow needs a clean bug handoff.
+Use when QA execution produced a strong failure signal and the workflow needs
+a clean bug handoff.
 
-## Goal
-
-Turn a failed scenario into a crisp bug report with reliable repro steps, expected versus actual behavior, and evidence.
-
-## Core Steps
-
-1. Reuse the latest validated repro steps from QA triage, validation, or test-plan execution instead of rewriting them from memory.
-2. Confirm whether the bug is:
-   - reproducible with steps, or
-   - not fully reproduced but strongly supported by evidence
-3. Write clean repro steps from a known starting state.
-4. Record expected versus actual behavior without speculation.
-5. Attach the strongest evidence and environment details:
-   - URL or page
-   - branch, build, or commit when relevant
-   - browser/device
-   - account, role, flags, or seed data
-6. For UI or workflow bugs, prefer Playwright video as the primary artifact when available.
-7. Identify one `Best proof` artifact or log line so later readers know what to open first.
-8. Link the failure back to the originating scenario or parent work item when relevant.
+1. Reuse the latest validated repro steps from triage, validation, or
+   test-plan execution instead of rewriting them from memory, and say whether
+   the bug reproduced or is evidence-only.
+2. Write repro steps from a known starting state, and expected versus actual
+   behavior without speculation.
+3. Record the environment: URL or page, branch/build/commit when relevant,
+   browser/device, and account, role, flags or seed data.
+4. Attach the strongest evidence (a recording for UI or workflow bugs) and
+   name one `Best proof` artifact or log line to open first. Link the
+   originating scenario or work item when there is one.
 
 ## Severity Criteria
 
 | Severity | Indicators |
 |----------|-----------|
-| **high** | Data loss, security bypass, crash, blocks core user workflow |
-| **medium** | Incorrect behavior with workaround, non-blocking regression |
+| **high** | Data loss, security bypass, crash, blocks a core user workflow, affects many users |
+| **medium** | Incorrect behavior with a workaround, non-blocking regression |
 | **low** | Cosmetic misalignment, rare edge case, minor impact |
+
+This table is the single home of QA bug severity. Across domains, `[major]` =
+`[High]` = high (must address); `[minor]` = `[Medium]` = medium (should
+address); `[nitpick]` = `[Low]` = low (optional). The review tags themselves
+are defined in `rules/severity.md`.
 
 ## Output
 
@@ -66,15 +58,10 @@ Turn a failed scenario into a crisp bug report with reliable repro steps, expect
 **Best proof**: screenshot-delete-button.png
 **Severity**: high (security boundary violation)
 
-## Shortcut Integration
+## Shortcut
 
-When the workflow requires posting results back to Shortcut:
-
-1. Upload any required video or file evidence to the story.
-2. Fetch the story again to retrieve the uploaded media URL.
-3. Post one clean QA result comment that includes:
-   - the actual repro steps or validation path used
-   - expected versus actual behavior
-   - the single best proof link first
-   - the overall QA result
-4. Apply any required Shortcut-specific state or custom-field updates.
+When the result goes back to a Shortcut story, follow
+`skills/shortcut/references/report.md` in this order: upload the evidence,
+refetch the story for the uploaded media URL, then post one comment with the
+repro or validation path, expected versus actual, the best proof link first,
+and the overall result.

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import re
 import subprocess
+import tempfile
 import unittest
 
 
@@ -34,7 +37,78 @@ class CliTests(unittest.TestCase):
         self.assertIn("summary", payload)
         self.assertIn("findings", payload)
 
-    def test_optional_workflows_are_listed_and_routed_explicitly(self) -> None:
+    def test_cost_reads_claude_transcripts_and_refuses_an_unknown_period(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            project = home / ".claude/projects/-work-sample"
+            project.mkdir(parents=True)
+            record = {
+                "timestamp": "2026-09-30T12:00:00Z",
+                "sessionId": "session-1",
+                "requestId": "req-1",
+                "message": {
+                    "id": "msg-1",
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 1_000_000},
+                },
+            }
+            (project / "session-1.jsonl").write_text(json.dumps(record) + "\n")
+            environment = {**os.environ, "HOME": str(home)}
+            result = subprocess.run(
+                [str(ROOT / "bin/aitk"), "cost", "all"],
+                cwd=home,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("$4.00", result.stdout)
+            refused = subprocess.run(
+                [str(ROOT / "bin/aitk"), "cost", "last-week"],
+                cwd=home,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(2, refused.returncode)
+            self.assertIn("unknown period", refused.stdout)
+            missing = subprocess.run(
+                [str(ROOT / "bin/aitk"), "cost"],
+                cwd=home,
+                env={**environment, "HOME": str(home / "nobody")},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(1, missing.returncode)
+
+    def test_list_details_names_the_command_of_a_command_only_entry(self) -> None:
+        listing = self.run_cli("list", "--details", "--json")
+        self.assertEqual(0, listing.returncode, listing.stderr)
+        items = {item["name"]: item for item in json.loads(listing.stdout)["workflows"]}
+        cost = items["show-cost"]
+        self.assertEqual("bin/aitk cost", cost["command"])
+        self.assertNotIn("reference", cost)
+        self.assertEqual("read_only", cost["effect"])
+        self.assertEqual([], cost["dependencies"])
+        self.assertEqual(
+            "skills/workflows/references/verify.md", items["verify"]["reference"]
+        )
+        self.assertNotIn("command", items["verify"])
+        # Every command an entry names is a real subcommand.
+        usage = re.search(r"\{([a-z,-]+)\}", self.run_cli("--help").stdout)
+        self.assertIsNotNone(usage)
+        subcommands = set(usage.group(1).split(","))
+        # The router reads `list --details --json`; there is no matcher command.
+        self.assertNotIn("route", subcommands)
+        for item in items.values():
+            if "command" in item:
+                with self.subTest(workflow=item["name"]):
+                    self.assertIn(item["command"].split()[1], subcommands)
+
+    def test_optional_workflows_are_listed_with_their_contracts(self) -> None:
         listing = self.run_cli("list", "--with-pgm", "--details", "--json")
         self.assertEqual(0, listing.returncode, listing.stderr)
         items = json.loads(listing.stdout)["workflows"]
@@ -44,20 +118,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual("pgm", pgm["owner_skill"])
         self.assertEqual("local_mutation", pgm["effect"])
         self.assertTrue(pgm["resumable"])
-
-        routed = self.run_cli("route", "--with-pgm", "program health report", "--json")
-        self.assertEqual(0, routed.returncode, routed.stderr)
-        match = json.loads(routed.stdout)["match"]
-        self.assertEqual("create-status-report", match["workflow"])
-        self.assertIn("Use $pgm", match["invoke"])
-
-        explicit = self.run_cli(
-            "route", "--with-pgm", "$pgm", "create-velocity-report", "--json"
-        )
-        self.assertEqual(0, explicit.returncode, explicit.stderr)
-        self.assertEqual(
-            "create-velocity-report", json.loads(explicit.stdout)["match"]["workflow"]
-        )
 
     def test_root_is_discovered_from_a_repository_subdirectory(self) -> None:
         result = subprocess.run(
@@ -84,30 +144,8 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(0, resolved.returncode, resolved.stderr)
         payload = json.loads(resolved.stdout)
-        self.assertEqual("sol", payload["family"])
-        self.assertEqual("high", payload["effort"])
-        self.assertEqual("read-only", payload["controls"]["sandbox"])
-        self.assertEqual("plan", payload["lens_domain"])
-        for contract in (
-            "rules/model-assignment.md",
-            "rules/specialist-handoff.md",
-            "skills/planning/SKILL.md",
-            "skills/planning/references/validate-plan.md",
-            "agents/specialists/plan-validator.md",
-            "rules/severity.md",
-        ):
-            self.assertIn(contract, payload["required_contracts"])
-        # The validator inlines its plan checklists but never the code-review
-        # umbrella, the code grading rules, or the floored architecture lens.
-        self.assertIn(
-            "skills/plan-review/references/implementation.md", payload["required_contracts"]
-        )
-        for leaked in (
-            "skills/review/SKILL.md",
-            "rules/code-review.md",
-            "skills/plan-review/references/architecture.md",
-        ):
-            self.assertNotIn(leaked, payload["required_contracts"])
+        self.assertEqual(("review", "planning.validate"), (payload["route"], payload["boundary"]))
+        self.assertIn("agents/specialists/plan-validator.md", payload["required_contracts"])
 
         rejected = self.run_cli(
             "model-route", "unknown", "--provider", "codex", "--json"
@@ -147,13 +185,8 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(0, allowed.returncode, allowed.stderr)
         payload = json.loads(allowed.stdout)
-        self.assertEqual("fable", payload["family"])
-        self.assertEqual("xhigh", payload["effort"])
+        self.assertEqual("deep-review", payload["route"])
         self.assertEqual("code", payload["lens_domain"])
-        self.assertIn("rules/code-review.md", payload["required_contracts"])
-        self.assertNotIn(
-            "skills/review/references/deep-quality.md", payload["required_contracts"]
-        )
 
     def test_model_route_rejects_a_lens_without_a_boundary(self) -> None:
         """`--lens` alone used to resolve a route that silently ignored it."""
@@ -170,6 +203,102 @@ class CliTests(unittest.TestCase):
         error = json.loads(rejected.stdout)["error"]
         self.assertEqual("MODEL_ROUTE_INVALID", error["code"])
         self.assertIn("pass --boundary too", error["message"])
+
+
+
+class ProcedureCommandSmokeTests(unittest.TestCase):
+    """P3 commands: exit codes and JSON keys. Behaviour lives in each module's suite."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.work = Path(self.temporary.name).resolve()
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.work)], check=True)
+
+    def aitk(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(ROOT / "bin/aitk"), *arguments],
+            cwd=self.work,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_verify_observe_and_block_format(self) -> None:
+        init = self.aitk(
+            "project-state", "init", "--workflow", "fix-bug", "--complexity", "STANDARD",
+            "--size", "S", "--format", "block",
+        )
+        self.assertEqual(0, init.returncode, init.stderr)
+        self.assertTrue(init.stdout.startswith("## Complexity Gate\n"))
+        verify = self.aitk("verify", "--run", "true", "--json")
+        self.assertEqual(0, verify.returncode, verify.stderr)
+        payload = json.loads(verify.stdout)
+        self.assertEqual("PASS", payload["status"])
+        self.assertTrue({"command", "run", "snapshot", "file", "tree_changed"} <= set(payload))
+        self.assertTrue(
+            {"command", "exit_code", "output_tail", "tree", "time", "strength"} <= set(payload["run"])
+        )
+        self.assertEqual(1, self.aitk("verify", "--run", "false").returncode)
+        gate = self.aitk("project-state", "gate", "--gate", "plan", "--status", "PASS", "--format", "block")
+        self.assertEqual(0, gate.returncode, gate.stderr)
+        self.assertTrue(gate.stdout.startswith("## Gate: plan\n"))
+        observe = self.aitk("observe", "--kind", "misroute", "--detail", "picked fix-ci for a test failure", "--json")
+        self.assertEqual(0, observe.returncode, observe.stderr)
+        self.assertEqual({"command", "file", "kind"}, set(json.loads(observe.stdout)))
+        check = self.aitk("project-state", "op", "--check", "rerun:42", "--json")
+        self.assertEqual(3, check.returncode, check.stderr)
+        self.assertEqual({"operation", "ran", "recorded"}, set(json.loads(check.stdout)))
+
+    def test_review_plan_and_merge_report_json(self) -> None:
+        (self.work / "a.py").write_text("x = 1\n")
+        for command in (["add", "a.py"], ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "a"]):
+            subprocess.run(["git", "-C", str(self.work), *command], check=True)
+        (self.work / "a.py").write_text("x = 2\n")
+        planned = self.aitk(
+            "review", "plan", "--parent", "claude", "--complexity", "STANDARD", "--base", "HEAD",
+            "--unreachable", "codex", "--unreachable", "claude", "--json",
+        )
+        self.assertEqual(3, planned.returncode, planned.stderr)
+        payload = json.loads(planned.stdout)
+        self.assertTrue(
+            {"status", "lanes", "classification", "verifier", "delta", "coverage", "deep_lenses", "second_family"}
+            <= set(payload)
+        )
+        plan_file = self.work / ".ai-toolkit-plan.json"
+        plan_file.write_text(planned.stdout)
+        envelope = self.work / ".ai-toolkit-lane.json"
+        envelope.write_text(
+            json.dumps(
+                {
+                    "boundary": "review.independent",
+                    "provider": "codex",
+                    "route": "review",
+                    "dry_run": False,
+                    "request": {"family": "sol"},
+                    "result": {"status": "completed", "summary": "s", "findings": [], "verification": ["a.py"]},
+                }
+            )
+        )
+        merged = self.aitk("review", "merge", "--plan", str(plan_file), "--result", str(envelope), "--json")
+        self.assertEqual(0, merged.returncode, merged.stderr)
+        self.assertEqual(
+            {"command", "lanes", "findings", "verify", "settled", "coverage_rerun"}, set(json.loads(merged.stdout))
+        )
+
+    def test_deliver_refuses_without_evidence_and_reports_json(self) -> None:
+        init = self.aitk("project-state", "init", "--workflow", "fix-bug", "--complexity", "STANDARD", "--size", "S")
+        self.assertEqual(0, init.returncode, init.stderr)
+        deliver = self.aitk("deliver", "--workflow", "fix-bug", "--no-pr", "--message", "Fix x", "--json")
+        self.assertEqual(1, deliver.returncode, deliver.stderr)
+        payload = json.loads(deliver.stdout)
+        self.assertEqual("refused", payload["status"])
+        self.assertTrue(
+            {"command", "status", "reason", "branch", "remote", "commit", "pushed", "pr", "steps"} <= set(payload)
+        )
+        rendered = self.aitk("deliver", "--workflow", "fix-bug", "--no-pr", "--message", "Fix x")
+        self.assertEqual(1, rendered.returncode)
+        self.assertTrue(rendered.stdout.startswith("## Delivery Refused"), rendered.stdout)
 
 
 if __name__ == "__main__":

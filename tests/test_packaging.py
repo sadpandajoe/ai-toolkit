@@ -21,14 +21,26 @@ class PackagingTests(unittest.TestCase):
     def test_versions_match_across_python_plugin_and_changelog(self) -> None:
         project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
         plugin = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())
+        claude_plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
         self.assertEqual(aitk.__version__, project["version"])
         self.assertEqual(aitk.__version__, plugin["version"])
+        self.assertEqual(aitk.__version__, claude_plugin["version"])
         self.assertIn(f"## {aitk.__version__}", (ROOT / "CHANGELOG.md").read_text())
 
     def test_package_exposes_the_aitk_entrypoint(self) -> None:
         project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
         self.assertEqual("aitk.cli:main", project["scripts"]["aitk"])
         self.assertEqual([], project["dependencies"])
+
+    def test_every_python_package_ships_in_the_wheel(self) -> None:
+        listed = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["setuptools"]["packages"]
+        found = {
+            ".".join(path.parent.relative_to(ROOT).parts)
+            for path in (ROOT / "aitk").rglob("__init__.py")
+            if "__pycache__" not in path.parts
+        }
+        self.assertEqual(sorted(found), sorted(listed))
+        self.assertIn("aitk.hooks", listed)
 
     def test_ci_runs_the_same_local_gate_with_pinned_actions(self) -> None:
         workflow = (ROOT / ".github/workflows/validate.yml").read_text()
@@ -45,16 +57,6 @@ class PackagingTests(unittest.TestCase):
         self.assertGreaterEqual(len(action_lines), 2)
         for line in action_lines:
             self.assertRegex(line, r"uses: actions/[a-z-]+@[0-9a-f]{40}(?:\s+#.*)?$")
-
-    def test_public_docs_and_cli_describe_the_skills_only_interface(self) -> None:
-        readme = (ROOT / "README.md").read_text()
-        cli = (ROOT / "aitk/cli.py").read_text()
-
-        self.assertIn("## Migrating from Slash Commands", readme)
-        self.assertIn("$workflows fix-bug", readme)
-        self.assertIn("validate the optional PGM extension", cli)
-        self.assertNotIn("commands and guidance need a rebuild", readme)
-        self.assertNotIn("include optional PGM commands", cli)
 
 
 if __name__ == "__main__":

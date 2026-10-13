@@ -1,20 +1,13 @@
 # Investigation Output Template
 
-## Rules
-
-- The **"Raw Signals for Gate"** block is not optional — the gate consumes it.
-- Prefer a summary line ("12 files apply cleanly, 2 need adaptation, 1 doesn't exist on target") over a 12-row table with "OK" repeated.
-- Omit sections that don't apply. Write "N/A" once rather than filling a table with "none."
-- Report what investigation **observed**. Do not make the go/no-go call — that is the gate's job.
-
-## Template
+The rules for filling it are in
+[../references/investigate.md](../references/investigate.md).
 
 ```markdown
 ## Investigation: <sha-short> (<summary>)
 
 ### Source Analysis
 Change type: functional / structural / dependency / mixed
-Files changed: [N]
 Key files: [list of most significant files]
 Sub-fixes: [if bundled PR, list them; otherwise "N/A"]
 
@@ -35,7 +28,6 @@ Verdict: AFFECTED / NOT_AFFECTED / UNCLEAR
 Evidence: [buggy pre-fix code present on target, OR named introducing commit + is-ancestor result, OR why unclear]
 
 ### Raw Signals for Gate
-Files touched: [N]
 New dependencies: YES / NO
 Lockfile changes: YES / NO
 Target APIs compatible: YES / NO / PARTIALLY

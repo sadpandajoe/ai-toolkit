@@ -70,6 +70,24 @@ osc8_link() {
     printf "\033]8;;%s\033\\%s\033]8;;\033\\" "$url" "$text"
 }
 
+# file_birth <path> → creation time in epoch seconds: BSD `stat -f %B`, else
+# GNU `stat -c %W`. Empty when the filesystem does not record it.
+file_birth() {
+    local value
+    value=$(stat -f %B "$1" 2>/dev/null)
+    if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+        value=$(stat -c %W "$1" 2>/dev/null)
+    fi
+    if [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -gt 0 ]; then
+        printf "%s" "$value"
+    fi
+}
+
+# epoch_format <seconds> <format> → BSD `date -r`, else GNU `date -d @seconds`
+epoch_format() {
+    date -r "$1" "+$2" 2>/dev/null || date -d "@$1" "+$2" 2>/dev/null
+}
+
 # --- Data extraction ---
 
 # Model name: strip common provider prefixes from display labels
@@ -106,8 +124,8 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
         msg_str=$(printf "%b%d msgs%b" "$msg_color" "$msg_count" "$RESET")
     fi
 
-    # Session duration from transcript file birth time (macOS)
-    birth=$(stat -f %B "$transcript" 2>/dev/null)
+    # Session duration from the transcript file's birth time
+    birth=$(file_birth "$transcript")
     if [ -n "$birth" ]; then
         now=$(date +%s)
         elapsed=$(( now - birth ))
@@ -208,7 +226,7 @@ if [ -n "$five_hr" ]; then
     five_hr_pct=$(printf "%.0f" "$five_hr")
 fi
 if [ -n "$five_hr_reset" ]; then
-    five_hr_reset_str=$(date -r "$five_hr_reset" +"%-I%p" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    five_hr_reset_str=$(epoch_format "$five_hr_reset" "%-I%p" | tr '[:upper:]' '[:lower:]')
 fi
 
 seven_day_pct=""
@@ -234,47 +252,6 @@ if [ -n "$seven_day_reset" ]; then
         m=$(( delta / 60 ))
         seven_day_reset_str=$(printf "in %dm" "$m")
     fi
-fi
-
-# Agent invocations grouped by model (parse current transcript)
-agents_total=0
-agents_heavy=0
-agents_standard=0
-agents_light=0
-agents_unknown_tier=0
-if [ -n "$transcript" ] && [ -f "$transcript" ]; then
-    while IFS= read -r agent_input; do
-        [ -z "$agent_input" ] && continue
-        agents_total=$((agents_total + 1))
-        stype=$(printf "%s" "$agent_input" | jq -r '.subagent_type // ""' 2>/dev/null)
-        model=$(printf "%s" "$agent_input" | jq -r '.model // ""' 2>/dev/null)
-        tier=$(printf "%s" "$agent_input" | jq -r '.tier // ""' 2>/dev/null)
-        eprompt=$(printf "%s" "$agent_input" | jq -r '.prompt // ""' 2>/dev/null)
-        if [ -z "$tier" ] && [ -n "$eprompt" ]; then
-            tier=$(printf "%s\n" "$eprompt" | awk 'BEGIN{IGNORECASE=1} { gsub(/\\n/, "\n") } /^Tier:[ \t]*/ { sub(/^[Tt]ier:[ \t]*/, ""); sub(/\n.*/, ""); sub(/[ \t]+$/, ""); print; exit }')
-        fi
-        if [ -z "$model" ] && [ -n "$stype" ]; then
-            def=$(find "$HOME/.claude/plugins/marketplaces" -name "${stype}.md" -path "*/agents/*" -print -quit 2>/dev/null)
-            if [ -n "$def" ]; then
-                model=$(awk '/^model:/ { sub(/^[ \t]*model:[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit }' "$def" 2>/dev/null)
-                tier=$(awk '/^tier:/ { sub(/^[ \t]*tier:[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit }' "$def" 2>/dev/null)
-            fi
-        fi
-        case "$tier" in
-            Heavy|heavy)       agents_heavy=$((agents_heavy + 1)) ;;
-            Standard|standard) agents_standard=$((agents_standard + 1)) ;;
-            Light|light)       agents_light=$((agents_light + 1)) ;;
-            *)
-                model_lc=$(printf "%s" "$model" | tr '[:upper:]' '[:lower:]')
-                case "$model_lc" in
-                    *haiku*|*mini*)             agents_light=$((agents_light + 1)) ;;
-                    *opus*|*fable*|gpt-*|o1*|o3*|o4*)   agents_heavy=$((agents_heavy + 1)) ;;
-                    *sonnet*|codex-*|*codex*)   agents_standard=$((agents_standard + 1)) ;;
-                    *)                          agents_unknown_tier=$((agents_unknown_tier + 1)) ;;
-                esac
-                ;;
-        esac
-    done < <(jq -c 'select(.message.content) | .message.content[]? | select(.type == "tool_use" and .name == "Agent") | (.input // {})' "$transcript" 2>/dev/null)
 fi
 
 # --- Line 1: model effort | session dur | msgs | cost | time | diff ---
@@ -350,17 +327,7 @@ for part in "${line2_parts[@]}"; do
     fi
 done
 
-# --- Line 3: agents N | heavy N | standard N | light N ---
-agents_line=""
-if [ "$agents_total" -gt 0 ]; then
-    agents_line=$(printf "agents %d | heavy %d | standard %d | light %d" \
-        "$agents_total" "$agents_heavy" "$agents_standard" "$agents_light")
-    if [ "$agents_unknown_tier" -gt 0 ]; then
-        agents_line="$agents_line | tier? $agents_unknown_tier"
-    fi
-fi
-
-# --- Line 4: directory | branch | repo ---
+# --- Line 3: directory | branch | repo ---
 line3_parts=()
 
 # Directory
@@ -398,6 +365,5 @@ done
 # --- Output ---
 output="$line1"
 [ -n "$line2" ] && output="${output}"$'\n'"${line2}"
-[ -n "$agents_line" ] && output="${output}"$'\n'"${agents_line}"
 [ -n "$line3" ] && output="${output}"$'\n'"${line3}"
 printf "%s" "$output"

@@ -8,109 +8,45 @@ description: Move completed-phase PROJECT.md content to PROJECT_ARCHIVE.md, or r
 > **When**: A project/feature is done and needs to be preserved.
 > **Produces**: Archived PROJECT.md content in PROJECT_ARCHIVE.md, stale PLAN.md deleted.
 
-## Before Starting
-
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-
-This command should be owned by one main agent. Do not split the write across multiple agents — the archive boundary, breadcrumb, and preserved active context must stay consistent.
-
 ## Contract
 
-### Goal
-Keep PROJECT.md focused on active work by moving completed-phase detail into PROJECT_ARCHIVE.md. When a stale PLAN.md exists with no active workflow, delete it.
-
-### In Scope
-- completed investigations, implementations, milestones, and resolved blockers
-- older log sections that are no longer needed for active execution
-- leaving a short summary and reference behind in PROJECT.md
-- deleting a stale PLAN.md (no active workflow uses it)
-
-### Out of Scope
-- active work
-- current status
-- current continuation checkpoint
-- anything still needed for the next immediate phase
-- the PLAN.md of an active workflow — it stays in place while the workflow runs and persists after completion; this skill is the only deletion path, and it only deletes once the plan is stale (step 7)
-
-## When to Archive
-
-**Good times:**
-- After a major phase is complete and no longer active
-- After feature implementation is merged and follow-up work is minimal
-- After major refactoring finishes
-- When PROJECT.md becomes hard to navigate
-- Before starting a new major phase
-
-**Don't archive yet if:**
-- Work still in progress
-- Solution not validated
-- Tests still failing
-- Under active review
-- The archived material is still needed for the next immediate phase
+Keep PROJECT.md focused on active work: move completed-phase detail into
+PROJECT_ARCHIVE.md and delete a stale PLAN.md. This skill is the only deletion
+path for either. In scope: completed investigations, implementations,
+milestones, resolved blockers, and old log sections no longer needed for
+active execution. Never archive active work, Current Status, the current
+checkpoint, open blockers, or anything the next immediate phase needs; an
+active workflow's PLAN.md stays in place.
 
 ## Steps
 
-### 1. Identify what to archive
+1. **Pick the candidate** from PROJECT.md: a completed investigation,
+   implemented feature, finished refactor, or closed milestone. With one
+   clear candidate, archive it without asking; ask only when candidates are
+   equally plausible or the boundary is unclear.
+2. **Choose the sections.** Archive completed investigation timelines, Failed
+   Solutions once a solution works, old Development Log entries, resolved
+   blockers, and completed implementation notes. Keep Current Status, active
+   work, the last few log entries, open blockers, next steps, and the
+   checkpoint.
+3. **Append the archive entry** to PROJECT_ARCHIVE.md with
+   [templates/archive-entry.md](templates/archive-entry.md); never rewrite
+   earlier entries, and copy the archived sections verbatim.
+4. **Leave the breadcrumb** in PROJECT.md with
+   [templates/project-md-after.md](templates/project-md-after.md): phase name
+   and completion date, a 1–3 sentence summary, and the pointer to
+   PROJECT_ARCHIVE.md.
+5. **Handle a stale PLAN.md.** When `PLAN.md` exists at the repo root and
+   `bin/aitk project-state show` reports no snapshot or no unfinished
+   workflow, delete it and append `Completed: <date> — <feature>` to
+   PROJECT.md if absent. Its record lives in git (commits, PR description),
+   so its content is not preserved. When a workflow is still active, leave
+   PLAN.md in place and tell the user.
+6. **Log the archiving** in the Development Log:
 
-Infer the best archive candidate from PROJECT.md first. Common candidates: completed investigation, implemented feature, finished refactoring, closed milestone.
-
-Only ask the user if multiple candidates are equally plausible or the boundary is unclear. If there's one clear completed phase, proceed automatically.
-
-### 2. Read current PROJECT.md
-
-Use the `Read` tool to view PROJECT.md contents.
-
-### 3. Determine sections to archive
-
-| Archive | Keep |
-|---|---|
-| Completed investigation timelines | Current Status |
-| Failed Solutions (once solution working) | Active / In Progress work |
-| Old Development Log entries | Recent Development Log (last few entries) |
-| Resolved blockers | Open blockers |
-| Completed implementation notes | Next steps |
-| | Current continuation checkpoint |
-| | Anything needed for the next immediate phase |
-
-### 4. Create archive entry
-
-Use the template at [templates/archive-entry.md](templates/archive-entry.md). Append to PROJECT_ARCHIVE.md (don't rewrite prior archive entries).
-
-### 5. Update PROJECT.md
-
-Replace archived sections with the breadcrumb template at [templates/project-md-after.md](templates/project-md-after.md). Keep only:
-- phase name and completion date
-- 1–3 sentence summary
-- pointer to PROJECT_ARCHIVE.md
-
-### 6. Log the archiving
-
-Append a Development Log entry using [templates/log-entry.md](templates/log-entry.md).
-
-### 7. Handle stale PLAN.md (if applicable)
-
-If a `PLAN.md` exists at the repo root AND no active workflow references it (no Continuation Checkpoint with `Active plan: PLAN.md`):
-- Delete it
-- Append a "Completed" entry to PROJECT.md if not already present: `<date> — <feature>`
-
-The audit trail of what was built lives in git (commits, PR description). Don't preserve PLAN.md content — it was a working draft, not a record.
-
-If a Continuation Checkpoint references PLAN.md, leave it in place and surface to the user — they may have an unfinished workflow.
-
-### 8. Verify
-
-- [ ] Archive entry written to PROJECT_ARCHIVE.md
-- [ ] Critical info preserved
-- [ ] PROJECT.md more concise
-- [ ] References resolve
-- [ ] Stale PLAN.md handled (deleted or left for active workflow)
-
-For a worked before/after, see [examples/worked-example.md](examples/worked-example.md).
-
-## Notes
-- Archive completed phases, don't delete the content
-- Keep PROJECT.md focused on current work
-- Searchable history lives in PROJECT_ARCHIVE.md
-- Use when completed phases are cluttering active work, not as a substitute for checkpointing
-- Once invoked, auto-archive the clear candidate rather than pausing for routine confirmation
-- Ask only when the archive boundary is genuinely ambiguous
+   ```markdown
+   ### [YYYY-MM-DDTHH:MM] — Archived: [Phase Name]
+   - Moved [X] sections to PROJECT_ARCHIVE.md
+   - Reason: [concrete, such as "phase complete and merged in PR #123"]
+   - PROJECT.md focus now: [one phrase]
+   ```

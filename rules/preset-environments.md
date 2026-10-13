@@ -29,32 +29,30 @@ Do not fall back to guessing common dev passwords for staging — the bot accoun
 
 ## Network Reachability (VPN)
 
-The GitHub API for Preset's repos — `superset-shell`, `superset-private`, `manager` — is reachable **only from the corporate VPN**. Jenkins mirrors build status back onto the PRs as commit statuses, but reading any of it still needs VPN-level API access.
-
-Consequence for automation: **anything cloud-executed cannot read these repos.** A
-cloud-backed `recurrence` binding runs off the VPN and cannot authenticate to the
-API. Do not recommend it for workflows that must read a Preset repo (PR
-watching, CI polling, release audits).
-
-Automation that must read these repos runs **locally** on a host connected to the VPN: an in-session recurrence capability or a local scheduler invoking the provider's headless runner. A local runner only fires while the machine is awake and VPN-connected, so scheduled runs must report missed/offline executions rather than silently implying coverage.
-
-Public repos (e.g. the toolkit's own) are unaffected; cloud scheduling is fine there.
+Preset's private repositories are reachable only from the corporate VPN; what
+that means for watching and scheduling is in `skills/pr-watch/SKILL.md`
+(Recurrence Reachability).
 
 ## Environment Detection
 
-Identify which environment is under test by the app URL:
+Identify which environment is under test by the app URL's host. `*` stands
+for one or more host labels (workspace hosts look like
+`<ws>.us1a.app-stg.preset.io`). `scripts/preset/hosts.mjs` implements this
+table; scripts import it instead of matching hosts themselves.
 
-| URL Pattern | Environment | Credentials |
-|-------------|-------------|-------------|
-| `localhost:*` | Local dev | Try `admin`/`admin`, `admin`/`general` |
-| `*.stg.preset.io` or `stg.` in hostname | Staging | `PRESET_STG_BOT_LOGIN` / `PRESET_STG_BOT_PASSWORD` |
-| `*.preset.io` (no `stg`) | Production | Do not run automated tests |
+| Host pattern | Environment | Credentials |
+|--------------|-------------|-------------|
+| `localhost`, `127.0.0.1`, `0.0.0.0` (any port) | Local dev | Try `admin`/`admin`, `admin`/`general` |
+| `*.app-stg.preset.io`, `manage.app-stg.preset.io` | Staging | `PRESET_STG_BOT_LOGIN` / `PRESET_STG_BOT_PASSWORD` |
+| `*.app-dev.preset.io`, `manage.app-dev.preset.io` | Dev (not production) | Ask the user; never reuse staging or production credentials |
+| `*.app.preset.io`, `manage.app.preset.io`, `app.preset.io` | Production | Do not run automated tests |
+| Anything else | Unknown | Treat as production: stop and ask the user |
 
 **Never run automated browser tests against production.**
 
 ## Preset Products
 
-| Product | Typical local port | Staging URL pattern |
-|---------|-------------------|---------------------|
-| Manager | 3000 | `manager.stg.preset.io` |
-| Superset-shell | 8088 | `*.stg.preset.io` |
+| Product | Typical local port | Staging host | Dev host |
+|---------|-------------------|--------------|----------|
+| Manager | 3000 | `manage.app-stg.preset.io` | `manage.app-dev.preset.io` |
+| Superset-shell | 8088 | `*.app-stg.preset.io` (one host per workspace) | `*.app-dev.preset.io` |

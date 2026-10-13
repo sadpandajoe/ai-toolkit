@@ -30,7 +30,5 @@ Append this block to PROJECT_ARCHIVE.md. Preserve any earlier entries above; do 
 
 ## Rules
 
-- Date in `YYYY-MM-DD` format for sort/grep friendliness.
-- Summary fields are short — one line each. Detail goes in "Full Details".
-- "Key Decisions" should capture *why*, not just *what*. Future readers care about the reasoning.
-- Preserve archived sections verbatim under "Full Details" — don't paraphrase, don't trim.
+- "Key Decisions" capture *why*, not just *what*: future readers need the reasoning.
+- Preserve archived sections verbatim under "Full Details": don't paraphrase or trim.

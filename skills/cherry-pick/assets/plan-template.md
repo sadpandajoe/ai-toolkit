@@ -2,10 +2,17 @@
 
 ## Rules
 
-- The **Execution Table Row** is required for every cherry-pick — it is the tracking artifact that follows the cherry through apply → adapt → validate.
-- For trivial changes, the Adaptation Strategy can be a single line ("Clean apply expected, no adaptation needed"). For non-trivial, use per-file detail.
-- See [../examples/execution-table.md](../examples/execution-table.md) for the full 13-column batch table and field meanings.
-- Do not re-litigate the gate's go/no-go — the plan is about *how*, not *whether*.
+- The plan is about *how*, not *whether*: do not re-litigate the gate. A plan
+  may note disagreement with the gate for the user, never override it.
+- For trivial changes, the Adaptation Strategy can be one line ("Clean apply
+  expected, no adaptation needed"); for non-trivial, give per-file detail.
+- List modify/delete files explicitly; they need `git rm` during apply.
+- For a bundled PR, list each sub-fix and its applicability, recommend which to
+  include, treat entangled sub-fixes atomically, and state "N of M sub-fixes
+  planned for inclusion".
+- Record the plan's outcome in the row of `CHERRY_PICK.md`
+  ([../templates/cherry-pick-manifest.md](../templates/cherry-pick-manifest.md)),
+  which owns the row schema and the adaptation severity definitions.
 
 ## Template
 
@@ -22,18 +29,13 @@ Expected conflicts: [list with resolution approach or "none expected"]
 Unknown risks: [list or "none"]
 
 ### Adaptation Strategy
-[For non-trivial: detailed per-file approach]
+[For non-trivial: per-file approach, API and import changes, what to include and drop]
 [For trivial: "Clean apply expected, no adaptation needed"]
 
 ### Validation Approach
 Checks: [specific commands]
 Tests: [specific test files/suites or "none identified"]
 Gaps: [what can't be validated locally]
-
-### Execution Table Row
-| SHA | PR | Description | Risk | Confidence | Decision | Status | Adaptation | Validation | Notes |
-|-----|----|-------------|------|------------|----------|--------|------------|------------|-------|
-| `<sha>` | #NNN | <summary> | LOW/MED/HIGH | X/10 | Auto/Approval/Escalate | Planned | None/Minor/Medium/High | Not run | <notes> |
 
 ### Risk Summary
 Overall risk: LOW / MED / HIGH

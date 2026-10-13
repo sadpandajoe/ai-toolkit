@@ -11,8 +11,8 @@ not improved by a third round of the same reviewers.
 - Every COMPLEX bug-fix plan (`fix-plan` mode) against its accepted RCA.
 - A STANDARD plan only when the snapshot's `classification_confidence` is
   `LOW` or the user asked for a plan review; otherwise the verification loop
-  is its gate. `create-feature`, `fix-bug`, `plan-phase.md`, and
-  `planning/SKILL.md` follow this list and add no case of their own.
+  is its gate. `create-feature`, `fix-bug`, `plan-implementation.md`,
+  and `planning/SKILL.md` follow this list and add no case of their own.
 
 ## Dispatch
 
@@ -24,7 +24,9 @@ the mode, the plan section verbatim, the accepted decomposition's invariants
 for `phase-plan` mode, the accepted RCA for `fix-plan` mode, and the routing
 snapshot line; never earlier validation rounds unless this is the informed
 revision, in which case include the previous findings and what changed. The
-worker receives its contract inline from the route runner.
+worker receives its contract inline from the route runner and works from that
+prompt alone; it does not open `PROJECT.md` or `PLAN.md`, which carry earlier
+validation rounds.
 
 ## Second Family (XL decomposition)
 
@@ -34,11 +36,16 @@ validator did not use, concurrently and with the same prompt, when the
 decomposition being validated is size XL. A wrong cut there costs every later
 phase, so this is the one plan artifact that earns two families. Merge by
 convergence: a finding both raised is blocking at its severity; a finding one
-raised is validated by the parent against the repo before it blocks; a split
-verdict is `CHANGES_REQUIRED` carrying both sets of findings. Smaller
+raised is validated by the parent against the repo before it blocks (a plan
+has no executable failure scenario for a verifier to reproduce, so the parent
+checks the cited files and contracts instead); a split verdict is
+`CHANGES_REQUIRED` carrying both sets of findings. Smaller
 decompositions and every phase plan stay at one validator.
 
 ## Consume the verdict
+
+This section is the one home of verdict handling; `review-plan`, `create-feature`
+and `fix-bug` follow it.
 
 - `APPROVE` → gate `PASS`; record it and proceed to implementation.
 - `CHANGES_REQUIRED` → the same planner makes one informed revision, then
@@ -57,7 +64,8 @@ decompositions and every phase plan stay at one validator.
   the retry budget in `rules/gates.md`. Do not iterate further.
 
 Record the outcome with `bin/aitk project-state gate --gate plan --status
-<PASS|RETRY|ESCALATE|USER_DECISION> --unit <decomposition|phase-name>`
-(`--editorial` when the revision was wording only, so it is not charged) and
-append the verdict and blocking findings to `PLAN.md` under
-`## Validation: <unit>`. Findings, not scores, are the persistent artifact.
+<PASS|RETRY|ESCALATE|USER_DECISION> --unit <decomposition|phase-name>
+--format block` (`--editorial` when the revision was wording only, so it is
+not charged), paste the gate block it prints, and append the verdict and
+blocking findings to `PLAN.md` under `## Validation: <unit>`. Findings, not
+scores, are the persistent artifact.

@@ -27,17 +27,13 @@ skills/<name>/
 
 Shared frontmatter intentionally contains only these two portable fields. Put Codex display metadata and `policy.allow_implicit_invocation` in `agents/openai.yaml`; keep concrete provider model/tool configuration in provider adapters.
 
-**The "Before Starting" line** at the top of every SKILL.md:
-```
-Read any sibling `rules.md`, `lessons.md`, and `gotchas.md` files if present.
-```
-This convention ensures scoped guidance loads without bloating always-on context.
+**Sibling files** (`rules.md`, `gotchas.md`, `lessons.md`, templates): link each from the phase that needs it; omit the line when none exist. Scoped guidance then loads only where it applies.
 
 Worker and specialist definitions live outside `skills/`: `agents/claude/` and `agents/codex/` hold the native subagent roster, `agents/specialists/` the provider-neutral contracts the route runner inlines.
 
 ## When each file fires
 
-- `rules.md` — always read when the skill is invoked. Same shape as global `/rules` files.
+- `rules.md` — scoped rules, read when a phase links them. Same shape as global `/rules` files.
 - `gotchas.md` — "don't do X, here's what bit us." Concrete failure modes with incident references.
 - `lessons.md` — "do Y, here's what worked." Patterns the user has validated.
 - `references/*.md` — phase-specific steps the orchestrator reads inline or passes to a subagent. The umbrella `SKILL.md` routes to them by intent.
@@ -56,7 +52,6 @@ End-to-end workflow umbrellas:
 | [reflection/](reflection/) | Observation queue, memory review/prune, failure postmortems, rule promotion with eval candidates |
 | [planning/](planning/) | Sized planning: inline plans, decomposition, just-in-time phase plans, independent validation |
 | [pm/](pm/) | Product scoping before planning — feature briefs, acceptance criteria, milestones |
-| [plan-review/](plan-review/) | Focused lenses the plan validator and deep code review apply: architecture, backend, frontend, feasibility |
 | [qa/](qa/) | Triage, fix validation, impact assessment, use-case discovery, scenario expansion, bug filing |
 | [testing/](testing/) | HOW to test — creating/updating automated test suites, reviewing test code |
 | [review/](review/) | One independent review, validate-then-fix, delta re-review, conditional deep lenses, PR posting |
@@ -70,7 +65,6 @@ Workflow scaffolding (mostly orchestrator-only; not auto-routed):
 |----------|---------|
 | [verification-loop/](verification-loop/) | Shared verify, fix, recheck loop returning PASS / RETRY / ESCALATE / RECLASSIFY / USER_DECISION / BLOCKED |
 | [reporting/](reporting/) | Final summary + continuation checkpoint shapes |
-| [metrics-emit/](metrics-emit/) | Append structured event to `.ai-toolkit/metrics.jsonl` |
 | [archive-project-file/](archive-project-file/) | Move completed PROJECT.md content to PROJECT_ARCHIVE.md |
 | [agent-setup-maintainer/](agent-setup-maintainer/) | Auditing or updating toolkit skills, rules, interfaces, and generated adapters |
 
@@ -81,6 +75,7 @@ Domain integrations:
 | [shortcut/](shortcut/) | Shortcut REST API: fetch story, post report, attach artifacts |
 | [superset-local/](superset-local/) | Superset-specific local Docker stack and Playwright glue |
 | [preset-rbac-setup/](preset-rbac-setup/) | Seed canonical RBAC test users on a fresh Preset staging workspace |
+| [pgm/](../extensions/pgm/skills/pgm/) | Optional PGM extension: status and velocity reports, stakeholder comms; installed with `--with-pgm` |
 
 ## Designing a new skill
 

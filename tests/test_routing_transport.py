@@ -9,48 +9,60 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import hashlib
 import json
+import os
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from unittest import mock
 
-from aitk.model_routing import (
-    BLOCKED_EXIT,
-    ModelRouteError,
+from aitk.routing_policy import BLOCKED_EXIT, REFUSED_ERROR, ModelRouteError
+from aitk.routing_resolver import resolve_route
+from aitk.routing_transport import (
     _valid_worker,
     parse_claude_output,
     parse_codex_output,
-    resolve_route,
     run_model,
+    worker_instructions,
     worker_prompt,
+    worker_schema,
 )
 
 from routing_fixtures import (
     ROOT,
     MODEL_CATALOG,
     _claude_runner,
+    _codex_runner,
     RESULT,
     RoutingTestCase,
 )
 
 
 class RoutingTransportTests(RoutingTestCase):
-    def test_worker_prompt_carries_route_and_restrictions(self) -> None:
+    def test_instructions_carry_contracts_then_route_and_the_task_stays_apart(self) -> None:
         route = resolve_route(ROOT, "operations", "claude")
         contract_content = "# Read-only evidence contract\n"
-        prompt = worker_prompt(
-            route,
-            "Collect the named evidence.",
-            (("skills/qa/SKILL.md", "digest", contract_content),),
+        instructions = worker_instructions(
+            route, (("skills/qa/SKILL.md", "digest", contract_content),)
         )
-        self.assertIn("AI_TOOLKIT_MODEL_ROUTE_V1", prompt)
+        self.assertTrue(instructions.startswith("AI_TOOLKIT_MODEL_ROUTE_V1\n"))
         selector = MODEL_CATALOG["claude"]["models"]["sonnet"]["selector"]
-        self.assertIn(f"selector={selector}", prompt)
-        self.assertIn("effort=high", prompt)
-        self.assertIn("design tests", prompt)
-        self.assertIn(contract_content, prompt)
-        self.assertTrue(prompt.endswith("TASK_END\n"))
+        self.assertIn(f"selector={selector}", instructions)
+        self.assertIn("effort=high", instructions)
+        self.assertIn("design tests", instructions)
+        self.assertIn(contract_content, instructions)
+        # Stable contracts first, the per-dispatch header after, so lanes that
+        # share a contract list share a cached prefix.
+        self.assertLess(
+            instructions.index(contract_content), instructions.index("route=operations")
+        )
+        # Digests belong to the envelope, not the prompt.
+        self.assertNotIn("digest", instructions)
+        task = worker_prompt("Collect the named evidence.")
+        self.assertEqual("TASK_BEGIN\nCollect the named evidence.\nTASK_END\n", task)
+        self.assertNotIn("Collect the named evidence.", instructions)
 
     def test_provider_output_parsers_require_one_structured_result(self) -> None:
         codex = json.dumps(
@@ -131,16 +143,8 @@ class RoutingTransportTests(RoutingTestCase):
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             calls.append(argv)
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
-            flags = " ".join(
-                (
-                    "--ephemeral --strict-config --ignore-user-config --ignore-rules ",
-                    "--skip-git-repo-check ",
-                    "--disable --model --config --sandbox --cd --add-dir --output-schema ",
-                    "--output-last-message --json",
-                )
-            )
-            return subprocess.CompletedProcess(argv, 0, flags, "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
+            raise AssertionError("a dry run asks the CLI only for its version")
 
         with tempfile.TemporaryDirectory() as cwd, tempfile.NamedTemporaryFile(
             "w", encoding="utf-8"
@@ -168,7 +172,7 @@ class RoutingTransportTests(RoutingTestCase):
                     runner=runner,
                 )
         self.assertEqual(0, code)
-        self.assertEqual(2, len(calls))
+        self.assertEqual(1, len(calls))
         argv = payload["argv"]
         # The deep route on Codex is Astra, never the Sol workhorse.
         self.assertIn(MODEL_CATALOG["codex"]["models"]["astra"]["selector"], argv)
@@ -184,11 +188,17 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(str(Path(cwd).resolve()), argv[argv.index("--add-dir") + 1])
         self.assertIn("--output-last-message", argv)
         self.assertNotIn("--fallback-model", argv)
+        # A dry run names the instruction channel without printing the contracts.
+        self.assertIn("developer_instructions=<instructions>", argv)
+        self.assertEqual(
+            ["agents/specialists/reviewer.md", "rules/code-review.md", "rules/severity.md"],
+            [item["path"] for item in payload["contracts"]],
+        )
 
     def test_prerelease_at_minimum_version_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
-                argv, 0, "codex-cli 0.155.0-alpha.1\n", ""
+                argv, 0, "codex-cli 0.159.3-alpha.1\n", ""
             )
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
@@ -212,20 +222,10 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertTrue(payload["dry_run"])
 
     def test_cli_one_release_below_the_provider_floor_fails_closed(self) -> None:
-        """GPT-6 Sol needs Codex 0.155.0 and Opus 5.5 needs Claude Code 2.1.280."""
-        ALL_FLAGS = " ".join(
-            (
-                "--ephemeral --strict-config --ignore-user-config --ignore-rules",
-                "--skip-git-repo-check --disable --model --config --sandbox --cd",
-                "--add-dir --output-schema --output-last-message --json",
-                "--print --no-session-persistence --safe-mode --strict-mcp-config",
-                "--mcp-config --effort --permission-mode --json-schema",
-                "--output-format --disallowedTools --tools",
-            )
-        )
+        """GPT-6.1 Sol needs Codex 0.159.3 and Sonnet 5.5 needs Claude Code 2.1.284."""
         cases = (
-            ("codex", "/bin/codex", "codex-cli 0.154.9\n"),
-            ("claude", "/bin/claude", "2.1.279\n"),
+            ("codex", "/bin/codex", "codex-cli 0.159.2\n"),
+            ("claude", "/bin/claude", "2.1.283\n"),
         )
         for provider, executable, version in cases:
             with self.subTest(provider=provider):
@@ -233,11 +233,9 @@ class RoutingTransportTests(RoutingTestCase):
                 def runner(
                     argv: list[str], version: str = version, **_: object
                 ) -> subprocess.CompletedProcess[str]:
-                    # Only the version is stale; every flag probe succeeds, so a
-                    # rejection can come from nothing but the floor.
                     if "--version" in argv:
                         return subprocess.CompletedProcess(argv, 0, version, "")
-                    return subprocess.CompletedProcess(argv, 0, ALL_FLAGS, "")
+                    raise AssertionError("the worker must not start")
 
                 with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
                     prompt.write("Review this change.")
@@ -263,15 +261,8 @@ class RoutingTransportTests(RoutingTestCase):
     def test_dry_run_emits_exact_claude_controls_without_fallback(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
-            flags = " ".join(
-                (
-                    "--print --no-session-persistence --safe-mode --strict-mcp-config ",
-                    "--mcp-config --model --effort --permission-mode --json-schema ",
-                    "--output-format --disallowedTools --tools",
-                )
-            )
-            return subprocess.CompletedProcess(argv, 0, flags, "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
+            raise AssertionError("a dry run asks the CLI only for its version")
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
             prompt.write("Review this change.")
@@ -303,31 +294,46 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(
             '{"mcpServers": {}}', argv[argv.index("--mcp-config") + 1]
         )
+        # The review routes get read-only git: bare `Bash` in the tool box, and
+        # only the git read commands allowed. `--restricted` keeps every other
+        # command-running tool out, and with `--permission-prompts none` any
+        # Bash call no rule allows is denied instead of waiting on a prompt.
         tool_start = argv.index("--tools") + 1
-        tool_end = argv.index("--json-schema")
-        self.assertEqual(["Read", "Grep", "Glob"], argv[tool_start:tool_end])
+        tool_end = argv.index("--allowedTools")
+        self.assertEqual(["Read", "Grep", "Glob", "Bash"], argv[tool_start:tool_end])
+        rules_end = argv.index("--json-schema")
+        self.assertEqual(
+            [
+                "Bash(git log *)",
+                "Bash(git show *)",
+                "Bash(git diff *)",
+                "Bash(git blame *)",
+            ],
+            argv[tool_end + 1 : rules_end],
+        )
+        self.assertIn("--restricted", argv)
+        self.assertEqual("none", argv[argv.index("--permission-prompts") + 1])
         self.assertNotIn("--fallback-model", argv)
+        self.assertEqual(
+            "<instructions-path>", argv[argv.index("--append-system-prompt-file") + 1]
+        )
+        self.assertEqual("15", argv[argv.index("--max-budget-usd") + 1])
 
     def test_runner_inlines_only_the_derived_contract_closure(self) -> None:
         worker_input = ""
+        instructions = ""
+        instruction_mode = 0
 
         def runner(
             argv: list[str], **kwargs: object
         ) -> subprocess.CompletedProcess[str]:
-            nonlocal worker_input
+            nonlocal worker_input, instructions, instruction_mode
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
-            if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--print --no-session-persistence --safe-mode ",
-                        "--strict-mcp-config --mcp-config --model --effort ",
-                        "--permission-mode --json-schema --output-format ",
-                        "--disallowedTools --tools",
-                    )
-                )
-                return subprocess.CompletedProcess(argv, 0, flags, "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             worker_input = str(kwargs["input"])
+            path = Path(argv[argv.index("--append-system-prompt-file") + 1])
+            instructions = path.read_text()
+            instruction_mode = path.stat().st_mode & 0o777
             envelope = {
                 "type": "result",
                 "subtype": "success",
@@ -342,7 +348,7 @@ class RoutingTransportTests(RoutingTestCase):
             with mock.patch(
                 "aitk.routing_transport.shutil.which", return_value="/bin/claude"
             ):
-                code, _ = run_model(
+                code, payload = run_model(
                     ROOT,
                     "deep-review",
                     "claude",
@@ -352,34 +358,41 @@ class RoutingTransportTests(RoutingTestCase):
                     runner=runner,
                 )
         self.assertEqual(0, code)
+        self.assertEqual(0o600, instruction_mode)
+        for contract in (
+            "agents/specialists/reviewer.md",
+            "rules/code-review.md",
+            "rules/severity.md",
+        ):
+            self.assertIn(f"CONTRACT path={contract}\n", instructions)
+        # The parent's files never reach the reviewer.
         for contract in (
             "rules/model-assignment.md",
+            "rules/specialist-handoff.md",
             "skills/review/SKILL.md",
-            "agents/specialists/reviewer.md",
+            "skills/review/references/local-review.md",
         ):
-            self.assertIn(f"CONTRACT path={contract} sha256=", worker_input)
+            self.assertNotIn(f"CONTRACT path={contract}\n", instructions)
         expected_contracts = resolve_route(
             ROOT,
             "deep-review",
             "claude",
             boundary="review.independent",
         ).required_contracts
-        self.assertEqual(len(expected_contracts), worker_input.count("CONTRACT path="))
-        self.assertNotIn("CONTRACT path=README.md", worker_input)
+        self.assertEqual(len(expected_contracts), instructions.count("CONTRACT path="))
+        self.assertNotIn("CONTRACT path=README.md", instructions)
+        # The user message is the task alone; the digests are in the envelope.
+        self.assertEqual("TASK_BEGIN\nReview this change.\nTASK_END\n", worker_input)
+        self.assertEqual(
+            list(expected_contracts), [item["path"] for item in payload["contracts"]]
+        )
+        for item in payload["contracts"]:
+            self.assertRegex(item["sha256"], r"^[0-9a-f]{64}$")
 
     def test_unreadable_codex_final_message_fails_closed(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
-            if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--ephemeral --strict-config --ignore-user-config ",
-                        "--ignore-rules --skip-git-repo-check --disable --model --config --sandbox ",
-                        "--cd --add-dir --output-schema --output-last-message --json",
-                    )
-                )
-                return subprocess.CompletedProcess(argv, 0, flags, "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
             output_path = Path(argv[argv.index("--output-last-message") + 1])
             output_path.write_bytes(b"\xff")
             return subprocess.CompletedProcess(argv, 0, "", "")
@@ -406,16 +419,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_codex_success_path_returns_the_structured_result(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.155.0\n", "")
-            if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--ephemeral --strict-config --ignore-user-config ",
-                        "--ignore-rules --skip-git-repo-check --disable --model --config --sandbox ",
-                        "--cd --add-dir --output-schema --output-last-message --json",
-                    )
-                )
-                return subprocess.CompletedProcess(argv, 0, flags, "")
+                return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
             output_path = Path(argv[argv.index("--output-last-message") + 1])
             output_path.write_text(json.dumps(RESULT))
             return subprocess.CompletedProcess(
@@ -436,11 +440,60 @@ class RoutingTransportTests(RoutingTestCase):
                     Path(prompt.name),
                     cwd=ROOT,
                     runner=runner,
+                    reviewed_tree="b" * 40,
                 )
 
         self.assertEqual(0, code)
         self.assertEqual(RESULT, payload["result"])
         self.assertEqual({"started": True, "exit_code": 0}, payload["transport"])
+        # The envelope carries what `gate --gate review --result` records.
+        encoded = json.dumps(RESULT, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        self.assertEqual(
+            "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+            payload["result_digest"],
+        )
+        self.assertEqual("b" * 40, payload["reviewed_tree"])
+
+    def test_a_codex_write_run_that_leaves_files_in_the_temp_root_fails(self) -> None:
+        # The temporary `--cd` root is deleted after the run; an edit that
+        # landed there instead of the workspace would vanish unseen.
+        def codex_runner(stray: str | None):
+            def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+                if "--version" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "codex-cli 0.159.3\n", "")
+                root = Path(argv[argv.index("--cd") + 1])
+                self.assertEqual(root, Path(str(options["cwd"])))
+                if stray == "src/":
+                    (root / "src").mkdir()
+                elif stray is not None:
+                    target = root / stray
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("edit\n")
+                Path(argv[argv.index("--output-last-message") + 1]).write_text(json.dumps(RESULT))
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"type": "turn.completed"}), "")
+
+            return runner
+
+        def run(route: str, boundary: str, stray: str | None) -> tuple[int, dict[str, object]]:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt, tempfile.TemporaryDirectory() as cwd:
+                prompt.write("Fix the bug.")
+                prompt.flush()
+                with mock.patch("aitk.routing_transport.shutil.which", return_value="/bin/codex"):
+                    return run_model(
+                        ROOT, route, "codex", boundary, Path(prompt.name), cwd=Path(cwd), runner=codex_runner(stray)
+                    )
+
+        for stray in ("app.py", "src/module.py", "src/"):
+            with self.subTest(stray=stray):
+                code, payload = run("implementation", "workflows.fix-bug-implementation", stray)
+                self.assertEqual(3, code, payload)
+                self.assertTrue(payload["transport"]["started"])
+                self.assertIsNone(payload["result"])
+                self.assertIn("Codex wrote outside the workspace", payload["error"]["message"])
+                self.assertIn(stray, payload["error"]["message"])
+        code, payload = run("implementation", "workflows.fix-bug-implementation", None)
+        self.assertEqual(0, code, payload)
+        self.assertEqual(RESULT, payload["result"])
 
     def test_unscored_lane_rejects_a_non_empty_findings_array(self) -> None:
         # code-judo emits unscored proposals. A proposal written into `findings`
@@ -451,17 +504,7 @@ class RoutingTransportTests(RoutingTestCase):
         ) -> Callable[..., subprocess.CompletedProcess[str]]:
             def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
                 if "--version" in argv:
-                    return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
-                if "--help" in argv:
-                    flags = " ".join(
-                        (
-                            "--print --no-session-persistence --safe-mode ",
-                            "--strict-mcp-config --mcp-config --model --effort ",
-                            "--permission-mode --json-schema --output-format ",
-                            "--disallowedTools --tools",
-                        )
-                    )
-                    return subprocess.CompletedProcess(argv, 0, flags, "")
+                    return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                 return subprocess.CompletedProcess(
                     argv,
                     0,
@@ -835,7 +878,7 @@ class RoutingTransportTests(RoutingTestCase):
         self.assertEqual(BLOCKED_EXIT, code)
         self.assertEqual(worker, payload["result"])
 
-    def test_the_worker_prompt_states_the_vocabulary_it_is_graded_on(self) -> None:
+    def test_the_worker_instructions_state_the_vocabulary_they_are_graded_on(self) -> None:
         # Enforcement without disclosure is a trap: the runner rejects an
         # untagged fan-out result, so the header the worker reads has to name the
         # tags it will be checked against.
@@ -847,24 +890,24 @@ class RoutingTransportTests(RoutingTestCase):
             lens="skills/review/references/deep-quality.md",
         )
         plan_route = resolve_route(ROOT, "review", "claude", "planning.validate")
-        plain = resolve_route(ROOT, "review", "claude", "cherry-pick.scope-leak-review")
+        plain = resolve_route(ROOT, "review", "claude", "cherry-pick.validate-scope-leak")
         batch = resolve_route(ROOT, "review", "claude", "review.pr-batch")
         self.assertIn(
             "grading=every finding must begin with one of "
             "[major]|[minor]|[nitpick]\n",
-            worker_prompt(code_route, "task", ()),
+            worker_instructions(code_route, ()),
         )
         self.assertIn(
             "grading=every finding must begin with one of [High]|[Medium]|[Low]; "
             "summary must contain a `Verdict: APPROVE|CHANGES_REQUIRED|REPLAN` "
             "line of its own\n",
-            worker_prompt(plan_route, "task", ()),
+            worker_instructions(plan_route, ()),
         )
         # The batch lane's summary is checked line by line, so the header names
         # each line rather than only the finding vocabulary. Tightening the check
         # without tightening this text is exactly the trap the comment above
         # describes, one field over.
-        batch_header = worker_prompt(batch, "task", ())
+        batch_header = worker_instructions(batch, ())
         self.assertIn("every finding must begin with one of [major]", batch_header)
         for label in (
             "PR: #<N> <title>",
@@ -875,7 +918,7 @@ class RoutingTransportTests(RoutingTestCase):
             self.assertIn(label, batch_header)
         # Always emitted, `-` included, so a worker never has to tell "no domain"
         # apart from "header field the runner forgot".
-        self.assertIn("grading=-\n", worker_prompt(plain, "task", ()))
+        self.assertIn("grading=-\n", worker_instructions(plain, ()))
 
     def test_provider_timeout_and_nonzero_exit_fail_closed(self) -> None:
         for failure, expected_exit in (("timeout", None), ("nonzero", 17)):
@@ -885,17 +928,7 @@ class RoutingTransportTests(RoutingTestCase):
                     argv: list[str], **_: object
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
-                        return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
-                    if "--help" in argv:
-                        flags = " ".join(
-                            (
-                                "--print --no-session-persistence --safe-mode ",
-                                "--strict-mcp-config --mcp-config --model --effort ",
-                                "--permission-mode --json-schema --output-format ",
-                                "--disallowedTools --tools",
-                            )
-                        )
-                        return subprocess.CompletedProcess(argv, 0, flags, "")
+                        return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                     if failure == "timeout":
                         raise subprocess.TimeoutExpired(argv, 1)
                     return subprocess.CompletedProcess(argv, 17, "", "rejected")
@@ -932,17 +965,7 @@ class RoutingTransportTests(RoutingTestCase):
     def test_provider_failure_diagnostic_is_bounded(self) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
-            if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--print --no-session-persistence --safe-mode ",
-                        "--strict-mcp-config --mcp-config --model --effort ",
-                        "--permission-mode --json-schema --output-format ",
-                        "--disallowedTools --tools",
-                    )
-                )
-                return subprocess.CompletedProcess(argv, 0, flags, "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             return subprocess.CompletedProcess(argv, 1, "", "x" * 5000)
 
         with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
@@ -971,17 +994,7 @@ class RoutingTransportTests(RoutingTestCase):
     ) -> None:
         def runner(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
             if "--version" in argv:
-                return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
-            if "--help" in argv:
-                flags = " ".join(
-                    (
-                        "--print --no-session-persistence --safe-mode ",
-                        "--strict-mcp-config --mcp-config --model --effort ",
-                        "--permission-mode --json-schema --output-format ",
-                        "--disallowedTools --tools",
-                    )
-                )
-                return subprocess.CompletedProcess(argv, 0, flags, "")
+                return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
             return subprocess.CompletedProcess(
                 argv,
                 1,
@@ -1083,17 +1096,7 @@ class RoutingTransportTests(RoutingTestCase):
                     argv: list[str], **_: object
                 ) -> subprocess.CompletedProcess[str]:
                     if "--version" in argv:
-                        return subprocess.CompletedProcess(argv, 0, "2.1.280\n", "")
-                    if "--help" in argv:
-                        flags = " ".join(
-                            (
-                                "--print --no-session-persistence --safe-mode ",
-                                "--strict-mcp-config --mcp-config --model --effort ",
-                                "--permission-mode --json-schema --output-format ",
-                                "--disallowedTools --tools",
-                            )
-                        )
-                        return subprocess.CompletedProcess(argv, 0, flags, "")
+                        return subprocess.CompletedProcess(argv, 0, "2.1.284\n", "")
                     value = {**RESULT, "status": status}
                     envelope = {
                         "type": "result",
@@ -1123,6 +1126,328 @@ class RoutingTransportTests(RoutingTestCase):
                         )
                 self.assertEqual(expected_exit, code)
                 self.assertEqual(status, payload["result"]["status"])
+
+
+ADVERSARIAL = "skills/review/references/adversarial.md"
+GUIDANCE_MARKER = "AITK-GUIDANCE-MARKER-7f3a"
+
+
+class InstructionChannelAndRefusalTests(RoutingTestCase):
+    """What reaches a worker, by which channel, and how a refusal is recorded (D15)."""
+
+    def run_lane(
+        self,
+        runner: Callable[..., subprocess.CompletedProcess[str]],
+        route: str,
+        provider: str,
+        boundary: str,
+        lens: str | None = None,
+        cwd: Path = ROOT,
+    ) -> tuple[int, dict[str, object]]:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as prompt:
+            prompt.write("Review this change.\n")
+            prompt.flush()
+            with mock.patch(
+                "aitk.routing_transport.shutil.which",
+                side_effect=lambda name: f"/bin/{name}",
+            ):
+                return run_model(
+                    ROOT, route, provider, boundary, Path(prompt.name),
+                    cwd=cwd, runner=runner, lens=lens,
+                )
+
+    def test_codex_gets_contracts_as_developer_instructions_in_an_isolated_home(self) -> None:
+        calls: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as home:
+            # The user's Codex home holds the toolkit's installed guidance, a
+            # personal agent and a skill; only the auth file may reach a worker.
+            Path(home, "auth.json").write_text('{"token": "x"}')
+            Path(home, "AGENTS.md").write_text(f"{GUIDANCE_MARKER}: orchestrate.\n")
+            Path(home, "agents").mkdir()
+            Path(home, "agents", "aitk-planner.toml").write_text(f"# {GUIDANCE_MARKER}\n")
+            Path(home, "skills").mkdir()
+            with mock.patch.dict(os.environ, {"CODEX_HOME": home}):
+                code, payload = self.run_lane(
+                    _codex_runner(RESULT, calls), "review", "codex", "review.independent"
+                )
+            self.assertEqual({"token": "x"}, json.loads(Path(home, "auth.json").read_text()))
+        self.assertEqual(0, code, payload)
+        (call,) = calls
+        self.assertEqual({"auth.json": 0o600}, call["codex_home"])
+        self.assertNotEqual(home, call["env"]["CODEX_HOME"])
+        self.assertFalse(Path(call["env"]["CODEX_HOME"]).exists(), "isolated home outlived the run")
+        argv = call["argv"]
+        everything = "\n".join(argv) + str(call["input"])
+        self.assertNotIn(GUIDANCE_MARKER, everything)
+        overrides = [argv[index + 1] for index, item in enumerate(argv) if item == "--config"]
+        (developer,) = [item for item in overrides if item.startswith("developer_instructions=")]
+        for forbidden in ("instructions=", "model_instructions_file="):
+            self.assertFalse(
+                any(item.startswith(forbidden) for item in overrides), forbidden
+            )
+        text = tomllib.loads(developer)["developer_instructions"]
+        self.assertTrue(text.startswith("AI_TOOLKIT_MODEL_ROUTE_V1\n"))
+        self.assertIn("CONTRACT path=agents/specialists/reviewer.md\n", text)
+        self.assertNotIn("Review this change.", text)
+        self.assertEqual("TASK_BEGIN\nReview this change.\nTASK_END\n", call["input"])
+        self.assertEqual(
+            ["agents/specialists/reviewer.md", "rules/code-review.md", "rules/severity.md"],
+            [item["path"] for item in payload["contracts"]],
+        )
+
+    def test_the_codex_instruction_channel_is_bounded(self) -> None:
+        with mock.patch("aitk.routing_transport.CODEX_INSTRUCTIONS_LIMIT", 1000):
+            with self.assertRaisesRegex(ModelRouteError, "instruction channel limit"):
+                self.run_lane(_codex_runner(RESULT), "review", "codex", "review.independent")
+
+    def test_each_lane_gets_its_own_strict_schema(self) -> None:
+        def strict(schema: dict[str, object]) -> None:
+            self.assertFalse(schema["additionalProperties"])
+            self.assertEqual(sorted(schema["properties"]), sorted(schema["required"]))
+            text = json.dumps(schema).lower()
+            for field in ("reasoning", "rationale"):
+                self.assertNotIn(f'"{field}"', text)
+
+        judo = resolve_route(ROOT, "deep-review", "claude", "review.code-judo")
+        lens = resolve_route(
+            ROOT, "deep-review", "claude", "review.deep-lenses", lens=ADVERSARIAL
+        )
+        plan = resolve_route(ROOT, "review", "claude", "planning.validate")
+        for route in (judo, lens, plan):
+            with self.subTest(boundary=route.boundary):
+                strict(worker_schema(route))
+        self.assertEqual(0, worker_schema(judo)["properties"]["findings"]["maxItems"])
+        self.assertNotIn("maxItems", worker_schema(lens)["properties"]["findings"])
+        self.assertIn("[major]", worker_schema(lens)["properties"]["findings"]["description"])
+        self.assertIn("Verdict:", worker_schema(plan)["properties"]["summary"]["description"])
+        # The schema each provider receives is the lane's own.
+        calls: list[dict[str, object]] = []
+        code, _ = self.run_lane(
+            _codex_runner(RESULT, calls), "deep-review", "codex", "review.code-judo"
+        )
+        self.assertEqual(0, code)
+        self.assertEqual(0, calls[0]["schema"]["properties"]["findings"]["maxItems"])
+        claude_calls: list[dict[str, object]] = []
+        code, _ = self.run_lane(
+            _claude_runner(RESULT, claude_calls), "deep-review", "claude", "review.code-judo"
+        )
+        self.assertEqual(0, code)
+        argv = claude_calls[0]["argv"]
+        schema = json.loads(argv[argv.index("--json-schema") + 1])
+        self.assertEqual(0, schema["properties"]["findings"]["maxItems"])
+
+    def test_claude_gets_contracts_as_a_private_system_prompt_file_and_a_budget(self) -> None:
+        calls: list[dict[str, object]] = []
+        code, payload = self.run_lane(
+            _claude_runner(RESULT, calls), "deep-review", "claude", "review.independent"
+        )
+        self.assertEqual(0, code, payload)
+        (call,) = calls
+        self.assertEqual(0o600, call["instructions_mode"])
+        self.assertIn("CONTRACT path=agents/specialists/reviewer.md\n", call["instructions"])
+        self.assertEqual("TASK_BEGIN\nReview this change.\nTASK_END\n", call["input"])
+        argv = call["argv"]
+        self.assertFalse(Path(argv[argv.index("--append-system-prompt-file") + 1]).exists())
+        self.assertEqual("xhigh", argv[argv.index("--effort") + 1])
+        self.assertEqual("15", argv[argv.index("--max-budget-usd") + 1])
+        code, payload = self.run_lane(
+            _claude_runner(RESULT, calls), "review", "claude", "review.independent"
+        )
+        argv = calls[-1]["argv"]
+        self.assertEqual("high", argv[argv.index("--effort") + 1])
+        self.assertEqual("5", argv[argv.index("--max-budget-usd") + 1])
+
+    def test_a_cli_without_a_readable_version_fails_closed(self) -> None:
+        """The version floor is the only preflight, so every way of missing it stops the run."""
+        for label, completed in (
+            ("no version in the output", (0, "claude code\n", "")),
+            ("version command fails", (1, "", "unknown option --version")),
+            ("prerelease of the floor", (0, "2.1.284-beta.2\n", "")),
+        ):
+            def runner(
+                argv: list[str], completed: tuple[int, str, str] = completed, **_: object
+            ) -> subprocess.CompletedProcess[str]:
+                if "--version" in argv:
+                    return subprocess.CompletedProcess(argv, *completed)
+                raise AssertionError("the worker must not start")
+
+            with self.subTest(case=label):
+                code, payload = self.run_lane(runner, "review", "claude", "review.independent")
+                self.assertEqual(3, code)
+                self.assertFalse(payload["transport"]["started"])
+                self.assertEqual("MODEL_ROUTE_UNAVAILABLE", payload["error"]["code"])
+
+    def test_a_cli_at_or_above_the_floor_starts_the_worker(self) -> None:
+        for version in ("2.1.284\n", "2.1.285\n", "2.2.0\n", "3.0.0\n"):
+            started: list[list[str]] = []
+
+            def runner(
+                argv: list[str], version: str = version, **options: object
+            ) -> subprocess.CompletedProcess[str]:
+                if "--version" in argv:
+                    return subprocess.CompletedProcess(argv, 0, version, "")
+                started.append(argv)
+                return _claude_runner(RESULT)(argv, **options)
+
+            with self.subTest(version=version.strip()):
+                code, payload = self.run_lane(runner, "review", "claude", "review.independent")
+                self.assertEqual(0, code, payload)
+                self.assertEqual(1, len(started))
+
+    def test_a_refusal_is_recorded_apart_from_an_outage(self) -> None:
+        cases = (
+            ("claude", _claude_runner(RESULT, refusal="refusal"), "refusal"),
+            ("codex", _codex_runner(None, refusal="invalid_prompt"), "invalid_prompt"),
+        )
+        for provider, runner, category in cases:
+            with self.subTest(provider=provider):
+                code, payload = self.run_lane(runner, "review", provider, "review.independent")
+                self.assertEqual(3, code)
+                self.assertEqual(REFUSED_ERROR, payload["error"]["code"])
+                self.assertEqual(category, payload["error"]["category"])
+                self.assertIsNone(payload["reroute"], "only the adversarial lens reroutes")
+                self.assertEqual(provider, payload["provider"])
+        # An ordinary failure event is still an outage, not a refusal.
+        def failing(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+            if "--version" in argv:
+                return _codex_runner(None)(argv, **options)
+            event = {"type": "error", "error": {"code": "server_error"}}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(event), "")
+
+        code, payload = self.run_lane(failing, "review", "codex", "review.independent")
+        self.assertEqual(3, code)
+        self.assertEqual("MODEL_ROUTE_UNAVAILABLE", payload["error"]["code"])
+        self.assertNotIn("category", payload["error"])
+
+    def test_a_refused_adversarial_lens_reroutes_once_to_the_other_provider(self) -> None:
+        def both(
+            codex: Callable[..., subprocess.CompletedProcess[str]],
+            claude: Callable[..., subprocess.CompletedProcess[str]],
+            started: list[str],
+        ) -> Callable[..., subprocess.CompletedProcess[str]]:
+            def runner(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+                provider = "codex" if argv[0].endswith("codex") else "claude"
+                if "--version" not in argv:
+                    started.append(provider)
+                return (codex if provider == "codex" else claude)(argv, **options)
+
+            return runner
+
+        # Codex declines the adversarial lens; Claude answers it once.
+        started: list[str] = []
+        code, payload = self.run_lane(
+            both(_codex_runner(None, refusal="cyber_policy"), _claude_runner(RESULT), started),
+            "deep-review", "codex", "review.deep-lenses", lens=ADVERSARIAL,
+        )
+        self.assertEqual(0, code, payload)
+        self.assertEqual(["codex", "claude"], started)
+        self.assertEqual("claude", payload["provider"])
+        self.assertEqual(RESULT, payload["result"])
+        self.assertEqual("codex", payload["reroute"]["from"])
+        self.assertEqual("claude", payload["reroute"]["to"])
+        self.assertEqual("cyber_policy", payload["reroute"]["category"])
+        # A reroute that is refused too stands as refused; there is no third try.
+        started = []
+        code, payload = self.run_lane(
+            both(
+                _codex_runner(None, refusal="cyber_policy"),
+                _claude_runner(RESULT, refusal="refusal"),
+                started,
+            ),
+            "deep-review", "codex", "review.deep-lenses", lens=ADVERSARIAL,
+        )
+        self.assertEqual(3, code)
+        self.assertEqual(["codex", "claude"], started)
+        self.assertEqual(REFUSED_ERROR, payload["error"]["code"])
+        self.assertEqual("codex", payload["reroute"]["from"])
+        # Any other lens's refusal is not rerouted.
+        started = []
+        code, payload = self.run_lane(
+            both(_codex_runner(None, refusal="cyber_policy"), _claude_runner(RESULT), started),
+            "deep-review", "codex", "review.deep-lenses",
+            lens="skills/review/references/deep-quality.md",
+        )
+        self.assertEqual(3, code)
+        self.assertEqual(["codex"], started)
+        self.assertIsNone(payload["reroute"])
+        # The adversarial workflow's own boundary carries the lens too.
+        started = []
+        code, payload = self.run_lane(
+            both(_codex_runner(RESULT), _claude_runner(RESULT, refusal="refusal"), started),
+            "deep-review", "claude", "workflows.adversarial-primary",
+        )
+        self.assertEqual(0, code, payload)
+        self.assertEqual(["claude", "codex"], started)
+        self.assertEqual("refusal", payload["reroute"]["category"])
+
+    def test_the_envelope_records_what_the_provider_reported_spending(self) -> None:
+        def claude(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+            if "--version" in argv:
+                return _claude_runner(RESULT)(argv, **options)
+            output = {
+                "type": "result", "subtype": "success", "is_error": False,
+                "structured_output": RESULT, "total_cost_usd": 0.42,
+                "usage": {"input_tokens": 12, "cache_read_input_tokens": 30,
+                          "cache_creation_input_tokens": 4, "output_tokens": 7},
+            }
+            return subprocess.CompletedProcess(argv, 0, json.dumps(output), "")
+
+        code, payload = self.run_lane(claude, "review", "claude", "review.independent")
+        self.assertEqual(0, code, payload)
+        self.assertEqual(
+            {"input_tokens": 12, "cache_read_input_tokens": 30, "cache_creation_input_tokens": 4,
+             "output_tokens": 7, "cost_usd": 0.42},
+            payload["usage"],
+        )
+
+        def codex(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+            completed = _codex_runner(RESULT)(argv, **options)
+            if "--version" in argv:
+                return completed
+            turns = [
+                {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 60, "output_tokens": 9}},
+                {"type": "turn.completed", "usage": {"input_tokens": 50, "cached_input_tokens": 0, "output_tokens": 1}},
+            ]
+            return subprocess.CompletedProcess(argv, 0, "\n".join(json.dumps(t) for t in turns), "")
+
+        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"CODEX_HOME": home}):
+            code, payload = self.run_lane(codex, "review", "codex", "review.independent")
+        self.assertEqual(0, code, payload)
+        # Codex counts cached input inside input_tokens; the envelope splits it out.
+        self.assertEqual(
+            {"input_tokens": 90, "cache_read_input_tokens": 60, "cache_creation_input_tokens": 0,
+             "output_tokens": 10, "cost_usd": None},
+            payload["usage"],
+        )
+        # A provider that reports nothing leaves the field empty, as does a dry run.
+        code, payload = self.run_lane(_claude_runner(RESULT), "review", "claude", "review.independent")
+        self.assertIsNone(payload["usage"])
+
+    def test_a_caller_resolved_dispatch_runs_through_the_same_checks(self) -> None:
+        import dataclasses
+
+        from aitk.routing_transport import run_resolved
+
+        route = resolve_route(ROOT, "review", "claude")
+        with self.assertRaisesRegex(ModelRouteError, "no required contracts"):
+            run_resolved(ROOT, route, "Grade this.", ROOT, runner=_claude_runner(RESULT))
+        route = dataclasses.replace(
+            route, boundary="eval.grade", required_contracts=("rules/severity.md",)
+        )
+        with self.assertRaisesRegex(ModelRouteError, "timeout must be positive"):
+            run_resolved(ROOT, route, "Grade this.", ROOT, 0, _claude_runner(RESULT))
+        calls: list[dict[str, object]] = []
+        with mock.patch(
+            "aitk.routing_transport.shutil.which", side_effect=lambda name: f"/bin/{name}"
+        ):
+            code, payload = run_resolved(ROOT, route, "Grade this.", ROOT, 60, _claude_runner(RESULT, calls))
+        self.assertEqual(0, code, payload)
+        self.assertEqual(RESULT, payload["result"])
+        self.assertIsNone(payload["reviewed_tree"], "a caller-resolved run never backs a review gate")
+        self.assertIsNone(payload["reroute"])
+        (call,) = calls
+        self.assertIn("CONTRACT path=rules/severity.md\n", call["instructions"])
+        self.assertEqual("TASK_BEGIN\nGrade this.\nTASK_END\n", call["input"])
 
 
 if __name__ == "__main__":

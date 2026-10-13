@@ -1,34 +1,18 @@
 # Resource Management
 
-## Golden Rules
+Check resources before consuming them (Docker, test workers, builds, agents);
+parallel work shares one machine.
 
-- Check resources before consuming them: Docker, test workers, builds, agents.
-- Fit work to measured capacity, not to container count or CPU count.
-- Bound agent trees: one worker layer below the goal skill, one exceptional
-  specialist child (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=2`). Parallel workers
-  share the machine; two or three at once is the normal ceiling.
-
-## Routing
-
-| Work | Read |
-|---|---|
-| Starting Docker or local app stacks | `skills/preflight/rules.md` |
-| Entering or preparing a git worktree | `skills/preflight/rules.md` |
-| Running Jest, pytest, Playwright, or similar suites | `skills/testing/rules.md` |
-
-## Always-On Guardrails
-
-- Before starting containers, run `docker ps` and check two things: capacity
-  fit (read the daemon cap with `docker info | grep "Total Memory"` and current
-  aggregate use, estimate the new stack, show the math, proceed if it fits, ask
-  only on genuine over-capacity) and staleness (list containers running over 24h
-  or named for old branches, and ask before stopping any).
-- Choose test worker counts intentionally.
-- In worktrees, assume dependencies, build outputs, and env files may be missing.
-
-## Capacity Reference
-
-Docker Desktop's memory cap is independent of host RAM; measure it rather than
-encoding one machine. A Superset stack typically uses 4 to 6 GB. If the user is
-at capacity, suggest raising Docker Desktop memory rather than killing work, and
-never change Docker settings programmatically.
+- Fit work to measured capacity, not to container count or CPU count. The
+  Docker facts and thresholds live in
+  `skills/workflows/references/check-resources.md`.
+- Cap test workers explicitly: Jest's default worker count can OOM, so pass
+  `--maxWorkers`; size pytest `-n` the same way; respect
+  `playwright.config`'s worker strategy unless there is a clear reason not to.
+- Run parallel workers as measured capacity allows, not a fixed two or three.
+- Keep the agent tree bounded: the goal skill, one worker layer, and one
+  exceptional specialist child (`rules/orchestration.md`).
+- A git worktree shares `.git` but not dependencies, build outputs, or `.env`
+  files: install, rebuild, or copy them before tests or builds there.
+- Never change Docker Desktop settings programmatically; suggest the change to
+  the user.

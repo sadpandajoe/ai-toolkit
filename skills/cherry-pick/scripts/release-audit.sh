@@ -12,6 +12,11 @@
 #   PRESENT-BY-CHERRY-MARK — a commit on target carries "cherry picked from
 #                            commit <this sha>"
 #
+# A subject's PR number is the one in `Merge pull request #N`, else the
+# trailing `(#N)` GitHub adds on squash, else the first `#N`; an issue
+# reference earlier in the subject does not count. Target subjects starting
+# with `Revert` are skipped: a reverted PR is not on the release branch.
+#
 # MISSING rows are candidates, not decisions: verify each with
 # `gh pr view <n>` before queuing (see references/release-audit.md).
 
@@ -22,11 +27,24 @@ source_branch="${2:-$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/n
 
 mb=$(git merge-base "$source_branch" "$target")
 
+MERGE_PR='^Merge pull request #([0-9]+)'
+TRAILING_PR='\(#([0-9]+)\)[[:space:]]*$'
+ANY_PR='#([0-9]+)'
+
+pr_number() {
+  if [[ $1 =~ $MERGE_PR ]] || [[ $1 =~ $TRAILING_PR ]] || [[ $1 =~ $ANY_PR ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+  fi
+}
+
 # PR numbers already represented in the target's own first-parent history
 # (its merges/squashes since divergence, including prior cherry-picks that
-# kept the "(#N)" suffix).
+# kept the "(#N)" suffix), reverts excluded.
 target_prs=$(git log --first-parent --format='%s' "$mb..$target" \
-  | grep -oE '#[0-9]+' | tr -d '#' | sort -u || true)
+  | while IFS= read -r subject; do
+      [[ $subject == Revert* ]] && continue
+      pr_number "$subject"
+    done | sort -u)
 
 # Source SHAs already applied to target via `git cherry-pick -x` markers —
 # the only exact already-applied evidence (PR/title matches are advisory).
@@ -36,7 +54,7 @@ picked_shas=$(git log --format='%b' "$mb..$target" \
 printf 'status\tsha\tpr\tsubject\n'
 git log --first-parent --reverse --format='%H%x09%s' "$mb..$source_branch" \
 | while IFS=$'\t' read -r sha subject; do
-    pr=$(grep -oE '#[0-9]+' <<<"$subject" | head -1 | tr -d '#' || true)
+    pr=$(pr_number "$subject")
     status="MISSING"
     if [ -n "$pr" ] && grep -qx "$pr" <<<"$target_prs"; then
       status="PRESENT-BY-PR"

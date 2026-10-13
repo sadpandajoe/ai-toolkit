@@ -1,10 +1,34 @@
-{"id": "route-review-and-fix", "mode": "deterministic", "input": "review this branch and fix anything important", "expected": {"workflow": "review-code"}, "source": "plan"}
-{"id": "route-fix-bug", "mode": "deterministic", "input": "fix this bug: pagination skips rows after an update", "expected": {"workflow": "fix-bug"}, "source": "plan"}
-{"id": "route-create-feature", "mode": "deterministic", "input": "build a feature that adds bulk edit for dashboard filters", "expected": {"workflow": "create-feature"}, "source": "plan"}
-{"id": "route-fix-ci", "mode": "deterministic", "input": "fix the failing CI checks on this PR", "expected": {"workflow": "fix-ci"}, "source": "plan"}
-{"id": "route-address-feedback", "mode": "deterministic", "input": "address review comments on PR 123", "expected": {"workflow": "address-feedback"}, "source": "plan"}
-{"id": "route-watch-pr", "mode": "deterministic", "input": "watch pr 123 until it is green", "expected": {"workflow": "watch-pr"}, "source": "plan"}
-{"id": "route-review-plan", "mode": "deterministic", "input": "review technical plan in PLAN.md", "expected": {"workflow": "review-plan"}, "source": "plan"}
-{"id": "route-unrelated", "mode": "deterministic", "input": "what does this regex match?", "expected": {"workflow": null}, "source": "plan"}
+{"id": "route-review-and-fix", "mode": "judgment", "input": "review this branch and fix anything important", "expected": {"workflow": "review-code"}, "source": "plan"}
+{"id": "route-fix-bug", "mode": "judgment", "input": "fix this bug: pagination skips rows after an update", "expected": {"workflow": "fix-bug"}, "source": "plan"}
+{"id": "route-create-feature", "mode": "judgment", "input": "build a feature that adds bulk edit for dashboard filters", "expected": {"workflow": "create-feature"}, "source": "plan"}
+{"id": "route-fix-ci", "mode": "judgment", "input": "fix the failing CI checks on this PR", "expected": {"workflow": "fix-ci"}, "source": "plan"}
+{"id": "route-address-feedback", "mode": "judgment", "input": "address review comments on PR 123", "expected": {"workflow": "address-feedback"}, "source": "plan"}
+{"id": "route-watch-pr", "mode": "judgment", "input": "watch pr 123 until it is green", "expected": {"workflow": "watch-pr"}, "source": "plan"}
+{"id": "route-review-plan", "mode": "judgment", "input": "review technical plan in PLAN.md", "expected": {"workflow": "review-plan"}, "source": "plan"}
+{"id": "route-unrelated", "mode": "judgment", "input": "what does this regex match?", "expected": {"workflow": null}, "source": "plan"}
 {"id": "route-review-only", "mode": "judgment", "input": "review this; don't change anything", "expected": {"workflow": "review-code", "remediation": false}, "source": "plan"}
 {"id": "route-rca-only", "mode": "judgment", "input": "investigate why exports time out; do not modify code", "expected": {"skill": "debug", "mutation": false}, "source": "plan"}
+{"id": "daily-create-feature", "mode": "judgment", "input": "Please build a feature for bulk editing dashboards", "expected": {"workflow": "create-feature"}, "source": "migration"}
+{"id": "daily-fix-bug", "mode": "judgment", "input": "Diagnose and fix this broken behavior", "expected": {"workflow": "fix-bug"}, "source": "migration"}
+{"id": "daily-fix-ci", "mode": "judgment", "input": "GitHub Actions failing on my PR", "expected": {"workflow": "fix-ci"}, "source": "migration"}
+{"id": "daily-address-feedback", "mode": "judgment", "input": "Address the review comments on PR 42", "expected": {"workflow": "address-feedback"}, "source": "migration"}
+{"id": "daily-adversarial-review", "mode": "judgment", "input": "Run an adversarial code review", "expected": {"workflow": "review-code", "adversarial": true}, "source": "migration"}
+{"id": "daily-review-code", "mode": "judgment", "input": "Review my code before I push", "expected": {"workflow": "review-code"}, "source": "migration"}
+{"id": "daily-review-plan", "mode": "judgment", "input": "Review the technical plan", "expected": {"workflow": "review-plan"}, "source": "migration"}
+{"id": "daily-review-pr", "mode": "judgment", "input": "Review pull request 42", "expected": {"workflow": "review-pr"}, "source": "migration"}
+{"id": "daily-test-pr", "mode": "judgment", "input": "Manually test PR 42 in the browser", "expected": {"workflow": "test-pr"}, "source": "migration"}
+{"id": "daily-run-test-plan", "mode": "judgment", "input": "Execute the test plan for SQL Lab", "expected": {"workflow": "run-test-plan"}, "source": "migration"}
+{"id": "daily-watch-pr", "mode": "judgment", "input": "Babysit PR 42 until CI is green", "expected": {"workflow": "watch-pr"}, "source": "migration"}
+{"id": "daily-checkpoint", "mode": "judgment", "input": "Save a checkpoint before I clear context", "expected": {"workflow": "checkpoint"}, "source": "migration"}
+{"id": "daily-metrics", "mode": "judgment", "input": "Show me the workflow metrics", "expected": {"workflow": "metrics"}, "source": "migration"}
+{"id": "daily-toolkit-doctor", "mode": "judgment", "input": "Validate toolkit health", "expected": {"workflow": "toolkit-doctor"}, "source": "migration"}
+{"id": "daily-update-tests", "mode": "judgment", "input": "Improve the existing test suite", "expected": {"workflow": "tests"}, "source": "migration"}
+{"id": "daily-create-tests", "mode": "judgment", "input": "Create the first tests for this package", "expected": {"workflow": "tests"}, "source": "migration"}
+{"id": "daily-create-pr", "mode": "judgment", "input": "Open a pull request for these changes", "expected": {"workflow": "create-pr"}, "source": "migration"}
+{"id": "daily-show-cost", "mode": "judgment", "input": "Show the current session cost", "expected": {"workflow": "show-cost"}, "source": "migration"}
+{"id": "daily-check-resources", "mode": "judgment", "input": "Check local capacity before the test run", "expected": {"workflow": "check-resources"}, "source": "migration"}
+{"id": "daily-start", "mode": "judgment", "input": "Resume session from saved state", "expected": {"workflow": "start"}, "source": "migration"}
+{"id": "question-explain-ci-failure", "mode": "judgment", "input": "explain this CI failure", "expected": {"workflow": null, "edits": false}, "source": "prompt-audit"}
+{"id": "question-how-review-works", "mode": "judgment", "input": "how does code review work here", "expected": {"workflow": null, "edits": false}, "source": "prompt-audit"}
+{"id": "question-what-pr-changes", "mode": "judgment", "input": "what does PR 123 change", "expected": {"workflow": null, "edits": false}, "source": "prompt-audit"}
+{"id": "direct-commit-request", "mode": "judgment", "input": "commit this", "expected": {"workflow": null}, "source": "prompt-audit"}

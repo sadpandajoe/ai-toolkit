@@ -1,7 +1,8 @@
-"""Deterministic eval cases: routing, classification derivation, gate budgets.
+"""Deterministic eval cases: classification derivation and gate budgets.
 
-Judgment-mode cases are model work and are skipped here; they are documented
-in `evals/README.md`.
+Judgment-mode cases (all of skill_routing: the router is the model reading
+`bin/aitk list --details --json`) are model work run by `bin/aitk eval`; they
+are documented in `evals/README.md`.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import json
 from pathlib import Path
 import unittest
 
-from aitk.conformance import route_workflow
+from aitk.eval import FAMILY_CONTRACTS, NON_FAMILY_DIRS
 from aitk.project_state import (
     ProjectStateError,
     classify_complexity,
@@ -29,10 +30,18 @@ def cases(family: str) -> list[dict[str, object]]:
 
 class EvalCorpusTests(unittest.TestCase):
     def test_every_family_has_cases_with_stable_shape(self) -> None:
-        families = sorted(p.name for p in (ROOT / "evals").iterdir() if p.is_dir())
+        # `bin/aitk eval` writes evals/results/ and the replay set lives in
+        # evals/replay/; neither holds cases.
+        families = sorted(
+            p.name
+            for p in (ROOT / "evals").iterdir()
+            if p.is_dir() and p.name not in NON_FAMILY_DIRS
+        )
         self.assertEqual(
             ["complexity", "gates", "planning", "skill_routing", "workflows"], families
         )
+        # Every family names the contracts its judgment cases run against.
+        self.assertEqual(families, sorted(FAMILY_CONTRACTS))
         for family in families:
             rows = cases(family)
             self.assertTrue(rows, family)
@@ -41,16 +50,6 @@ class EvalCorpusTests(unittest.TestCase):
             for row in rows:
                 self.assertEqual({"id", "mode", "input", "expected", "source"}, set(row))
                 self.assertIn(row["mode"], {"deterministic", "judgment"})
-
-    def test_skill_routing_cases(self) -> None:
-        for case in cases("skill_routing"):
-            if case["mode"] != "deterministic":
-                continue
-            with self.subTest(case=case["id"]):
-                match = route_workflow(ROOT, str(case["input"]))
-                expected = case["expected"]["workflow"]
-                actual = match.workflow.name if match is not None and match.workflow else None
-                self.assertEqual(expected, actual)
 
     def test_complexity_cases(self) -> None:
         for case in cases("complexity"):

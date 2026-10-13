@@ -1,28 +1,21 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
-from aitk.build import write_build
-from aitk.doctor import _secret_output, run_doctor
+from aitk.doctor import _personal_paths, _secret_output, run_doctor
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class DoctorTests(unittest.TestCase):
     def make_clean_repo(self, root: Path) -> None:
-        for directory in (
-            "config",
-            "hooks",
-            "rules",
-            "skills/example/references",
-        ):
-            (root / directory).mkdir(parents=True, exist_ok=True)
-        (root / "README.md").write_text("rules/universal.md skills/example/\n")
-        (root / ".gitignore").write_text(
-            "/PROJECT.md\n/PROJECT_ARCHIVE.md\n/PLAN.md\n/WATCH.md\n/CHERRY_PICK.md\n/CI_FIX.md\nbuild/\n"
-        )
-        (root / "config/CLAUDE.md").write_text("@{{TOOLKIT_DIR}}/rules/universal.md\n")
-        (root / "rules/universal.md").write_text("# Universal\n")
+        (root / "skills/example/references").mkdir(parents=True, exist_ok=True)
+        (root / "README.md").write_text("See [the example](skills/example/SKILL.md).\n")
         (root / "skills/example/SKILL.md").write_text(
             "---\n"
             "name: example\n"
@@ -31,10 +24,6 @@ class DoctorTests(unittest.TestCase):
             "Read [details](references/details.md).\n"
         )
         (root / "skills/example/references/details.md").write_text("# Details\n")
-        (root / "hooks/prevent-project-commit.sh").write_text(
-            "#!/bin/bash\n# PROJECT.md PROJECT_ARCHIVE.md PLAN.md WATCH.md CHERRY_PICK.md CI_FIX.md\n"
-        )
-        write_build(root)
 
     def test_clean_fixture_has_no_failures_or_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -44,37 +33,7 @@ class DoctorTests(unittest.TestCase):
             problems = [finding for finding in findings if finding.status != "PASS"]
             self.assertEqual([], problems)
 
-    def test_retired_command_sources_and_slash_aliases_fail_ownership(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "commands").mkdir()
-            (root / "commands/fix-bug.md").write_text("# Retired\n")
-            (root / "extensions/pgm/commands").mkdir(parents=True)
-            (root / "extensions/pgm/commands/report.md").write_text("# Retired\n")
-            extension_skill = root / "extensions/pgm/skills/pgm/SKILL.md"
-            extension_skill.parent.mkdir(parents=True)
-            extension_skill.write_text("Route this work to `/create-status-report`.\n")
-
-            finding = next(
-                item
-                for item in run_doctor(root)
-                if item.check == "canonical-ownership"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            combined = " ".join(finding.details)
-            self.assertIn("commands/fix-bug.md: retired command source", combined)
-            self.assertIn(
-                "extensions/pgm/commands/report.md: retired command source",
-                combined,
-            )
-            self.assertIn(
-                "extensions/pgm/skills/pgm/SKILL.md: retired slash alias",
-                combined,
-            )
-
-    def test_broken_link_and_bad_description_are_reported(self) -> None:
+    def test_broken_link_fails_and_bad_description_is_advisory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.make_clean_repo(root)
@@ -87,203 +46,56 @@ class DoctorTests(unittest.TestCase):
                 f"{finding.status} {finding.message} {' '.join(finding.details)}"
                 for finding in findings
             )
-            self.assertIn("DRIFT Skill descriptions", messages)
+            # The routing halves of a description are advice: reported, not failed.
+            self.assertIn(
+                "PASS Skill descriptions advisory: skills/example/SKILL.md: "
+                "description lacks positive and negative routing",
+                messages,
+            )
             self.assertIn("FAIL Markdown links", messages)
 
-    def test_rule_inventory_requires_a_real_non_readme_loader(self) -> None:
+    def test_skill_frontmatter_shape_still_drifts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.make_clean_repo(root)
-            (root / "rules/orphan.md").write_text("# Orphan\n")
-            (root / "README.md").write_text(
-                "rules/universal.md rules/orphan.md skills/example/\n"
+            (root / "skills/example/SKILL.md").write_text(
+                "---\nname: example\ndescription: Use when needed. Do NOT use otherwise.\n"
+                "model: opus\n---\n"
             )
-
             finding = next(
-                item for item in run_doctor(root) if item.check == "rule-loaders"
+                item for item in run_doctor(root) if item.check == "skill-descriptions"
             )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertEqual(("rules/orphan.md",), finding.details)
-
-    def test_rule_inventory_rejects_rule_only_reference_cycles(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "rules/first.md").write_text(
-                "# First\n\nRead `rules/second.md`.\n"
-            )
-            (root / "rules/second.md").write_text(
-                "# Second\n\nRead `rules/first.md`.\n"
-            )
-            (root / "README.md").write_text(
-                "rules/universal.md rules/first.md rules/second.md "
-                "skills/example/\n"
-            )
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "rule-loaders"
-            )
-
-            self.assertEqual("FAIL", finding.status)
+            self.assertEqual("DRIFT", finding.status)
             self.assertEqual(
-                ("rules/first.md", "rules/second.md"), finding.details
+                ("skills/example/SKILL.md: provider-specific fields model",), finding.details
             )
 
-    def test_rule_inventory_reports_non_utf8_sources_without_crashing(self) -> None:
+    def test_routing_manifest_problems_fail_the_doctor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            shutil.copytree(
+                ROOT, root, ignore=shutil.ignore_patterns(".git", "build", "__pycache__")
+            )
+            findings = {item.check: item for item in run_doctor(root)}
+            self.assertEqual("PASS", findings["model-routing"].status)
+            manifest = root / "interfaces/model-routing.json"
+            payload = json.loads(manifest.read_text())
+            payload["dispatch_boundaries"][0]["routes"] = ["no-such-route"]
+            manifest.write_text(json.dumps(payload))
+            findings = {item.check: item for item in run_doctor(root)}
+            self.assertEqual("FAIL", findings["model-routing"].status)
+
+    def test_personal_absolute_paths_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.make_clean_repo(root)
-            (root / "config/binary.yaml").write_bytes(b"\xff\xfe\x00")
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "rule-loaders"
+            self.assertEqual("PASS", _personal_paths(root).status)
+            (root / "skills/example/references/details.md").write_text(
+                "Run /Users/someone/tools/run.sh\n"
             )
-
+            finding = _personal_paths(root)
             self.assertEqual("FAIL", finding.status)
-            self.assertIn(
-                "config/binary.yaml: not valid UTF-8 text", finding.details
-            )
-
-    def test_readme_direct_workflow_rule_claims_match_manifest(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "interfaces").mkdir()
-            (root / "interfaces/workflows.json").write_text(
-                '{"version":1,"skill":"workflows",'
-                '"reference_root":"skills/workflows/references",'
-                '"workflows":[{"name":"example","summary":"Example",'
-                '"arguments":"","rules":["rules/universal.md"],'
-                '"triggers":["run example"],"execution_class":"single_run"}]}\n'
-            )
-            (root / "README.md").write_text(
-                "skills/example/\n\n"
-                "## Workflow Rules\n\n"
-                "| File | Owner / direct workflow loaders |\n"
-                "|---|---|\n"
-                "| `rules/universal.md` | Always-on guidance; `wrong` |\n"
-            )
-
-            finding = next(
-                item
-                for item in run_doctor(root)
-                if item.check == "readme-workflow-rules"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertIn(
-                "rules/universal.md: expected example; README claims none",
-                finding.details,
-            )
-
-    def test_readme_workflow_rule_rows_cannot_be_duplicated(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "interfaces").mkdir()
-            (root / "interfaces/workflows.json").write_text(
-                '{"version":1,"skill":"workflows",'
-                '"reference_root":"skills/workflows/references",'
-                '"workflows":[{"name":"example","summary":"Example",'
-                '"arguments":"","rules":[],"triggers":["run example"],'
-                '"execution_class":"single_run"}]}\n'
-            )
-            (root / "README.md").write_text(
-                "skills/example/\n\n## Workflow Rules\n\n"
-                "| File | Owner / direct workflow loaders |\n|---|---|\n"
-                "| `rules/universal.md` | Always-on |\n"
-                "| `rules/universal.md` | Still always-on |\n"
-            )
-
-            finding = next(
-                item
-                for item in run_doctor(root)
-                if item.check == "readme-workflow-rules"
-            )
-
-            self.assertIn(
-                "rules/universal.md: duplicate README workflow rule row",
-                finding.details,
-            )
-
-    def test_state_files_must_be_ignored_only_at_repository_root(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / ".gitignore").write_text(
-                "PROJECT.md\nPROJECT_ARCHIVE.md\nPLAN.md\nWATCH.md\n"
-                "CHERRY_PICK.md\nCI_FIX.md\nbuild/\n"
-            )
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "state-protection"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertIn("/PLAN.md", finding.details)
-
-    def test_provider_specific_primitives_in_shared_skills_fail(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            details = root / "skills/example/references/details.md"
-            details.write_text("Run EnterPlanMode then use model: haiku.\n")
-            findings = run_doctor(root)
-            portability = next(
-                finding
-                for finding in findings
-                if finding.check == "provider-portability"
-            )
-            self.assertEqual("FAIL", portability.status)
-            self.assertEqual(2, len(portability.details))
-
-    def test_every_forbidden_provider_primitive_category_has_a_negative_fixture(
-        self,
-    ) -> None:
-        cases = {
-            "provider template import": "@{{TOOLKIT_DIR}}/rules/provider.md\n",
-            "EnterPlanMode": "EnterPlanMode\n",
-            "ExitPlanMode": "ExitPlanMode\n",
-            "Claude task primitive": "TaskCreate\n",
-            "provider worktree primitive": "EnterWorktree\n",
-            "provider agent call": "Agent(task='review')\n",
-            "provider workflow runtime": "phase('review')\n",
-            "provider workflow tool": "Workflow tool\n",
-            "provider lifecycle command": "/compact\n",
-            "Claude model tier": "model: haiku\n",
-            "Claude skill directory": "CLAUDE_SKILL_DIR\n",
-            "Claude plugin cache": ".claude/plugins/cache/example\n",
-        }
-        for label, content in cases.items():
-            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                self.make_clean_repo(root)
-                details = root / "skills/example/references/details.md"
-                details.write_text(content)
-
-                finding = next(
-                    item
-                    for item in run_doctor(root)
-                    if item.check == "provider-portability"
-                )
-
-                self.assertEqual("FAIL", finding.status)
-                self.assertTrue(any(label in item for item in finding.details))
-
-    def test_non_object_plugin_manifest_fails_without_crashing(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / ".codex-plugin").mkdir()
-            (root / ".codex-plugin/plugin.json").write_text("[]\n")
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "provider-package"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertIn("JSON object", " ".join(finding.details))
+            self.assertEqual(("skills/example/references/details.md",), finding.details)
 
     def test_secret_output_scanner_covers_shell_and_python_sinks(self) -> None:
         cases = {
@@ -317,31 +129,6 @@ class DoctorTests(unittest.TestCase):
 
             self.assertEqual("PASS", finding.status)
             self.assertEqual((), finding.details)
-
-    def test_syntax_checks_ignore_environments_but_reject_authored_errors(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            dependency = root / ".venv/lib/python/site-packages"
-            dependency.mkdir(parents=True)
-            (dependency / "invalid.py").write_text("def broken(\n")
-            (dependency / "invalid.sh").write_text("if then\n")
-
-            findings = {item.check: item for item in run_doctor(root)}
-
-            self.assertEqual("PASS", findings["python-syntax"].status)
-            self.assertEqual("PASS", findings["shell-syntax"].status)
-
-            authored = root / "scripts"
-            authored.mkdir()
-            (authored / "invalid.py").write_text("def broken(\n")
-            (authored / "invalid.sh").write_text("if then\n")
-
-            findings = {item.check: item for item in run_doctor(root)}
-
-            self.assertEqual("FAIL", findings["python-syntax"].status)
-            self.assertEqual("FAIL", findings["shell-syntax"].status)
-
 
 if __name__ == "__main__":
     unittest.main()

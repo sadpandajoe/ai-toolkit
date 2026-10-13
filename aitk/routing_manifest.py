@@ -1,10 +1,15 @@
 """Loading and validating the routing manifest, fail-closed.
 
 Everything that answers "is this manifest, and the documents it points at,
-internally consistent" lives here: payload shape, per-lens route floors, lens menu
-completeness, seed-only closures, marker placement, and selector ownership. These
-checks are the reason the resolver can be small -- by the time a route resolves, the
-data it reads has already been proven well-formed.
+internally consistent" lives here: payload shape, per-route write controls and
+tool boxes, per-lane contract lists, parent-only contracts kept out of workers,
+the manifest's own lens floors, and the marker bijection. The route table
+itself (families, efforts, restrictions, boundary allowlists) lives only in
+`interfaces/model-routing.json`. These checks are the reason the resolver can
+be small -- by the time a route resolves, the data it reads has already been
+proven well-formed. The fence-aware route marker
+scan lives here too, since the marker inventory is the only thing the routing
+layer still reads out of Markdown.
 """
 
 from __future__ import annotations
@@ -14,23 +19,21 @@ from pathlib import Path
 import re
 
 from aitk.routing_policy import (
-    CLAUDE_SELECTOR,
-    CODEX_SELECTOR,
+    CRITIC_EXCLUDED_CONTRACTS,
     DISALLOWED_TOOLS,
-    DISPATCH_PATTERN,
-    EXEMPT_MARKER,
     LENS_DOMAINS,
-    LENS_DOMAIN_FLOORS,
-    LENS_ROUTE_FLOORS,
     ModelRouteError,
+    PARENT_ONLY_CONTRACTS,
     PERMISSION_MODES,
+    PROJECT_FILE_INSTRUCTION,
     PROVIDERS,
     REASONING,
     RESPONSIBILITIES,
+    ROUTE_CONTROLS,
     ROUTE_MARKER,
-    ROUTE_NAMES,
-    ROUTE_RESTRICTIONS,
+    ROUTE_TOOLS,
     SANDBOXES,
+    TOOL_ENTRY,
     SUMMARY_FORMS,
     _boundary_contracts,
     _lens_domain,
@@ -42,16 +45,93 @@ from aitk.routing_policy import (
     _safe_dispatch_path,
     _safe_path,
 )
-from aitk.routing_markdown import (
-    _catalog_lenses,
-    _contract_dependency_allowed,
-    _markdown_lines,
-    _span_link_targets,
-)
-from aitk.routing_closure import (
-    _required_contract_paths,
-    _structural_seeds,
-)
+from aitk.routing_closure import _required_contract_paths
+
+# Efforts a route may pin. `max` runs only on an explicit user ask, recorded in
+# the envelope, so it is never a route default.
+ROUTE_EFFORTS = ("low", "medium", "high", "xhigh")
+
+
+def _markdown_content_lines(text: str) -> list[tuple[int, str]]:
+    """Return numbered Markdown lines outside frontmatter and fenced blocks."""
+    result: list[tuple[int, str]] = []
+    fence_character: str | None = None
+    fence_length = 0
+    frontmatter = False
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.lstrip()
+        if number == 1 and stripped == "---":
+            frontmatter = True
+            continue
+        if frontmatter:
+            if stripped == "---":
+                frontmatter = False
+            continue
+        fence = re.match(r"(`{3,}|~{3,})", stripped)
+        if fence_character is not None:
+            if (
+                fence is not None
+                and fence.group(1)[0] == fence_character
+                and len(fence.group(1)) >= fence_length
+            ):
+                fence_character = None
+                fence_length = 0
+            continue
+        if fence is not None:
+            fence_character = fence.group(1)[0]
+            fence_length = len(fence.group(1))
+            continue
+        result.append((number, line))
+    return result
+
+
+def _route_markers(text: str) -> list[str]:
+    """Every route marker id in a document, in order, skipping fenced examples."""
+    return [
+        match.group(1)
+        for _, line in _markdown_content_lines(text)
+        if (match := ROUTE_MARKER.fullmatch(line.strip())) is not None
+    ]
+
+
+def _require_route_marker(root: Path, boundary_path: str, boundary_id: str) -> None:
+    """Fail closed on a boundary document that no longer dispatches this lane.
+
+    The document is the parent's procedure and nothing in it is inlined, but it
+    must still carry this lane's route marker. Loading the manifest checks it
+    for every boundary, so `resolve_route` never hands back a launchable route
+    for a lane the prose no longer dispatches; `validate_dispatch_boundaries`
+    adds the reverse direction (no stray or duplicate marker) at check time.
+    """
+    source = root / boundary_path
+    if not source.is_file() or source.is_symlink():
+        # An optional extension that is not installed has no document to read;
+        # `_safe_dispatch_path` already decided that is acceptable.
+        return
+    try:
+        content = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ModelRouteError(
+            f"boundary document could not be read: {boundary_path}"
+        ) from error
+    if boundary_id not in _route_markers(content):
+        raise ModelRouteError(f"missing route marker: {boundary_path}/{boundary_id}")
+
+
+def _contract_dependency_allowed(path: Path) -> bool:
+    if not path.parts:
+        return False
+    if path.parts[0] in {"rules", "skills"}:
+        return True
+    # Provider-neutral specialist contracts (reviewer, RCA, plan validator) are
+    # inlined into cross-provider workers the same way a skill reference is.
+    if len(path.parts) == 3 and path.parts[:2] == ("agents", "specialists"):
+        return True
+    return (
+        len(path.parts) >= 4
+        and path.parts[0] == "extensions"
+        and path.parts[2] == "skills"
+    )
 
 
 def load_model_routing(root: Path) -> dict[str, object]:
@@ -100,10 +180,14 @@ def _valid_lens_menu(root: Path, boundary: dict[str, object]) -> bool:
 
 
 def _valid_boundary_contracts(root: Path, boundary: dict[str, object]) -> bool:
-    """Check the declared per-lane contracts are distinct, existing Markdown files."""
+    """Check the lane's contract list: present, non-empty, distinct Markdown paths.
+
+    Every boundary declares its worker's contracts; nothing is inherited from the
+    boundary document any more, so a lane without a list would dispatch a worker
+    with no instructions at all. A listed file that does not exist is reported
+    separately, as a missing boundary contract, once the closure is derived.
+    """
     contracts = boundary.get("contracts")
-    if contracts is None:
-        return True
     if not isinstance(contracts, list) or not contracts:
         return False
     if len(set(map(repr, contracts))) != len(contracts):
@@ -111,10 +195,55 @@ def _valid_boundary_contracts(root: Path, boundary: dict[str, object]) -> bool:
     for contract in contracts:
         if not isinstance(contract, str) or not contract.endswith(".md"):
             return False
-        safe = _safe_path(root, contract)
-        if safe is None or not _contract_dependency_allowed(safe):
+        path = Path(contract)
+        if path.is_absolute() or ".." in path.parts:
+            return False
+        if not _contract_dependency_allowed(path):
+            return False
+        if (root / path).exists() and _safe_path(root, contract) is None:
             return False
     return True
+
+
+def _worker_contract_problems(
+    root: Path,
+    identifier: str,
+    responsibility: str,
+    closure: tuple[str, ...],
+) -> list[str]:
+    """Reject a closure that hands a worker the parent's own instructions.
+
+    Every worker is refused the routing policy and the handoff rules: they tell
+    the reader how to dispatch and brief workers. A critic (any review-route
+    lane: reviewer, second family, verifier, deep lens, plan validator,
+    adversarial lens) is also refused the parent's review procedure and the gate
+    rules, and any file that tells it to read `PROJECT.md` first, because each
+    of those carries the parent's view of the work into a lane whose value is
+    that it does not have one.
+    """
+    excluded = (
+        CRITIC_EXCLUDED_CONTRACTS if responsibility == "review" else PARENT_ONLY_CONTRACTS
+    )
+    problems = [
+        f"boundary {identifier} hands its worker a parent-only contract: {contract}"
+        for contract in closure
+        if contract in excluded
+    ]
+    if responsibility == "review":
+        for contract in closure:
+            source = root / contract
+            if not source.is_file() or source.is_symlink():
+                continue
+            try:
+                text = source.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if PROJECT_FILE_INSTRUCTION.search(text):
+                problems.append(
+                    f"boundary {identifier} hands a critic a contract that sends it "
+                    f"to PROJECT.md: {contract}"
+                )
+    return problems
 
 
 def _lens_route_problems(
@@ -126,15 +255,8 @@ def _lens_route_problems(
 
     A floor that no boundary can honour is worse than no floor: the lens is on
     the menu, so an orchestrator picks it, and every dispatch then fails at
-    resolve time. Catching it here keeps the failure at check time.
-
-    The map is required and is checked against `LENS_ROUTE_FLOORS`. Treating it
-    as optional meant `null`, `{}`, and a deleted entry each validated cleanly,
-    so the guarantee "the adversarial lens never runs on the cheap route" could
-    be removed by deleting the line that states it -- the one edit no reviewer
-    reads as a change in behaviour. Widening a floor is the failure direction, so
-    the manifest's allowed set for a pinned lens must stay within the pinned one;
-    narrowing it further (or flooring an additional lens) is still free.
+    resolve time. Catching it here keeps the failure at check time. The floors
+    themselves are data in the manifest.
     """
     floors = payload.get("lens_routes")
     if not isinstance(floors, dict):
@@ -142,19 +264,6 @@ def _lens_route_problems(
     if not floors:
         return ["lens_routes must not be empty"]
     problems: list[str] = []
-    for lens, pinned in sorted(LENS_ROUTE_FLOORS.items()):
-        declared = floors.get(lens)
-        # Element types before the set comparison, for the reason spelled out in
-        # the loop below: this reads the raw payload, not the coerced
-        # `_lens_routes`, so a nested member reaches `set()` as written.
-        if (
-            not isinstance(declared, list)
-            or not all(isinstance(route, str) for route in declared)
-            or not set(declared) <= set(pinned)
-        ):
-            problems.append(
-                f"lens route floor for {lens} must stay within: {', '.join(pinned)}"
-            )
     for lens, allowed in floors.items():
         if (
             not isinstance(lens, str)
@@ -192,12 +301,7 @@ def _lens_floor_problems(root: Path, payload: dict[str, object]) -> list[str]:
     sibling menus keep the union whole, so the lane is unreachable in exactly one
     workflow and nothing complains. The floor closes it per boundary.
 
-    The map is required, must cover every domain, and is checked against
-    `LENS_DOMAIN_FLOORS`. Optional floors made the whole check self-deleting: an
-    absent key, an empty object, or a dropped domain all validated, so the answer
-    to "which lenses must every code menu offer?" could become "none" without a
-    single check failing. Narrowing is the failure direction here -- the reverse
-    of `lens_routes` -- so a declared floor must contain the pinned one.
+    The floors themselves are data in the manifest.
     """
     raw = payload.get("lens_floors")
     if not isinstance(raw, dict):
@@ -206,13 +310,6 @@ def _lens_floor_problems(root: Path, payload: dict[str, object]) -> list[str]:
         return ["lens_floors must not be empty"]
     problems: list[str] = []
     floors = _lens_floors(payload)
-    for domain in LENS_DOMAINS:
-        pinned = LENS_DOMAIN_FLOORS.get(domain, ())
-        if not set(pinned) <= set(floors.get(domain, ())):
-            missing = sorted(set(pinned) - set(floors.get(domain, ())))
-            problems.append(
-                f"lens floor for {domain} drops pinned lenses: {', '.join(missing)}"
-            )
     for domain, declared in raw.items():
         if (
             not isinstance(domain, str)
@@ -283,90 +380,6 @@ def _closure_floor_problems(
     ]
 
 
-def _seed_only_problems(
-    root: Path,
-    boundary: dict[str, object],
-    responsibility: str,
-    identifier: str,
-    closure: tuple[str, ...],
-) -> list[str]:
-    """Reject a review lane whose closure is nothing but its structural seeds.
-
-    A review worker needs a grading contract: the lens it applies, or the
-    procedure it follows, or the severity vocabulary it reports in. The
-    structural seeds carry none of that -- they are the policy rules, the owning
-    skill, and the boundary document. A lane that adds nothing to them was
-    dispatched with no instructions about what to look for, and it will still
-    exit 0 and return confident-sounding prose, which is why this is checked
-    rather than left to show up as a weak review.
-
-    This is the check whose absence let thirteen boundaries lose their real
-    contracts silently when span traversal narrowed: each kept resolving, kept
-    passing validation, and only a full closure diff revealed the loss.
-
-    A lane whose boundary document genuinely *is* its grading contract -- the
-    Code-judo lens, the QA skill -- satisfies this by naming that document in its
-    own `contracts`. The declaration adds nothing to the closure, which is the
-    point: it turns "this lane needs nothing else" from an accident of the seed
-    arithmetic into a claim someone wrote down and a reviewer can disagree with.
-    """
-    if (
-        responsibility != "review"
-        or _lens_menu(boundary)
-        or _boundary_contracts(boundary)
-    ):
-        return []
-    seeds = set(_structural_seeds(root, str(boundary.get("path")), responsibility))
-    if set(closure) <= seeds:
-        return [
-            f"review boundary resolves to structural seeds only: {identifier} "
-            "-- declare its grading contracts in the boundary's `contracts` or "
-            "the document's `## Required Context`"
-        ]
-    return []
-
-
-# Every dispatch boundary's route allowlist ceiling is pinned here. Structural
-# validation alone would let an edit widen an allowlist (adding `review` to
-# `review.code-judo`, say) and still pass, silently defeating the fail-closed
-# route pinning the skills advertise.
-BOUNDARY_INVARIANTS = {
-    "cherry-pick.batch-investigation": ("rca", "deep-rca"),
-    "cherry-pick.headless-implementation": ("implementation",),
-    "cherry-pick.scope-leak-rereview": ("review", "deep-review"),
-    "cherry-pick.scope-leak-review": ("review", "deep-review"),
-    "cherry-pick.unblock-discovery": ("review",),
-    "cherry-pick.validate-scope-leak": ("review", "deep-review"),
-    "cherry-pick.validate-scope-leak-rerun": ("review", "deep-review"),
-    "debug.ci-triage": ("rca", "deep-rca"),
-    "debug.rca-specialist": ("rca", "deep-rca"),
-    "feedback.comment-fix-groups": ("implementation",),
-    "pgm.status-collection": ("operations",),
-    "planning.validate": ("review", "deep-review"),
-    "planning.validate-second-family": ("review", "deep-review"),
-    "qa.fresh-validation": ("review", "operations"),
-    "review.code-judo": ("deep-review",),
-    "review.deep-lenses": ("deep-review",),
-    "review.delta": ("review", "deep-review"),
-    "review.independent": ("review", "deep-review"),
-    "review.verify-major": ("review", "deep-review"),
-    "review.pr-batch": ("review", "deep-review"),
-    "review.pr-deep-lenses": ("deep-review",),
-    "review.pr-independent": ("review", "deep-review"),
-    "review.pr-second-family": ("review", "deep-review"),
-    "review.second-family": ("review", "deep-review"),
-    "testing.test-authoring": ("implementation",),
-    "workflows.adversarial-primary": ("deep-review",),
-    "workflows.adversarial-second-opinion": ("deep-review",),
-    "workflows.create-feature-implementation": ("implementation",),
-    "workflows.create-feature-planning": ("planning",),
-    "workflows.feedback-fix-wave": ("implementation",),
-    "workflows.fix-bug-implementation": ("implementation",),
-    "workflows.watch-pr-fix": ("implementation",),
-    "workflows.watch-pr-poll": ("operations",),
-}
-
-
 def _validate_payload(root: Path, payload: object) -> list[str]:
     if not isinstance(payload, dict):
         return ["model routing manifest must be an object"]
@@ -378,7 +391,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "providers",
             "routes",
             "dispatch_boundaries",
-            "dispatch_exemptions",
             "lens_routes",
             "lens_floors",
         }
@@ -387,39 +399,13 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
     ):
         return ["interfaces/model-routing.json does not match schema version 1"]
     problems: list[str] = []
-    policy = payload.get("policy")
-    if not isinstance(policy, dict) or set(policy) != {
-        "efforts",
-        "automatic_max",
-        "fallback",
-        "orchestrator",
-    }:
-        problems.append("invalid model routing policy")
-        efforts: object = None
-    else:
-        efforts = policy.get("efforts")
-        if (
-            efforts != {"standard": "high", "deep": "xhigh"}
-            or policy.get("automatic_max") is not False
-            or policy.get("fallback") != "forbidden"
-        ):
-            problems.append(
-                "model routing policy must use high/xhigh with no max or fallback"
-            )
-        # The parent session is the orchestrator. It runs the cheap workhorse
-        # family, and the manifest records which so docs and evals can check it.
-        if policy.get("orchestrator") != {"codex": "sol", "claude": "sonnet"}:
-            problems.append(
-                "model routing policy must name sol/sonnet as the orchestrator families"
-            )
     providers = payload.get("providers")
     if not isinstance(providers, dict) or set(providers) != PROVIDERS:
         problems.append("model routing providers must contain exactly codex and claude")
         providers = {}
+    # A family is valid when the catalog names it with a selector; which
+    # families exist, and which selector each runs, is the manifest's call.
     provider_models: dict[str, dict[str, str]] = {}
-    # Sol is the Codex workhorse and Astra its deep tier, mirroring Sonnet/Opus
-    # and Fable on Claude, so both providers have a standard and a deep family.
-    expected_families = {"codex": {"sol", "astra"}, "claude": {"opus", "fable", "sonnet"}}
     selectors: set[str] = set()
     for provider in sorted(PROVIDERS):
         value = providers.get(provider) if isinstance(providers, dict) else None
@@ -431,42 +417,58 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ):
             problems.append(f"{provider}: invalid minimum CLI version")
         models = value.get("models")
-        if not isinstance(models, dict) or set(models) != expected_families[provider]:
-            problems.append(f"{provider}: model family coverage mismatch")
+        if not isinstance(models, dict) or not models:
+            problems.append(f"{provider}: model catalog must name at least one family")
             continue
         provider_models[provider] = {}
         for family, model in models.items():
-            if not isinstance(model, dict) or set(model) != {"selector"}:
-                problems.append(f"{provider}/{family}: invalid model entry")
-                continue
-            selector = model.get("selector")
-            if not isinstance(selector, str) or selector in selectors:
+            selector = model.get("selector") if isinstance(model, dict) else None
+            if (
+                not isinstance(model, dict)
+                or set(model) != {"selector"}
+                or not isinstance(selector, str)
+                or not selector.strip()
+                or selector in selectors
+            ):
                 problems.append(f"{provider}/{family}: invalid or duplicate selector")
-                continue
-            match = (
-                CODEX_SELECTOR.fullmatch(selector)
-                if provider == "codex"
-                else CLAUDE_SELECTOR.fullmatch(selector)
-            )
-            if match is None or (provider == "claude" and match.group(1) != family):
-                problems.append(f"{provider}/{family}: selector does not match family")
                 continue
             selectors.add(selector)
             provider_models[provider][family] = selector
+
+    policy = payload.get("policy")
+    if not isinstance(policy, dict) or set(policy) != {"efforts", "orchestrator"}:
+        problems.append("invalid model routing policy")
+    else:
+        efforts = policy.get("efforts")
+        if (
+            not isinstance(efforts, dict)
+            or set(efforts) != {"standard", "deep"}
+            or any(value not in ROUTE_EFFORTS for value in efforts.values())
+        ):
+            problems.append("model routing policy efforts must name standard and deep")
+        # The parent session is the orchestrator; the manifest records its family
+        # per provider so docs and evals can name it.
+        orchestrator = policy.get("orchestrator")
+        if not isinstance(orchestrator, dict) or set(orchestrator) != PROVIDERS or any(
+            not isinstance(orchestrator.get(provider), str)
+            or orchestrator[provider] not in provider_models.get(provider, {})
+            for provider in PROVIDERS
+        ):
+            problems.append("model routing orchestrator must name a catalog family per provider")
 
     routes = payload.get("routes")
     if not isinstance(routes, list):
         problems.append("model routes must be a list")
         routes = []
     seen_routes: set[str] = set()
-    actual: dict[str, tuple[object, ...]] = {}
     for route in routes:
         if not isinstance(route, dict) or set(route) != {
             "name",
             "reasoning",
+            "effort",
+            "tools",
             "responsibility",
             "restrictions",
-            "explicit_only",
             "providers",
         }:
             problems.append("invalid model route entry")
@@ -475,7 +477,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         reasoning = route.get("reasoning")
         responsibility = route.get("responsibility")
         restrictions = route.get("restrictions")
-        explicit_only = route.get("explicit_only")
         if (
             not isinstance(name, str)
             or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) is None
@@ -486,16 +487,33 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         seen_routes.add(name)
         if reasoning not in REASONING or responsibility not in RESPONSIBILITIES:
             problems.append(f"{name}: invalid reasoning or responsibility")
-        if not isinstance(explicit_only, bool):
-            problems.append(f"{name}: explicit_only must be boolean")
+        # Every route pins its effort (D16): a provider default differs by model
+        # and surface. `max` is never automatic, so no route may name it.
+        effort = route.get("effort")
+        if effort not in ROUTE_EFFORTS:
+            problems.append(f"{name}: effort must be one of {', '.join(ROUTE_EFFORTS)}")
         if (
             not isinstance(restrictions, list)
             or not restrictions
             or any(not isinstance(item, str) or not item for item in restrictions)
         ):
             problems.append(f"{name}: restrictions must be nonempty strings")
-        elif tuple(restrictions) != ROUTE_RESTRICTIONS.get(name):
-            problems.append(f"{name}: responsibility restrictions do not match policy")
+        # The tool box and the write controls are pinned in policy: a read-only
+        # route that quietly gained Edit, a sandbox, or a permission mode is a
+        # widening no reviewer reads as a behaviour change in a JSON diff.
+        tools = route.get("tools")
+        if (
+            not isinstance(tools, list)
+            or not tools
+            or any(
+                not isinstance(item, str) or TOOL_ENTRY.fullmatch(item) is None
+                for item in tools
+            )
+            or len(set(tools)) != len(tools)
+        ):
+            problems.append(f"{name}: tools must be distinct tool names or read-only git rules")
+        elif tuple(tools) != ROUTE_TOOLS.get(name):
+            problems.append(f"{name}: tools do not match policy")
         mappings = route.get("providers")
         if not isinstance(mappings, dict) or set(mappings) != PROVIDERS:
             problems.append(f"{name}: provider mapping coverage mismatch")
@@ -525,118 +543,29 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
         ):
             problems.append(f"{name}/claude: invalid route controls")
             continue
-        actual[name] = (
-            reasoning,
-            responsibility,
-            explicit_only,
-            codex.get("model"),
+        controls = (
             codex.get("sandbox"),
-            claude.get("model"),
             claude.get("permission_mode"),
             tuple(claude.get("disallowed_tools", [])),
         )
-    expected = {
-        # Sonnet implements. Development judgment that used to require Opus
-        # now lives in planning, review, and RCA specialists; the implementer
-        # receives an accepted artifact and a bounded scope.
-        "implementation": (
-            "standard",
-            "implementation",
-            False,
-            "sol",
-            "workspace-write",
-            "sonnet",
-            "acceptEdits",
-            (),
-        ),
-        # Fable plans only COMPLEX work, read-only, at the standard effort; the
-        # parent writes PLAN.md. Opus stays the Claude judgment tier for review
-        # and RCA so Fable remains a distinct escalation rung above them.
-        "planning": (
-            "standard",
-            "planning",
-            False,
-            "sol",
-            "read-only",
-            "fable",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "review": (
-            "standard",
-            "review",
-            False,
-            "sol",
-            "read-only",
-            "opus",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "deep-review": (
-            "deep",
-            "review",
-            False,
-            "astra",
-            "read-only",
-            "fable",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "rca": (
-            "standard",
-            "rca",
-            False,
-            "sol",
-            "read-only",
-            "opus",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "deep-rca": (
-            "deep",
-            "rca",
-            False,
-            "astra",
-            "read-only",
-            "fable",
-            "plan",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-        "operations": (
-            "standard",
-            "operations",
-            False,
-            "sol",
-            "read-only",
-            "sonnet",
-            "dontAsk",
-            ("Write", "Edit", "NotebookEdit"),
-        ),
-    }
-    if seen_routes != ROUTE_NAMES or actual != expected:
-        problems.append("model route vocabulary or invariant mapping mismatch")
+        if controls != ROUTE_CONTROLS.get(name):
+            problems.append(f"{name}: sandbox and permission controls do not match policy")
 
     declared_routes = seen_routes
     boundaries = payload.get("dispatch_boundaries")
     if not isinstance(boundaries, list):
         problems.append("dispatch_boundaries must be a list")
         boundaries = []
-    exemptions_value = payload.get("dispatch_exemptions")
-    if not isinstance(exemptions_value, list):
-        problems.append("dispatch_exemptions must be a list")
-        exemptions_value = []
     seen_ids: set[str] = set()
-    seed_only_reported: set[str] = set()
     menu_owners: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
     for boundary in boundaries:
         if (
             not isinstance(boundary, dict)
-            or not {"id", "path", "count", "routes"} <= set(boundary)
+            or not {"id", "path", "routes"} <= set(boundary)
             or not set(boundary)
             <= {
                 "id",
                 "path",
-                "count",
                 "routes",
                 "unscored",
                 "lens_domain",
@@ -662,8 +591,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             not isinstance(identifier, str)
             or re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", identifier) is None
             or identifier in seen_ids
-            or type(boundary.get("count")) is not int
-            or boundary.get("count") != 1
             or _safe_dispatch_path(root, boundary.get("path")) is None
             or not isinstance(routes_value, list)
             or not routes_value
@@ -676,46 +603,45 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             problems.append(f"invalid dispatch boundary: {identifier}")
             continue
         # A fan-out boundary declares its reviewer menu here rather than leaving
-        # it implicit in the dispatch prose. The span scan below still has to
-        # agree with this list, but the manifest is what `resolve_route` checks
-        # `--lens` against, so an omitted lens is a rejected dispatch instead of
-        # a lane that quietly does not exist.
+        # it implicit in the dispatch prose. The manifest is what `resolve_route`
+        # checks `--lens` against, so an omitted lens is a rejected dispatch
+        # instead of a lane that quietly does not exist.
         if not _valid_lens_menu(root, boundary):
             problems.append(f"invalid dispatch boundary lens menu: {identifier}")
             continue
         if not _valid_boundary_contracts(root, boundary):
             problems.append(f"invalid dispatch boundary contracts: {identifier}")
             continue
+        try:
+            _require_route_marker(root, str(boundary.get("path")), identifier)
+        except ModelRouteError as error:
+            problems.append(str(error))
+        worker_reported = False
         for route_name in routes_value:
             route_item = _route_map(payload).get(route_name, {})
             responsibility = str(route_item.get("responsibility"))
-            # Narrowing a fan-out span to one lens only happens on the review
-            # route. A fan-out boundary on any other route would demand `--lens`
-            # at dispatch, never scan its span, and drop the named lens without
-            # a word -- reject the combination here rather than shipping it.
+            # Narrowing a fan-out to one lens only happens on the review route.
+            # A graded boundary on any other route would demand `--lens` at
+            # dispatch and drop the named lens without a word -- reject the
+            # combination here rather than shipping it.
             if _lens_domain(boundary) is not None and responsibility != "review":
                 problems.append(f"graded lens boundary is not a review lane: {identifier}")
-            try:
-                # `lens` is deliberately omitted: check time verifies that the
-                # unnarrowed union resolves, so every lens the span names is
-                # reachable. Dispatch time is where exactly one gets selected.
-                required_contracts = _required_contract_paths(
-                    root,
-                    str(boundary.get("path")),
-                    responsibility,
-                    identifier,
-                    None,
-                    _lens_menu(boundary),
-                    _boundary_contracts(boundary),
-                )
-            except ModelRouteError as error:
-                problems.append(str(error))
-                continue
-            if any(
-                _safe_dispatch_path(root, contract) is None
+            # `lens` is deliberately omitted: check time verifies the
+            # unnarrowed union, so every menu lens is proven to exist. Dispatch
+            # time is where exactly one gets selected.
+            required_contracts = _required_contract_paths(
+                _boundary_contracts(boundary), None, _lens_menu(boundary)
+            )
+            missing = [
+                contract
                 for contract in required_contracts
-            ):
-                problems.append(f"missing required boundary contract: {identifier}")
+                if _safe_dispatch_path(root, contract) is None
+            ]
+            if missing:
+                problems.append(
+                    f"missing required boundary contract: {identifier}: "
+                    f"{', '.join(missing)}"
+                )
             problems.extend(
                 _closure_floor_problems(
                     payload, boundary, identifier, route_name, required_contracts
@@ -723,22 +649,13 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             )
             # Every route at a boundary shares its responsibility in practice, so
             # report the lane once rather than once per route it offers.
-            if identifier not in seed_only_reported:
-                seed_only = _seed_only_problems(
-                    root, boundary, responsibility, identifier, required_contracts
+            if not worker_reported:
+                worker_problems = _worker_contract_problems(
+                    root, identifier, responsibility, required_contracts
                 )
-                if seed_only:
-                    seed_only_reported.add(identifier)
-                    problems.extend(seed_only)
-        # A ceiling, not an exact match, for the same reason `lens_routes` is:
-        # widening is the failure direction. Narrowing a boundary to a subset of
-        # its pinned routes is what scoping a lane means and stays free; adding
-        # `review` to `review.code-judo` is the edit that silently defeats the
-        # fail-closed pinning, and it is the one this rejects. An unpinned
-        # boundary is rejected outright so a new lane cannot skip the table.
-        pinned = BOUNDARY_INVARIANTS.get(identifier)
-        if pinned is None or not set(routes_value) <= set(pinned):
-            problems.append(f"dispatch boundary route allowlist mismatch: {identifier}")
+                if worker_problems:
+                    worker_reported = True
+                    problems.extend(worker_problems)
         seen_ids.add(identifier)
         for lens in _lens_menu(boundary):
             menu_owners.setdefault(str(lens), []).append(
@@ -746,28 +663,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             )
     problems.extend(_lens_route_problems(payload, declared_routes, menu_owners))
     problems.extend(_lens_floor_problems(root, payload))
-    seen_exemptions: set[tuple[str, str]] = set()
-    for exemption in exemptions_value:
-        if not isinstance(exemption, dict) or set(exemption) != {
-            "path",
-            "marker",
-            "count",
-        }:
-            problems.append("invalid dispatch exemption entry")
-            continue
-        path_value, marker = exemption.get("path"), exemption.get("marker")
-        identity = (str(path_value), str(marker))
-        if (
-            _safe_path(root, path_value) is None
-            or not isinstance(marker, str)
-            or not marker
-            or type(exemption.get("count")) is not int
-            or exemption.get("count") != 1
-            or identity in seen_exemptions
-        ):
-            problems.append(f"invalid dispatch exemption: {identity}")
-            continue
-        seen_exemptions.add(identity)
     return problems
 
 
@@ -778,36 +673,8 @@ def validate_model_routing(root: Path) -> list[str]:
         return [str(error)]
     problems = _validate_payload(root, payload)
     if isinstance(payload, dict) and not problems:
-        problems.extend(validate_selector_ownership(root, payload))
         problems.extend(validate_dispatch_boundaries(root, payload))
         problems.extend(validate_route_bindings(root))
-        problems.extend(validate_legacy_route_prose(root))
-    return problems
-
-
-def validate_legacy_route_prose(root: Path) -> list[str]:
-    paths = list((root / "skills/cherry-pick").rglob("*.md"))
-    paths.append(root / "rules/orchestration.md")
-    legacy = re.compile(
-        r"\b(?:Standard|Heavy)-tier\b|"
-        r"\b(?:standard|heavy) reasoning effort\b|"
-        r"\bheavy effort\b",
-        re.I,
-    )
-    problems: list[str] = []
-    for path in sorted(set(paths)):
-        if not path.is_file() or path.is_symlink():
-            continue
-        for number, line in _markdown_lines(path):
-            gate_legacy = (
-                path == root / "skills/cherry-pick/references/gate.md"
-                and re.search(r"\b(?:Standard|Heavy)\b", line) is not None
-            )
-            if legacy.search(line) or gate_legacy:
-                problems.append(
-                    "legacy route vocabulary in authoritative cherry-pick prose: "
-                    f"{path.relative_to(root)}:{number}"
-                )
     return problems
 
 
@@ -849,70 +716,19 @@ def validate_route_bindings(root: Path) -> list[str]:
     return problems
 
 
-def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[str]:
-    del payload
-    paths = [
-        path
-        for name in ("README.md", "CHANGELOG.md", "pyproject.toml")
-        if (path := root / name).is_file()
-    ]
-    authored_roots = (
-        ".codex-plugin",
-        "agents",
-        "aitk",
-        "bin",
-        "config",
-        "docs",
-        "extensions",
-        "hooks",
-        "interfaces",
-        "rules",
-        "scripts",
-        "skills",
-    )
-    suffixes = {".json", ".md", ".py", ".sh", ".toml", ".yaml", ".yml"}
-    for name in authored_roots:
-        base = root / name
-        if base.is_file():
-            paths.append(base)
-        elif base.is_dir():
-            paths.extend(path for path in base.rglob("*") if path.suffix in suffixes)
-    problems: list[str] = []
-    for path in sorted(set(paths)):
-        if not path.is_file() or path.is_symlink():
-            continue
-        if path in {
-            root / "interfaces/model-routing.json",
-            root / "aitk/pricing.py",
-            root / "scripts/optimize-cost.py",
-            root / "scripts/show-cost.py",
-        }:
-            # Pricing is an independent historical registry, not route selection.
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        if CODEX_SELECTOR.search(text) or CLAUDE_SELECTOR.search(text):
-            problems.append(
-                f"volatile model selector copied outside manifest: {path.relative_to(root)}"
-            )
-    return problems
-
-
 def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list[str]:
+    """Hold the route markers and the declared boundaries in a bijection.
+
+    Each declared boundary's document carries its marker exactly once, and every
+    marker in a skill document names a declared boundary at that path. Markers
+    inside fenced examples are documentation and are not counted.
+    """
     declared = {
         item["id"]: item
         for item in payload["dispatch_boundaries"]
         if (root / item["path"]).is_file()
     }
-    exemptions = {
-        (item["path"], item["marker"]): item for item in payload["dispatch_exemptions"]
-    }
     route_counts: dict[tuple[str, str], int] = {}
-    exemption_counts: dict[tuple[str, str], int] = {}
-    used_route_markers: set[tuple[str, str]] = set()
-    used_exemption_markers: set[tuple[str, str]] = set()
     problems: list[str] = []
     paths = list((root / "skills").glob("**/*.md"))
     paths.extend((root / "extensions").glob("*/skills/**/*.md"))
@@ -923,31 +739,9 @@ def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list
             continue
         if not path.is_file():
             continue
-        previous_nonblank: tuple[int, str] | None = None
-        for number, line in _markdown_lines(path):
-            stripped = line.strip()
-            route_marker = ROUTE_MARKER.fullmatch(stripped)
-            exemption_marker = EXEMPT_MARKER.fullmatch(stripped)
-            if route_marker is not None:
-                key = (relative, route_marker.group(1))
-                route_counts[key] = route_counts.get(key, 0) + 1
-            elif exemption_marker is not None:
-                key = (relative, exemption_marker.group(1))
-                exemption_counts[key] = exemption_counts.get(key, 0) + 1
-            elif not stripped.startswith("#") and DISPATCH_PATTERN.search(line):
-                prior = previous_nonblank[1].strip() if previous_nonblank else ""
-                prior_route = ROUTE_MARKER.fullmatch(prior)
-                prior_exemption = EXEMPT_MARKER.fullmatch(prior)
-                if prior_route is not None:
-                    used_route_markers.add((relative, prior_route.group(1)))
-                elif prior_exemption is not None:
-                    used_exemption_markers.add((relative, prior_exemption.group(1)))
-                else:
-                    problems.append(
-                        f"unmarked model dispatch boundary: {relative}:{number}"
-                    )
-            if stripped:
-                previous_nonblank = (number, line)
+        for marker in _route_markers(path.read_text(encoding="utf-8", errors="replace")):
+            key = (relative, marker)
+            route_counts[key] = route_counts.get(key, 0) + 1
     for (path_value, identifier), count in sorted(route_counts.items()):
         item = declared.get(identifier)
         if item is None or item["path"] != path_value or count != 1:
@@ -957,56 +751,4 @@ def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list
     for identifier, item in sorted(declared.items()):
         if route_counts.get((item["path"], identifier), 0) != 1:
             problems.append(f"missing route marker: {item['path']}/{identifier}")
-        elif (item["path"], identifier) not in used_route_markers:
-            problems.append(
-                f"route marker does not precede a dispatch: {item['path']}/{identifier}"
-            )
-    for key, count in sorted(exemption_counts.items()):
-        if key not in exemptions or count != 1:
-            problems.append(
-                f"unknown, misplaced, or duplicate route exemption: {key[0]}/{key[1]}"
-            )
-    for key in sorted(exemptions):
-        if exemption_counts.get(key, 0) != 1:
-            problems.append(f"missing route exemption: {key[0]}/{key[1]}")
-        elif key not in used_exemption_markers:
-            problems.append(
-                f"route exemption does not precede a dispatch: {key[0]}/{key[1]}"
-            )
-    problems.extend(_lens_menu_problems(root, declared))
-    return problems
-
-
-def _lens_menu_problems(root: Path, declared: dict[str, dict[str, object]]) -> list[str]:
-    """Report drift between declared reviewer menus and the dispatch prose.
-
-    Both directions matter and they fail differently. A lens the manifest names
-    but the span does not link cannot be dispatched -- `_contract_closure` fails
-    closed on it, but only when someone happens to select it. A lens the span
-    links but the manifest omits is worse and quieter: it used to ride into every
-    worker's closure as a shared dependency, and now it is dropped from all of
-    them, so the lane exists in prose and in no contract. Neither shows up in a
-    passing route resolution, so both are caught here instead.
-    """
-    catalog, problems = _catalog_lenses(root)
-    every_lens = catalog | {
-        lens
-        for boundary in declared.values()
-        for lens in _lens_menu(boundary)
-    }
-    for identifier, boundary in sorted(declared.items()):
-        menu = set(_lens_menu(boundary))
-        if not menu:
-            continue
-        linked = _span_link_targets(root, boundary)
-        for missing in sorted(menu - linked):
-            problems.append(
-                f"declared lens is not linked in the dispatch span: "
-                f"{identifier}/{missing}"
-            )
-        for undeclared in sorted((linked & every_lens) - menu):
-            problems.append(
-                f"reviewer lens linked in the dispatch span but not declared: "
-                f"{identifier}/{undeclared}"
-            )
     return problems

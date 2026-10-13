@@ -15,4 +15,4 @@ dependencies = []
 aitk = "aitk.cli:main"
 
 [tool.setuptools]
-packages = ["aitk"]
+packages = ["aitk", "aitk.hooks"]

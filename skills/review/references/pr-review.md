@@ -14,15 +14,11 @@ actions; review lanes are read-only and receive the material inline.
 
 ## Classify and Assess
 
-Emit the Complexity Gate (`rules/complexity-gate.md`) using the PR signals
-below, run [classify-diff.md](classify-diff.md), and run
-`qa/references/assess-impact.md`.
-
-| Signal | TRIVIAL | STANDARD | COMPLEX |
-|---|---|---|---|
-| Files changed | 1-3 | 4-8, one subsystem | 9+ or unclear ownership |
-| Behavioral change | None or cosmetic | Contained | Cross-cutting or contract change |
-| Deep lenses | Only on flags | Only on flags | Flags plus premise validation |
+Emit the Complexity Gate (`rules/complexity-gate.md`), run
+[classify-diff.md](classify-diff.md), and run
+`qa/references/assess-impact.md`. The PR signal is the behavioural change:
+none or cosmetic is TRIVIAL, contained is STANDARD, cross-cutting or a
+contract change is COMPLEX. Deep lenses run only on flags at every tier.
 
 `--deep` or a deep-tier phrase pins complexity to at least COMPLEX and routes
 the independent review on `deep-review`.
@@ -32,50 +28,47 @@ and prior comments; confirm the stated problem exists and the change addresses
 its cause or need. A wrong premise is the primary finding; skip the remaining
 lanes and go to posting.
 
-## Independent Review
+## Lanes
+
+Launch the lanes `bin/aitk review plan --kind pr --pr <ref> --parent <your
+provider> --complexity <tier> --impact <impact>` lists (add `--deep`,
+`--adversarial`, `--security-sensitive`, `--architecture`, or `--refactor`
+when they apply). It applies the second-family triggers, the two-lens cap,
+the provider and family for each lane, and `BLOCKED (degraded)`, which stands
+until the other provider is reachable or the user passes `--allow-degraded`,
+recorded as `USER_DECISION` (`rules/gates.md`, Independent Judgment). Every
+lane is cold: the PR title and body, the diff and full changed files, the
+classifier's flags and impact, and any premise notes, never earlier review
+rounds or other reviewers' comments. Each runs through `bin/aitk model-run`
+with the boundary, route, provider, and lens the plan names.
 
 <!-- aitk-model-route:review.pr-independent -->
-Launch one fresh reviewer worker on `review` (or `deep-review` under `--deep`),
-on the other provider when reachable, with the PR title and body, the diff and
-full changed files, the classifier's flags and impact, and any premise notes.
-Never include earlier review rounds or other reviewers' comments; the lane must
-be cold. The worker receives its contract inline from the route runner. If no
-cross-provider lane is reachable, use the toolkit's same-provider reviewer agent
-and disclose it in the report, except under `--deep` or a security-sensitive
-flag: there the review is `BLOCKED (degraded)` until the other provider is
-reachable or the user passes `--allow-degraded`, recorded as `USER_DECISION`
-(`rules/gates.md`, Independent Judgment). Single-source `[major]` findings are
-verified before posting exactly as in `local-review.md`.
-
-## Second Family (COMPLEX, CORE impact, or a clean verdict on a sizeable PR)
+Launch one fresh reviewer worker on `review` (or `deep-review` under `--deep`)
+for the plan's `independent` lane. The worker receives its contract inline from
+the route runner.
 
 <!-- aitk-model-route:review.pr-second-family -->
-Launch one more fresh reviewer worker on `review` (`deep-review` under `--deep`)
-on the provider the independent lane did not use, with the same cold prompt,
-when the PR classifies COMPLEX or CORE impact, or when the clean-verdict guard
-fires (zero findings on a STANDARD PR above 200 changed lines or 5 files).
-Merge under the convergence rule (`rules/code-review.md`); no verifier runs
-when this lane ran. A `[major]` the parent would reject, a reviewer-reported
-missing flag, and lane yields are handled exactly as in `local-review.md`. On a Claude
-parent this is the Opus reviewer agent and spends Claude quota, so STANDARD PRs
-stay at one lane. Skip and disclose when the second provider is unreachable and
-the PR is not security-sensitive.
-
-## Deep Lenses (conditional)
+Launch one more fresh reviewer worker on `review` (`deep-review` under
+`--deep`) for the plan's `second-family` lane (COMPLEX or CORE impact), on the
+provider the independent lane did not use, through `bin/aitk model-run`. It
+spends the other family's quota, which is why STANDARD PRs stay at one lane.
 
 <!-- aitk-model-route:review.pr-deep-lenses -->
-When the classifier flagged risk, launch at most two additional fresh worker
-lanes on `deep-review`, one per flagged lens, resolved with `--lens`:
-[adversarial.md](adversarial.md) for security sensitivity or `--adversarial`,
-[deep-quality.md](deep-quality.md) for refactor shape or a deep-quality ask, or
-[../../plan-review/references/architecture.md](../../plan-review/references/architecture.md)
-for architecture changes. A code-judo ask runs at its own boundary
+For each deep-lens lane, launch one fresh worker on `deep-review` resolved
+with `--lens`: [adversarial.md](adversarial.md) for security sensitivity or
+`--adversarial`, [deep-quality.md](deep-quality.md) for refactor shape or a
+deep-quality ask, or
+[architecture.md](architecture.md) for architecture changes. A code-judo ask runs at its own boundary
 ([code-judo.md](code-judo.md)) and its proposals stay in their own section.
 
 ## Synthesize
 
-Dedupe findings, then validate each `[major]` and `[minor]` against the diff
-before recording it (`rules/code-review.md`). Recommendation:
+Run `bin/aitk review merge --result <lane>=<envelope> …` to dedupe by
+file:line, compute convergence, and list the single-source majors that need a
+verifier on the other family. Then validate each `[major]` and `[minor]`
+against the diff before recording it (`rules/code-review.md`), exactly as in
+`local-review.md`: a single-source `[major]`, a reviewer-reported missing flag,
+and lane yields are handled there. Recommendation:
 
 - **Approve**: no `[major]`, and any `[minor]` is non-blocking.
 - **Request changes**: any accepted `[major]`.

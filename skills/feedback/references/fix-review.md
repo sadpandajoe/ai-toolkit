@@ -1,18 +1,4 @@
----
-tier: Heavy
----
-
 # Fix + Review PR Feedback
-
-## Fix Order
-
-Address approved fixes in this order:
-
-1. Bugs and security issues.
-2. Missing error handling or data integrity checks.
-3. Project standards and mechanical cleanup.
-
-Use TDD for behavioral changes when feasible: write the failing test first, then fix it. Cosmetic or pattern-following edits may be fixed directly when existing coverage is enough.
 
 ## Large Review Rounds
 
@@ -20,10 +6,11 @@ When approved fixes are independent, keep the main thread as the orchestrator:
 
 - Group comments by file, subsystem, or originating commit.
 - Batch 2-4 small groups per wave; use single-item waves for risky behavior changes.
-- Give subagents only the relevant comments, files, diff context, and expected validation.
+- Give each group only its comments, files, diff context, and expected validation.
 - Require a compact handoff: comments addressed, changed files, tests run, reply draft, residual risk.
 
-The main thread owns final review, posting, thread resolution, and user-facing summary.
+The main thread keeps comment ids, verdicts and post status, and owns final
+review, posting, thread resolution, and the user-facing summary.
 
 ## Review Gate
 
@@ -44,19 +31,19 @@ New commits on the current PR branch and pushes are part of the default `address
 | Fix is additive beyond original scope | New commit |
 | Branch is shared or active re-review is underway | New commit; avoid rewriting history |
 
-Autosquash mechanics:
-
 ```bash
 git commit --fixup=<originating-sha>
 git rebase --autosquash <base>
 git push --force-with-lease
 ```
 
-Force-push only after explicit user authorization, only on the current feature branch, and only with `--force-with-lease`. Never force-push main/master or a protected branch.
+Force-push only after explicit authorization, only on the current feature
+branch, and only with `--force-with-lease`; never on main/master or a
+protected branch (the git guard hook blocks it).
 
 ## Persist Fix Wave to PROJECT.md (Hard Gate Before Handoff)
 
-After each fix wave, before any checkpoint, the orchestrator must append a `## Feedback Round N` entry to PROJECT.md:
+After each fix wave, before any checkpoint, append:
 
 ```markdown
 ## Feedback Round N
@@ -71,11 +58,4 @@ Next: [next wave / posting / done]
 
 This block is what `start` reads to resume mid-feedback-round in a fresh session or worker. Without it, the comment-id → fix-state mapping is lost.
 
-## Stop Conditions
-
-Stop before push/post when:
-
-- `--draft` was passed.
-- A `Discuss` verdict needs the user's wording or decision.
-- Push would require unsafe history rewriting.
-- Verification failed or could not run and the change is substantive.
+Before pushing or posting, check the pause list in [reply-resolve.md](reply-resolve.md#push--post-defaults).

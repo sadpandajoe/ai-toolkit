@@ -1,7 +1,8 @@
 """The routing vocabulary and the invariants that hold it to the rules.
 
-Route matrix, responsibility restrictions, selector ownership, and the guards that
-stop a generic worker or a stale document from reintroducing a retired tier.
+The route table is read from the manifest; what stays pinned in policy is each
+route's write controls and tool box, and the guard that stops a generic worker
+from standing in for independent review.
 """
 
 from __future__ import annotations
@@ -10,11 +11,9 @@ import json
 import tempfile
 import unittest
 
-from aitk.model_routing import (
-    ModelRouteError,
-    resolve_route,
-    validate_model_routing,
-)
+from aitk.routing_manifest import validate_model_routing
+from aitk.routing_policy import ROUTE_CONTROLS, ModelRouteError
+from aitk.routing_resolver import resolve_route
 
 from routing_fixtures import (
     ROOT,
@@ -24,73 +23,75 @@ from routing_fixtures import (
 
 
 class RoutingPolicyTests(RoutingTestCase):
-    def test_route_matrix_enforces_family_effort_and_permissions(self) -> None:
-        cases = {
-            ("implementation", "codex"): ("sol", "high", "workspace-write"),
-            ("implementation", "claude"): ("sonnet", "high", "acceptEdits"),
-            ("planning", "claude"): ("fable", "high", "plan"),
-            ("planning", "codex"): ("sol", "high", "read-only"),
-            ("review", "claude"): ("opus", "high", "plan"),
-            ("deep-review", "claude"): ("fable", "xhigh", "plan"),
-            ("deep-review", "codex"): ("astra", "xhigh", "read-only"),
-            ("rca", "claude"): ("opus", "high", "plan"),
-            ("deep-rca", "codex"): ("astra", "xhigh", "read-only"),
-            ("operations", "claude"): ("sonnet", "high", "dontAsk"),
-        }
-        for (name, provider), expected in cases.items():
-            with self.subTest(route=name, provider=provider):
-                route = resolve_route(ROOT, name, provider)
-                control = route.controls.get("sandbox") or route.controls.get(
-                    "permission_mode"
-                )
-                self.assertEqual(expected, (route.family, route.effort, control))
+    def test_routes_resolve_to_the_manifest_family_effort_and_controls(self) -> None:
+        """The route table is data: each route resolves exactly as the manifest says."""
+        manifest = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        for item in manifest["routes"]:
+            for provider in ("codex", "claude"):
+                with self.subTest(route=item["name"], provider=provider):
+                    route = resolve_route(ROOT, item["name"], provider)
+                    mapping = item["providers"][provider]
+                    self.assertEqual(
+                        (mapping["model"], item["effort"]), (route.family, route.effort)
+                    )
+                    self.assertEqual(
+                        MODEL_CATALOG[provider]["models"][mapping["model"]]["selector"],
+                        route.selector,
+                    )
+                    control = "sandbox" if provider == "codex" else "permission_mode"
+                    self.assertEqual(mapping[control], route.controls[control])
 
-    def test_sonnet_implements_and_fable_plans_only_complex(self) -> None:
+    def test_only_implementation_may_write(self) -> None:
         with self.assertRaisesRegex(ModelRouteError, "unknown or nonspawnable"):
             resolve_route(ROOT, "frontier-implementation", "claude")
         implementation = resolve_route(ROOT, "implementation", "claude")
         self.assertEqual(
-            ("sonnet", "high"), (implementation.family, implementation.effort)
+            ("Read", "Grep", "Glob", "Edit", "Write"), implementation.tools
         )
-        planning = resolve_route(ROOT, "planning", "claude")
-        self.assertEqual(("fable", "high", "plan"), (planning.family, planning.effort, planning.controls["permission_mode"]))
-        self.assertEqual(
-            ["Write", "Edit", "NotebookEdit"], planning.controls["disallowed_tools"]
-        )
-        # Opus is the standard judgment tier, so Fable stays a distinct
-        # escalation rung above review and RCA.
-        for name in ("review", "rca"):
-            self.assertEqual("opus", resolve_route(ROOT, name, "claude").family)
-        # Fable is read-only on every automatic route and deep only on the deep ones.
-        for name in ("deep-review", "deep-rca"):
-            route = resolve_route(ROOT, name, "claude")
-            self.assertEqual(("fable", "xhigh", "plan"), (route.family, route.effort, route.controls["permission_mode"]))
+        for name in ROUTE_CONTROLS:
+            if name == "implementation":
+                continue
+            with self.subTest(route=name):
+                claude = resolve_route(ROOT, name, "claude")
+                codex = resolve_route(ROOT, name, "codex")
+                self.assertEqual("read-only", codex.controls["sandbox"])
+                self.assertIn(claude.controls["permission_mode"], {"plan", "dontAsk"})
+                self.assertEqual(
+                    ["Write", "Edit", "NotebookEdit"], claude.controls["disallowed_tools"]
+                )
+                self.assertFalse({"Edit", "Write"} & set(claude.tools))
 
-    def test_manifest_names_the_orchestrator_family(self) -> None:
+    def test_a_manifest_edit_cannot_open_write_access(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.fixture(temporary)
+            path = root / "interfaces/model-routing.json"
+            pristine = path.read_text()
+            for control, value in (
+                ("sandbox", "workspace-write"),
+                ("permission_mode", "acceptEdits"),
+                ("disallowed_tools", []),
+            ):
+                with self.subTest(control=control):
+                    payload = json.loads(pristine)
+                    review = next(item for item in payload["routes"] if item["name"] == "review")
+                    provider = "codex" if control == "sandbox" else "claude"
+                    review["providers"][provider][control] = value
+                    path.write_text(json.dumps(payload))
+                    self.assertIn(
+                        "review: sandbox and permission controls do not match policy",
+                        validate_model_routing(root),
+                    )
+
+    def test_the_orchestrator_names_a_catalog_family(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.fixture(temporary)
             path = root / "interfaces/model-routing.json"
             payload = json.loads(path.read_text())
-            payload["policy"]["orchestrator"] = {"codex": "sol", "claude": "opus"}
+            payload["policy"]["orchestrator"]["claude"] = "haiku"
             path.write_text(json.dumps(payload))
             problems = validate_model_routing(root)
             self.assertTrue(
-                any("orchestrator families" in item for item in problems), problems
-            )
-
-    def test_responsibility_restrictions_cannot_be_weakened(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            path = root / "interfaces/model-routing.json"
-            payload = json.loads(path.read_text())
-            operations = next(
-                item for item in payload["routes"] if item["name"] == "operations"
-            )
-            operations["restrictions"] = ["Do anything requested."]
-            path.write_text(json.dumps(payload))
-            problems = validate_model_routing(root)
-            self.assertTrue(
-                any("responsibility restrictions" in item for item in problems),
+                any("orchestrator must name a catalog family" in item for item in problems),
                 problems,
             )
 
@@ -103,7 +104,6 @@ class RoutingPolicyTests(RoutingTestCase):
             payload = json.loads(path.read_text())
             payload["providers"]["codex"]["bindings"]["independent_review"] = {
                 "mode": "native",
-                "document": "config/providers/codex.md",
                 "fallback": None,
             }
             path.write_text(json.dumps(payload))
@@ -114,12 +114,10 @@ class RoutingPolicyTests(RoutingTestCase):
             )
             payload["providers"]["codex"]["bindings"]["independent_review"] = {
                 "mode": "fallback",
-                "document": "config/providers/codex.md",
                 "fallback": "source_linked_model_run",
             }
             payload["providers"]["codex"]["bindings"]["fresh_subagent"] = {
                 "mode": "fallback",
-                "document": "config/providers/codex.md",
                 "fallback": "manual_fresh_session",
             }
             path.write_text(json.dumps(payload))
@@ -127,50 +125,6 @@ class RoutingPolicyTests(RoutingTestCase):
             self.assertTrue(
                 any("native or source_linked_model_run" in item for item in problems),
                 problems,
-            )
-
-    def test_selectors_are_owned_only_by_manifest(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            selector = MODEL_CATALOG["codex"]["models"]["sol"]["selector"]
-            (root / "rules/leaked-selector.md").write_text(f"Use {selector} here.\n")
-            problems = validate_model_routing(root)
-            self.assertTrue(
-                any("volatile model selector" in item for item in problems), problems
-            )
-            # The agent roster is authored content too: an agent file that pins a
-            # dated selector would drift the moment the catalog is promoted.
-            (root / "rules/leaked-selector.md").unlink()
-            claude_selector = MODEL_CATALOG["claude"]["models"]["fable"]["selector"]
-            (root / "agents/claude/aitk-planner.md").write_text(
-                f"---\nname: aitk-planner\ndescription: x\nmodel: {claude_selector}\n---\n"
-            )
-            problems = validate_model_routing(root)
-            self.assertTrue(
-                any("agents/claude/aitk-planner.md" in item for item in problems), problems
-            )
-
-    def test_future_selector_in_yaml_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            path = root / "skills/review/agents/openai.yaml"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text('model: "gpt-9.9-sol"\n')
-            problems = validate_model_routing(root)
-            self.assertTrue(
-                any("volatile model selector" in item for item in problems), problems
-            )
-
-    def test_cherry_pick_authoritative_prose_cannot_restore_legacy_tiers(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            gate = root / "skills/cherry-pick/references/gate.md"
-            gate.write_text(gate.read_text() + "\nUse Heavy-tier handling.\n")
-
-            problems = validate_model_routing(root)
-
-            self.assertTrue(
-                any("legacy route vocabulary" in item for item in problems), problems
             )
 
 
