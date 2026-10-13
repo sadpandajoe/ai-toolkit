@@ -160,7 +160,7 @@ ai-toolkit/
 │   ├── orchestration.md    # Goal loop, isolation mechanisms, batch rules
 │   ├── model-assignment.md # Roles and routes
 │   ├── durable-workflows.md    # Snapshot, checkpoint, and effect protocol
-│   ├── code-review.md      # One independent review, validate before fix, delta review
+│   ├── code-review.md      # How a review lane grades: scope, locking assertion, calibration
 │   ├── implementation.md   # Test-first modes; fix the invariant, not the test
 │   ├── pii-scrub.md        # What to scrub from public PR text, replies, and commits
 │   ├── severity.md         # Finding severity vocabularies
@@ -264,7 +264,7 @@ names so the table cannot imply manifest wiring that does not exist.
 | Rule | Covers | Workflows that declare it | Also read by |
 |---|---|---|---|
 | `rules/ci-evidence.md` | CI Evidence | `fix-ci`, `watch-pr` | skills: debug, workflows |
-| `rules/code-review.md` | Code Review | none | skills: metrics-emit, review, testing, workflows; 11 routed worker contract lists |
+| `rules/code-review.md` | Code Review | none | skills: metrics-emit, review, testing; 11 routed worker contract lists |
 | `rules/complexity-gate.md` | Complexity Gate | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` | skills: cherry-pick, feedback, review, workflows |
 | `rules/durable-workflows.md` | Durable Workflow Runtime | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests`, `watch-pr` | none |
 | `rules/gates.md` | Gates | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `update-tests` | skills: debug, feedback, planning, qa, review, verification-loop, workflows |

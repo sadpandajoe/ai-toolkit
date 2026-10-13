@@ -1,4 +1,4 @@
-"""`aitk lane-yield` applies the yield table in rules/code-review.md to metrics."""
+"""`aitk lane-yield` applies the yield table in local-review.md to metrics."""
 
 from __future__ import annotations
 

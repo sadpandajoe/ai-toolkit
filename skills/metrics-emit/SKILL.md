@@ -27,8 +27,8 @@ From the routing snapshot and the run:
   "lanes": { "<lane or lens>": {"raised": n, "accepted": n, "converged": n,
   "confirmed": n, "refuted": n, "not_fixed": n, "introduced": n} },
   "demoted": [...] }` — `lanes` is what `bin/aitk lane-yield` reads to apply
-  the yield thresholds in `rules/code-review.md`; lane names are `independent`,
-  `second-family`, `verify-major`, `delta`, and the deep lens name
+  the yield thresholds in `review/references/local-review.md`; lane names are
+  `independent`, `second-family`, `verify-major`, `delta`, and the deep lens name
   (`adversarial`, `deep-quality`, `architecture`); `converged` is how many of
   the lane's raised findings the other lane also raised (the convergence merge
   in `rules/code-review.md`), so `accepted - converged` is what the lane added

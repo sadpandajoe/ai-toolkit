@@ -77,7 +77,7 @@ specialist grades the root cause and the fix plan is validated before code.
    an RCA that materially changed, reopen the RCA gate (rabbit-hole guardrail).
 9. **Review** through `review-code` (`review/references/local-review.md`): one
    independent review, validate findings, fix, delta pass if substantive, by
-   the tier table in `rules/code-review.md` (a TRIVIAL fix gets no delta;
+   its tier table (a TRIVIAL fix gets no delta;
    BATCHED fixes review the transformation on wave one; MULTI_PHASE fixes pass
    the phase base recorded with `project-state phase --sha`).
 10. **Validate** user-visible behavior with `qa/references/validate.md`

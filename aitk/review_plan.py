@@ -15,8 +15,9 @@ disputes). The deterministic half lives here:
   convergence, applies the coverage check, and lists the single-source majors
   that still need a verifier on the other family.
 - ``bin/aitk lane-yield`` applies the Yield Thresholds in
-  ``rules/code-review.md`` to the metrics file and appends a ``low-yield-lane``
-  observation for each new demotion. The thresholds are the constants below.
+  ``skills/review/references/local-review.md`` to the metrics file and appends
+  a ``low-yield-lane`` observation for each new demotion. The thresholds are
+  the constants below.
 
 The coverage check (D13) has its single home in :func:`coverage_gaps`: a clean
 verdict counts only when the lane's ``verification`` list covers every changed
@@ -71,7 +72,7 @@ class ReviewPlanError(ValueError):
     """The planner or merger could not read its inputs."""
 
 
-# --- Yield thresholds (rules/code-review.md, Yield Thresholds) -------------
+# --- Yield thresholds (local-review.md, Yield Thresholds) ------------------
 
 DEEP_LENSES = ("adversarial", "deep-quality", "architecture")
 LENS_WINDOW = 5

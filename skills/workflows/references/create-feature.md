@@ -94,7 +94,7 @@ snapshot, evaluates the gate, and either advances or applies `rules/gates.md`.
    `tree` SHA the previous phase recorded in the snapshot), so a phase-three
    review measures only phase three; the branch base is reserved for the
    integrated review in step 10. Review depth follows the tier table in
-   `rules/code-review.md`; a TRIVIAL unit gets no delta pass.
+   `review/references/local-review.md`; a TRIVIAL unit gets no delta pass.
 8. **Validate behavior** with `qa/references/validate.md` when
    user-visible behavior changed and the app runs; otherwise record why not.
 9. **Checkpoint the unit.** Hard gate before the next unit or any handoff:
