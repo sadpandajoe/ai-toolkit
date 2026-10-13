@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Workflow state is one block: `bin/aitk checkpoint`, `aitk/checkpoint.py`,
+  `aitk/artifact_lock.py`, `rules/durable-workflows.md` and the checkpoint
+  machine-block template are gone. `bin/aitk project-state` writes the only
+  machine block in `PROJECT.md`, under the file lock that used to live in
+  `artifact_lock.py`, and `deliver` and the PR gate read its gates.
+  `interfaces/contracts.json` is version 3: each workflow keeps its effect,
+  authorization, state, resume flag and verification strength, and
+  `list --details` no longer prints phases. An existing `aitk-checkpoint:v1`
+  block in a `PROJECT.md` is now ordinary text and can be deleted.
+- The validators are gone: `aitk/conformance.py` and `aitk/interfaces.py` are
+  deleted, `bin/aitk doctor` checks links, skill descriptions, the routing
+  manifest, personal paths and secret output, and a malformed manifest fails
+  when it is loaded. `interfaces/support.json` becomes README's Support
+  section, and `interfaces/providers.json` drops `document`.
+- The route table lives only in `interfaces/model-routing.json`: the pinned
+  copy, the per-field schema, `count`, `explicit_only`,
+  `policy.automatic_max` and `fallback` are gone. A route's model must be a
+  catalog family, and each route's write controls and tool box stay pinned in
+  `aitk/routing_policy.py`.
+- `model-run` checks the provider CLI against the route's version floor and
+  no longer scans `--help` output for flags.
+
 - Workflows deliver through `bin/aitk deliver`: `create-feature`, `fix-bug`,
   `fix-ci`, `tests` and `create-pr` no longer carry their own push and PR
   procedure. `bin/aitk route` is gone; the router is the model reading
