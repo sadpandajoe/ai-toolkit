@@ -16,7 +16,7 @@ from .interfaces import (
     validate_skill_interfaces,
     validate_support_interface,
 )
-from .model_routing import validate_model_routing
+from .routing_manifest import validate_model_routing
 from .installer import InstallPaths, inspect_install
 from .project_state import STATE_FILES
 from .workflows import (

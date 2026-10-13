@@ -11,7 +11,7 @@ from aitk.interfaces import (
     validate_skill_interfaces,
     validate_support_interface,
 )
-from aitk.model_routing import validate_model_routing
+from aitk.routing_manifest import validate_model_routing
 from aitk.workflows import (
     validate_extension_workflows,
     validate_workflows,

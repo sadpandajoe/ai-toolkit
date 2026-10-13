@@ -657,28 +657,6 @@
       ]
     }
   ],
-  "dispatch_exemptions": [
-    {
-      "path": "skills/review/references/classify-diff.md",
-      "marker": "describes-caller-owned-dispatch",
-      "count": 1
-    },
-    {
-      "path": "skills/review/references/local-review.md",
-      "marker": "pre-dispatch-condition",
-      "count": 1
-    },
-    {
-      "path": "skills/agent-setup-maintainer/lessons.md",
-      "marker": "historical-handoff-lesson",
-      "count": 1
-    },
-    {
-      "path": "skills/review/references/classify-diff.md",
-      "marker": "explicitly-not-a-dispatch",
-      "count": 1
-    }
-  ],
   "lens_routes": {
     "skills/review/references/adversarial.md": [
       "deep-review"

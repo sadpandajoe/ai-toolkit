@@ -18,14 +18,12 @@ import tomllib
 import unittest
 from unittest import mock
 
-from aitk.model_routing import (
-    BLOCKED_EXIT,
-    ModelRouteError,
-    REFUSED_ERROR,
+from aitk.routing_policy import BLOCKED_EXIT, REFUSED_ERROR, ModelRouteError
+from aitk.routing_resolver import resolve_route
+from aitk.routing_transport import (
     _valid_worker,
     parse_claude_output,
     parse_codex_output,
-    resolve_route,
     run_model,
     worker_instructions,
     worker_prompt,
@@ -1448,7 +1446,7 @@ class InstructionChannelAndRefusalTests(RoutingTestCase):
     def test_a_caller_resolved_dispatch_runs_through_the_same_checks(self) -> None:
         import dataclasses
 
-        from aitk.model_routing import run_resolved
+        from aitk.routing_transport import run_resolved
 
         route = resolve_route(ROOT, "review", "claude")
         with self.assertRaisesRegex(ModelRouteError, "no required contracts"):

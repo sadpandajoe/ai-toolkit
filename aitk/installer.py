@@ -26,7 +26,7 @@ from .interfaces import (
     validate_skill_interfaces,
     validate_support_interface,
 )
-from .model_routing import validate_model_routing
+from .routing_manifest import validate_model_routing
 from .workflows import (
     extension_manifest_path,
     load_workflows,

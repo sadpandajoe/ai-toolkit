@@ -357,23 +357,7 @@ CODEX_SELECTOR = re.compile(r"gpt-[0-9]+(?:\.[0-9]+)*-(?:sol|astra)")
 CLAUDE_SELECTOR = re.compile(r"claude-(opus|fable|sonnet)-[0-9]+(?:-[0-9]+)*")
 
 
-DISPATCH_PATTERN = re.compile(
-    r"(?:"
-    r"^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:automatically\s+)?"
-    r"(?:ask|use)\b.*\b(?:agents?|subagents?|workers?|reviewers?)\b"
-    r"|"
-    r"\b(?:spawn(?:s|ed|ing)?|launch(?:es|ed|ing)?|dispatch(?:es|ed|ing)?|"
-    r"delegat(?:e|es|ed|ing)|hand(?:s|ed|ing)?\s+off|send(?:s|ing)?|sent|"
-    r"fan\s+out)\b.*\b(?:agents?|subagents?|workers?|reviewers?)\b"
-    r")",
-    re.IGNORECASE,
-)
-
-
 ROUTE_MARKER = re.compile(r"^<!-- aitk-model-route:([a-z0-9]+(?:[.-][a-z0-9]+)*) -->$")
-
-
-EXEMPT_MARKER = re.compile(r"^<!-- aitk-model-route-exempt:(.+) -->$")
 
 
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")

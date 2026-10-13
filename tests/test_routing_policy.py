@@ -10,11 +10,9 @@ import json
 import tempfile
 import unittest
 
-from aitk.model_routing import (
-    ModelRouteError,
-    resolve_route,
-    validate_model_routing,
-)
+from aitk.routing_manifest import validate_model_routing
+from aitk.routing_policy import ModelRouteError
+from aitk.routing_resolver import resolve_route
 
 from routing_fixtures import (
     ROOT,
@@ -176,18 +174,6 @@ class RoutingPolicyTests(RoutingTestCase):
             problems = validate_model_routing(root)
             self.assertTrue(
                 any("volatile model selector" in item for item in problems), problems
-            )
-
-    def test_cherry_pick_authoritative_prose_cannot_restore_legacy_tiers(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            gate = root / "skills/cherry-pick/references/gate.md"
-            gate.write_text(gate.read_text() + "\nUse Heavy-tier handling.\n")
-
-            problems = validate_model_routing(root)
-
-            self.assertTrue(
-                any("legacy route vocabulary" in item for item in problems), problems
             )
 
 

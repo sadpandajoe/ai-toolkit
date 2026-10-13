@@ -9,7 +9,6 @@ Default scope is branch-wide: `<base>..HEAD` plus the working tree and index.
 `--committed` and `--uncommitted` narrow it; path arguments filter it. Read the
 full contents of changed files, not only hunks.
 
-<!-- aitk-model-route-exempt:pre-dispatch-condition -->
 Before dispatching any reviewer, print one line so the user can intervene:
 `Scope: <N> committed + <M> uncommitted files (<base>..HEAD = <sha>..HEAD)`.
 Stop if the scope is empty.

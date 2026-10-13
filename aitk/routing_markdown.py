@@ -13,7 +13,6 @@ from pathlib import Path
 import re
 
 from aitk.routing_policy import (
-    EXEMPT_MARKER,
     LENS_CATALOG,
     MARKDOWN_LINK,
     ROUTE_MARKER,
@@ -122,8 +121,8 @@ def _marker_present(content: str, boundary_id: str) -> bool:
 def _marker_span_text(content: str, boundary_id: str) -> str:
     """Return the dispatch prose owned by one route marker.
 
-    The span runs from the marker to the next route/exemption marker or the next
-    Markdown heading, whichever comes first. Headings and markers inside fenced
+    The span runs from the marker to the next route marker or the next Markdown
+    heading, whichever comes first. Headings and markers inside fenced
     examples are documentation, not span structure, so the scan runs over
     fence-stripped lines. A boundary whose marker is missing contributes nothing
     here; callers on the dispatch path check `_marker_present` first so a missing
@@ -137,9 +136,7 @@ def _marker_span_text(content: str, boundary_id: str) -> str:
         if route_marker is not None:
             in_span = route_marker.group(1) == boundary_id
             continue
-        if in_span and (
-            EXEMPT_MARKER.fullmatch(stripped) is not None or stripped.startswith("#")
-        ):
+        if in_span and stripped.startswith("#"):
             break
         if in_span:
             selected.append(line)

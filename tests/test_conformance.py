@@ -247,7 +247,7 @@ class ConformanceTests(unittest.TestCase):
             with self.subTest(signal=signal):
                 self.assertTrue(matches and all(m.exists() for m in matches), f"{signal} matches no real path")
             covered |= {m.relative_to(ROOT).as_posix().rstrip("/") for m in matches}
-        for surface in ("interfaces/model-routing.json", "aitk/model_routing.py", "agents", "aitk/installer.py"):
+        for surface in ("interfaces/model-routing.json", "agents", "aitk/installer.py"):
             self.assertIn(surface, covered)
         layers = {p.relative_to(ROOT).as_posix() for p in ROOT.glob("aitk/routing_*.py")}
         self.assertEqual(set(), layers - covered)

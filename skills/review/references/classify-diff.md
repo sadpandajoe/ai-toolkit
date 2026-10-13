@@ -3,7 +3,6 @@
 Deterministic risk routing for a review. The classifier reports facts; the
 calling orchestration decides dispatch.
 
-<!-- aitk-model-route-exempt:describes-caller-owned-dispatch -->
 This reference never dispatches reviewers or launches workers itself; the
 calling workflow owns orchestration.
 
@@ -35,12 +34,12 @@ lens. The parent adds the semantic flags that paths cannot show
      permission checks. When reviewing ai-toolkit itself, also
      agent capability configuration (which model, effort, sandbox,
      permission mode, or tool list a worker runs under:
-     `interfaces/model-routing.json`, `aitk/model_routing.py`,
-     `aitk/routing_*.py`, `agents/`, `aitk/build.py` (renders the native
-     agents' model, tools, and sandbox), hook and MCP config: `hooks/`,
-     `aitk/hooks/`), worker context assembly (`aitk/routing_closure.py`,
-     `aitk/routing_markdown.py`), or trust-boundary changes (publish or push
-     authorization, sandbox enforcement, fail-closed checks becoming advisory:
+     `interfaces/model-routing.json`, `aitk/routing_*.py`, `agents/`,
+     `aitk/build.py` (renders the native agents' model, tools, and sandbox),
+     hook and MCP config: `hooks/`, `aitk/hooks/`), worker context assembly
+     (`aitk/routing_closure.py`, `aitk/routing_markdown.py`), or
+     trust-boundary changes (publish or push authorization, sandbox
+     enforcement, fail-closed checks becoming advisory:
      `aitk/routing_manifest.py`, `aitk/routing_resolver.py`,
      `aitk/routing_transport.py`, `aitk/installer.py`, `aitk/deliver.py`,
      `aitk/review_plan.py`). `review plan` flags these paths itself (its
@@ -99,7 +98,6 @@ Files analyzed: <count>
 
 ## Notes
 
-<!-- aitk-model-route-exempt:explicitly-not-a-dispatch -->
 - This reference classifies; it does not dispatch reviewers or launch subagents.
 - The trigger table is the single source of truth for deep lenses. Update it
   here, not in the orchestration references.

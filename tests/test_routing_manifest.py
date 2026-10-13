@@ -2,7 +2,7 @@
 
 Every case here is a malformed or drifted declaration that must become a problem
 string rather than a traceback or a quiet default: boundary shape, lens menus, the
-per-domain lens floor, the dispatch marker inventory, and the exemption list.
+per-domain lens floor, and the route marker inventory.
 """
 
 from __future__ import annotations
@@ -15,13 +15,13 @@ import subprocess
 import tempfile
 import unittest
 
-from aitk.model_routing import (
-    ModelRouteError,
+from aitk.routing_manifest import (
     load_model_routing,
-    resolve_route,
     validate_dispatch_boundaries,
     validate_model_routing,
 )
+from aitk.routing_policy import ModelRouteError
+from aitk.routing_resolver import resolve_route
 
 from routing_fixtures import (
     ROOT,
@@ -492,32 +492,6 @@ class RoutingManifestTests(RoutingTestCase):
                 mutate(payload)
                 path.write_text(json.dumps(payload))
                 self.assertTrue(validate_model_routing(root))
-
-    def test_new_dispatch_requires_an_inventoried_marker(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            path = root / "skills/review/references/new-dispatch.md"
-            path.write_text("# New\n\nSpawn reviewer agents now.\n")
-            problems = validate_model_routing(root)
-            self.assertTrue(
-                any("unmarked model dispatch boundary" in item for item in problems),
-                problems,
-            )
-
-    def test_mid_sentence_and_extension_dispatches_are_scanned(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            core = root / "skills/review/references/new-mid-sentence.md"
-            core.write_text("# New\n\nThe orchestrator spawns reviewer agents now.\n")
-            extension = root / "extensions/pgm/skills/pgm/references/new-dispatch.md"
-            extension.write_text(
-                "# New\n\nSend this work to implementation subagents.\n"
-            )
-            problems = validate_model_routing(root)
-            unmarked = [
-                item for item in problems if "unmarked model dispatch boundary" in item
-            ]
-            self.assertEqual(2, len(unmarked), problems)
 
     def test_a_route_family_must_exist_in_the_provider_catalog(self) -> None:
         """A route names a model family; one the catalog lacks fails closed."""

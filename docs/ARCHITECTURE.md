@@ -214,7 +214,7 @@ mutation and preserve user conflicts.
    `fix-bug.md` and `create-feature.md`.
 2. Register it in `interfaces/workflows.json` (rules, triggers, class) and add a
    total v2 entry to `interfaces/contracts.json`.
-3. Mark every dispatch sentence with an inventoried route marker and declare the
+3. Put an `aitk-model-route:` marker before each worker dispatch and declare the
    boundary (routes, contracts, lens menu when it fans out) in
    `interfaces/model-routing.json`; pin its route ceiling in
    `aitk/routing_manifest.py`.

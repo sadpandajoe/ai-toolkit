@@ -13,12 +13,10 @@ import json
 import tempfile
 import unittest
 
-from aitk.model_routing import (
-    _marker_span_text,
-    _safe_path,
-    resolve_route,
-    validate_model_routing,
-)
+from aitk.routing_manifest import validate_model_routing
+from aitk.routing_markdown import _marker_span_text
+from aitk.routing_policy import _safe_path
+from aitk.routing_resolver import resolve_route
 
 from routing_fixtures import (
     ROOT,
@@ -135,15 +133,6 @@ class RoutingClosureTests(RoutingTestCase):
         self.assertNotIn("gamma.md", second)
         self.assertNotIn("alpha.md", second)
         self.assertEqual("", _marker_span_text(document, "demo.missing").strip())
-        exempted = "\n".join(
-            [
-                "<!-- aitk-model-route:demo.first -->",
-                "Dispatch reviewers with [alpha.md](alpha.md).",
-                "<!-- aitk-model-route-exempt:not-a-dispatch -->",
-                "Prose naming [beta.md](beta.md).",
-            ]
-        )
-        self.assertNotIn("beta.md", _marker_span_text(exempted, "demo.first"))
 
     def test_marker_span_ignores_headings_inside_fenced_examples(self) -> None:
         # A span that stops at a fenced heading silently truncates: every

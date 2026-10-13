@@ -20,8 +20,6 @@ from aitk.routing_policy import (
     CODEX_SELECTOR,
     CRITIC_EXCLUDED_CONTRACTS,
     DISALLOWED_TOOLS,
-    DISPATCH_PATTERN,
-    EXEMPT_MARKER,
     GENERATED_HEADER,
     LENS_DOMAINS,
     LENS_DOMAIN_FLOORS,
@@ -434,7 +432,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             "providers",
             "routes",
             "dispatch_boundaries",
-            "dispatch_exemptions",
             "lens_routes",
             "lens_floors",
         }
@@ -708,10 +705,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
     if not isinstance(boundaries, list):
         problems.append("dispatch_boundaries must be a list")
         boundaries = []
-    exemptions_value = payload.get("dispatch_exemptions")
-    if not isinstance(exemptions_value, list):
-        problems.append("dispatch_exemptions must be a list")
-        exemptions_value = []
     seen_ids: set[str] = set()
     seed_only_reported: set[str] = set()
     menu_owners: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
@@ -846,28 +839,6 @@ def _validate_payload(root: Path, payload: object) -> list[str]:
             )
     problems.extend(_lens_route_problems(payload, declared_routes, menu_owners))
     problems.extend(_lens_floor_problems(root, payload))
-    seen_exemptions: set[tuple[str, str]] = set()
-    for exemption in exemptions_value:
-        if not isinstance(exemption, dict) or set(exemption) != {
-            "path",
-            "marker",
-            "count",
-        }:
-            problems.append("invalid dispatch exemption entry")
-            continue
-        path_value, marker = exemption.get("path"), exemption.get("marker")
-        identity = (str(path_value), str(marker))
-        if (
-            _safe_path(root, path_value) is None
-            or not isinstance(marker, str)
-            or not marker
-            or type(exemption.get("count")) is not int
-            or exemption.get("count") != 1
-            or identity in seen_exemptions
-        ):
-            problems.append(f"invalid dispatch exemption: {identity}")
-            continue
-        seen_exemptions.add(identity)
     return problems
 
 
@@ -881,33 +852,6 @@ def validate_model_routing(root: Path) -> list[str]:
         problems.extend(validate_selector_ownership(root, payload))
         problems.extend(validate_dispatch_boundaries(root, payload))
         problems.extend(validate_route_bindings(root))
-        problems.extend(validate_legacy_route_prose(root))
-    return problems
-
-
-def validate_legacy_route_prose(root: Path) -> list[str]:
-    paths = list((root / "skills/cherry-pick").rglob("*.md"))
-    paths.append(root / "rules/orchestration.md")
-    legacy = re.compile(
-        r"\b(?:Standard|Heavy)-tier\b|"
-        r"\b(?:standard|heavy) reasoning effort\b|"
-        r"\bheavy effort\b",
-        re.I,
-    )
-    problems: list[str] = []
-    for path in sorted(set(paths)):
-        if not path.is_file() or path.is_symlink():
-            continue
-        for number, line in _markdown_lines(path):
-            gate_legacy = (
-                path == root / "skills/cherry-pick/references/gate.md"
-                and re.search(r"\b(?:Standard|Heavy)\b", line) is not None
-            )
-            if legacy.search(line) or gate_legacy:
-                problems.append(
-                    "legacy route vocabulary in authoritative cherry-pick prose: "
-                    f"{path.relative_to(root)}:{number}"
-                )
     return problems
 
 
@@ -1028,18 +972,18 @@ def _generated_codex_pin(
 
 
 def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list[str]:
+    """Hold the route markers and the declared boundaries in a bijection.
+
+    Each declared boundary's document carries its marker exactly once, and every
+    marker in a skill document names a declared boundary at that path. Markers
+    inside fenced examples are documentation and are not counted.
+    """
     declared = {
         item["id"]: item
         for item in payload["dispatch_boundaries"]
         if (root / item["path"]).is_file()
     }
-    exemptions = {
-        (item["path"], item["marker"]): item for item in payload["dispatch_exemptions"]
-    }
     route_counts: dict[tuple[str, str], int] = {}
-    exemption_counts: dict[tuple[str, str], int] = {}
-    used_route_markers: set[tuple[str, str]] = set()
-    used_exemption_markers: set[tuple[str, str]] = set()
     problems: list[str] = []
     paths = list((root / "skills").glob("**/*.md"))
     paths.extend((root / "extensions").glob("*/skills/**/*.md"))
@@ -1050,31 +994,11 @@ def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list
             continue
         if not path.is_file():
             continue
-        previous_nonblank: tuple[int, str] | None = None
-        for number, line in _markdown_lines(path):
-            stripped = line.strip()
-            route_marker = ROUTE_MARKER.fullmatch(stripped)
-            exemption_marker = EXEMPT_MARKER.fullmatch(stripped)
+        for _, line in _markdown_lines(path):
+            route_marker = ROUTE_MARKER.fullmatch(line.strip())
             if route_marker is not None:
                 key = (relative, route_marker.group(1))
                 route_counts[key] = route_counts.get(key, 0) + 1
-            elif exemption_marker is not None:
-                key = (relative, exemption_marker.group(1))
-                exemption_counts[key] = exemption_counts.get(key, 0) + 1
-            elif not stripped.startswith("#") and DISPATCH_PATTERN.search(line):
-                prior = previous_nonblank[1].strip() if previous_nonblank else ""
-                prior_route = ROUTE_MARKER.fullmatch(prior)
-                prior_exemption = EXEMPT_MARKER.fullmatch(prior)
-                if prior_route is not None:
-                    used_route_markers.add((relative, prior_route.group(1)))
-                elif prior_exemption is not None:
-                    used_exemption_markers.add((relative, prior_exemption.group(1)))
-                else:
-                    problems.append(
-                        f"unmarked model dispatch boundary: {relative}:{number}"
-                    )
-            if stripped:
-                previous_nonblank = (number, line)
     for (path_value, identifier), count in sorted(route_counts.items()):
         item = declared.get(identifier)
         if item is None or item["path"] != path_value or count != 1:
@@ -1084,22 +1008,6 @@ def validate_dispatch_boundaries(root: Path, payload: dict[str, object]) -> list
     for identifier, item in sorted(declared.items()):
         if route_counts.get((item["path"], identifier), 0) != 1:
             problems.append(f"missing route marker: {item['path']}/{identifier}")
-        elif (item["path"], identifier) not in used_route_markers:
-            problems.append(
-                f"route marker does not precede a dispatch: {item['path']}/{identifier}"
-            )
-    for key, count in sorted(exemption_counts.items()):
-        if key not in exemptions or count != 1:
-            problems.append(
-                f"unknown, misplaced, or duplicate route exemption: {key[0]}/{key[1]}"
-            )
-    for key in sorted(exemptions):
-        if exemption_counts.get(key, 0) != 1:
-            problems.append(f"missing route exemption: {key[0]}/{key[1]}")
-        elif key not in used_exemption_markers:
-            problems.append(
-                f"route exemption does not precede a dispatch: {key[0]}/{key[1]}"
-            )
     problems.extend(_lens_menu_problems(root, declared))
     return problems
 

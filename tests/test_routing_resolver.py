@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import unittest
 
-from aitk.model_routing import (
-    ModelRouteError,
-    resolve_route,
-)
+from aitk.routing_policy import ModelRouteError
+from aitk.routing_resolver import resolve_route
 
 from routing_fixtures import (
     ROOT,

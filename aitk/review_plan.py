@@ -55,7 +55,9 @@ import subprocess
 import tempfile
 from typing import Iterable, Mapping
 
-from .model_routing import ModelRouteError, load_model_routing, run_model
+from .routing_manifest import load_model_routing
+from .routing_policy import ModelRouteError
+from .routing_transport import run_model
 from .project_state import (
     COMPLEXITIES,
     append_observation,
@@ -293,7 +295,6 @@ GENERATED_HEADER = re.compile(
 # tests/test_review_plan.py keeps the two lists in step.
 TOOLKIT_SENSITIVE = (
     "interfaces/model-routing.json",
-    "aitk/model_routing.py",
     "aitk/routing_*.py",
     "agents/*",
     "aitk/build.py",

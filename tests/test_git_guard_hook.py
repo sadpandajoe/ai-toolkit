@@ -410,7 +410,7 @@ class GitGuardHookTests(unittest.TestCase):
         )
         loaded = json.loads(result.stdout)
         self.assertIn("aitk.project_state", loaded)
-        for heavy in ("aitk.doctor", "aitk.installer", "aitk.build", "aitk.conformance", "aitk.model_routing"):
+        for heavy in ("aitk.doctor", "aitk.installer", "aitk.build", "aitk.conformance", "aitk.routing_manifest"):
             self.assertNotIn(heavy, loaded)
 
 
