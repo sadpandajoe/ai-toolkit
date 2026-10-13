@@ -74,9 +74,9 @@ class RoutingManifestTests(RoutingTestCase):
             declared_only = json.loads(manifest.read_text())
             document = root / "skills/review/references/pr-review.md"
             original = document.read_text()
-            document.write_text(
-                original.replace("[adversarial.md](adversarial.md) for security sensitivity", "adversarial for security sensitivity", 1)
-            )
+            unlinked, count = re.subn(r"\[([^\]]*)\]\(adversarial\.md\)", r"\1", original)
+            self.assertTrue(count, "pr-review.md no longer links the adversarial lens")
+            document.write_text(unlinked)
             problems = validate_dispatch_boundaries(root, declared_only)
             self.assertIn(
                 f"declared lens is not linked in the dispatch span: "

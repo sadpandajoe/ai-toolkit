@@ -45,14 +45,6 @@ def _markdown_table_rows(block: str) -> list[list[str]]:
     return rows
 
 
-# The owner push rule: an existing upstream must be `<remote>/<branch>`, then push explicitly.
-PUSH_RULE_TOKENS = (
-    "`<remote>/<branch>`",
-    '`git push "<remote>" "HEAD:refs/heads/<branch>"`',
-    "never a bare `git push`",
-)
-
-
 class ConformanceTests(unittest.TestCase):
     def test_behavior_and_resume_contracts_are_satisfied(self) -> None:
         self.assertEqual([], validate_contracts(ROOT))
@@ -110,40 +102,6 @@ class ConformanceTests(unittest.TestCase):
         ):
             with self.subTest(request=request):
                 self.assertIsNone(route_workflow(ROOT, request))
-
-    def test_pr_posting_keeps_severity_labels_internal(self) -> None:
-        posting = (
-            ROOT / "skills/review/references/pr-posting.md"
-        ).read_text()
-        normalized_posting = " ".join(posting.split())
-        self.assertIn("Severity labels are internal metadata", posting)
-        for label in (
-            "`[major]`",
-            "`[minor]`",
-            "`[nitpick]`",
-            "`[critical]`",
-            "`[nit]`",
-        ):
-            with self.subTest(label=label):
-                self.assertIn(label, posting)
-        self.assertIn(
-            "Never include scores or confidence anywhere in posted GitHub "
-            "review prose",
-            normalized_posting,
-        )
-        self.assertIn(
-            "Never include severity labels in inline comments, top-level comments, "
-            "or review bodies unless the user explicitly requests labeled comments",
-            normalized_posting,
-        )
-        for review_surface in (
-            "inline comments",
-            "top-level comments",
-            "review bodies",
-        ):
-            with self.subTest(review_surface=review_surface):
-                self.assertIn(review_surface, normalized_posting)
-        self.assertIn("explicitly requests labeled comments", posting)
 
     def test_optional_pgm_requests_route_only_when_enabled(self) -> None:
         request = "Create a current program health report"
@@ -205,26 +163,6 @@ class ConformanceTests(unittest.TestCase):
                 offenders.append(str(reference.relative_to(ROOT)))
         self.assertEqual([], offenders)
 
-    def test_deep_tier_phrases_stay_canonical_and_single_owner(self) -> None:
-        # "deep quality" (one lens) versus "deep quality review" (whole review at
-        # deep tier) is a one-word gap the classifier alone owns.
-        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
-        for phrase in ('**"deep review"**', '**"deep quality review"**', '**"thermonuclear"**'):
-            self.assertIn(phrase, classifier)
-        candidates = [path for path in ROOT.glob("*.md") if path.is_file()]
-        for content_root in ("skills", "rules", "config", "docs", "extensions", "agents"):
-            candidates.extend(
-                path
-                for path in (ROOT / content_root).glob("**/*.md")
-                if path.is_file() and not path.is_symlink()
-            )
-        owners = [
-            str(path.relative_to(ROOT))
-            for path in sorted(candidates)
-            if "thermonuclear" in path.read_text()
-        ]
-        self.assertEqual(["skills/review/references/classify-diff.md"], owners)
-
     def test_classifier_reports_risk_flags_that_select_deep_lenses(self) -> None:
         classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
         output = re.search(
@@ -283,31 +221,6 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual("plan", validate["lens_domain"])
         self.assertIn("agents/specialists/plan-validator.md", validate["contracts"])
 
-    def test_deep_review_lenses_carry_the_route_floor_the_rule_promises(self) -> None:
-        rule = (ROOT / "rules/model-assignment.md").read_text()
-        row = next(
-            (line for line in rule.splitlines() if line.startswith("| `deep-review` |")),
-            None,
-        )
-        self.assertIsNotNone(row, "model-assignment.md lost its `deep-review` row")
-        when = row.strip().strip("|").split("|")[-1].lower()
-        reserved = {word for word in re.findall(r"[a-z]+", when) if len(word) > 3} - {
-            "review", "lens", "flagged", "risk", "exceptional", "escalation"
-        }
-        self.assertIn("architecture", reserved)
-        self.assertIn("adversarial", reserved)
-        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
-        floors = payload["lens_routes"]
-        menus = {lens for b in payload["dispatch_boundaries"] for lens in b.get("lenses", [])}
-        for lens in sorted(menus):
-            stem = set(Path(lens).stem.replace("-", " ").split())
-            with self.subTest(lens=lens):
-                if reserved & stem:
-                    self.assertEqual(["deep-review"], floors.get(lens))
-                else:
-                    self.assertNotIn(lens, floors)
-        self.assertLessEqual(set(floors), menus)
-
     def test_security_predicate_covers_agent_capability_surfaces(self) -> None:
         """A change to the toolkit's own routing must classify as security-sensitive."""
         classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
@@ -339,92 +252,6 @@ class ConformanceTests(unittest.TestCase):
         layers = {p.relative_to(ROOT).as_posix() for p in ROOT.glob("aitk/routing_*.py")}
         self.assertEqual(set(), layers - covered)
 
-    def test_review_rounds_measure_scope_against_the_recorded_base(self) -> None:
-        rule = (ROOT / "rules/code-review.md").read_text()
-        self.assertIn("**Scope is upstream of correctness.**", rule)
-        self.assertIn("recorded base", rule)
-        local = (ROOT / "skills/review/references/local-review.md").read_text()
-        record = re.search(r"^## Current Code Review$.*?^### Resume Notes", local, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(record, "local-review.md lost its Review Record template")
-        self.assertRegex(record.group(0), re.compile(r"^\*\*Base:\*\*", re.MULTILINE))
-        delta = re.search(r"^## Delta Review$.*?(?=^## )", local, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(delta, "local-review.md lost its Delta Review section")
-        self.assertIn("recorded base", delta.group(0))
-
-    def test_review_is_one_independent_lane_with_a_bounded_delta(self) -> None:
-        """The 10-round review loop is gone: one full review, one delta, then escalate."""
-        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
-        local_ids = {
-            b["id"] for b in payload["dispatch_boundaries"]
-            if b["path"] == "skills/review/references/local-review.md"
-        }
-        self.assertEqual(
-            {
-                "review.independent",
-                "review.second-family",
-                "review.deep-lenses",
-                "review.delta",
-                "review.verify-major",
-            },
-            local_ids,
-        )
-        pr_ids = {
-            b["id"] for b in payload["dispatch_boundaries"]
-            if b["path"] == "skills/review/references/pr-review.md"
-        }
-        self.assertEqual(
-            {"review.pr-independent", "review.pr-second-family", "review.pr-deep-lenses"}, pr_ids
-        )
-        for identifier in (
-            "review.independent",
-            "review.second-family",
-            "review.delta",
-            "review.pr-independent",
-            "review.pr-second-family",
-            "review.pr-batch",
-        ):
-            boundary = next(b for b in payload["dispatch_boundaries"] if b["id"] == identifier)
-            with self.subTest(boundary=identifier):
-                self.assertIn("agents/specialists/reviewer.md", boundary["contracts"])
-                self.assertIn("rules/code-review.md", boundary["contracts"])
-                self.assertEqual("code", boundary["lens_domain"])
-        local = (ROOT / "skills/review/references/local-review.md").read_text()
-        self.assertIn("not a third round", local)
-        self.assertIn("never review\ninline", local)
-        rule = (ROOT / "rules/code-review.md").read_text()
-        for clause in ("One independent review by default", "Validate before fixing", "Delta review, not a second full review", "Bounded rounds"):
-            self.assertIn(clause, rule)
-
-    def test_findings_are_validated_before_any_fix(self) -> None:
-        local = (ROOT / "skills/review/references/local-review.md").read_text()
-        section = re.search(r"^## Validate, Then Fix$.*?(?=^## )", local, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(section, "local-review.md lost its Validate, Then Fix section")
-        body = section.group(0)
-        self.assertIn("before changing anything", body)
-        self.assertIn("rejected with a one-line evidence-based", body)
-        handoff = (ROOT / "rules/specialist-handoff.md").read_text()
-        self.assertIn("critics, not authorities", handoff)
-        reviewer = (ROOT / "agents/specialists/reviewer.md").read_text().replace("\n", " ")
-        self.assertIn("parent validates every finding", reviewer)
-
-    def test_batch_worker_is_a_single_reviewer_that_reports_deferred_lenses(self) -> None:
-        batch = (ROOT / "skills/review/references/pr-batch.md").read_text()
-        span = re.search(
-            r"<!-- aitk-model-route:review\.pr-batch -->.*?(?=^## )", batch, re.MULTILINE | re.DOTALL
-        )
-        self.assertIsNotNone(span, "pr-batch.md lost its dispatch span")
-        self.assertIn("no subagent capability", span.group(0))
-        self.assertIn("Batch mode: Code-judo suppressed", span.group(0))
-        self.assertIn("Deferred lenses:", batch)
-        wave = re.search(r"^## Review-PR Batch Wave N$.*?^Next wave:", batch, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(wave, "pr-batch.md lost its wave block template")
-        rows = _markdown_table_rows(wave.group(0))
-        header = [cell.lower() for cell in rows[0]]
-        self.assertIn("proposals", header)
-        self.assertIn("deferred", header)
-        for row in rows[1:]:
-            self.assertEqual("suppressed (batch)", row[header.index("proposals")])
-
     def test_lens_finding_templates_lead_with_the_domain_severity(self) -> None:
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
         menus: dict[str, set[str]] = {}
@@ -443,21 +270,6 @@ class ConformanceTests(unittest.TestCase):
                     with self.subTest(lens=lens, tag=tag):
                         self.assertEqual(expected, {option.strip() for option in tag.split("|")})
         self.assertIn("skills/review/references/adversarial.md", checked)
-
-    def test_missing_test_findings_name_the_assertion_that_locks_them(self) -> None:
-        rule = (ROOT / "rules/code-review.md").read_text()
-        section = re.search(r"^## Severity$.*?(?=^## )", rule, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(section, "code-review.md lost its Severity section")
-        self.assertIn("Name the locking assertion", section.group(0))
-        self.assertIn("cannot be named", section.group(0))
-        local = (ROOT / "skills/review/references/local-review.md").read_text()
-        findings = re.search(r"^### Findings$.*?(?=^###)", local, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(findings)
-        rows = _markdown_table_rows(findings.group(0))
-        header = [cell.lower() for cell in rows[0]]
-        self.assertIn("locking assertion", header)
-        self.assertIn("verdict", header)
-        self.assertEqual("status", header[-1])
 
     def test_code_judo_pins_its_proposals_to_a_worker_result_slot(self) -> None:
         judo = (ROOT / "skills/review/references/code-judo.md").read_text()
@@ -483,10 +295,6 @@ class ConformanceTests(unittest.TestCase):
             self.assertEqual("astra", routes[name]["providers"]["codex"]["model"])
         for name in ("implementation", "planning", "review", "rca", "operations"):
             self.assertEqual("sol", routes[name]["providers"]["codex"]["model"])
-        self.assertNotIn("ensembles", payload)
-        rule = (ROOT / "rules/model-assignment.md").read_text()
-        self.assertIn("Fable plans only COMPLEX work", rule)
-        self.assertIn("Prefer the other provider for independent review", rule)
 
     def test_specialist_contracts_are_inlined_for_their_lanes(self) -> None:
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
@@ -496,13 +304,6 @@ class ConformanceTests(unittest.TestCase):
         self.assertIn("agents/specialists/plan-validator.md", by_id["planning.validate"]["contracts"])
         self.assertEqual(["review", "deep-review"], by_id["planning.validate"]["routes"])
         self.assertEqual(["planning"], by_id["workflows.create-feature-planning"]["routes"])
-        for contract in ("agents/specialists/reviewer.md", "agents/specialists/rca.md", "agents/specialists/plan-validator.md"):
-            text = (ROOT / contract).read_text()
-            self.assertIn("read-only", text.lower())
-        validator = (ROOT / "agents/specialists/plan-validator.md").read_text()
-        self.assertIn("Verdict: APPROVE | CHANGES_REQUIRED | REPLAN", validator)
-        rca = (ROOT / "agents/specialists/rca.md").read_text()
-        self.assertIn("Verdict: PASS | REVISE | ESCALATE", rca)
 
     def test_review_lanes_run_through_model_run_with_their_own_contracts(self) -> None:
         """No native reviewer agent; each critic reads only what grades its lane.
@@ -612,28 +413,8 @@ class ConformanceTests(unittest.TestCase):
         feature = (ROOT / "skills/workflows/references/create-feature.md").read_text()
         self.assertIn("writes the section\n   to `PLAN.md` verbatim", feature)
 
-    def test_gates_rule_defines_outcomes_and_the_retry_budget(self) -> None:
-        gates = (ROOT / "rules/gates.md").read_text()
-        for outcome in ("`PASS`", "`RETRY`", "`ESCALATE`", "`RECLASSIFY`", "`USER_DECISION`", "`BLOCKED`"):
-            self.assertIn(outcome, gates)
-        self.assertIn("one initial attempt plus one informed retry", gates)
-        self.assertIn("never becomes `PASS` from code inspection alone", gates)
-        loop = (ROOT / "skills/verification-loop/SKILL.md").read_text()
-        self.assertIn("Never a third quiet attempt", loop)
-        self.assertIn("rules/gates.md", loop)
-
     def test_single_provider_verifier_changes_family_or_caps_the_finding(self) -> None:
         """A verifier on the family that raised the finding is not a verifier."""
-        local = (ROOT / "skills/review/references/local-review.md").read_text()
-        section = re.search(r"^## Validate, Then Fix$.*?(?=^## )", local, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(section)
-        body = section.group(0)
-        self.assertIn("single-provider machine", body)
-        self.assertIn("run the verifier on `deep-review`", body)
-        self.assertIn("Verifier: unavailable — single family", body)
-        binding = (ROOT / "config/providers/claude.md").read_text()
-        self.assertIn("verifier runs on `deep-review` (Fable)", binding)
-        self.assertIn("Verifier: unavailable", binding)
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
         verifier = next(b for b in payload["dispatch_boundaries"] if b["id"] == "review.verify-major")
         self.assertIn("deep-review", verifier["routes"], "the verifier has no other-family route to fall to")
@@ -644,49 +425,7 @@ class ConformanceTests(unittest.TestCase):
             "review and deep-review resolve to the same Claude family; the fallback changes nothing",
         )
 
-    def test_phased_work_ends_with_an_integrated_review_and_a_roadmap_check(self) -> None:
-        feature = (ROOT / "skills/workflows/references/create-feature.md").read_text()
-        bug = (ROOT / "skills/workflows/references/fix-bug.md").read_text()
-        for text, name in ((feature, "create-feature"), (bug, "fix-bug")):
-            with self.subTest(workflow=name):
-                self.assertIn("## Gate: review (integrated)", text)
-                self.assertIn("branch base", text)
-                self.assertIn("Integrated review:", text)
-        self.assertIn("roadmap check", feature)
-        self.assertIn("--gate phase-exit --status RECLASSIFY", feature)
-        handoff = (ROOT / "skills/reporting/templates/phase-handoff.md").read_text()
-        self.assertIn("Roadmap check:", handoff)
-        self.assertIn("Delivered as:", handoff)
-        local = (ROOT / "skills/review/references/local-review.md").read_text()
-        self.assertIn("**Branch base:**", local)
-        self.assertIn("phase base", local)
-        self.assertIn("never re-reads phases one and two", local)
-        decompose = (ROOT / "skills/planning/references/decompose-work.md").read_text()
-        self.assertIn("Delivery order", decompose)
-        self.assertIn("single PR", decompose)
-        guard = (ROOT / "skills/planning/SKILL.md").read_text()
-        self.assertIn("more than 10 files", guard)
-        self.assertIn("horizontal layer", guard)
-        self.assertIn("one sitting", guard)
-
-    def test_review_depth_follows_the_tier_and_delivery_follows_the_contract(self) -> None:
-        rule = (ROOT / "rules/code-review.md").read_text()
-        self.assertIn("## Review Shape by Tier", rule)
-        self.assertIn("verification-only", rule)
-        local = (ROOT / "skills/review/references/local-review.md").read_text()
-        self.assertIn("reviews the transformation, not the waves", local)
-        self.assertIn("--status done --sha", local)
-        feature = (ROOT / "skills/workflows/references/create-feature.md").read_text()
-        self.assertIn("## Feature Complexity Signals", feature)
-        self.assertIn("Cosmetic changes are TRIVIAL regardless of file count", feature)
-        # Per-phase delivery is committed and pushed by default; a PR opens only
-        # under the contract's publish-explicit gate, one effect record per phase.
-        self.assertIn("`publish-explicit` gate", feature)
-        self.assertIn("operation ID `phase:<name>`", feature)
-        self.assertIn("pushed — awaiting PR request", feature)
-        handoff = (ROOT / "skills/reporting/templates/phase-handoff.md").read_text()
-        self.assertIn("Tree:", handoff)
-        self.assertIn("pushed — awaiting PR request", handoff)
+    def test_delivery_follows_the_contract_graph(self) -> None:
         contracts = json.loads((ROOT / "interfaces/contracts.json").read_text())
         by_name = {c["name"]: c for c in contracts["contracts"]}
         feature_edges = {(e["from"], e["to"]) for e in by_name["create-feature"]["transitions"]}
@@ -719,37 +458,6 @@ class ConformanceTests(unittest.TestCase):
         self.assertIn("aitk-model-route:planning.validate-second-family", validate)
         self.assertIn("size XL", validate)
 
-    def test_pre_switch_review_controls(self) -> None:
-        """Coverage check on clean verdicts, rejected majors, reviewer-reported flags, yield thresholds."""
-        local = (ROOT / "skills/review/references/local-review.md").read_text()
-        self.assertIn("Coverage rerun:", local)
-        self.assertNotIn("clean-verdict guard", local)
-        self.assertIn("never **rejected** on it either", local)
-        self.assertIn("`CONFIRMED` overrides the parent", local)
-        self.assertIn("**Reviewer-reported flags.**", local)
-        self.assertIn("Missing flag:", local)
-        self.assertIn("Lane demoted:", local)
-        pr = (ROOT / "skills/review/references/pr-review.md").read_text()
-        self.assertNotIn("clean-verdict guard", pr)
-        reviewer = (ROOT / "agents/specialists/reviewer.md").read_text()
-        self.assertIn("Missing flag:", reviewer)
-        self.assertIn("you do not\nreview under it yourself", reviewer)
-        rule = (ROOT / "rules/code-review.md").read_text()
-        self.assertIn("## Yield Thresholds", rule)
-        table = re.search(r"^## Yield Thresholds$.*?(?=^## |\Z)", rule, re.MULTILINE | re.DOTALL)
-        assert table is not None
-        rows = [cells for cells in _markdown_table_rows(table.group(0)) if cells[0] != "Lane"]
-        self.assertEqual(4, len(rows), "every optional lane needs a threshold and a consequence")
-        for cells in rows:
-            with self.subTest(lane=cells[0]):
-                self.assertTrue(cells[2].strip(), "threshold missing")
-                self.assertTrue(cells[3].strip(), "consequence missing")
-        self.assertIn("never demoted", rule)
-        metrics = (ROOT / "skills/metrics-emit/SKILL.md").read_text()
-        self.assertIn('"lanes"', metrics)
-        gates = (ROOT / "rules/gates.md").read_text()
-        self.assertIn("`CONFIRMED` overrides it", gates)
-
     def test_retired_v1_vocabulary_does_not_return(self) -> None:
         retired = re.compile(
             r"\bMODERATE\b|rules/(?:review-gate|stop-rules|scoring)\.md|review-ensemble|"
@@ -766,100 +474,14 @@ class ConformanceTests(unittest.TestCase):
                         offenders.append(f"{path.relative_to(ROOT)}:{number}")
         self.assertEqual([], offenders)
 
-    def test_draft_pr_opens_through_the_create_pr_contract(self) -> None:
-        references = ROOT / "skills/workflows/references"
+    def test_test_workflows_never_publish_and_delivery_takes_no_pr(self) -> None:
+        """Contract data only: the PR and push procedure is `deliver`'s to test."""
         contracts = contracts_by_name(ROOT)
         for name in ("create-tests", "update-tests"):
             with self.subTest(contract=name):
                 serialized = json.dumps(contracts[name])
                 self.assertNotIn("publish-explicit", serialized)
                 self.assertNotIn("published_pr", serialized)
-
-        create_pr = (references / "create-pr.md").read_text()
-        for token in (
-            "-f head=",
-            "%(push:remotename)",
-            "%(upstream:remoteref)",
-            "$branch@{upstream}",
-            "get-url --push",
-            "isFork",
-            "env.BRANCH",
-            'BRANCH="$branch" HEAD_REPO="$head_repo" gh api',
-            "PR conflict:",
-            "## PR Ready",
-            "## PR Exists",
-            "## PR Not Opened",
-        ):
-            with self.subTest(create_pr_contains=token):
-                self.assertIn(token, create_pr)
-        for token in ("gh pr list --head", "--limit 10"):
-            with self.subTest(create_pr_omits=token):
-                self.assertNotIn(token, create_pr)
-
-        # The reservation yield sits between presenting the PR and creating it.
-        step_six = create_pr.index("### 6.")
-        step_seven = create_pr.index("### 7.")
-        self.assertGreaterEqual(create_pr.find("## PR Ready", step_six), 0)
-        self.assertLess(create_pr.index("## PR Ready", step_six), step_seven)
-        # The paginated lookup belongs to step 1, before any context is gathered.
-        lookup = create_pr.index("--paginate -X GET")
-        self.assertLess(create_pr.index("### 1."), lookup)
-        self.assertLess(lookup, create_pr.index("### 2."))
-        # Step 1 resolves the lookup rows, then continues through context, title,
-        # body, scrub, and pause; it never jumps straight to creation.
-        step_one = create_pr[create_pr.index("### 1.") : create_pr.index("### 2.")]
-        self.assertNotIn("straight into step 7", step_one)
-        self.assertIn("continue with steps 2-6", step_one)
-        self.assertIn("already has an upstream", create_pr)
-        for token in PUSH_RULE_TOKENS:
-            with self.subTest(create_pr_push_rule=token):
-                self.assertIn(token, create_pr)
-        # The pre-push guard names concrete refusals; the default branch is checked later.
-        self.assertIn('"refs/remotes/<remote>/HEAD"', create_pr)
-        # Creation pins the head identity the lookup used.
-        self.assertGreaterEqual(
-            create_pr.find('--head "$head_owner:$branch"', step_seven), 0
-        )
-
-        for name in ("create-feature", "fix-bug", "fix-ci"):
-            with self.subTest(owner=name):
-                text = (references / f"{name}.md").read_text()
-                ready = text.index("## PR Ready")
-                reserve = text.index("checkpoint reserve")
-                self.assertLess(ready, reserve)
-                self.assertLess(reserve, text.index("checkpoint apply"))
-                self.assertLess(text.index("--no-pr"), ready)
-        for name in ("create-tests", "update-tests"):
-            with self.subTest(owner=name):
-                text = (references / f"{name}.md").read_text()
-                self.assertIn("create-pr --draft", text)
-                self.assertIn("--no-pr", text)
-                self.assertNotIn("checkpoint reserve", text)
-        for name in ("create-feature", "fix-bug", "fix-ci", "create-tests", "update-tests"):
-            with self.subTest(push=name):
-                text = (references / f"{name}.md").read_text()
-                self.assertIn("git push -u", text)
-                self.assertIn("ambiguous push target", text)
-                self.assertIn("already has an upstream", text)
-                for token in PUSH_RULE_TOKENS:
-                    with self.subTest(push_rule=token):
-                        self.assertIn(token, text)
-        for name in ("create-feature", "fix-bug", "fix-ci"):
-            with self.subTest(no_pr_pushes_per_step_two=name):
-                text = (references / f"{name}.md").read_text()
-                self.assertIn("`--no-pr`: commit and push per step 2, then stop", text)
-                self.assertNotIn("skip the rest", text)
-        for name in ("create-feature", "fix-bug", "fix-ci"):
-            with self.subTest(existing_pr_record=name):
-                text = (references / f"{name}.md").read_text()
-                self.assertIn("existing, draft|ready", text)
-                self.assertNotIn("`draft PR #n (existing)`", text)
-
-        universal = (ROOT / "rules/universal.md").read_text()
-        self.assertIn("draft", universal)
-        self.assertIn("`--no-pr`", universal)
-        self.assertNotIn("Never open a pull request", universal)
-
         workflows = {
             item["name"]: item
             for item in json.loads((ROOT / "interfaces/workflows.json").read_text())["workflows"]

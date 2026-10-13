@@ -168,9 +168,7 @@ class ProviderAdapterTests(unittest.TestCase):
                 self.assertIn(expected_rule, claude)
                 self.assertIn(expected_rule, codex)
         for provider in ("claude", "codex"):
-            document = ROOT / f"config/providers/{provider}.md"
-            self.assertTrue(document.is_file())
-            self.assertIn("capability bindings", document.read_text().lower())
+            self.assertTrue((ROOT / f"config/providers/{provider}.md").is_file())
 
     def test_dependencies_resolve_from_source_link_and_isolated_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

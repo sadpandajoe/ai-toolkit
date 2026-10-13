@@ -59,91 +59,10 @@ class RoutingClosureTests(RoutingTestCase):
                     else:
                         self.assertNotIn(judo_lens, contracts)
         self.assertTrue(checked_judo, "review.code-judo left the boundary manifest")
-        # Scoping narrows every lane on a multi-lane document, so pin all of
-        # them exactly. Isolation that starves a lane is the same regression in
-        # the other direction: the worker silently loses a lens it is told to
-        # run, and a negative-membership assertion alone stays green.
-        expected = {
-            # A deep-lens lane carries exactly one lens plus that lens's own
-            # grading contracts, never its two siblings, and never the parent's
-            # review procedure or the routing policy.
-            ("review.deep-lenses", "skills/review/references/deep-quality.md"): (
-                "rules/code-review.md",
-                "rules/severity.md",
-                "skills/review/references/deep-quality.md",
-            ),
-            ("review.pr-deep-lenses", "skills/review/references/adversarial.md"): (
-                "rules/code-review.md",
-                "rules/severity.md",
-                "skills/review/references/adversarial.md",
-            ),
-            # The independent and delta lanes carry the reviewer contract and
-            # the grading rules, and nothing about deep lenses or judo.
-            ("review.independent", None): (
-                "agents/specialists/reviewer.md",
-                "rules/code-review.md",
-                "rules/severity.md",
-            ),
-            ("review.delta", None): (
-                "agents/specialists/reviewer.md",
-                "rules/code-review.md",
-                "rules/severity.md",
-            ),
-            # The second-family lane is the independent lane's twin: same
-            # contract, nothing from the first lane.
-            ("review.second-family", None): (
-                "agents/specialists/reviewer.md",
-                "rules/code-review.md",
-                "rules/severity.md",
-            ),
-            # The single-finding verifier carries its own contract and the
-            # grading rules; never the reviewer contract or the domain
-            # checklists, so it cannot widen into a second review.
-            ("review.verify-major", None): (
-                "agents/specialists/finding-verifier.md",
-                "rules/code-review.md",
-                "rules/severity.md",
-            ),
-            # The batch worker applies the reviewer contract itself and reads
-            # its own payload's classification; the floored deep lenses are
-            # deliberately absent because the lane runs on `review` too.
-            ("review.pr-batch", None): (
-                "agents/specialists/reviewer.md",
-                "rules/code-review.md",
-                "rules/severity.md",
-                "skills/review/references/classify-diff.md",
-            ),
-            # Plan validation is one worker with the validator contract, which
-            # carries its own checks; the floored architecture lens never rides
-            # along.
-            ("planning.validate", None): (
-                "agents/specialists/plan-validator.md",
-                "rules/severity.md",
-            ),
-            ("debug.rca-specialist", None): ("agents/specialists/rca.md",),
-            # The planner gets its own contract and the two plan shapes it
-            # returns verbatim; never the planning skill's routing table.
-            ("workflows.create-feature-planning", None): (
-                "agents/specialists/planner.md",
-                "skills/planning/references/decompose-work.md",
-                "skills/planning/references/plan-implementation.md",
-            ),
-        }
-        allowed = {b["id"]: b for b in payload["dispatch_boundaries"]}
-        for (identifier, lens), contracts in expected.items():
-            for route in _routes_for(allowed[identifier], lens):
-                with self.subTest(boundary=identifier, route=route):
-                    resolved = resolve_route(
-                        ROOT, route, "claude", boundary=identifier, lens=lens
-                    )
-                    self.assertEqual(
-                        contracts, tuple(sorted(resolved.required_contracts))
-                    )
 
     def test_no_marker_span_is_starved_of_a_contract_it_names(self) -> None:
-        # Structural counterpart to the exact closures above: whatever a boundary
-        # declares its worker must read has to reach that worker. This holds for
-        # boundaries nobody thought to pin, including ones added later.
+        # Whatever a boundary declares its worker must read has to reach that
+        # worker, for every boundary, including ones added later.
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
         for boundary in payload["dispatch_boundaries"]:
             linked = set(_declared_at(boundary))

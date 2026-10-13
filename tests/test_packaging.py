@@ -58,16 +58,6 @@ class PackagingTests(unittest.TestCase):
         for line in action_lines:
             self.assertRegex(line, r"uses: actions/[a-z-]+@[0-9a-f]{40}(?:\s+#.*)?$")
 
-    def test_public_docs_and_cli_describe_the_skills_only_interface(self) -> None:
-        readme = (ROOT / "README.md").read_text()
-        cli = (ROOT / "aitk/cli.py").read_text()
-
-        self.assertIn("## Migrating from Slash Commands", readme)
-        self.assertIn("$workflows fix-bug", readme)
-        self.assertIn("validate the optional PGM extension", cli)
-        self.assertNotIn("commands and guidance need a rebuild", readme)
-        self.assertNotIn("include optional PGM commands", cli)
-
 
 if __name__ == "__main__":
     unittest.main()

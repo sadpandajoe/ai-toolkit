@@ -1148,5 +1148,128 @@ class ClaudeHookRegistrationTests(unittest.TestCase):
         self.assertEqual(registered, self.settings.read_bytes())
 
 
+class InstallerOwnershipTests(unittest.TestCase):
+    def run_installer(
+        self, home: Path, *arguments: str
+    ) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env["HOME"] = str(home)
+        env["CODEX_HOME"] = str(home / ".codex")
+        return subprocess.run(
+            ["/bin/sh", str(ROOT / "install.sh"), *arguments],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_install_is_non_destructive_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            claude = home / ".claude"
+            custom_command = claude / "commands/custom.md"
+            custom_skill = claude / "skills/custom/SKILL.md"
+            custom_command.parent.mkdir(parents=True)
+            custom_skill.parent.mkdir(parents=True)
+            custom_command.write_text("# Custom command\n")
+            custom_skill.write_text("---\nname: custom\ndescription: Custom\n---\n")
+            claude_md = claude / "CLAUDE.md"
+            claude_md.write_text("# Personal instructions\n")
+            codex_md = home / ".codex/AGENTS.md"
+            codex_md.parent.mkdir(parents=True)
+            codex_md.write_text("# Personal Codex instructions\n")
+
+            first = self.run_installer(home)
+            self.assertEqual(0, first.returncode, first.stderr)
+            self.assertEqual("# Custom command\n", custom_command.read_text())
+            self.assertEqual(
+                "---\nname: custom\ndescription: Custom\n---\n",
+                custom_skill.read_text(),
+            )
+            self.assertIn("# Personal instructions", claude_md.read_text())
+            self.assertIn("# Personal Codex instructions", codex_md.read_text())
+            self.assertIn("# >>> ai-toolkit managed guidance >>>", codex_md.read_text())
+            self.assertTrue((home / ".agents/skills/workflows").is_symlink())
+            self.assertTrue((home / ".claude/skills/workflows").is_symlink())
+            self.assertFalse((home / ".agents/skills/debug").exists())
+            self.assertFalse((home / ".codex/skills/debug").exists())
+
+            backups_after_first = sorted(claude.glob("backup-*"))
+            ledger = home / ".ai-toolkit/install-state.json"
+            first_ledger = ledger.read_bytes()
+            first_ledger_mtime = ledger.stat().st_mtime_ns
+            first_snapshot = sorted(
+                str(path.relative_to(home))
+                for path in home.rglob("*")
+                if not path.is_dir()
+            )
+
+            second = self.run_installer(home)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertEqual(backups_after_first, sorted(claude.glob("backup-*")))
+            self.assertEqual(first_ledger, ledger.read_bytes())
+            self.assertEqual(first_ledger_mtime, ledger.stat().st_mtime_ns)
+            second_snapshot = sorted(
+                str(path.relative_to(home))
+                for path in home.rglob("*")
+                if not path.is_dir()
+            )
+            self.assertEqual(first_snapshot, second_snapshot)
+
+    def test_install_ignores_personal_legacy_command_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            conflict = home / ".claude/commands/start.md"
+            conflict.parent.mkdir(parents=True)
+            conflict.write_text("# Personal start command\n")
+
+            result = self.run_installer(home)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("# Personal start command\n", conflict.read_text())
+            self.assertTrue((home / ".agents/skills/workflows").is_symlink())
+
+    def test_installer_delegates_generation_to_aitk(self) -> None:
+        installer = (ROOT / "install.sh").read_text()
+        implementation = (ROOT / "aitk/installer.py").read_text()
+        self.assertIn('exec "$ROOT/bin/aitk" install', installer)
+        self.assertIn("write_build(paths.root", implementation)
+        self.assertNotIn('rm -rf "$BUILD_DIR"', installer)
+
+    def test_optional_pgm_skill_is_linked_during_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            result = self.run_installer(home, "--with-pgm")
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertTrue((home / ".claude/skills/pgm").is_symlink())
+            self.assertTrue((home / ".agents/skills/pgm").is_symlink())
+
+            regular = self.run_installer(home)
+            self.assertEqual(0, regular.returncode, regular.stderr)
+            self.assertFalse((home / ".agents/skills/pgm").exists())
+
+    def test_install_migrates_legacy_whole_directory_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            claude = home / ".claude"
+            claude.mkdir(parents=True)
+            (claude / "commands").symlink_to(ROOT / "build/commands")
+            (claude / "skills").symlink_to(ROOT / "skills")
+            (claude / "CLAUDE.md").symlink_to(ROOT / "build/config/CLAUDE.md")
+
+            result = self.run_installer(home)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertFalse((claude / "commands").exists())
+            self.assertTrue((claude / "skills").is_dir())
+            self.assertFalse((claude / "skills").is_symlink())
+            self.assertTrue((claude / "skills/workflows").is_symlink())
+            self.assertFalse((claude / "skills/debug").exists())
+            self.assertIn(
+                "# >>> ai-toolkit managed guidance >>>",
+                (claude / "CLAUDE.md").read_text(),
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
