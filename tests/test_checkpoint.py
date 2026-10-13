@@ -18,6 +18,7 @@ from aitk.checkpoint import (
     advance,
     apply,
     canonical_json,
+    contract_digest,
     initialize,
     parse_checkpoint,
     reconcile_pending,
@@ -25,7 +26,7 @@ from aitk.checkpoint import (
     validate,
     validate_transition,
 )
-from aitk.conformance import contract_digest, contracts_by_name
+from aitk.workflows import contracts_by_name
 from aitk.project_state import (
     BEGIN as SNAPSHOT_BEGIN,
     END as SNAPSHOT_END,

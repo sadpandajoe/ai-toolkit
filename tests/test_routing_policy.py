@@ -104,7 +104,6 @@ class RoutingPolicyTests(RoutingTestCase):
             payload = json.loads(path.read_text())
             payload["providers"]["codex"]["bindings"]["independent_review"] = {
                 "mode": "native",
-                "document": "config/providers/codex.md",
                 "fallback": None,
             }
             path.write_text(json.dumps(payload))
@@ -115,12 +114,10 @@ class RoutingPolicyTests(RoutingTestCase):
             )
             payload["providers"]["codex"]["bindings"]["independent_review"] = {
                 "mode": "fallback",
-                "document": "config/providers/codex.md",
                 "fallback": "source_linked_model_run",
             }
             payload["providers"]["codex"]["bindings"]["fresh_subagent"] = {
                 "mode": "fallback",
-                "document": "config/providers/codex.md",
                 "fallback": "manual_fresh_session",
             }
             path.write_text(json.dumps(payload))

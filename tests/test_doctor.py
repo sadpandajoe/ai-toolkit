@@ -1,28 +1,21 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
-from aitk.build import write_build
-from aitk.doctor import _secret_output, run_doctor
+from aitk.doctor import _personal_paths, _secret_output, run_doctor
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class DoctorTests(unittest.TestCase):
     def make_clean_repo(self, root: Path) -> None:
-        for directory in (
-            "config",
-            "hooks",
-            "rules",
-            "skills/example/references",
-        ):
-            (root / directory).mkdir(parents=True, exist_ok=True)
-        (root / "README.md").write_text("rules/universal.md skills/example/\n")
-        (root / ".gitignore").write_text(
-            "/PROJECT.md\n/PROJECT_ARCHIVE.md\n/PLAN.md\n/WATCH.md\n/CHERRY_PICK.md\n/CI_FIX.md\nbuild/\n"
-        )
-        (root / "config/CLAUDE.md").write_text("@{{TOOLKIT_DIR}}/rules/universal.md\n")
-        (root / "rules/universal.md").write_text("# Universal\n")
+        (root / "skills/example/references").mkdir(parents=True, exist_ok=True)
+        (root / "README.md").write_text("See [the example](skills/example/SKILL.md).\n")
         (root / "skills/example/SKILL.md").write_text(
             "---\n"
             "name: example\n"
@@ -31,14 +24,6 @@ class DoctorTests(unittest.TestCase):
             "Read [details](references/details.md).\n"
         )
         (root / "skills/example/references/details.md").write_text("# Details\n")
-        (root / "hooks/prevent-project-commit.sh").write_text(
-            "#!/bin/bash\nprintf '%s' \"$INPUT\" | python3 -m aitk.hooks.git_guard\n"
-        )
-        (root / "aitk/hooks").mkdir(parents=True, exist_ok=True)
-        (root / "aitk/hooks/git_guard.py").write_text(
-            "from aitk.project_state import STATE_FILES\n"
-        )
-        write_build(root)
 
     def test_clean_fixture_has_no_failures_or_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -85,159 +70,32 @@ class DoctorTests(unittest.TestCase):
                 ("skills/example/SKILL.md: provider-specific fields model",), finding.details
             )
 
-    def test_rule_inventory_requires_a_real_non_readme_loader(self) -> None:
+    def test_routing_manifest_problems_fail_the_doctor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            shutil.copytree(
+                ROOT, root, ignore=shutil.ignore_patterns(".git", "build", "__pycache__")
+            )
+            findings = {item.check: item for item in run_doctor(root)}
+            self.assertEqual("PASS", findings["model-routing"].status)
+            manifest = root / "interfaces/model-routing.json"
+            payload = json.loads(manifest.read_text())
+            payload["dispatch_boundaries"][0]["routes"] = ["no-such-route"]
+            manifest.write_text(json.dumps(payload))
+            findings = {item.check: item for item in run_doctor(root)}
+            self.assertEqual("FAIL", findings["model-routing"].status)
+
+    def test_personal_absolute_paths_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.make_clean_repo(root)
-            (root / "rules/orphan.md").write_text("# Orphan\n")
-            (root / "README.md").write_text(
-                "rules/universal.md rules/orphan.md skills/example/\n"
+            self.assertEqual("PASS", _personal_paths(root).status)
+            (root / "skills/example/references/details.md").write_text(
+                "Run /Users/someone/tools/run.sh\n"
             )
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "rule-loaders"
-            )
-
+            finding = _personal_paths(root)
             self.assertEqual("FAIL", finding.status)
-            self.assertEqual(("rules/orphan.md",), finding.details)
-
-    def test_rule_inventory_rejects_rule_only_reference_cycles(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "rules/first.md").write_text(
-                "# First\n\nRead `rules/second.md`.\n"
-            )
-            (root / "rules/second.md").write_text(
-                "# Second\n\nRead `rules/first.md`.\n"
-            )
-            (root / "README.md").write_text(
-                "rules/universal.md rules/first.md rules/second.md "
-                "skills/example/\n"
-            )
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "rule-loaders"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertEqual(
-                ("rules/first.md", "rules/second.md"), finding.details
-            )
-
-    def test_rule_inventory_reports_non_utf8_sources_without_crashing(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "config/binary.yaml").write_bytes(b"\xff\xfe\x00")
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "rule-loaders"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertIn(
-                "config/binary.yaml: not valid UTF-8 text", finding.details
-            )
-
-    def test_state_files_must_be_ignored_only_at_repository_root(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / ".gitignore").write_text(
-                "PROJECT.md\nPROJECT_ARCHIVE.md\nPLAN.md\nWATCH.md\n"
-                "CHERRY_PICK.md\nCI_FIX.md\nbuild/\n"
-            )
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "state-protection"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertIn("/PLAN.md", finding.details)
-
-    def test_state_protection_needs_the_git_guard_and_its_state_list(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / "aitk/hooks/git_guard.py").write_text("STATE_FILES = ('PROJECT.md',)\n")
-            (root / "hooks/prevent-project-commit.sh").write_text("#!/bin/bash\nexit 0\n")
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "state-protection"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertIn(
-                "hooks/prevent-project-commit.sh does not run aitk.hooks.git_guard",
-                finding.details,
-            )
-            self.assertIn(
-                "aitk/hooks/git_guard.py does not import project_state.STATE_FILES",
-                finding.details,
-            )
-
-    def test_provider_specific_primitives_in_shared_skills_fail(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            details = root / "skills/example/references/details.md"
-            details.write_text("Run EnterPlanMode then use model: haiku.\n")
-            findings = run_doctor(root)
-            portability = next(
-                finding
-                for finding in findings
-                if finding.check == "provider-portability"
-            )
-            self.assertEqual("FAIL", portability.status)
-            self.assertEqual(2, len(portability.details))
-
-    def test_every_forbidden_provider_primitive_category_has_a_negative_fixture(
-        self,
-    ) -> None:
-        cases = {
-            "provider template import": "@{{TOOLKIT_DIR}}/rules/provider.md\n",
-            "EnterPlanMode": "EnterPlanMode\n",
-            "ExitPlanMode": "ExitPlanMode\n",
-            "Claude task primitive": "TaskCreate\n",
-            "provider worktree primitive": "EnterWorktree\n",
-            "provider agent call": "Agent(task='review')\n",
-            "provider workflow runtime": "phase('review')\n",
-            "provider workflow tool": "Workflow tool\n",
-            "provider lifecycle command": "/compact\n",
-            "Claude model tier": "model: haiku\n",
-            "Claude skill directory": "CLAUDE_SKILL_DIR\n",
-            "Claude plugin cache": ".claude/plugins/cache/example\n",
-        }
-        for label, content in cases.items():
-            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                self.make_clean_repo(root)
-                details = root / "skills/example/references/details.md"
-                details.write_text(content)
-
-                finding = next(
-                    item
-                    for item in run_doctor(root)
-                    if item.check == "provider-portability"
-                )
-
-                self.assertEqual("FAIL", finding.status)
-                self.assertTrue(any(label in item for item in finding.details))
-
-    def test_non_object_plugin_manifest_fails_without_crashing(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            (root / ".codex-plugin").mkdir()
-            (root / ".codex-plugin/plugin.json").write_text("[]\n")
-
-            finding = next(
-                item for item in run_doctor(root) if item.check == "provider-package"
-            )
-
-            self.assertEqual("FAIL", finding.status)
-            self.assertIn("JSON object", " ".join(finding.details))
+            self.assertEqual(("skills/example/references/details.md",), finding.details)
 
     def test_secret_output_scanner_covers_shell_and_python_sinks(self) -> None:
         cases = {
@@ -271,31 +129,6 @@ class DoctorTests(unittest.TestCase):
 
             self.assertEqual("PASS", finding.status)
             self.assertEqual((), finding.details)
-
-    def test_syntax_checks_ignore_environments_but_reject_authored_errors(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_clean_repo(root)
-            dependency = root / ".venv/lib/python/site-packages"
-            dependency.mkdir(parents=True)
-            (dependency / "invalid.py").write_text("def broken(\n")
-            (dependency / "invalid.sh").write_text("if then\n")
-
-            findings = {item.check: item for item in run_doctor(root)}
-
-            self.assertEqual("PASS", findings["python-syntax"].status)
-            self.assertEqual("PASS", findings["shell-syntax"].status)
-
-            authored = root / "scripts"
-            authored.mkdir()
-            (authored / "invalid.py").write_text("def broken(\n")
-            (authored / "invalid.sh").write_text("if then\n")
-
-            findings = {item.check: item for item in run_doctor(root)}
-
-            self.assertEqual("FAIL", findings["python-syntax"].status)
-            self.assertEqual("FAIL", findings["shell-syntax"].status)
-
 
 if __name__ == "__main__":
     unittest.main()

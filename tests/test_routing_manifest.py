@@ -19,13 +19,27 @@ from aitk.routing_manifest import (
     load_model_routing,
     validate_model_routing,
 )
-from aitk.routing_policy import ModelRouteError
+from aitk.routing_policy import DOMAIN_SEVERITIES, ModelRouteError
 from aitk.routing_resolver import resolve_route
 
 from routing_fixtures import (
     ROOT,
     RoutingTestCase,
 )
+
+
+def _markdown_table_rows(block: str) -> list[list[str]]:
+    """Split a Markdown table into cell lists, dropping the alignment row."""
+    rows = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if all(set(cell) <= {"-", ":"} and cell for cell in cells):
+            continue
+        rows.append(cells)
+    return rows
 
 
 class RoutingManifestTests(RoutingTestCase):
@@ -499,6 +513,98 @@ class RoutingManifestTests(RoutingTestCase):
             copies.extend(f"{name}: {item}" for item in selectors if item in text)
         self.assertEqual([], copies)
 
+
+    def test_every_classified_deep_lens_is_dispatchable_at_every_fan_out(self) -> None:
+        """The classifier's deep-lens table, the code floor, and every code menu agree.
+
+        v2 runs one independent reviewer by default and fans out only over the
+        conditional deep lenses. A lens the classifier can name but no menu
+        offers is a lane that gets selected and cannot run; a menu entry the
+        classifier never names is dead weight in a worker's closure.
+        """
+        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        table = re.search(
+            r"^\| Review Domain \| Trigger \| Skill \|.*?(?=\n\n)",
+            classifier,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(table, "classify-diff.md lost its Review Domain table")
+        triggerable = {
+            f"skills/{cells[2].strip('`')}"
+            for cells in _markdown_table_rows(table.group(0))
+            if cells[0] != "Review Domain"
+        }
+        for path in sorted(triggerable):
+            self.assertTrue((ROOT / path).is_file(), f"classifier names a missing lens: {path}")
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        code_floor = set(payload["lens_floors"]["code"])
+        self.assertEqual(triggerable, code_floor)
+        fanouts = [b for b in payload["dispatch_boundaries"] if b.get("lenses")]
+        self.assertTrue(fanouts, "no deep-lens fan-out boundaries left")
+        for boundary in fanouts:
+            with self.subTest(boundary=boundary["id"]):
+                self.assertEqual("code", boundary["lens_domain"])
+                self.assertEqual(["deep-review"], boundary["routes"])
+                self.assertEqual(code_floor, set(boundary["lenses"]))
+        # Plan validation is one worker with the validator contract inline; it
+        # never fans out over plan lenses, so no boundary may declare a plan menu.
+        self.assertEqual(
+            [],
+            [b["id"] for b in fanouts if b.get("lens_domain") == "plan"],
+        )
+        validate = next(b for b in payload["dispatch_boundaries"] if b["id"] == "planning.validate")
+        self.assertEqual("plan", validate["lens_domain"])
+        self.assertIn("agents/specialists/plan-validator.md", validate["contracts"])
+
+    def test_lens_finding_templates_lead_with_the_domain_severity(self) -> None:
+        payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
+        menus: dict[str, set[str]] = {}
+        for boundary in payload["dispatch_boundaries"]:
+            domain = boundary.get("lens_domain")
+            if domain is not None and boundary.get("lenses"):
+                menus.setdefault(domain, set()).update(boundary["lenses"])
+        self.assertTrue(menus, "no fan-out boundary declares a lens menu")
+        checked: set[str] = set()
+        for domain, lenses in sorted(menus.items()):
+            expected = {tag.strip("[]") for tag in DOMAIN_SEVERITIES[domain]}
+            for lens in sorted(lenses):
+                text = (ROOT / lens).read_text()
+                for tag in re.findall(r"^#{2,4} \[([^\]]+)\]", text, re.MULTILINE):
+                    checked.add(lens)
+                    with self.subTest(lens=lens, tag=tag):
+                        self.assertEqual(expected, {option.strip() for option in tag.split("|")})
+        self.assertIn("skills/review/references/adversarial.md", checked)
+
+    def test_security_predicate_covers_agent_capability_surfaces(self) -> None:
+        """A change to the toolkit's own routing must classify as security-sensitive."""
+        classifier = (ROOT / "skills/review/references/classify-diff.md").read_text()
+        bullet = re.search(
+            r"^   - \*\*Security-sensitive\*\*.*?(?=^   - \*\*)",
+            classifier,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(bullet, "classify-diff.md lost its security-sensitive flag")
+        body = bullet.group(0)
+        for category in ("agent capability configuration", "worker context assembly", "trust-boundary changes"):
+            self.assertIn(category, body.lower())
+        named = {
+            token
+            for token in re.findall(r"`([^`]+)`", body)
+            if "/" in token or re.search(r"\.[a-z]+$", token)
+        }
+        self.assertTrue(named)
+        covered: set[str] = set()
+        for signal in sorted(named):
+            matches = (
+                sorted(ROOT.glob(signal)) if any(c in signal for c in "*?[") else [ROOT / signal]
+            )
+            with self.subTest(signal=signal):
+                self.assertTrue(matches and all(m.exists() for m in matches), f"{signal} matches no real path")
+            covered |= {m.relative_to(ROOT).as_posix().rstrip("/") for m in matches}
+        for surface in ("interfaces/model-routing.json", "agents", "aitk/installer.py"):
+            self.assertIn(surface, covered)
+        layers = {p.relative_to(ROOT).as_posix() for p in ROOT.glob("aitk/routing_*.py")}
+        self.assertEqual(set(), layers - covered)
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,21 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import re
 import shutil
 import tempfile
 import unittest
 
-from aitk.interfaces import (
-    validate_provider_interfaces,
-    validate_skill_interfaces,
-    validate_support_interface,
-)
-from aitk.routing_manifest import validate_model_routing
-from aitk.workflows import (
-    validate_extension_workflows,
-    validate_workflows,
-)
-from aitk.conformance import validate_contracts
 from aitk.workflows import load_workflows, workflow_dependency_resources
 
 
@@ -33,8 +23,16 @@ class WorkflowInterfaceTests(unittest.TestCase):
         )
         return root
 
-    def test_manifest_is_complete_and_references_canonical_workflows(self) -> None:
-        self.assertEqual([], validate_workflows(ROOT))
+    def test_every_workflow_reference_resolves(self) -> None:
+        workflows = load_workflows(ROOT, include_pgm=True)
+        self.assertEqual(len({item.name for item in workflows}), len(workflows))
+        for workflow in workflows:
+            with self.subTest(workflow=workflow.name):
+                if not workflow.command:
+                    self.assertTrue((ROOT / workflow.reference).is_file())
+                for rule in workflow.rules:
+                    self.assertTrue((ROOT / rule).is_file(), rule)
+                workflow_dependency_resources(ROOT, workflow)
 
     def test_command_only_entries_run_one_command_and_keep_no_reference(self) -> None:
         commands = {
@@ -61,59 +59,39 @@ class WorkflowInterfaceTests(unittest.TestCase):
                         item for item in load_workflows(ROOT) if item.name == name
                     ))
                 )
-
-        def entry(payload: dict, name: str) -> dict:
-            return next(item for item in payload["workflows"] if item["name"] == name)
-
-        def problems_after(mutate) -> list[str]:
-            with tempfile.TemporaryDirectory() as temporary:
+        for command in ("aitk cost", "bin/aitk", "bin/aitk cost\nrm -rf /", ""):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as temporary:
                 root = self.fixture(temporary)
                 manifest = root / "interfaces/workflows.json"
                 payload = json.loads(manifest.read_text())
-                mutate(root, payload)
+                next(
+                    item for item in payload["workflows"] if item["name"] == "show-cost"
+                )["command"] = command
                 manifest.write_text(json.dumps(payload))
-                return validate_workflows(root) + validate_contracts(root)
+                with self.assertRaisesRegex(
+                    ValueError, "command must be one `bin/aitk <subcommand>` line"
+                ):
+                    load_workflows(root)
 
-        def stale_reference(root: Path, payload: dict) -> None:
-            (root / "skills/workflows/references/show-cost.md").write_text("# Cost\n")
-
-        self.assertIn(
-            "show-cost: command-only entry keeps a stale skills/workflows/references/show-cost.md",
-            problems_after(stale_reference),
-        )
-        self.assertIn(
-            "metrics: a command-only entry loads no rules",
-            problems_after(lambda root, payload: entry(payload, "metrics").update(
-                rules=["rules/gates.md"]
-            )),
-        )
-        self.assertIn(
-            "metrics: a command-only entry must be single_run",
-            problems_after(lambda root, payload: entry(payload, "metrics").update(
-                execution_class="durable"
-            )),
-        )
-        for command in ("aitk cost", "bin/aitk", "bin/aitk cost\nrm -rf /", ""):
-            with self.subTest(command=command):
-                problems = problems_after(
-                    lambda root, payload: entry(payload, "show-cost").update(command=command)
-                )
-                self.assertTrue(
-                    any("command must be one `bin/aitk <subcommand>` line" in item for item in problems),
-                    problems,
-                )
-
-        def effectful_contract(root: Path, payload: dict) -> None:
-            contracts = root / "interfaces/contracts.json"
-            document = json.loads(contracts.read_text())
-            contract = next(item for item in document["contracts"] if item["name"] == "show-cost")
-            contract["effect"] = "local_mutation"
-            contracts.write_text(json.dumps(document))
-
-        self.assertIn(
-            "show-cost: a command-only entry must have a read_only contract",
-            problems_after(effectful_contract),
-        )
+    def test_malformed_manifest_values_fail_the_load(self) -> None:
+        mutations = {
+            "rule-object": lambda payload: payload["workflows"][0].update(rules=[{}]),
+            "duplicate": lambda payload: payload["workflows"].append(
+                dict(payload["workflows"][0])
+            ),
+            "unsafe-rule": lambda payload: payload["workflows"][0].update(
+                rules=["../outside.md"]
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = self.fixture(temporary)
+                manifest = root / "interfaces/workflows.json"
+                payload = json.loads(manifest.read_text())
+                mutate(payload)
+                manifest.write_text(json.dumps(payload))
+                with self.assertRaises(ValueError):
+                    load_workflows(root)
 
     def test_memory_store_is_bound_on_both_providers(self) -> None:
         payload = json.loads((ROOT / "interfaces/providers.json").read_text())
@@ -124,312 +102,9 @@ class WorkflowInterfaceTests(unittest.TestCase):
         self.assertEqual(
             ("fallback", "repository_memory_directory"), (codex["mode"], codex["fallback"])
         )
-        self.assertIn(".ai-toolkit/memory/", (ROOT / codex["document"]).read_text())
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            path = root / "interfaces/providers.json"
-            payload["providers"]["codex"]["bindings"]["memory_store"]["fallback"] = "anywhere"
-            path.write_text(json.dumps(payload))
-            self.assertIn(
-                "codex/memory_store: unapproved fallback",
-                validate_provider_interfaces(root),
-            )
-
-    def test_optional_pgm_manifest_references_canonical_workflows(self) -> None:
-        self.assertEqual([], validate_extension_workflows(ROOT, "pgm"))
-
-    def test_skill_provider_and_support_interfaces_are_total(self) -> None:
-        self.assertEqual([], validate_skill_interfaces(ROOT))
-        self.assertEqual([], validate_provider_interfaces(ROOT))
-        self.assertEqual([], validate_model_routing(ROOT))
-        self.assertEqual([], validate_support_interface(ROOT))
-
-    def test_public_skills_require_openai_metadata(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            (root / "skills/cherry-pick/agents/openai.yaml").unlink()
-
-            problems = validate_skill_interfaces(root)
-
-            self.assertIn(
-                "cherry-pick: public skill is missing agents/openai.yaml", problems
-            )
-
-    def test_cherry_pick_contract_follows_the_single_run_rules(self) -> None:
-        self.assertEqual([], validate_contracts(ROOT))
-        contract = next(
-            item
-            for item in json.loads((ROOT / "interfaces/contracts.json").read_text())["contracts"]
-            if item["name"] == "cherry-pick"
-        )
-        self.assertEqual("invocation", contract["authorization"]["mode"])
-        self.assertEqual(["PROJECT.md", "CHERRY_PICK.md"], contract["state"]["artifacts"])
-
-        def mutated(callback) -> list[str]:
-            with tempfile.TemporaryDirectory() as temporary:
-                root = self.fixture(temporary)
-                path = root / "interfaces/contracts.json"
-                payload = json.loads(path.read_text())
-                callback(root, payload)
-                path.write_text(json.dumps(payload))
-                return validate_contracts(root)
-
-        def contract_of(payload: dict, name: str) -> dict:
-            return next(item for item in payload["contracts"] if item["name"] == name)
-
-        resumable = mutated(lambda root, payload: contract_of(payload, "cherry-pick").update({"resumable": True}))
-        self.assertIn("cherry-pick: single_run contract must use the canonical run graph", resumable)
-
-        def drop_marker(root: Path, payload: dict) -> None:
-            skill = root / "skills/cherry-pick/SKILL.md"
-            skill.write_text(skill.read_text().replace("Authorization mode: `invocation`.", "Authorization:"))
-
         self.assertIn(
-            "cherry-pick: external-effect authorization marker does not match its contract",
-            mutated(drop_marker),
+            ".ai-toolkit/memory/", (ROOT / "config/providers/codex.md").read_text()
         )
-
-        def internal_skill(root: Path, payload: dict) -> None:
-            payload["contracts"].append({**contract_of(payload, "cherry-pick"), "name": "shortcut"})
-
-        self.assertIn("contract references unknown workflow: shortcut", mutated(internal_skill))
-
-    def test_contract_version_one_is_rejected_with_migration_error(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            (root / "interfaces/contracts.json").write_text(
-                json.dumps({"version": 1, "contracts": {}})
-            )
-            problems = validate_contracts(root)
-            self.assertTrue(
-                any("version 2" in problem for problem in problems), problems
-            )
-
-    def test_manifest_execution_class_cannot_hide_a_durable_contract(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            path = root / "interfaces/workflows.json"
-            payload = json.loads(path.read_text())
-            workflow = next(
-                item
-                for item in payload["workflows"]
-                if item["name"] == "create-feature"
-            )
-            workflow["execution_class"] = "single_run"
-            path.write_text(json.dumps(payload))
-            problems = validate_contracts(root)
-            self.assertTrue(
-                any("create-feature: single_run" in problem for problem in problems),
-                problems,
-            )
-
-    def test_effect_and_authorization_markers_are_contract_bound(self) -> None:
-        cases = {
-            "effect-marker": (
-                "skills/workflows/references/verify.md",
-                "Effect: `read_only`.",
-                "Effect: `local_mutation`.",
-                "effect boundary marker",
-            ),
-            "authorization-marker": (
-                "skills/workflows/references/address-feedback.md",
-                "Authorization mode: `invocation`.",
-                "Authorization mode: `explicit`.",
-                "authorization marker",
-            ),
-        }
-        for name, (relative, old, new, expected) in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
-                root = self.fixture(temporary)
-                path = root / relative
-                path.write_text(path.read_text().replace(old, new))
-
-                problems = validate_contracts(root)
-
-                self.assertTrue(any(expected in item for item in problems), problems)
-
-    def test_read_only_linked_script_cannot_hide_an_effect(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            script = root / "scripts/probe-report.py"
-            script.write_text('from pathlib import Path\n\nPath("unsafe").write_text("x")\n')
-            reference = root / "skills/workflows/references/verify.md"
-            reference.write_text(
-                reference.read_text()
-                + "\nRun `python3 <toolkit-root>/scripts/probe-report.py`.\n"
-            )
-
-            problems = validate_contracts(root)
-
-            self.assertTrue(
-                any(
-                    "verify: read-only executable surface" in item
-                    for item in problems
-                ),
-                problems,
-            )
-
-    def test_semantic_contract_failures_are_not_accepted_as_structural_success(
-        self,
-    ) -> None:
-        def mutate_contract(root: Path, callback) -> None:
-            path = root / "interfaces/contracts.json"
-            payload = json.loads(path.read_text())
-            callback(payload)
-            path.write_text(json.dumps(payload))
-
-        cases = {
-            "missing-phases": (
-                lambda root: mutate_contract(
-                    root,
-                    lambda payload: next(
-                        item
-                        for item in payload["contracts"]
-                        if item["name"] == "create-feature"
-                    ).update({"phases": []}),
-                ),
-                "phases must be unique",
-            ),
-            "missing-authorization": (
-                lambda root: mutate_contract(
-                    root,
-                    lambda payload: next(
-                        item
-                        for item in payload["contracts"]
-                        if item["name"] == "create-feature"
-                    )["authorization"].update({"mode": "none"}),
-                ),
-                "requires authorization",
-            ),
-            "missing-idempotency": (
-                lambda root: mutate_contract(
-                    root,
-                    lambda payload: next(
-                        item
-                        for item in payload["contracts"]
-                        if item["name"] == "create-feature"
-                    ).update({"idempotency_keys": []}),
-                ),
-                "requires an idempotency key",
-            ),
-            "read-only-executable-effect": (
-                lambda root: (
-                    root / "skills/workflows/references/verify.md"
-                ).write_text(
-                    (root / "skills/workflows/references/verify.md").read_text()
-                    + "\n```sh\ngit commit -am unsafe\n```\n"
-                ),
-                "read-only executable surface is effectful",
-            ),
-            "missing-runtime-binding": (
-                lambda root: (
-                    lambda path, payload: (
-                        next(
-                            item
-                            for item in payload["workflows"]
-                            if item["name"] == "create-feature"
-                        )["rules"].remove("rules/durable-workflows.md"),
-                        path.write_text(json.dumps(payload)),
-                    )
-                )(
-                    root / "interfaces/workflows.json",
-                    json.loads((root / "interfaces/workflows.json").read_text()),
-                ),
-                "must load rules/durable-workflows.md",
-            ),
-        }
-        for name, (mutate, expected) in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
-                root = self.fixture(temporary)
-                mutate(root)
-                problems = validate_contracts(root)
-                self.assertTrue(
-                    any(expected in problem for problem in problems),
-                    problems,
-                )
-
-    def test_malformed_nested_contract_values_are_reported_without_crashing(
-        self,
-    ) -> None:
-        mutations = {
-            "phase-object": lambda contract, payload: contract.update({"phases": [{}]}),
-            "authorization-gate-object": lambda contract, payload: contract[
-                "authorization"
-            ].update({"gates": [{}]}),
-            "idempotency-strategy-object": lambda contract, payload: contract.update(
-                {"idempotency_keys": [{"key": "commit", "strategy": {}}]}
-            ),
-            "evidence-object": lambda contract, payload: contract[
-                "verification"
-            ].update({"evidence": [{}]}),
-            "vocabulary-object": lambda contract, payload: payload[
-                "vocabularies"
-            ].update({"gates": [{}]}),
-        }
-        for name, mutate in mutations.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
-                root = self.fixture(temporary)
-                path = root / "interfaces/contracts.json"
-                payload = json.loads(path.read_text())
-                contract = next(
-                    item
-                    for item in payload["contracts"]
-                    if item["name"] == "create-feature"
-                )
-                mutate(contract, payload)
-                path.write_text(json.dumps(payload))
-                self.assertTrue(validate_contracts(root))
-
-    def test_malformed_manifest_and_provider_values_are_reported_without_crashing(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            workflow_path = root / "interfaces/workflows.json"
-            workflow_payload = json.loads(workflow_path.read_text())
-            workflow_payload["workflows"][0]["rules"] = [{}]
-            workflow_path.write_text(json.dumps(workflow_payload))
-            self.assertTrue(validate_workflows(root))
-
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            provider_path = root / "interfaces/providers.json"
-            provider_payload = json.loads(provider_path.read_text())
-            provider_payload["providers"]["codex"]["bindings"]["planning_boundary"][
-                "mode"
-            ] = {}
-            provider_path.write_text(json.dumps(provider_payload))
-            self.assertTrue(validate_provider_interfaces(root))
-
-    def test_dependency_links_fail_closed_on_missing_unclassified_and_escape(
-        self,
-    ) -> None:
-        cases = {
-            "missing": (
-                "[missing](../../qa/references/not-present.md)",
-                "missing or not a file",
-            ),
-            "unclassified": (
-                "[unclassified](../../unclassified/resource.md)",
-                "not classified",
-            ),
-            "escape": ("[escape](../../../../outside.md)", "escapes repository"),
-        }
-        for name, (link, expected) in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
-                root = self.fixture(temporary)
-                reference = root / "skills/workflows/references/verify.md"
-                if name == "unclassified":
-                    target = root / "skills/unclassified/resource.md"
-                    target.parent.mkdir()
-                    target.write_text("# Resource\n")
-                elif name == "escape":
-                    (root.parent / "outside.md").write_text("# Outside\n")
-                reference.write_text(reference.read_text() + f"\n{link}\n")
-
-                problems = validate_contracts(root)
-
-                self.assertTrue(any(expected in item for item in problems), problems)
 
     def test_dependency_resolution_fails_closed_in_the_router_loader(self) -> None:
         # `list --details` resolves dependencies through aitk.workflows, so the
@@ -458,32 +133,29 @@ class WorkflowInterfaceTests(unittest.TestCase):
     def test_every_named_inline_skill_resource_is_resolved_exactly(self) -> None:
         # Two channels name skill resources: a bare skill-relative path in
         # backticks (`fix-bug` names the existing-fix check) and a Markdown link
-        # (`review-code` links the classifier). Both must fail closed when the
-        # target vanishes, and they report through different checks.
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            (root / "skills/debug/references/check-existing-fix.md").unlink()
-            problems = validate_contracts(root)
-            self.assertTrue(
-                any(
-                    "fix-bug: named skill resource is missing or unsafe: "
-                    "debug/references/check-existing-fix.md" in item
-                    for item in problems
-                ),
-                problems,
-            )
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.fixture(temporary)
-            (root / "skills/review/references/classify-diff.md").unlink()
-            problems = validate_contracts(root)
-            self.assertTrue(
-                any(
-                    "review-code: dependency link target is missing or not a file: "
-                    "../../review/references/classify-diff.md" in item
-                    for item in problems
-                ),
-                problems,
-            )
+        # (`review-code` links the classifier). Both fail closed when the target
+        # vanishes.
+        cases = (
+            (
+                "skills/debug/references/check-existing-fix.md",
+                "fix-bug",
+                "named skill resource is missing or unsafe: "
+                "debug/references/check-existing-fix.md",
+            ),
+            (
+                "skills/review/references/classify-diff.md",
+                "review-code",
+                "dependency link target is missing or not a file: "
+                "../../review/references/classify-diff.md",
+            ),
+        )
+        for removed, name, expected in cases:
+            with self.subTest(workflow=name), tempfile.TemporaryDirectory() as temporary:
+                root = self.fixture(temporary)
+                (root / removed).unlink()
+                workflow = next(item for item in load_workflows(root) if item.name == name)
+                with self.assertRaisesRegex(ValueError, re.escape(expected)):
+                    workflow_dependency_resources(root, workflow)
 
     def test_removing_a_known_link_changes_the_exact_dependency_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -513,6 +185,7 @@ class WorkflowInterfaceTests(unittest.TestCase):
                 ),
                 dependencies,
             )
+
 
 
 if __name__ == "__main__":

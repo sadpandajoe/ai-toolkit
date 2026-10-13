@@ -1,8 +1,9 @@
-"""Canonical workflow manifest loading and validation.
+"""Canonical workflow manifest loading.
 
 Also the router's data: each workflow's contract from
-`interfaces/contracts.json` and the skills its reference links to, which
-`bin/aitk list --details --json` prints.
+`interfaces/contracts.json`, the skill manifest in `interfaces/skills.json`,
+and the skills a reference links to, which `bin/aitk list --details --json`
+prints. Loading fails on a malformed manifest; nothing else re-validates it.
 """
 
 from __future__ import annotations
@@ -115,6 +116,8 @@ def _load_manifest(path: Path) -> list[Workflow]:
             )
         if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) is None:
             raise ValueError(f"{path}: unsafe workflow name {name!r}")
+        if any(workflow.name == name for workflow in workflows):
+            raise ValueError(f"{path}: duplicate workflow name {name}")
         for rule in rules:
             rule_path = Path(rule)
             if not rule or rule_path.is_absolute() or ".." in rule_path.parts:
@@ -146,94 +149,59 @@ def load_workflows(root: Path, include_pgm: bool = False) -> list[Workflow]:
     return workflows
 
 
-def _validate_workflows(
-    root: Path, workflows: list[Workflow], reject_orphans: bool
-) -> list[str]:
-    problems: list[str] = []
-    names: set[str] = set()
-    for workflow in workflows:
-        if workflow.name in names:
-            problems.append(f"duplicate workflow name: {workflow.name}")
-        names.add(workflow.name)
-        if not workflow.summary.strip():
-            problems.append(f"{workflow.name}: missing summary")
-        if workflow.execution_class not in {"single_run", "durable"}:
-            problems.append(
-                f"{workflow.name}: invalid execution_class {workflow.execution_class}"
-            )
-        if not workflow.triggers:
-            problems.append(f"{workflow.name}: missing routing triggers")
-        if workflow.command:
-            if workflow.execution_class != "single_run":
-                problems.append(f"{workflow.name}: a command-only entry must be single_run")
-            if workflow.rules:
-                problems.append(f"{workflow.name}: a command-only entry loads no rules")
-            if (root / workflow.reference).exists():
-                problems.append(
-                    f"{workflow.name}: command-only entry keeps a stale "
-                    f"{workflow.reference.as_posix()}"
-                )
-        elif not (root / workflow.reference).is_file():
-            problems.append(f"{workflow.name}: missing {workflow.reference.as_posix()}")
-        for rule in workflow.rules:
-            if not (root / rule).is_file():
-                problems.append(f"{workflow.name}: missing {rule}")
+CLASSIFICATIONS = {"public_router", "public_direct", "internal_support"}
 
-    if reject_orphans and workflows:
-        reference_dir = root / workflows[0].reference_root
-        references = (
-            {path.stem for path in reference_dir.glob("*.md")}
-            if reference_dir.is_dir()
-            else set()
+
+def load_skill_interfaces(root: Path) -> list[dict[str, str]]:
+    """Read interfaces/skills.json; a malformed or unsafe entry raises."""
+    payload = json.loads((root / "interfaces/skills.json").read_text())
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"version", "skills"}
+        or payload.get("version") != 1
+        or not isinstance(payload.get("skills"), list)
+    ):
+        raise ValueError(
+            "interfaces/skills.json must contain exactly version 1 and skills"
         )
-        for orphan in sorted(references - names):
-            problems.append(f"unregistered workflow reference: {orphan}")
-    return problems
-
-
-def validate_workflows(root: Path) -> list[str]:
-    try:
-        workflows = load_workflows(root)
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-        return [str(error)]
-    return _validate_workflows(root, workflows, reject_orphans=True)
-
-
-def validate_extension_workflows(root: Path, extension: str) -> list[str]:
-    try:
-        workflows = load_extension_workflows(root, extension)
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-        return [str(error)]
-    # Extension reference roots may also hold explicitly linked support material
-    # (for example PGM audience formatting) that is not itself a workflow.
-    problems = _validate_workflows(root, workflows, reject_orphans=False)
-    try:
-        core_names = {workflow.name for workflow in load_workflows(root)}
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-        problems.append(str(error))
-    else:
-        for duplicate in sorted(core_names & {workflow.name for workflow in workflows}):
-            problems.append(
-                f"extension workflow collides with core workflow: {duplicate}"
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for entry in payload["skills"]:
+        if not isinstance(entry, dict) or set(entry) != {
+            "name",
+            "path",
+            "classification",
+        }:
+            raise ValueError(
+                "every skill interface must contain exactly name, path, and classification"
             )
-    return problems
+        name = entry["name"]
+        path_value = entry["path"]
+        classification = entry["classification"]
+        if (
+            not isinstance(name, str)
+            or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) is None
+            or name in seen
+        ):
+            raise ValueError(f"invalid or duplicate skill name: {name}")
+        if not isinstance(classification, str) or classification not in CLASSIFICATIONS:
+            raise ValueError(f"{name}: invalid skill classification {classification}")
+        if not isinstance(path_value, str) or not path_value:
+            raise ValueError(f"{name}: invalid skill path {path_value}")
+        path = Path(path_value)
+        if path.is_absolute() or ".." in path.parts or path == Path("."):
+            raise ValueError(f"{name}: unsafe skill path {path_value}")
+        seen.add(name)
+        result.append(entry)
+    return result
 
 
 def _skill_roots(repository: Path) -> list[tuple[Path, str]]:
     """Each skill's resolved directory and name from interfaces/skills.json, deepest first."""
-    payload = json.loads((repository / "interfaces/skills.json").read_text())
-    entries = payload.get("skills") if isinstance(payload, dict) else None
-    if not isinstance(entries, list):
-        raise ValueError("interfaces/skills.json must contain a skills list")
-    roots: list[tuple[Path, str]] = []
-    for entry in entries:
-        name = entry.get("name") if isinstance(entry, dict) else None
-        path = entry.get("path") if isinstance(entry, dict) else None
-        if not isinstance(name, str) or not isinstance(path, str):
-            raise ValueError("every skill interface needs a name and a path")
-        if not path or Path(path).is_absolute() or ".." in Path(path).parts:
-            raise ValueError(f"unsafe skill path for {name}: {path!r}")
-        roots.append(((repository / path).resolve(strict=False), name))
+    roots = [
+        ((repository / entry["path"]).resolve(strict=False), entry["name"])
+        for entry in load_skill_interfaces(repository)
+    ]
     return sorted(roots, key=lambda item: len(item[0].parts), reverse=True)
 
 

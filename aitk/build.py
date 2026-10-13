@@ -11,12 +11,7 @@ import tempfile
 
 from .review_plan import NEVER_DEMOTED, YIELD_TABLE
 from .routing_policy import GENERATED_HEADER
-from .workflows import (
-    extension_manifest_path,
-    manifest_path,
-    validate_extension_workflows,
-    validate_workflows,
-)
+from .workflows import extension_manifest_path, load_workflows, manifest_path
 
 
 PLACEHOLDER = "{{TOOLKIT_DIR}}"
@@ -149,11 +144,11 @@ def expected_build(root: Path, include_pgm: bool = False) -> dict[Path, str]:
     """Return the complete generated file map without touching the filesystem."""
     root = root.resolve()
     if manifest_path(root).is_file():
-        problems = validate_workflows(root)
-        if include_pgm and extension_manifest_path(root, "pgm").is_file():
-            problems.extend(validate_extension_workflows(root, "pgm"))
-        if problems:
-            raise ValueError("invalid workflow interface: " + "; ".join(problems))
+        # Loading raises on a malformed manifest, before anything is written.
+        load_workflows(
+            root,
+            include_pgm=include_pgm and extension_manifest_path(root, "pgm").is_file(),
+        )
     expected: dict[Path, str] = dict(expected_guidance_imports(root))
     for config_name in ("CLAUDE.md", "AGENTS.md"):
         source = root / "config" / config_name

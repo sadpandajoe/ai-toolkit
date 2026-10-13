@@ -19,20 +19,8 @@ import uuid
 
 from . import claude_hooks
 from .build import write_build
-from .conformance import validate_contracts
-from .interfaces import (
-    load_skill_interfaces,
-    validate_provider_interfaces,
-    validate_skill_interfaces,
-    validate_support_interface,
-)
 from .routing_manifest import validate_model_routing
-from .workflows import (
-    extension_manifest_path,
-    load_workflows,
-    validate_extension_workflows,
-    validate_workflows,
-)
+from .workflows import extension_manifest_path, load_skill_interfaces, load_workflows
 
 
 BEGIN = "# >>> ai-toolkit managed guidance >>>"
@@ -198,14 +186,18 @@ def resolve_paths(
 
 
 def _validate_source(root: Path) -> None:
-    problems = validate_workflows(root)
-    if extension_manifest_path(root, "pgm").is_file():
-        problems.extend(validate_extension_workflows(root, "pgm"))
-    problems.extend(validate_skill_interfaces(root))
-    problems.extend(validate_provider_interfaces(root))
+    try:
+        load_workflows(root, include_pgm=extension_manifest_path(root, "pgm").is_file())
+        skills = load_skill_interfaces(root)
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise LifecycleError(f"source interface validation failed: {error}") from error
+    # Every linked skill must exist, so an install never writes a dangling link.
+    problems = [
+        f"{entry['name']}: missing {entry['path']}/SKILL.md"
+        for entry in skills
+        if not (root / entry["path"] / "SKILL.md").is_file()
+    ]
     problems.extend(validate_model_routing(root))
-    problems.extend(validate_support_interface(root))
-    problems.extend(validate_contracts(root))
     if problems:
         raise LifecycleError(
             "source interface validation failed: " + "; ".join(problems)

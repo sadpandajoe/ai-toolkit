@@ -79,6 +79,17 @@ bin/aitk check
 bin/aitk doctor --installed --strict
 ```
 
+## Support
+
+- Python 3.11 to 3.14 on macOS and Linux; CI runs both on every supported
+  Python. `install.sh` and `bin/aitk` are POSIX `sh`; the hooks run on bash
+  3.2 or later.
+- Providers: Claude Code and Codex.
+- Distributions: the source-linked install (`./install.sh`), the Claude Code
+  plugin and the Codex plugin; the PGM extension ships in each.
+- Not covered by CI: live provider calls, authenticated APIs, and the
+  providers' hook-trust prompts.
+
 ## What Gets Installed
 
 | File | Purpose |
@@ -148,8 +159,7 @@ ai-toolkit/
 │   ├── skills.json         # Public/internal skill classification
 │   ├── providers.json      # Provider capability bindings
 │   ├── model-routing.json  # Selectors, routes, dispatch boundaries, lens floors
-│   ├── guidance.json       # Always-on rule inventory
-│   └── support.json        # Supported release matrix
+│   └── guidance.json       # Always-on rule inventory
 ├── config/                 # CLAUDE.md / AGENTS.md templates and provider bindings
 ├── rules/
 │   ├── universal.md        # Core principles (always on)

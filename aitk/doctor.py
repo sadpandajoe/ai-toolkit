@@ -1,30 +1,20 @@
-"""Repository health checks for portable AI Toolkit content."""
+"""Repository health checks for portable AI Toolkit content.
+
+`doctor` checks what a reader would trip over: Markdown links, SKILL.md
+frontmatter, and the routing manifest with its marker bijection. It also keeps
+the personal-path and secret-output scans, and `--installed` reports the
+installed ownership ledger while the installer remains the install path.
+"""
 
 from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-import json
 import re
 from pathlib import Path
-import subprocess
 
-from .build import compare_build
-from .conformance import validate_contracts
-from .interfaces import (
-    validate_provider_interfaces,
-    validate_skill_interfaces,
-    validate_support_interface,
-)
-from .routing_manifest import validate_model_routing
 from .installer import InstallPaths, inspect_install
-from .project_state import STATE_FILES
-from .workflows import (
-    extension_manifest_path,
-    manifest_path,
-    validate_extension_workflows,
-    validate_workflows,
-)
+from .routing_manifest import validate_model_routing
 
 
 @dataclass(frozen=True)
@@ -45,26 +35,6 @@ IGNORED_TREE_PARTS = {
     "site-packages",
     "venv",
 }
-PROVIDER_PATTERNS = (
-    ("provider template import", re.compile(r"@\{\{TOOLKIT_DIR\}\}")),
-    ("EnterPlanMode", re.compile(r"\bEnterPlanMode\b")),
-    ("ExitPlanMode", re.compile(r"\bExitPlanMode\b")),
-    ("Claude task primitive", re.compile(r"\bTask(?:Create|List|Update)\b")),
-    ("provider worktree primitive", re.compile(r"\bEnterWorktree\b")),
-    ("provider agent call", re.compile(r"\bAgent\s*\(")),
-    (
-        "provider workflow runtime",
-        re.compile(r"^\s*(?:phase|parallel|agent)\s*\(", re.M),
-    ),
-    ("provider workflow tool", re.compile(r"\bWorkflow\s+(?:tool|call)\b")),
-    (
-        "provider lifecycle command",
-        re.compile(r"/(?:clear|compact|schedule|loop|goal)\b"),
-    ),
-    ("Claude model tier", re.compile(r"\bmodel:\s*(?:haiku|sonnet|opus|fable)\b", re.I)),
-    ("Claude skill directory", re.compile(r"\bCLAUDE_SKILL_DIR\b")),
-    ("Claude plugin cache", re.compile(r"\.claude/plugins/cache/")),
-)
 
 
 def _ignored(root: Path, path: Path) -> bool:
@@ -155,80 +125,6 @@ def _markdown_links(root: Path) -> Finding:
     return Finding("markdown-links", status, "Markdown links", tuple(problems))
 
 
-def _provider_portability(root: Path) -> Finding:
-    problems: list[str] = []
-    directories = [root / "rules", root / "skills"]
-    directories.extend((root / "extensions").glob("*/rules"))
-    directories.extend((root / "extensions").glob("*/skills"))
-    for directory in directories:
-        if not directory.is_dir():
-            continue
-        for source in sorted(directory.rglob("*.md")):
-            if _ignored(root, source):
-                continue
-            text = source.read_text()
-            for label, pattern in PROVIDER_PATTERNS:
-                if pattern.search(text):
-                    problems.append(f"{source.relative_to(root)}: {label}")
-    status = "FAIL" if problems else "PASS"
-    return Finding(
-        "provider-portability", status, "Provider portability", tuple(problems)
-    )
-
-
-def _source_imports(root: Path) -> Finding:
-    problems: list[str] = []
-    pattern = re.compile(r"^@\{\{TOOLKIT_DIR\}\}/([^\s#]+)", re.M)
-    for source in _markdown_files(root):
-        for target in pattern.findall(source.read_text()):
-            if not (root / target).exists():
-                problems.append(f"{source.relative_to(root)} -> {target}")
-    status = "FAIL" if problems else "PASS"
-    return Finding("source-imports", status, "Source imports", tuple(problems))
-
-
-def _rule_loaders(root: Path) -> Finding:
-    rules = sorted((root / "rules").glob("*.md"))
-    # A rule-to-rule reference is dependency wiring, not proof that either rule
-    # is reachable from a real entry point. Excluding rules/ prevents isolated
-    # cycles from satisfying the loader invariant.
-    loader_roots = ("config", "extensions", "interfaces", "skills")
-    suffixes = {".json", ".md", ".yaml", ".yml"}
-    sources: list[Path] = []
-    for name in loader_roots:
-        base = root / name
-        if base.is_dir():
-            sources.extend(
-                path
-                for path in base.rglob("*")
-                if path.is_file()
-                and not path.is_symlink()
-                and path.suffix in suffixes
-                and not _ignored(root, path)
-            )
-    problems: list[str] = []
-    contents: dict[Path, str] = {}
-    for source in sources:
-        try:
-            contents[source] = source.read_text()
-        except UnicodeDecodeError:
-            problems.append(
-                f"{source.relative_to(root).as_posix()}: not valid UTF-8 text"
-            )
-    for rule in rules:
-        relative = rule.relative_to(root).as_posix()
-        if not any(
-            source != rule and relative in text for source, text in contents.items()
-        ):
-            problems.append(relative)
-    return Finding(
-        "rule-loaders",
-        "FAIL" if problems else "PASS",
-        "Canonical rule loaders",
-        tuple(problems),
-    )
-
-
 def _personal_paths(root: Path) -> Finding:
     problems: list[str] = []
     pattern = re.compile(r"/(?:Users|home)/[^/\s`]+/")
@@ -296,162 +192,6 @@ def _secret_output(root: Path) -> Finding:
     )
 
 
-def _state_protection(root: Path) -> Finding:
-    gitignore = (
-        (root / ".gitignore").read_text() if (root / ".gitignore").is_file() else ""
-    )
-    ignored = {line.strip() for line in gitignore.splitlines()}
-    problems = [f"/{name}" for name in STATE_FILES if f"/{name}" not in ignored]
-    # The hook is a wrapper around aitk.hooks.git_guard, which blocks commits of
-    # every STATE_FILES entry by importing the list.
-    wrapper_path = root / "hooks/prevent-project-commit.sh"
-    guard_path = root / "aitk/hooks/git_guard.py"
-    wrapper = wrapper_path.read_text() if wrapper_path.is_file() else ""
-    guard = guard_path.read_text() if guard_path.is_file() else ""
-    if "python3 -m aitk.hooks.git_guard" not in wrapper:
-        problems.append("hooks/prevent-project-commit.sh does not run aitk.hooks.git_guard")
-    if "from aitk.project_state import STATE_FILES" not in guard:
-        problems.append("aitk/hooks/git_guard.py does not import project_state.STATE_FILES")
-    status = "FAIL" if problems else "PASS"
-    return Finding(
-        "state-protection", status, "Local state protection", tuple(problems)
-    )
-
-
-def _build_freshness(root: Path) -> Finding:
-    try:
-        problems = compare_build(root)
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
-        return Finding(
-            "build-freshness",
-            "FAIL",
-            "Generated build freshness",
-            (str(error),),
-        )
-    status = "DRIFT" if problems else "PASS"
-    return Finding(
-        "build-freshness", status, "Generated build freshness", tuple(problems)
-    )
-
-
-def _provider_package(root: Path) -> Finding:
-    manifest_path = root / ".codex-plugin/plugin.json"
-    if not manifest_path.is_file():
-        return Finding(
-            "provider-package",
-            "DRIFT",
-            "Provider package",
-            ("missing .codex-plugin/plugin.json",),
-        )
-    problems: list[str] = []
-    try:
-        manifest = json.loads(manifest_path.read_text())
-    except json.JSONDecodeError as error:
-        return Finding(
-            "provider-package",
-            "FAIL",
-            "Provider package",
-            (f"invalid plugin JSON: {error}",),
-        )
-    if not isinstance(manifest, dict):
-        return Finding(
-            "provider-package",
-            "FAIL",
-            "Provider package",
-            ("plugin manifest must be a JSON object",),
-        )
-    if manifest.get("name") != "ai-toolkit":
-        problems.append("plugin name must be ai-toolkit")
-    if not re.fullmatch(
-        r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", str(manifest.get("version", ""))
-    ):
-        problems.append("plugin version must be semantic")
-    skills = manifest.get("skills")
-    skill_paths = [skills] if isinstance(skills, str) else skills
-    if not isinstance(skill_paths, list) or "./skills/" not in skill_paths:
-        problems.append("plugin must package ./skills/")
-    hooks_path = root / "hooks/hooks.json"
-    if not hooks_path.is_file():
-        problems.append("missing hooks/hooks.json")
-    else:
-        try:
-            hooks = json.loads(hooks_path.read_text())
-            commands = [
-                hook.get("command", "")
-                for groups in hooks.get("hooks", {}).values()
-                for group in groups
-                for hook in group.get("hooks", [])
-            ]
-            if not commands or any(
-                '"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/' not in command
-                for command in commands
-            ):
-                problems.append(
-                    "plugin hooks must resolve scripts through ${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"
-                )
-        except (AttributeError, TypeError, json.JSONDecodeError) as error:
-            problems.append(f"invalid hooks JSON: {error}")
-    if not (root / "config/AGENTS.md").is_file():
-        problems.append("missing Codex guidance template config/AGENTS.md")
-    status = "FAIL" if problems else "PASS"
-    return Finding("provider-package", status, "Provider package", tuple(problems))
-
-
-def _syntax(root: Path) -> list[Finding]:
-    shell_problems: list[str] = []
-    for source in sorted(root.rglob("*.sh")):
-        if _ignored(root, source):
-            continue
-        result = subprocess.run(
-            ["bash", "-n", str(source)], capture_output=True, text=True, check=False
-        )
-        if result.returncode:
-            shell_problems.append(
-                f"{source.relative_to(root)}: {result.stderr.strip()}"
-            )
-    for source in (
-        root / "install.sh",
-        root / "extensions/pgm/install.sh",
-        root / "bin/aitk",
-    ):
-        if not source.is_file():
-            continue
-        result = subprocess.run(
-            ["/bin/sh", "-n", str(source)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode:
-            shell_problems.append(
-                f"{source.relative_to(root)} (POSIX sh): {result.stderr.strip()}"
-            )
-    python_problems: list[str] = []
-    for source in sorted(root.rglob("*.py")):
-        if _ignored(root, source):
-            continue
-        try:
-            ast.parse(source.read_text(), filename=str(source))
-        except SyntaxError as error:
-            python_problems.append(
-                f"{source.relative_to(root)}:{error.lineno}: {error.msg}"
-            )
-    return [
-        Finding(
-            "shell-syntax",
-            "FAIL" if shell_problems else "PASS",
-            "Shell syntax",
-            tuple(shell_problems),
-        ),
-        Finding(
-            "python-syntax",
-            "FAIL" if python_problems else "PASS",
-            "Python syntax",
-            tuple(python_problems),
-        ),
-    ]
-
-
 def run_doctor(
     root: Path,
     installed_paths: InstallPaths | None = None,
@@ -462,78 +202,19 @@ def run_doctor(
     findings = [
         _skill_descriptions(root),
         _markdown_links(root),
-        _provider_portability(root),
-        _source_imports(root),
-        _rule_loaders(root),
         _personal_paths(root),
         _secret_output(root),
-        _state_protection(root),
-        _build_freshness(root),
     ]
-    if (root / ".codex-plugin").exists():
-        findings.append(_provider_package(root))
-    for filename, check, message, validator in (
-        (
-            "skills.json",
-            "skill-interfaces",
-            "Public and internal skill classification",
-            validate_skill_interfaces,
-        ),
-        (
-            "providers.json",
-            "provider-interfaces",
-            "Provider capability bindings",
-            validate_provider_interfaces,
-        ),
-        (
-            "model-routing.json",
-            "model-routing",
-            "Model and effort routing",
-            validate_model_routing,
-        ),
-        (
-            "support.json",
-            "support-interface",
-            "Supported release matrix",
-            validate_support_interface,
-        ),
-    ):
-        if not (root / "interfaces" / filename).is_file():
-            continue
-        problems = validator(root)
-        findings.append(
-            Finding(check, "FAIL" if problems else "PASS", message, tuple(problems))
-        )
-    if manifest_path(root).is_file():
-        workflow_problems = validate_workflows(root)
+    if (root / "interfaces/model-routing.json").is_file():
+        problems = validate_model_routing(root)
         findings.append(
             Finding(
-                "workflow-interfaces",
-                "FAIL" if workflow_problems else "PASS",
-                "Canonical workflow interfaces",
-                tuple(workflow_problems),
+                "model-routing",
+                "FAIL" if problems else "PASS",
+                "Model and effort routing",
+                tuple(problems),
             )
         )
-        contract_problems = validate_contracts(root)
-        findings.append(
-            Finding(
-                "behavior-conformance",
-                "FAIL" if contract_problems else "PASS",
-                "Workflow behavior and resume contracts",
-                tuple(contract_problems),
-            )
-        )
-    if extension_manifest_path(root, "pgm").is_file():
-        extension_problems = validate_extension_workflows(root, "pgm")
-        findings.append(
-            Finding(
-                "pgm-workflow-interfaces",
-                "FAIL" if extension_problems else "PASS",
-                "Optional PGM workflow interfaces",
-                tuple(extension_problems),
-            )
-        )
-    findings.extend(_syntax(root))
     if installed_paths is not None:
         details = inspect_install(installed_paths, with_pgm=with_pgm)
         statuses = [item.split(":", 1)[0] for item in details]

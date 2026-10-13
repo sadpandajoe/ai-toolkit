@@ -10,8 +10,7 @@ import unittest
 
 from aitk import claude_hooks
 from aitk.build import expected_build
-from aitk.interfaces import load_skill_interfaces
-from aitk.workflows import load_workflows, validate_workflows, workflow_dependency_resources
+from aitk.workflows import load_skill_interfaces, load_workflows, workflow_dependency_resources
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -194,7 +193,6 @@ class ProviderAdapterTests(unittest.TestCase):
 
             resolved: dict[str, dict[str, tuple[tuple[str, str], ...]]] = {}
             for repository in (source_root, plugin):
-                self.assertEqual([], validate_workflows(repository))
                 workflows = load_workflows(repository)
                 repository_map: dict[str, tuple[tuple[str, str], ...]] = {}
                 for workflow in workflows:
@@ -244,50 +242,6 @@ class ProviderAdapterTests(unittest.TestCase):
                 sum(len(items) for items in resolved[source_root.name].values()),
                 0,
             )
-
-    def test_plugin_distribution_matches_public_skill_support_scope(self) -> None:
-        manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())
-        support = json.loads((ROOT / "interfaces/support.json").read_text())
-        skill_dirs = [(ROOT / path).resolve() for path in manifest["skills"]]
-        public = [
-            entry
-            for entry in load_skill_interfaces(ROOT)
-            if entry["classification"] in {"public_router", "public_direct"}
-        ]
-
-        self.assertIn("codex-plugin", support["distributions"])
-        self.assertIn("claude-plugin", support["distributions"])
-        for entry in public:
-            skill = (ROOT / str(entry["path"])).resolve()
-            with self.subTest(skill=entry["name"]):
-                self.assertIn(skill.parent, skill_dirs)
-                self.assertTrue((skill / "SKILL.md").is_file())
-        pgm = next(entry for entry in public if entry["name"] == "pgm")
-        self.assertEqual("extensions", Path(str(pgm["path"])).parts[0])
-        self.assertEqual(
-            ["source-linked", "codex-plugin", "claude-plugin"],
-            support["extension_distributions"]["pgm"],
-        )
-
-    def test_ci_matrix_exactly_covers_the_declared_support_window(self) -> None:
-        support = json.loads((ROOT / "interfaces/support.json").read_text())
-        workflow = (ROOT / ".github/workflows/validate.yml").read_text()
-        os_match = re.search(r"(?m)^\s*os:\s*\[([^]]+)\]", workflow)
-        python_match = re.search(r"(?m)^\s*python-version:\s*\[([^]]+)\]", workflow)
-        self.assertIsNotNone(os_match)
-        self.assertIsNotNone(python_match)
-        matrix_os = {item.strip().strip("\"'") for item in os_match.group(1).split(",")}
-        matrix_python = {
-            item.strip().strip("\"'") for item in python_match.group(1).split(",")
-        }
-        minimum = int(str(support["python"]["minimum"]).split(".")[1])
-        maximum = int(str(support["python"]["maximum"]).split(".")[1])
-
-        self.assertEqual(set(support["operating_systems"]), matrix_os)
-        self.assertEqual(
-            {f"3.{minor}" for minor in range(minimum, maximum + 1)},
-            matrix_python,
-        )
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import wraps
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,9 +14,15 @@ import tempfile
 from typing import Callable
 
 from .artifact_lock import artifact_lock
-from .conformance import contract_digest, contracts_by_name
 from .project_state import ProjectStateError, gate_blockers, parse_project_state
-from .workflows import load_workflows
+from .workflows import contracts_by_name, load_workflows
+
+
+def contract_digest(contract: dict[str, object]) -> str:
+    canonical = json.dumps(
+        contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
 
 
 BEGIN = "<!-- aitk-checkpoint:v1 -->"
