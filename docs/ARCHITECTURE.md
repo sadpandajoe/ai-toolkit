@@ -93,6 +93,9 @@ selector and effort, forbids fallback, and validates the result against the
 lane's own schema. Codex targets run with an isolated `CODEX_HOME` that holds
 only the auth file, from an empty temporary project root with a scoped
 `--add-dir`, and with no user config, hooks, MCP servers, or project documents.
+The one variant is the Phase 6 `--experiment reviewer-runs-test` measurement:
+the independent reviewer runs from a disposable copy of its worktree and may
+run allowlisted test commands there ([evals/README.md](../evals/README.md)).
 A provider refusal is recorded as `refused`, apart from an outage; a refused
 adversarial lens reroutes once to the other provider, recorded in the result. Provider result formats do
 not attest the internal serving model, so backend substitution stays outside

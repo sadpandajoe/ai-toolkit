@@ -82,6 +82,14 @@ no answer (outage, refusal or invalid result); `UNGRADED` means the grader
 returned no verdict. A run that graded nothing exits 3. Phase 6 decisions are
 recorded under the run they rest on.
 
+A reviewer-runs-test (D11) section is written by hand from the saved
+`model-run` envelopes: per review, the change, the provider, whether the flag
+was on, the allowlist and enforcement from the envelope's `experiment` field,
+the test the reviewer ran (from its `verification`), its majors and the
+verifier's verdict on each, then the lane-yield result. That section is where
+the experiment's reviewer variant is described; `agents/specialists/reviewer.md`
+does not mention it.
+
 Track the false-COMPLEX rate (wasted premium calls) and the false-STANDARD rate
 (rabbit holes) from these results. Add a case whenever an observation shows a
 misroute, a reclassification, or a repeated gate failure.
@@ -122,3 +130,58 @@ day's `evals/results/` file.
 - **Rule yield.** `bin/aitk rule-yield [--runs N]` lists the rule files no
   observation named (`bin/aitk observe --rule <rules/file.md>`) over the last
   20 workflow runs; `reflect` reviews them as deletion candidates.
+- **Reviewer runs one test (D11).** On 10 reviews, run the independent
+  reviewer lane twice on the same tree and save both envelopes: once as
+  usual, and once with `--experiment reviewer-runs-test --test-command "<the
+  repository's test command> *"` added to `bin/aitk model-run review
+  --provider <p> --boundary review.independent --prompt-file <f> --cwd <top of
+  the worktree>`. Run the verifier lane on each review's majors as usual, emit
+  each experiment review's metrics with `bin/aitk metrics emit --extra
+  experiment=reviewer-runs-test`, then run `bin/aitk lane-yield --metrics
+  <file>` on a copy of the metrics file that holds only those events. Settles
+  whether the verifier lane stays: it does unless its yield on those reviews
+  drops below the threshold (CONFIRMED on fewer than 3 in 10 verified majors).
+
+## Reviewer runs one test (D11)
+
+`--experiment reviewer-runs-test` exists only for that measurement
+(`aitk/routing_experiment.py`). Without it the reviewer stays read-only.
+
+- **Lanes.** Only the boundaries whose contract is
+  `agents/specialists/reviewer.md` accept it; on any other lane `model-run`
+  exits 2. The dispatch header tells the reviewer it may run one targeted test.
+- **Allowlist.** Entries come only from `--test-command` (repeatable, at most
+  8), never from the reviewed tree. An entry is plain words (letters, digits
+  and `_ @ % + = : , . / -`) separated by single spaces: no quotes, variables,
+  globs, redirections or shell operators. It allows exactly that command. An
+  entry ending in ` *` is a prefix: it allows the words before the `*`
+  followed by more plain words naming the test, as in `python3 -m pytest *`.
+  A prefix needs at least two words, cannot end in an option, and cannot start
+  with a shell or a program that runs its arguments as another command (`env`,
+  `timeout`, `xargs`, `sudo`, `docker` and the rest of `COMMAND_RUNNERS`).
+- **Scratch copy.** `--cwd` must be the top of its worktree. The worker runs
+  in a disposable copy of it, uncommitted and untracked files included: a
+  standalone clone that borrows the source's objects read-only and has no
+  remote. The copy is removed after the run, and the source worktree is never
+  the worker's directory.
+- **Claude.** `--permission-mode dontAsk` with one `Bash(<entry>)` allow rule
+  per entry beside the read-only git rules, so any other command is denied,
+  and the Bash sandbox through `--settings`: writes only to the copy and to
+  Claude Code's temp directory, which `CLAUDE_CODE_TMPDIR` puts in the scratch
+  root; no network (`strictAllowlist` with no domains); no unsandboxed retry;
+  no auto-allow; and an error at startup if the sandbox cannot run.
+  `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` keeps credentials out of the test's
+  environment. Claude Code's built-in read-only commands, such as `ls` and
+  `grep`, still run.
+- **Codex.** `codex exec` has no command allowlist, so on Codex the allowlist
+  is an instruction. The boundary is the `workspace-write` sandbox rooted at
+  the copy, under `approval_policy="never"`, with no network, neither `/tmp`
+  nor `$TMPDIR` writable, and the scratch temp directory as the one other
+  writable root.
+- **Record.** The envelope's `experiment` field is `null` on every other run.
+  Here it names the experiment, its `allowed_commands` and its `enforcement`
+  (`permission-rules+sandbox` on Claude, `instruction+sandbox` on Codex), so
+  the results keep both the two kinds of review and the two providers apart.
+
+A test that needs the network, a package install or a write outside the copy
+fails under the experiment; record that as the test's result.

@@ -230,7 +230,7 @@ CLI:
 | `bin/aitk eval --provider <p> [--family F] [--model M] [--effort E] [--dry-run]` | Run the judgment eval cases through `model-run`, grade them with `evals/grader.md`, and append `evals/results/<date>-<provider>.md`; calls a provider and costs money |
 | `bin/aitk pgm-preflight --workflow <create-status-report\|create-velocity-report>` | Check the optional PGM configuration before a report collects data |
 | `bin/aitk model-route <route> --provider <p> --boundary <id> [--lens <path>]` | Resolve a pinned specialist dispatch |
-| `bin/aitk model-run <route> --provider <p> --boundary <id> --prompt-file <f>` | Run one fail-closed specialist |
+| `bin/aitk model-run <route> --provider <p> --boundary <id> --prompt-file <f>` | Run one fail-closed specialist; `--experiment reviewer-runs-test --test-command <cmd>` is a measurement-only variant in which the independent reviewer may run one allowlisted test in a scratch copy ([evals/README.md](evals/README.md)) |
 | `bin/aitk build [--check] [--with-pgm]` | Generate path-resolved guidance |
 | `bin/aitk doctor [--strict] [--installed]` | Structured health checks |
 | `bin/aitk install [--with-pgm] [--no-hooks]` / `uninstall` / `rollback` | Transactional lifecycle; install also registers the hooks in Claude Code settings |

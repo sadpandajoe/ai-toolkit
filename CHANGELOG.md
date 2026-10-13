@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `bin/aitk model-run --experiment reviewer-runs-test --test-command <cmd>`
+  lets the independent reviewer run one test from an allowlist given on the
+  command line, in a disposable copy of its worktree, for the D11
+  measurement. Claude enforces the allowlist with `dontAsk` allow rules and
+  its Bash sandbox; on Codex the allowlist is an instruction and the
+  `workspace-write` sandbox rooted at the copy, with no network, is the
+  boundary. Every `model-run` envelope gains an `experiment` field, `null`
+  without the flag.
+
 - Workflow state is one block: `bin/aitk checkpoint`, `aitk/checkpoint.py`,
   `aitk/artifact_lock.py`, `rules/durable-workflows.md` and the checkpoint
   machine-block template are gone. `bin/aitk project-state` writes the only
