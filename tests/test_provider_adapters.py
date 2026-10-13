@@ -60,10 +60,8 @@ class ProviderAdapterTests(unittest.TestCase):
             "prevent-project-commit.sh",
             "pre-push-validate.sh",
             "require-review-gate.sh",
-            "check-resources.sh",
             "check-plan-drift.sh",
             "observation-reminder.sh",
-            "agent-setup-edit-reminder.sh",
             "session-start.sh",
         }
         on_disk = {
@@ -102,9 +100,6 @@ class ProviderAdapterTests(unittest.TestCase):
             claude,
         )
 
-        posttool_matcher = hooks["PostToolUse"][0]["matcher"]
-        for tool in ("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"):
-            self.assertIn(tool, posttool_matcher)
 
     def test_internal_codex_skills_disable_implicit_routing(self) -> None:
         internal = (
@@ -133,26 +128,6 @@ class ProviderAdapterTests(unittest.TestCase):
 
         public = (ROOT / "skills/workflows/agents/openai.yaml").read_text()
         self.assertIn("$workflows", public)
-
-    def test_edit_reminder_accepts_codex_apply_patch_payloads(self) -> None:
-        payload = json.dumps(
-            {
-                "tool_name": "apply_patch",
-                "tool_input": {
-                    "patch": "*** Update File: /tmp/repo/skills/review/SKILL.md\n"
-                },
-            }
-        )
-        result = subprocess.run(
-            ["bash", str(ROOT / "hooks/agent-setup-edit-reminder.sh")],
-            input=payload,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(0, result.returncode)
-        self.assertIn("systemMessage", result.stdout)
-        self.assertIn("shared skills are canonical", result.stdout)
 
     def test_built_guidance_reaches_each_provider_binding(self) -> None:
         expected = expected_build(ROOT)

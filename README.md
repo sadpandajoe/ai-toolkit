@@ -291,10 +291,8 @@ list of them.
 | `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, commits of local workflow state files or `.ai-toolkit/`, and `gh pr ready`/`gh pr merge` unless the user set `AITK_PR_READY=1` |
 | `pre-push-validate.sh` | PreToolUse (Bash) | Runs repository-pinned lint and targeted tests before a push |
 | `require-review-gate.sh` | PreToolUse (Bash) | Blocks `gh pr create` unless the `PROJECT.md` snapshot records a review PASS backed by a reviewer record (`SKIP_PR_GATE=1` is the user's override) and the PR is a `--draft` (`AITK_PR_READY=1` is the user's override) |
-| `check-resources.sh` | PreToolUse (Bash) | Warns when running tests with constrained resources |
 | `check-plan-drift.sh` | Stop | Warns at turn end when PLAN.md outpaces PROJECT.md |
 | `observation-reminder.sh` | Stop | Says when ten or more unreviewed observations wait in `.ai-toolkit/observations.jsonl` |
-| `agent-setup-edit-reminder.sh` | PostToolUse (Edit/Write/MultiEdit/NotebookEdit) | Reminds to load `agent-setup-maintainer` when an agent-setup file is edited |
 | `session-start.sh` | SessionStart (plugins only) | Prints the always-on rules and the provider binding pointer; on a new session, warns when a `bin/aitk install` is still in place |
 
 The git guard and the review gate run `python3 -m aitk.hooks.*`; without

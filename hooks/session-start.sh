@@ -52,7 +52,7 @@ found=""
 grep -qF -- "$marker" "$claude_dir/CLAUDE.md" 2>/dev/null && found="$found $claude_dir/CLAUDE.md"
 grep -qF -- "$marker" "${CODEX_HOME:-$HOME/.codex}/AGENTS.md" 2>/dev/null &&
     found="$found ${CODEX_HOME:-$HOME/.codex}/AGENTS.md"
-grep -qE '/hooks/(prevent-project-commit|pre-push-validate|require-review-gate|check-resources|check-plan-drift|observation-reminder|agent-setup-edit-reminder)\.sh' \
+grep -qE '/hooks/(prevent-project-commit|pre-push-validate|require-review-gate|check-plan-drift|observation-reminder)\.sh' \
     "$claude_dir/settings.json" 2>/dev/null && found="$found $claude_dir/settings.json"
 if [ -n "$found" ]; then
     warning="AI Toolkit warning: an older \`bin/aitk install\` is still in place (${found# }), so the toolkit loads twice next to this plugin. Tell the user once: run \`bin/aitk uninstall\` from that checkout (docs/MIGRATION.md)."

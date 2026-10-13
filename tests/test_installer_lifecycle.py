@@ -1072,7 +1072,9 @@ class ClaudeHookRegistrationTests(unittest.TestCase):
         settings = json.loads(self.settings.read_text())
         expected = settings_entries()
         self.assertEqual([mine, *expected["PreToolUse"]], settings["hooks"]["PreToolUse"])
-        self.assertEqual(expected["PostToolUse"], settings["hooks"]["PostToolUse"])
+        # No toolkit hook runs after a tool any more; the old reminder entry goes.
+        self.assertNotIn("PostToolUse", expected)
+        self.assertEqual([], settings["hooks"].get("PostToolUse", []))
         self.assertEqual(expected["Stop"], settings["hooks"]["Stop"])
         self.assertEqual("opus", settings["model"])
         deny = settings["permissions"]["deny"]

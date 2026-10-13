@@ -250,15 +250,29 @@ def register(root: Path, home: Path, state_dir: Path) -> list[str]:
     record = load_record(state_dir)
     directories = list(dict.fromkeys([hooks_dir(root), *_strings(record.get("hook_dirs"))]))
     created = _strings(record.get("created"))
+    desired = desired_hooks(root)
+    previous = settings.get("hooks")
+    filled = (
+        {event for event, groups in previous.items() if isinstance(groups, list) and groups}
+        if isinstance(previous, dict)
+        else set()
+    )
     _strip_handlers(settings, directories)
 
     hooks = settings.get("hooks")
+    if isinstance(hooks, dict):
+        # An event the toolkit no longer registers, left empty by the strip, held
+        # only toolkit handlers; it goes rather than staying behind as `[]`.
+        for event in sorted(filled - set(desired)):
+            if hooks.get(event) == []:
+                del hooks[event]
+                created = [item for item in created if item != f"hooks.{event}"]
     if hooks is None:
         hooks = settings["hooks"] = {}
         created.append("hooks")
     if not isinstance(hooks, dict):
         raise HookSettingsError(f"{path}: `hooks` is not an object; fix it first")
-    for event, groups in desired_hooks(root).items():
+    for event, groups in desired.items():
         if event not in hooks:
             hooks[event] = []
             created.append(f"hooks.{event}")
