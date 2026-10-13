@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 import importlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,35 +11,26 @@ import tempfile
 import unittest
 
 from aitk.pricing import PRICING, PROMOTIONS, get_pricing
-from aitk.workflows import load_workflows
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-# The cost report is `aitk.cost` (`bin/aitk cost`); optimize-cost is still a
-# standalone script until it is retired.
+# The cost report is `aitk.cost` (`bin/aitk cost`).
 SOURCES = {
     "aitk/cost.py": ROOT / "aitk" / "cost.py",
-    "optimize-cost.py": ROOT / "scripts" / "optimize-cost.py",
 }
 
 
 def load_script(name: str):
-    if name == "aitk/cost.py":
-        return importlib.import_module("aitk.cost")
-    path = SOURCES[name]
-    spec = importlib.util.spec_from_file_location(name.replace("-", "_"), path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    assert name in SOURCES, name
+    return importlib.import_module("aitk.cost")
 
 
 class CostScriptTests(unittest.TestCase):
     def test_unknown_models_are_never_mispriced(self) -> None:
         usage = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
-        for script in ("aitk/cost.py", "optimize-cost.py"):
+        for script in SOURCES:
             module = load_script(script)
             self.assertIsNone(module.get_pricing("unknown-provider-model"), script)
             self.assertEqual(
@@ -127,7 +117,7 @@ class CostScriptTests(unittest.TestCase):
             "cache_read_input_tokens": 50_000,
             "cache_creation_input_tokens": 50_000,
         }
-        for script in ("aitk/cost.py", "optimize-cost.py"):
+        for script in SOURCES:
             module = load_script(script)
             with self.subTest(script=script):
                 self.assertEqual(
@@ -170,7 +160,7 @@ class CostScriptTests(unittest.TestCase):
             "2026-11-21T20:00:00-04:00": 5.0,
         }
         usage = {"input_tokens": 1_000_000}
-        for script in ("aitk/cost.py", "optimize-cost.py"):
+        for script in SOURCES:
             module = load_script(script)
             for model, boundaries in (
                 ("claude-sonnet-5", sonnet_boundaries),
@@ -246,7 +236,7 @@ class CostScriptTests(unittest.TestCase):
         self,
     ) -> None:
         usage = {"input_tokens": 1_000_000}
-        for script in ("aitk/cost.py", "optimize-cost.py"):
+        for script in SOURCES:
             module = load_script(script)
             for timestamp in (None, "", "not-a-time", "2026-08-31T23:59:59"):
                 with self.subTest(script=script, timestamp=timestamp):
@@ -290,32 +280,9 @@ class CostScriptTests(unittest.TestCase):
             self.assertEqual(0, session["models"]["claude-sonnet-5"]["unpriced"])
 
     def test_project_shortening_has_no_personal_username_constant(self) -> None:
-        for script in ("aitk/cost.py", "optimize-cost.py"):
+        for script in SOURCES:
             text = SOURCES[script].read_text()
             self.assertNotIn("joeli", text.lower())
-
-    def test_cost_attribution_recognizes_canonical_and_legacy_invocations(self) -> None:
-        module = load_script("optimize-cost.py")
-        self.assertEqual(
-            ["create-feature", "fix-bug", "create-status-report"],
-            module.extract_commands(
-                "$workflows create-feature then /fix-bug and $pgm create-status-report"
-            ),
-        )
-        for workflow in load_workflows(ROOT, include_pgm=True):
-            owner = "$pgm" if workflow.owner_skill == "pgm" else "$workflows"
-            with self.subTest(workflow=workflow.name):
-                self.assertEqual(
-                    [workflow.name],
-                    module.extract_commands(f"{owner} {workflow.name}"),
-                )
-                self.assertEqual(
-                    [workflow.name], module.extract_commands(f"/{workflow.name}")
-                )
-        self.assertEqual(
-            ["review-code-adversarial"],
-            module.extract_commands("$workflows review-code-adversarial"),
-        )
 
 
 class PricingMechanismTests(unittest.TestCase):

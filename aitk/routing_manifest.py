@@ -928,7 +928,6 @@ def validate_selector_ownership(root: Path, payload: dict[str, object]) -> list[
         if path in {
             root / "interfaces/model-routing.json",
             root / "aitk/pricing.py",
-            root / "scripts/optimize-cost.py",
             root / "aitk/cost.py",
         }:
             # Pricing is an independent historical registry, not route selection.
