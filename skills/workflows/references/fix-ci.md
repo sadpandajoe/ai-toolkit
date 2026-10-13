@@ -7,11 +7,6 @@
 
 Effect: `git_mutation`.
 
-## Durable Runtime Contract
-
-`fix-ci` in `interfaces/contracts.json`; transitions and effects go through
-`bin/aitk checkpoint`.
-
 ## Usage
 
 ```

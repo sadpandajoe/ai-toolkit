@@ -7,11 +7,6 @@
 
 Effect: `external_effect`.
 
-## Durable Runtime Contract
-
-`watch-pr` in `interfaces/contracts.json`; transitions and effects go through
-`bin/aitk checkpoint`.
-
 ## Usage
 
 ```bash

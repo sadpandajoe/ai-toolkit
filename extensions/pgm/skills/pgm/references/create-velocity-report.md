@@ -9,11 +9,6 @@ Before executing, read the [program management context](../../../rules/pgm.md). 
 
 Effect: `local_mutation`.
 
-## Durable Runtime Contract
-
-`create-velocity-report` in `interfaces/contracts.json`; transitions and
-effects go through `bin/aitk checkpoint --with-pgm`.
-
 ## Usage
 
 ```

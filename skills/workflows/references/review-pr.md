@@ -14,11 +14,6 @@ approval; `--auto` or a separate confirmation grants the bounded provider
 effect after the PII scrub. `--draft` shows the review locally without
 posting.
 
-## Durable Runtime Contract
-
-`review-pr` in `interfaces/contracts.json`; transitions and effects go through
-`bin/aitk checkpoint`.
-
 ## Usage
 
 ```

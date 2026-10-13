@@ -9,11 +9,6 @@ Effect: `external_effect`.
 
 Authorization mode: `invocation`.
 
-## Durable Runtime Contract
-
-`address-feedback` in `interfaces/contracts.json`; transitions and effects go
-through `bin/aitk checkpoint`.
-
 ## Authorization Boundary
 
 ```bash

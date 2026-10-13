@@ -7,11 +7,6 @@
 
 Effect: `local_mutation`.
 
-## Durable Runtime Contract
-
-`run-test-plan` in `interfaces/contracts.json`; transitions and effects go through
-`bin/aitk checkpoint`.
-
 ## Usage
 ```
 run-test-plan ./docs/test-plan.md

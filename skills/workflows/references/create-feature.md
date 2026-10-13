@@ -7,12 +7,6 @@
 
 Effect: `git_mutation`.
 
-## Durable Runtime Contract
-
-`create-feature` in `interfaces/contracts.json`; transitions and effects go
-through `bin/aitk checkpoint`, the routing snapshot and gates through
-`bin/aitk project-state`.
-
 ## Usage
 
 ```bash

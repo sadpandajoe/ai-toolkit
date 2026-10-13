@@ -7,11 +7,6 @@
 
 Effect: `git_mutation`.
 
-## Durable Runtime Contract
-
-`review-code` in `interfaces/contracts.json`; transitions and effects go through
-`bin/aitk checkpoint`.
-
 ## Usage
 
 ```bash
