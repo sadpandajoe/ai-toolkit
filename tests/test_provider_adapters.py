@@ -106,7 +106,6 @@ class ProviderAdapterTests(unittest.TestCase):
             "debug",
             "feedback",
             "implement-change",
-            "metrics-emit",
             "planning",
             "pm",
             "pr-watch",

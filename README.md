@@ -175,7 +175,7 @@ ai-toolkit/
 │   ├── debug/              # Investigation, RCA gate, CI diagnosis
 │   ├── testing/ qa/ pm/ feedback/ pr-watch/ reflection/
 │   ├── implement-change/   # Bounded implementation worker contract
-│   ├── reporting/ metrics-emit/ archive-project-file/
+│   ├── reporting/ archive-project-file/
 │   ├── preflight/ cherry-pick/ agent-setup-maintainer/
 │   └── shortcut/ superset-local/ preset-rbac-setup/   # Domain integrations
 ├── evals/                  # Judgment and deterministic eval cases
@@ -264,7 +264,7 @@ names so the table cannot imply manifest wiring that does not exist.
 | Rule | Covers | Workflows that declare it | Also read by |
 |---|---|---|---|
 | `rules/ci-evidence.md` | CI Evidence | `fix-ci`, `watch-pr` | skills: debug, workflows |
-| `rules/code-review.md` | Code Review | none | skills: metrics-emit, review, testing; 11 routed worker contract lists |
+| `rules/code-review.md` | Code Review | none | skills: review, testing; 11 routed worker contract lists |
 | `rules/complexity-gate.md` | Complexity Gate | `address-feedback`, `create-feature`, `fix-bug`, `fix-ci`, `review-code`, `review-pr` | skills: cherry-pick, feedback, review, workflows |
 | `rules/durable-workflows.md` | Durable Workflow Runtime | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `run-test-plan`, `test-pr`, `update-tests`, `watch-pr` | none |
 | `rules/gates.md` | Gates | `address-feedback`, `create-feature`, `create-tests`, `fix-bug`, `fix-ci`, `review-code`, `review-code-adversarial`, `review-plan`, `review-pr`, `update-tests` | skills: debug, feedback, planning, qa, review, verification-loop, workflows |
