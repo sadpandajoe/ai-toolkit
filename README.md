@@ -228,7 +228,7 @@ CLI:
 | `bin/aitk build [--check] [--with-pgm]` | Generate path-resolved guidance |
 | `bin/aitk doctor [--strict] [--installed]` | Structured health checks |
 | `bin/aitk install [--with-pgm] [--no-hooks]` / `uninstall` / `rollback` | Transactional lifecycle; install also registers the hooks in Claude Code settings |
-| `bin/aitk check` | Build drift, doctor, tests, hook smoke tests |
+| `bin/aitk check` | Build drift, doctor, the unittest suite (hook cases included) |
 
 See [Architecture](docs/ARCHITECTURE.md) (including
 [cost and metrics data](docs/ARCHITECTURE.md#cost-and-metrics-data)),

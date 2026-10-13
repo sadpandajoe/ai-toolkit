@@ -2,8 +2,8 @@
 
 Every case runs the wrapper end to end with a synthetic PreToolUse payload in a
 scratch repository under a fresh temporary directory, and checks the exit code:
-0 allows, 2 blocks. The cases port hooks/test-prevent-project-commit.sh and add
-the P1 ones: commands behind `timeout`, `nohup`, `xargs` and `nice`,
+0 allows, 2 blocks. The cases port the retired shell smoke suite and add the
+P1 ones: commands behind `timeout`, `nohup`, `xargs` and `nice`,
 newline-separated commands, `git add <state> && git commit`, and `gh pr ready`
 and `gh pr merge` without the user's AITK_PR_READY=1.
 """

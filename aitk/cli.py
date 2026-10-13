@@ -996,44 +996,27 @@ def _check(arguments: argparse.Namespace) -> int:
         capture_output=True,
         check=False,
     )
-    hook_path = root / "hooks/test-prevent-project-commit.sh"
-    hook = (
-        subprocess.run(
-            ["bash", str(hook_path)],
-            cwd=root,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if hook_path.is_file()
-        else None
-    )
     payload: dict[str, object] = {
         "command": "check",
         "build": "PASS" if not differences else "FAIL",
         "doctor": "PASS" if not doctor_problems else "FAIL",
         "tests": "PASS" if tests.returncode == 0 else "FAIL",
-        "hook-tests": "PASS" if hook is not None and hook.returncode == 0 else "FAIL",
         "differences": differences,
         "doctor_problems": [asdict(finding) for finding in doctor_problems],
     }
     if arguments.json:
         payload["test_output"] = tests.stderr
-        payload["hook_output"] = "" if hook is None else hook.stdout + hook.stderr
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print(f"Build: {payload['build']}")
         print(f"Doctor: {payload['doctor']}")
         print(f"Tests: {payload['tests']}")
-        print(f"Hook tests: {payload['hook-tests']}")
         if tests.returncode:
             print(tests.stderr)
-        if hook is not None and hook.returncode:
-            print(hook.stdout + hook.stderr)
     return (
         0
         if all(
-            payload[key] == "PASS" for key in ("build", "doctor", "tests", "hook-tests")
+            payload[key] == "PASS" for key in ("build", "doctor", "tests")
         )
         else 1
     )
