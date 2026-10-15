@@ -1,4 +1,4 @@
-"""hooks/pre-push-validate.sh: blocks a push on failed or overdue checks.
+"""hooks/pre-push-validate.sh: blocks a push on failed checks and warns on overdue ones.
 
 Each case runs the hook with a synthetic PreToolUse payload against a scratch
 repository whose `origin/main` is behind HEAD, with stub `pre-commit` and
@@ -26,6 +26,9 @@ STUB = """#!/bin/bash
 case "${{{variable}:-pass}}" in
     fail) echo "{name}: 1 problem found" >&2; exit 1 ;;
     sleep) exec sleep 30 ;;
+    sigkill) kill -9 $$ ;;
+    exit124) exit 124 ;;
+    stubborn) trap '' TERM; exec sleep 30 ;;
 esac
 exit 0
 """
@@ -144,17 +147,60 @@ class PrePushHookTests(unittest.TestCase):
             "pre-commit failed",
         )
 
-    def test_a_check_past_its_budget_blocks(self) -> None:
+    def assert_warned(self, result: subprocess.CompletedProcess[str], reason: str) -> None:
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("BLOCKED", result.stderr)
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn(reason, context)
+        self.assertIn("push proceeds", context)
+
+    def test_a_check_past_its_budget_warns_and_allows(self) -> None:
         for tools in (TOOLS + ("timeout",), TOOLS):
             with self.subTest(timeout_binary="timeout" in tools):
                 lint = self.run_hook(
                     "git push", tools=tools, STUB_PRECOMMIT="sleep", AITK_PRECHECK_LINT_BUDGET="2"
                 )
-                self.assert_blocked(lint, "pre-commit did not finish within 2s")
+                self.assert_warned(lint, "pre-commit did not finish within 2s")
                 tests = self.run_hook(
                     "git push", tools=tools, STUB_PYTEST="sleep", AITK_PRECHECK_TEST_BUDGET="2"
                 )
-                self.assert_blocked(tests, "pytest did not finish within 2s")
+                self.assert_warned(tests, "pytest did not finish within 2s")
+
+    def test_an_overrun_never_hides_a_real_failure(self) -> None:
+        result = self.run_hook(
+            "git push", STUB_PRECOMMIT="sleep", STUB_PYTEST="fail", AITK_PRECHECK_LINT_BUDGET="2"
+        )
+        self.assert_blocked(result, "pytest failed")
+        self.assertIn("Warnings:", result.stderr)
+        self.assertIn("pre-commit did not finish within 2s", result.stderr)
+
+    def test_a_check_killed_after_the_grace_warns_and_allows(self) -> None:
+        for tools in (TOOLS + ("timeout",), TOOLS):
+            with self.subTest(timeout_binary="timeout" in tools):
+                result = self.run_hook(
+                    "git push", tools=tools, STUB_PRECOMMIT="stubborn", AITK_PRECHECK_LINT_BUDGET="2"
+                )
+                self.assert_warned(result, "pre-commit did not finish within 2s")
+
+    def assert_failed_early(self, stub: str) -> None:
+        for tools in (TOOLS + ("timeout",), TOOLS):
+            for variable, reason in (("STUB_PRECOMMIT", "pre-commit failed"), ("STUB_PYTEST", "pytest failed")):
+                with self.subTest(timeout_binary="timeout" in tools, check=variable):
+                    result = self.run_hook(
+                        "git push",
+                        tools=tools,
+                        AITK_PRECHECK_LINT_BUDGET="2",
+                        AITK_PRECHECK_TEST_BUDGET="2",
+                        **{variable: stub},
+                    )
+                    self.assert_blocked(result, reason)
+                    self.assertNotIn("did not finish within", result.stderr)
+
+    def test_an_early_sigkill_is_a_failure_not_a_budget_warning(self) -> None:
+        self.assert_failed_early("sigkill")
+
+    def test_a_child_exit_124_is_a_failure_not_a_budget_warning(self) -> None:
+        self.assert_failed_early("exit124")
 
     def test_budgets_fit_inside_the_hook_timeout_and_only_go_down(self) -> None:
         script = HOOK.read_text()

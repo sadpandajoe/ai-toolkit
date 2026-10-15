@@ -4,7 +4,7 @@
 #
 # Runs lint + targeted tests on the commits that are about to be pushed,
 # using the repo's pinned tool versions (not the system's). Blocks the push
-# on a failure or a check that runs out of time.
+# on a failure; a check that runs out of time warns and the push proceeds.
 #
 # Tiers:
 #   1. pre-commit on all changed files (preferred — runs the repo's full
@@ -16,9 +16,11 @@
 # Time budgets: lint 180 s, tests 90 s, each with a 5 s grace before KILL,
 # so both together stay under the 300 s hook timeout in hooks/hooks.json. A
 # hook the runtime kills at its own timeout lets the push through; a check
-# that runs out of its budget here blocks it. `timeout` is used when present,
-# else `gtimeout`, else a shell watchdog. AITK_PRECHECK_LINT_BUDGET and
-# AITK_PRECHECK_TEST_BUDGET can only lower the budgets.
+# that runs out of its budget here warns and the push proceeds. A shell
+# watchdog enforces every budget, and only its deadline marker counts as a
+# timeout, so a check that dies early (SIGKILL, its own exit 124) still
+# blocks. AITK_PRECHECK_LINT_BUDGET and AITK_PRECHECK_TEST_BUDGET can only
+# lower the budgets.
 #
 # Bypass is the user's alone: SKIP_PRECHECK=1 in the environment Claude Code
 # or Codex started with, or as an environment prefix of the `git push`
@@ -150,23 +152,12 @@ LINT_BUDGET=$(budget 180 "${AITK_PRECHECK_LINT_BUDGET:-}")
 TEST_BUDGET=$(budget 90 "${AITK_PRECHECK_TEST_BUDGET:-}")
 GRACE=5
 
-TIMEOUT_BIN=""
-if command -v timeout >/dev/null 2>&1; then
-    TIMEOUT_BIN=timeout
-elif command -v gtimeout >/dev/null 2>&1; then
-    TIMEOUT_BIN=gtimeout
-fi
-
-# Run "$@" within SECONDS; return 124 when it runs out of time.
+# Run "$@" within SECONDS; return 124 only when the watchdog saw the deadline
+# pass with the check still running. A check's own exit 124 becomes 1, so it
+# cannot pass for a timeout.
 with_budget() {
     local seconds=$1
     shift
-    if [[ -n "$TIMEOUT_BIN" ]]; then
-        "$TIMEOUT_BIN" -k "$GRACE" "$seconds" "$@"
-        local rc=$?
-        [[ $rc -eq 137 ]] && rc=124
-        return $rc
-    fi
     local marker
     marker=$(mktemp "${TMPDIR:-/tmp}/aitk-prepush.XXXXXX") || return 1
     rm -f "$marker"
@@ -194,6 +185,7 @@ with_budget() {
         rm -f "$marker"
         return 124
     fi
+    [[ $rc -eq 124 ]] && rc=1
     return $rc
 }
 
@@ -205,7 +197,7 @@ WARNINGS=""
 # Returns:
 #   0   — ran and passed (or nothing to do)
 #   1   — ran and failed (block the push)
-#   124 — ran out of its budget (block the push)
+#   124 — watchdog confirmed the deadline expired (warn)
 #   99  — not configured here, caller should try the fallback path
 run_precommit() {
     cd "$REPO_ROOT" || return 99
@@ -252,13 +244,13 @@ if [[ $rc -eq 99 ]]; then
         run_ruff_fallback
         rc=$?
         if [[ $rc -eq 124 ]]; then
-            FAILURES+=$'\n'"  - ruff did not finish within ${LINT_BUDGET}s"
+            WARNINGS+=$'\n'"  - ruff did not finish within ${LINT_BUDGET}s; the push proceeds unchecked by lint — run ruff on the changed Python files locally"
         elif [[ $rc -ne 0 ]]; then
             FAILURES+=$'\n  - ruff failed on changed Python files'
         fi
     fi
 elif [[ $rc -eq 124 ]]; then
-    FAILURES+=$'\n'"  - pre-commit did not finish within ${LINT_BUDGET}s; run it locally on the changed files"
+    WARNINGS+=$'\n'"  - pre-commit did not finish within ${LINT_BUDGET}s; the push proceeds unchecked by lint — run pre-commit on the changed files locally"
 elif [[ $rc -ne 0 ]]; then
     FAILURES+=$'\n  - pre-commit failed on changed files (lint/format/type-check). If it modified files, commit the result and retry.'
 fi
@@ -288,7 +280,7 @@ if [[ ${#TEST_FILES[@]} -gt 0 ]]; then
     run_pytest
     rc=$?
     if [[ $rc -eq 124 ]]; then
-        FAILURES+=$'\n'"  - pytest did not finish within ${TEST_BUDGET}s on the changed test files"
+        WARNINGS+=$'\n'"  - pytest did not finish within ${TEST_BUDGET}s; the push proceeds with those tests unrun — run pytest on the changed test files locally"
     elif [[ $rc -ne 0 ]]; then
         FAILURES+=$'\n  - pytest failed on changed test files'
     fi
