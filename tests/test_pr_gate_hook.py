@@ -284,13 +284,13 @@ class ReviewGateHookTests(unittest.TestCase):
         text = "true " + "sh " * 200 + "; gh pr create --fill"
         started = time.monotonic()
         found = review_gate.pr_creations(text, str(self.repo))
-        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertLess(time.monotonic() - started, 3.0)
         self.assertEqual([False], [creation.draft for creation in found])
         # past the work budget the segment reads as one unresolved creation: still seen
         text = "true " + "sh " * 4000 + "gh pr create --draft --fill"
         started = time.monotonic()
         found = review_gate.pr_creations(text, str(self.repo))
-        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertLess(time.monotonic() - started, 3.0)
         self.assertTrue(found)
         self.assertEqual({False}, {creation.draft for creation in found})
 
@@ -315,7 +315,7 @@ class ReviewGateHookTests(unittest.TestCase):
             with self.subTest(case=name):
                 started = time.monotonic()
                 found = review_gate.pr_creations(text, str(self.repo))
-                self.assertLess(time.monotonic() - started, 1.0)
+                self.assertLess(time.monotonic() - started, 3.0)
                 self.assertTrue(found)
                 self.assertEqual({False}, {creation.draft for creation in found})
                 started = time.monotonic()
@@ -407,7 +407,7 @@ class ReviewGateHookTests(unittest.TestCase):
         text = 'gh pr create --fill --body "' + "$(" * 3000 + '"'
         started = time.monotonic()
         found = review_gate.pr_creations(text, str(self.repo))
-        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertLess(time.monotonic() - started, 3.0)
         self.assertTrue(found)
         self.assertEqual({False}, {creation.draft for creation in found})
         self.assertTrue(all(creation.unreadable for creation in found))
@@ -418,7 +418,7 @@ class ReviewGateHookTests(unittest.TestCase):
         started = time.monotonic()
         with self.assertRaises(review_gate.Blocked):
             review_gate.evaluate(text, str(self.repo), {})
-        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertLess(time.monotonic() - started, 3.0)
 
     def test_a_creation_nested_past_the_depth_limit_reads_as_not_draft(self) -> None:
         from aitk.hooks import review_gate

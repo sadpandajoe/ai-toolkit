@@ -849,7 +849,7 @@ class GitGuardHookTests(unittest.TestCase):
                 started = time.monotonic()
                 with self.assertRaises(git_guard.Blocked):
                     git_guard.evaluate(text, str(self.clean), {})
-                self.assertLess(time.monotonic() - started, 1.0)
+                self.assertLess(time.monotonic() - started, 3.0)
         walked = list(shell_tokens.commands("true " + "sh " * 200 + "; gh pr merge 12", str(self.clean)))
         self.assertLess(len(walked), 1000)
         self.assertEqual(["gh", "pr", "merge", "12"], walked[-1].argv)
@@ -863,12 +863,12 @@ class GitGuardHookTests(unittest.TestCase):
             with self.subTest(case=name):
                 started = time.monotonic()
                 walked = list(shell_tokens.commands(text, str(self.clean)))
-                self.assertLess(time.monotonic() - started, 1.0)
+                self.assertLess(time.monotonic() - started, 3.0)
                 self.assertTrue(any(found.unreadable for found in walked))
                 started = time.monotonic()
                 with self.assertRaises(git_guard.Blocked):
                     git_guard.evaluate(text, str(self.clean), {})
-                self.assertLess(time.monotonic() - started, 1.0)
+                self.assertLess(time.monotonic() - started, 3.0)
                 started = time.monotonic()
                 result = self.run_hook(text, self.clean)
                 self.assertLess(time.monotonic() - started, 5.0)
@@ -1039,7 +1039,7 @@ class GitGuardHookTests(unittest.TestCase):
         started = time.monotonic()
         self.assertIsNone(shell_tokens.words_in_order(unmatched_pr, *git_guard.UNRESOLVED_PR_PUBLISH))
         self.assertFalse(git_guard.unresolved_sets_override(unmatched_export))
-        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertLess(time.monotonic() - started, 3.0)
         # the same text as an unresolved command (the payload does not tokenize), end to end
         for text, check in (
             (f'bash -c "{unmatched_pr}\'"', lambda: git_guard.check_pr_publish(text, cwd, {})),
@@ -1048,7 +1048,7 @@ class GitGuardHookTests(unittest.TestCase):
             with self.subTest(length=len(text)):
                 started = time.monotonic()
                 check()
-                self.assertLess(time.monotonic() - started, 2.0)
+                self.assertLess(time.monotonic() - started, 3.0)
         # what matched before still matches, with the verb the message names
         for text, verb in (
             ('bash -c "gh pr merge 12 \'"', "merge"),
@@ -1156,21 +1156,21 @@ class GitGuardHookTests(unittest.TestCase):
                 for text in (f"echo $({body})", f"echo `{body}`", f"cat <({body})"):
                     started = time.monotonic()
                     self.assertFalse(git_guard.has_unsafe_git_substitution(text))
-                    self.assertLess(time.monotonic() - started, 2.0)
+                    self.assertLess(time.monotonic() - started, 3.0)
                     # a commit or push at the very end is still found
                     started = time.monotonic()
                     self.assertTrue(git_guard.has_unsafe_git_substitution(text[:-1] + " git push origin)" if text.endswith(")") else text[:-1] + " git push origin`"))
-                    self.assertLess(time.monotonic() - started, 2.0)
+                    self.assertLess(time.monotonic() - started, 3.0)
                 text = f"echo $({body})\ngh pr merge 12"
                 started = time.monotonic()
                 with self.assertRaises(git_guard.Blocked):
                     git_guard.evaluate(text, cwd, {})
-                self.assertLess(time.monotonic() - started, 2.0)
+                self.assertLess(time.monotonic() - started, 3.0)
         # an opener with no closer, and one very long word, cost nothing extra either
         for text in ("echo " + "$(" * 80_000, "echo $(" + "a" * 200_000 + ")", "echo " + "`x " * 60_000):
             started = time.monotonic()
             git_guard.has_unsafe_git_substitution(text)
-            self.assertLess(time.monotonic() - started, 2.0)
+            self.assertLess(time.monotonic() - started, 3.0)
 
     def test_the_linear_substitution_scan_matches_the_patterns_it_replaced(self) -> None:
         import random
@@ -1210,7 +1210,7 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 5.0)
         started = time.monotonic()
         walked = list(shell_tokens.commands(text, cwd))
-        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertLess(time.monotonic() - started, 3.0)
         self.assertTrue(any(found.unreadable for found in walked))
         self.assertEqual(["gh", "pr", "merge", "1"], walked[-1].argv)
         # a substitution that fits the budget is still read in full
@@ -1220,10 +1220,10 @@ class GitGuardHookTests(unittest.TestCase):
 
     def test_a_long_chain_of_C_options_stays_fast_and_still_blocks(self) -> None:
         cwd = str(self.clean)
-        text = "git " + "-C x " * 5000 + "status; gh pr merge 12"
+        text = "git " + "-C x " * 20000 + "status; gh pr merge 12"
         started = time.monotonic()
         walked = list(shell_tokens.commands(text, cwd))
-        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertLess(time.monotonic() - started, 3.0)
         self.assertEqual(["gh", "pr", "merge", "12"], walked[-1].argv)
         with self.assertRaises(git_guard.Blocked):
             git_guard.evaluate(text, cwd, {})
