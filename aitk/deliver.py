@@ -1,5 +1,9 @@
 """`bin/aitk deliver`: commit, push and open (or reuse) a draft PR once the gates hold.
 
+Deliver can never open a ready (non-draft) PR: it has no flag for it and reads no
+override. Only the user takes a PR out of draft, with `gh pr ready` under the git
+guard, which counts `AITK_PR_READY=1` only from the session environment.
+
 The workflows used to copy the push and PR procedure into their prose
 (create-pr's identity, lookup and creation steps, and each owner's delivery
 list). This module is that procedure, so the model runs one command instead of
@@ -10,8 +14,7 @@ re-typing it:
    that exited 0 at `STRONG`, both in the current phase (`gate_blockers`); the
    working tree, state files left out, equal to the tree the run and the review
    saw; a branch that is not detached and not `main`, `master` or the default
-   branch; `--title` and `--body-file` unless `--no-pr`; and, for `--ready`,
-   the user's `AITK_PR_READY=1`.
+   branch; and `--title` and `--body-file` unless `--no-pr`.
 2. **Push target**: the upstream's remote; else `branch.<name>.pushRemote`,
    `remote.pushDefault`, `origin`. A renamed upstream or push ref, a push
    remote that differs from the upstream remote, or no candidate is a hold
@@ -22,7 +25,7 @@ re-typing it:
    only when the remote is behind, then check the head identity again.
 5. **PR** (skipped with `--no-pr`): base identity from `gh repo view`, the
    fork rules, the paginated open-PR lookup for this head, then reuse
-   (`PR Exists`) or `gh pr create --draft` (`--ready` drops `--draft`). A
+   (`PR Exists`, whatever its draft state) or `gh pr create --draft`. A
    failed or unknown creation is reconciled with one more lookup.
 6. **Record** `## PR Created` (or `## Delivered` for `--no-pr`) with a
    `Delivered as:` line naming the verification command in PROJECT.md, once.
@@ -36,7 +39,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
-import os
 from pathlib import Path
 import re
 import subprocess
@@ -77,7 +79,6 @@ class DeliverOptions:
     message: str | None = None
     base: str | None = None
     no_pr: bool = False
-    ready: bool = False
     env: dict[str, str] | None = None
 
 
@@ -346,20 +347,7 @@ def choose_pr(
 # The delivery ---------------------------------------------------------------
 
 
-def _truthy(value: str | None) -> bool:
-    return (value or "").strip().lower() not in {"", "0", "false", "no", "off"}
-
-
 def _preconditions(options: DeliverOptions, result: DeliverResult) -> tuple[Path, dict[str, object], str]:
-    environment = options.env if options.env is not None else os.environ
-    if options.ready and not _truthy(environment.get("AITK_PR_READY")):
-        raise DeliverStop(
-            "refused",
-            "a ready (non-draft) PR needs the user's explicit request in words; without it deliver "
-            "opens a draft. Stop and ask the user, who alone can override it.",
-        )
-    if options.no_pr and options.ready:
-        raise DeliverStop("refused", "--ready and --no-pr contradict each other")
     repo = git_toplevel(options.cwd)
     if repo is None:
         raise DeliverStop("refused", "not inside a git repository")
@@ -493,10 +481,10 @@ def _create(
     head: str,
     env: dict[str, str] | None,
 ) -> subprocess.CompletedProcess[str]:
-    argv = ["gh", "pr", "create"]
-    if not options.ready:
-        argv.append("--draft")
-    argv += ["--base", base, "--head", head, "--title", str(options.title), "--body-file", str(options.body_file)]
+    argv = [
+        "gh", "pr", "create", "--draft",
+        "--base", base, "--head", head, "--title", str(options.title), "--body-file", str(options.body_file),
+    ]
     return _run(argv, repo, env)
 
 
@@ -519,7 +507,7 @@ def _record(path: Path, result: DeliverResult, options: DeliverOptions, base: st
         return
     pr = result.pr
     draft = "yes" if pr["draft"] else "no"
-    kind = "draft PR" if pr["draft"] else "ready PR"
+    kind = "draft PR" if pr["draft"] else "PR"
     section = "\n".join(
         [
             "## PR Created",
@@ -624,7 +612,7 @@ def deliver(options: DeliverOptions) -> DeliverResult:
                 result.pr = {
                     "number": pr_number,
                     "url": url,
-                    "draft": not options.ready,
+                    "draft": True,
                     "base": base,
                     "existing": False,
                 }

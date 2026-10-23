@@ -19,7 +19,9 @@ cause is ambiguous, stop instead of widening scope.
 
 ## Amend Targets
 
-An amend needs the user's explicit authorization (`fix-ci` step 8). On a
+An amend needs the user's explicit authorization (`fix-ci` step 8); a new
+commit is the default, as in
+[fix-review](../../feedback/references/fix-review.md#commit-strategy). On a
 cherry-pick branch (`git log --grep="cherry picked from commit"` on recent
 commits), the amend target is the cherry-picked commit that last touched the
 failing files (`git log -- <file>` filtered to those SHAs), not necessarily the

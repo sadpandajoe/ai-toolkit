@@ -70,11 +70,26 @@ downstream `PASS` is a reason to keep working, not to publish.
 ## Review Exceptions
 
 A review gate may `PASS` without a reviewer only for a zero-logic diff
-(formatting, import order, whitespace) or a passing micro-fix of three lines or
-fewer; anything with logic gets one independent review. CORE impact disables
-the exception: a TRIVIAL diff on a CORE path (auth,
-payment, data integrity, the toolkit's routing or installer) is reviewed as
-STANDARD.
+(formatting, import order, whitespace) or a passing micro-fix: one changed
+file, ten changed lines or fewer by numstat (lockfiles and generated files left
+out of the count by name, never by a header the file carries), neither on a
+CORE path (auth, payment, data integrity; `CORE_PATHS` in
+`aitk/review_plan.py`, plus, in the toolkit repo, the `TOOLKIT_SENSITIVE` paths (routing manifest,
+agents, build, installer, deliver, review plan, hooks, plugin manifests); a rename counts at
+both ends, and a CORE path counts whatever the file's name or header says).
+`bin/aitk project-state gate --exception` enforces what it can measure: for a
+micro-fix, the size (one counted file, ten lines or fewer by numstat); for
+either exception, that the diff has at least one counted file (a lockfile- or
+generated-only diff has none) and touches no CORE path. That a
+diff is zero-logic is the caller's declaration; the gate does not read the
+change. Anything with logic gets one independent review. CORE impact disables
+the exception in `bin/aitk review plan`: a TRIVIAL diff on a CORE path is
+reviewed as STANDARD. CORE impact calls the second-family lane at 40 or more
+changed lines (counted as for the micro-fix: lockfiles and generated files
+excluded by name, never by a content header) or on a CORE path (or, in the toolkit repo, a toolkit-sensitive
+one), either end of a rename included and whether or not the file is a lockfile
+or generated; a smaller CORE diff elsewhere, such as a UI render change, gets
+the one independent review and the plan discloses it.
 
 ## Independent Judgment
 
@@ -111,6 +126,7 @@ verification`, and `bin/aitk project-state gate --format block` (with
 `--evidence`, `--next`, `--strength`) prints the others. A review `PASS`
 counts only with its evidence: `--result <model-run envelope>` for the
 reviewer lanes, or `--exception zero-logic|micro-fix` on a passing
-verification run. A `USER_DECISION` adds the adjudication package: the two or
+verification run (the gate measures micro-fix size and refuses a CORE diff
+or one with no counted file; zero-logic is the caller's declaration). A `USER_DECISION` adds the adjudication package: the two or
 three options, what each costs, the evidence that could not settle it, and a
 recommendation.

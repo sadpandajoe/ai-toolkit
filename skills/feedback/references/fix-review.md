@@ -16,20 +16,24 @@ review, posting, thread resolution, and the user-facing summary.
 
 Run `review-code` on changed files after substantive fixes; it emits the `## Gate: review` block from `rules/gates.md`.
 
-For truly minimal edits, such as typo fixes or mechanical renames, the review exception in `rules/gates.md` applies. State the reason.
+For truly minimal edits, such as typo fixes, a one-file micro-fix of ten changed lines or fewer, or a zero-logic formatting, import-order or whitespace change, the review exception in `rules/gates.md` applies. State the reason.
 
 ## Commit Strategy
 
-Prefer fixing the originating in-PR commit when the branch is not merged and the source commit is clear.
+A new commit on the current PR branch is the default for every fix, whatever its origin.
 
 New commits on the current PR branch and pushes are part of the default `address-feedback` flow — apply the recommended shape and push once verification is clean. Amend, rebase, and force-push still require explicit user authorization for this feedback round (the unattended default does not grant history mutation).
 
 | Scenario | Action |
 |----------|--------|
-| Fix corrects one prior in-PR commit | `git commit --fixup=<originating-sha>` then autosquash rebase |
-| Fix spans multiple originating commits | Fix up earliest affected commit, or ask user |
+| Fix corrects one prior in-PR commit | New commit |
+| Fix spans multiple originating commits | New commit |
 | Fix is additive beyond original scope | New commit |
-| Branch is shared or active re-review is underway | New commit; avoid rewriting history |
+| Branch is shared or active re-review is underway | New commit |
+
+### Opt-in: rewrite history
+
+Only when the user authorized a history rewrite for this round: `git commit --fixup=<sha>`, `git rebase --autosquash <base>`, `git push --force-with-lease`, on the current feature branch only.
 
 ```bash
 git commit --fixup=<originating-sha>

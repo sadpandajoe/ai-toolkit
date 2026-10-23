@@ -53,7 +53,9 @@ when this text is missed.
   a **draft** PR without asking; `--no-pr` stops at `pushed — awaiting PR
   request`. Never from `main`. Hook-enforced: no `--no-verify`, no
   `gh pr create` before review `PASS`, and no non-draft PR, ready, or merge
-  without the user's words (`AITK_PR_READY=1`). Amend, rebase, and force-push
+  without the user's words (`AITK_PR_READY=1` in the environment the session
+  started with, never typed into a command; `deliver` never opens a ready
+  PR). Amend, rebase, and force-push
   need explicit authorization (force-push or delete of `main` is
   hook-enforced); invoking `cherry-pick` or `watch-pr` grants their
   fast-forward pushes.

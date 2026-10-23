@@ -14,30 +14,171 @@ Blocked:
   earlier in the same command (`git add PROJECT.md && git commit`): the hook
   runs before the add, so the staged set is `git diff --cached` plus what those
   adds would stage;
-- `gh pr ready` and `gh pr merge`, unless the user set `AITK_PR_READY=1` (a
-  command prefix or the session env, set only when the user asked in words).
-  `SKIP_PR_GATE=1` does not lift them.
+- `gh pr ready` and `gh pr merge`, unless the user set `AITK_PR_READY=1` in the
+  environment the session started with (set only when the user asked in
+  words). `SKIP_PR_GATE=1` does not lift them;
+- a command that assigns or exports any toolkit override itself (a prefix, an
+  assignment-only segment, `env`, `export`/`declare`/`typeset`/`readonly`/
+  `local`, a literal `+=` append, inside `bash -c`, `eval`, `env -S`, a
+  substitution or a function body, behind a redirection, or after an `env`,
+  shell or `eval` word later in the argv), whatever it runs: overrides count
+  only from the session environment, so the hook never reads them from the
+  command.
 
 Every command the shell would run is checked: newline- and `;`-separated
 commands, and-lists and or-lists, subshells, `sh -c` and `eval` payloads,
 command substitutions, shell functions, and commands behind `env`, `sudo`,
 `command`, `timeout`, `nohup`, `xargs`, `nice`, `ionice`, `stdbuf` or `time`.
-A command that mentions git or gh and cannot be parsed blocks, and so does an
-internal error; the wrapper fails closed when python3 is missing.
+A command that mentions git or gh and cannot be parsed blocks; an internal
+error blocks a command that mentions git, gh or an override, and the wrapper
+fails closed on those when python3 is missing.
 
 Known limits (a tripwire, not a shell sandbox): a git alias defined in a file
 the hook cannot read, `gh api` calls, and programs that run git themselves are
-not seen.
+not seen. Substitution bodies are scanned wherever they are quoted, so a
+single-quoted `$(...)` that only prints text blocks like a live one.
+
+Override-assignment check: a tripwire, not a sandbox. It is the opt-in token
+scan of `shell_tokens.commands(..., include_assignments=True)` and nothing more:
+it reads the command the way the git checks do, through recognized wrappers,
+`builtin`/`command` prefixes, redirections, function bodies, a later `env`,
+shell or `eval` word, and `bash -c`, `eval`, `env -S` and substitution
+payloads. It blocks a literal truthy assignment, every `+=` append and a bare
+or valueless export of an override (`declare -p` only prints), and an
+`integer`/`float` declaration or any attribute beyond x/g/r/p (`-i`, `-n`, `-F`,
+`-E`, `-Z`, `-T`) that mentions an override, because those change the value the
+literal text shows. Text that only mentions an assignment is allowed: `echo
+NAME=1`, `git push # NAME=1`, `git log --grep=NAME=1`, a commit message or a
+`git grep` pattern that carries export wording and a name.
+
+What actually protects the gates is elsewhere: `bin/aitk deliver` cannot open a
+ready PR (it has no flag and reads no override), and `gh pr ready`/`gh pr merge`
+read `AITK_PR_READY` only from the session environment. This check keeps the
+agent from shopping for an override it cannot get.
+
+Known limits of the scan, each a real override it does not see:
+- brace expansion that builds a name (`env {NAME,X}=1 ...`);
+- arithmetic setters, which export under `set -a`: `(( NAME = 1 ))`,
+  `let NAME++`, `let NAME=1`, `((++NAME))` after a falsy export, an indexed
+  write (`NAME[0]=1`) and a `${NAME:=1}` expansion;
+- array-literal (`NAME=(1)`), process-substitution (`NAME=<(...)`) and
+  carriage-return values, which read as falsy or empty;
+- heredoc bodies, which the tokenizer skips, so a body piped to a shell is not
+  read (the same property keeps prose in a heredoc commit message allowed);
+- a name quoted with a locale string (`AITK_PR_$"READY"`);
+- a redirection operator erased with a quoted or numeric option value
+  (`env -u '>' NAME=1 ...`);
+- shell-specific grammar: a zsh anonymous function (`() { ...; }`), a function
+  named after a wrapper (`env() { ...; }`), `nocorrect`/`repeat N`/`coproc`
+  before a prefix, and a nameref set by a plain value
+  (`declare -n r; r=NAME; declare -x r=1`);
+- `read`, `printf -v` and `mapfile` (write targets, not assignments),
+  `source`/`.` and scripts run separately, dynamically built names (`${!v}`,
+  `eval "AITK_PR_$X=1"`), ANSI-C-quoted names (`$'\\x41ITK_PR_READY=1'`),
+  substitution-built assignments (`env $(printf '...') ...`), aliases (the body
+  is quoted text) and profile writes, which alter later shell startup rather
+  than this command.
+
+`tests/test_git_guard_hook.py` pins every case above in `OVERRIDE_SCAN_LIMITS`;
+a fix moves the case into the BLOCK list and out of this list. (Operator runs the shell
+lexer returns as one token, `;(`, `)&&`, `&&(`, `|(`, `f()(`, are split into their
+operators by `shell_tokens.tokenize`, so the subshell or function body after one is read;
+that case moved to `OVERRIDE_ASSIGNMENT_BLOCK`. A quoted word made only of operator
+characters is split too, an accepted over-block.)
+
+Time limit: a PreToolUse hook that runs past its `timeout` in hooks/hooks.json (30 s
+here) FAILS OPEN, the tool call runs. `main()` therefore parses under
+`DEADLINE_SECONDS` (`shell_tokens.deadline`, a SIGALRM timer that raises a
+BaseException no `except Exception` swallows): a command not finished in time blocks as
+too large or complex to check, whatever it mentions, since quoting can hide git from a
+text match. Heads are compared without case (`GIT`, `Gh`), and the fail-closed
+mention patterns and the wrapper's prefilter ignore case too.
+Over-blocks the scan accepts: `echo env NAME=1` (a later `env` word restarts
+the scan) and a single-quoted `$(NAME=1)` (substitution bodies are scanned
+wherever they are quoted).
+
+`gh pr ready` / `gh pr merge` traversal: the default traversal of
+`shell_tokens.commands` rescans from every later `gh`, `git`, shell, `env` or
+`eval` word (and from the string after a later `-c`) behind any head that is
+not `gh`, `git` or a command that only prints (`echo`, `printf`, `cat`, `grep`,
+...), so `setsid`, `uv run`, `flock`, `chronic`, `watch -n1`, `find -exec ...
+\\;`, `builtin command`, `su -c` and `eval -- '...'` payloads are seen, even
+when an earlier argument is itself named `gh` (`flock /tmp/gh gh pr merge 12`).
+Function-definition heads (`name() {`) are dropped (`echo() { gh pr ready 12; }; echo`).
+Text git itself runs is never resolved (block on sight): the words after `git
+rebase -x`/`--exec` (every spelling), `git bisect run`, `git submodule foreach` and
+`git for-each-repo` (the git command after its options), and the whole segment of a command that carries an inline alias (`git -c
+alias.NAME=...`, `-calias.NAME=...`, `--config-env=alias.NAME=VAR`, a
+`GIT_CONFIG_KEY_n=alias.NAME` assignment, a bare `alias.NAME=...` word in a segment
+with a `git` word, and `git config alias.NAME ...`; a bare `alias.NAME` word alone
+(`grep alias.x`, `git push origin alias.cleanup`) is no alias; with or without a
+wrapper in front), are only checked for a MENTION of a gated operation after the quote characters,
+backslashes and backticks are removed (`shell_tokens.mentions_gated`: `gh` followed
+later by `pr`, `git` followed later by `push`, a bare `push`, `pr ready`/`merge`/
+`create`/`new`). A mention makes the command unreadable and it blocks. No alias is
+looked up, so a builtin and an alias are not told apart. Plain `git rebase -x 'make
+test'`, `git bisect run ./t.sh`, `git submodule foreach 'echo $name'` and `git -c
+alias.st=status st` are not affected. Budget: the traversal charges the characters of
+every tail it rescans, every string a later `-c` word hands to a shell and every `$(...)`/backtick body
+it scans against `MAX_TAIL_CHARS` for the whole call (the first tokenize of the command
+and the walk of an `sh -c`, `eval` or `env -S` payload are not charged; nesting is bounded by `DEPTH_LIMIT`); a segment past it, and every later segment that
+would read more, is one unreadable command (`true sh sh ...` thousands of times, a few
+words around one 100 KB word, or `$(` thousands of times) and blocks whatever its text
+says, so a `gh pr merge 12` after the budget is spent blocks too. It accepts over-blocks
+on commands that only carry such a word after an unknown head (`ssh host gh pr merge
+12`), on any gated mention in a segment that also carries an inline alias or in the
+words git runs (a commit message that says `gh pr merge` next to `-c alias.x=...`, an
+alias that is never invoked, `git rebase -x 'echo push'`, a filename such as
+`./push.sh`), and on a quoted `()` followed by a quoted `{`, which reads as a function
+head (`echo '()' '{' gh pr ready 12`). Known limits, each a real `gh pr ready`/`merge`
+it does not see (pinned in `PR_PUBLISH_LIMITS`): `gh` reached through a variable
+(`g=gh; $g pr merge 12`), a quoted command string handed to a wrapper that runs it
+through a shell without `-c` (`watch 'gh pr ready 12'`, `tmux new-session '...'`), every
+git config value or tool option that runs a shell other than an inline alias (`git
+filter-branch` filters, `git -c core.pager=...`, `-c credential.helper='!...'`, `git
+difftool -x`, `sequence.editor`, `core.editor`, `diff.external`, `core.sshCommand` and
+`mergetool.<n>.cmd` are the same class), `GIT_CONFIG_*` or an alias value exported by an
+earlier command (the alias key and the text in different segments), an alias an earlier
+call or a file already holds (`git config alias.m '!gh pr merge'` blocks, but the later
+`git m 12` is an ordinary git command, as is a value routed through a variable), an
+alias value assigned in the environment of a shell whose payload names the key (`env
+A='!gh pr merge 12' sh -c 'git --config-env=alias.x=A x'`), and `GIT_DIR` on `gh`
+itself.
+
+Dashed git entry points are read as their subcommand wherever git is looked for
+(`git-push`, `$(git --exec-path)/git-rebase -x ...`, `git-submodule foreach`, `git
+submodule--helper foreach`), but only a name git installs (`shell_tokens.GIT_ENTRY_POINTS`)
+counts: any other `git-*` head (`./git-run`, `git-x`, `/opt/x/git-wrap`) is an ordinary
+executable and gets the wrapper rescan like `setsid`. A variable that holds an entry
+point is read the same way (`G=git-push; $G -f origin main`). Accepted over-blocks: a later
+argument word that names an entry point restarts the scan, so `chmod +x bin/git-push`
+and `make git-push` read as a push, and so does an executable named `./git-push`. The
+inline-alias `-c alias.x` word counts only among git's own global options, before its
+subcommand (`git -C d -c alias.x x` counts; `grep -c alias.x`, `git grep -c alias.x docs`
+and `git log -c alias.x push` do not; a `g -c alias.x x` wrapper is an accepted miss). A
+`-C` or `cd` target that holds `$`, a backtick, a glob character (`*?[`), a tab, a newline (or
+`~` for `-C`) leaves the working
+directory unknown (`None`) before any path arithmetic, so the review gate blocks `cd
+"$X" && gh pr create` with "cannot follow" (`cd "$(git rev-parse --show-toplevel)"`, exactly
+that text, is read as the git top level instead), and the global options that take a separate value
+(`--attr-source`, `--super-prefix`, `--namespace`, `-C`, `-c`, `--git-dir`,
+`--work-tree`, `--config-env`) do not hide the subcommand. The patterns that scan
+unresolved text are searched in order, once (`shell_tokens.words_in_order`), so a
+long text that does not match is read in linear time, and so is the scan of
+`$(...)`, backtick and `<(...)` bodies for a git commit or push (`has_unsafe_git_substitution`:
+one pass over the openers, a position index for the git words).
 """
 
 from __future__ import annotations
 
+import bisect
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+from typing import Iterator
 
 from aitk.hooks import shell_tokens
 from aitk.project_state import STATE_FILES
@@ -48,7 +189,10 @@ SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "while", "until", "for", "
 # Wrappers that run the rest of the line as a command, after their own options.
 RUNNING_WRAPPERS = {"timeout", "nohup", "xargs", "nice", "ionice", "stdbuf", "exec"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
-MENTIONS_GIT = re.compile(r"\bgit\b|\bgh\b")
+MENTIONS_GIT = re.compile(r"\bgit\b|\bgh\b", re.I)
+# The in-process time limit of `main()`. A hook past its timeout in hooks/hooks.json (30 s)
+# fails open, so the guard stops itself first and blocks what it could not finish reading.
+DEADLINE_SECONDS = 20.0
 GH_GLOBAL_VALUE_FLAGS = {"-R", "--repo", "--hostname"}
 PROTECTED_DIRECTORY = ".ai-toolkit"
 
@@ -68,7 +212,8 @@ def resolve_path(base: str, path: str) -> str:
 
 
 def is_git_executable(token: str) -> bool:
-    return token == "git" or ("/" in token and os.path.basename(token) == "git")
+    """`git` or a path to it, whatever the case (`GIT` runs git on a case-insensitive filesystem)."""
+    return token.lower() == "git" or ("/" in token and os.path.basename(token).lower() == "git")
 
 
 def config_pair(raw: str) -> tuple[str, str]:
@@ -184,15 +329,100 @@ def shell_var_name(token: str) -> str | None:
     return None
 
 
-def has_unsafe_git_substitution(command_text: str) -> bool:
-    substitution_pattern = r"`[^`]*`|\$\([^)]*\)|<\([^)]*\)"
-    git_pattern = r"\bgit(?:\s+|\$\{[^}]+\})[^)]*(commit|push)\b"
-    variable_git_pattern = r"[A-Za-z_][A-Za-z0-9_]*=git[^)]*\$[A-Za-z_][A-Za-z0-9_]*\s+(commit|push)\b"
-    for match in re.finditer(substitution_pattern, command_text):
-        body = match.group(0)
-        if re.search(git_pattern, body) or re.search(variable_git_pattern, body):
+SUBSTITUTION_START = re.compile(r"`|\$\(|<\(")
+GIT_WORD_START = re.compile(r"\bgit(?=[\s\-$])", re.I)
+COMMIT_OR_PUSH = re.compile(r"(?:commit|push)\b")
+VARIABLE_GIT_ASSIGNMENT = re.compile(r"=git", re.I)
+VARIABLE_GIT_ARGUMENT = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\s+(?:commit|push)\b")
+
+
+def substitution_bodies(text: str) -> Iterator[str]:
+    """Each `` `...` ``, `$(...)` and `<(...)` span, left to right and without overlap.
+
+    The spans `` `[^`]*`|\\$\\([^)]*\\)|<\\([^)]*\\) `` would find, in linear time: an opener
+    with no closer after it ends the search for that kind, where the pattern retries it
+    from every later opener across the rest of the text.
+    """
+    position = 0
+    closed = {"`": True, ")": True}
+    while True:
+        start = SUBSTITUTION_START.search(text, position)
+        if start is None:
+            return
+        closer = "`" if start.group(0) == "`" else ")"
+        end = text.find(closer, start.end()) if closed[closer] else -1
+        if end < 0:
+            closed[closer] = False
+            position = start.end()
+            continue
+        yield text[start.start() : end + 1]
+        position = end + 1
+
+
+def positions_of(pattern: re.Pattern[str], text: str) -> list[int]:
+    return [match.start() for match in pattern.finditer(text)]
+
+
+def first_from(positions: list[int], at: int) -> int | None:
+    """The first of the sorted `positions` that is `at` or later."""
+    index = bisect.bisect_left(positions, at)
+    return positions[index] if index < len(positions) else None
+
+
+def variable_name_before(text: str, end: int) -> bool:
+    """Whether `text` ends, before `end`, in an identifier: `[A-Za-z_][A-Za-z0-9_]*`."""
+    index = end
+    while index > 0 and text[index - 1].isascii() and (text[index - 1].isalnum() or text[index - 1] == "_"):
+        index -= 1
+        if text[index].isalpha() or text[index] == "_":
             return True
     return False
+
+
+def body_runs_git_commit_or_push(body: str) -> bool:
+    """`git commit`/`git push` (a dashed or `${...}` spelling too, or `NAME=git ... $VAR push`).
+
+    Equivalent to the patterns `\\bgit(?:\\s+|-|\\$\\{[^}]+\\})[^)]*(commit|push)\\b` and
+    `[A-Za-z_]\\w*=git[^)]*\\$[A-Za-z_]\\w*\\s+(commit|push)\\b`, in linear time: the word
+    positions are listed once and each `git` start looks up the next one by bisection, where
+    the patterns retry the tail from every `git` word across the whole body.
+    """
+    pushes = positions_of(COMMIT_OR_PUSH, body)
+    arguments = positions_of(VARIABLE_GIT_ARGUMENT, body)
+    if not pushes and not arguments:
+        return False
+    parentheses = positions_of(re.compile(r"\)"), body)
+    braces = positions_of(re.compile(r"\}"), body)
+
+    def reaches(after: int, targets: list[int]) -> bool:
+        # a target at or after `after` with no `)` between
+        target = first_from(targets, after)
+        if target is None:
+            return False
+        closing = first_from(parentheses, after)
+        return closing is None or closing >= target
+
+    if pushes:
+        for start in GIT_WORD_START.finditer(body):
+            after = start.end()
+            if body[after] == "$":
+                if body[after + 1 : after + 2] != "{":
+                    continue
+                close = first_from(braces, after + 2)
+                if close is None or close == after + 2:
+                    continue  # `${...}` needs a name and a closing brace
+                after = close
+            if reaches(after + 1, pushes):
+                return True
+    if arguments:
+        for assignment in VARIABLE_GIT_ASSIGNMENT.finditer(body):
+            if variable_name_before(body, assignment.start()) and reaches(assignment.end(), arguments):
+                return True
+    return False
+
+
+def has_unsafe_git_substitution(command_text: str) -> bool:
+    return any(body_runs_git_commit_or_push(body) for body in substitution_bodies(command_text))
 
 
 def segment_end_index(tokens: list[str], start: int) -> int:
@@ -422,13 +652,33 @@ def parse_git_actions(
             command_start = False
             i = segment_end
             continue
+        word = token
+        if command_start and shell_var_name(token) is not None:
+            word = shell_vars.get(shell_var_name(token) or "", token)  # `G=git-push; $G -f origin main`
+        dashed = shell_tokens.git_argv([word]) if command_start else None
+        if dashed and len(dashed) == 2:
+            # a dashed entry point (`git-push -f origin main`, a path ending in `/git-push`,
+            # or a variable that holds one) is `git push -f origin main`; any other
+            # `git-*` word is an ordinary executable. The action is built here, from its own
+            # segment: splicing the tokens, or keeping the rest of the line per action, would
+            # cost the whole remaining text every time.
+            action = new_action(current_workdir, inherited_alias_map, env_assignments)
+            action["subcommand"] = dashed[1]
+            action["index"] = i
+            action["args"] = tokens[i + 1 : segment_end_index(tokens, i + 1)]
+            actions.append(action)
+            command_start = False
+            i += 1
+            continue
         dynamic_git = None
         if command_start:
-            dynamic_git = re.fullmatch(r"git(?:\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*)(?:(commit|push))?", token)
+            dynamic_git = re.fullmatch(
+                r"git(?:\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*)(?:(commit|push))?", token, re.I
+            )
 
         if command_start and dynamic_git:
             subcommand = dynamic_git.group(1)
-            args = tokens[i + 1 :]
+            args = tokens[i + 1 : segment_end_index(tokens, i + 1)]
             if subcommand is None and args:
                 subcommand = args[0]
                 args = args[1:]
@@ -510,10 +760,10 @@ def parse_git_actions(
                 register_config(action, f"{key}={env_assignments.get(env_name, '<config-env>')}")
                 j += 1
                 continue
-            if opt in {"--namespace", "--exec-path"}:
+            if opt in {"--namespace", "--super-prefix", "--attr-source"}:  # `--exec-path` alone takes no value
                 j += 2
                 continue
-            if opt.startswith("--namespace=") or opt.startswith("--exec-path="):
+            if opt.startswith(("--namespace=", "--exec-path=", "--super-prefix=", "--attr-source=")):
                 j += 1
                 continue
             if opt.startswith("-"):
@@ -529,7 +779,7 @@ def parse_git_actions(
                     if alias_tokens and not shell_alias and not is_git_executable(alias_tokens[0]):
                         alias_tokens = ["git"] + alias_tokens
                     nested_actions = parse_git_actions(
-                        alias_tokens + tokens[j + 1 :],
+                        alias_tokens + tokens[j + 1 : segment_end_index(tokens, j + 1)],
                         action["workdir"],
                         depth + 1,
                         dict(exported_env),
@@ -545,7 +795,7 @@ def parse_git_actions(
 
             action["subcommand"] = opt
             action["index"] = j
-            action["args"] = tokens[j + 1 :]
+            action["args"] = tokens[j + 1 : segment_end_index(tokens, j + 1)]
             actions.append(action)
             break
 
@@ -782,11 +1032,83 @@ PR_PUBLISH_MESSAGE = (
     "authorizes that (rules/universal.md). Do not bypass this on your own: stop "
     "and ask the user, who alone can override it."
 )
+PR_PUBLISH_UNREADABLE = (
+    "this command could not be read in full (too much text to scan, or git is handed text "
+    "that mentions `gh pr` or a push: an inline alias, `rebase -x`, `bisect run`, "
+    "`submodule foreach`, `for-each-repo`), so the guard cannot tell whether it runs `gh pr ready` or "
+    "`gh pr merge`, which need the user's explicit request in words (rules/universal.md). "
+    "Split it into plain commands. Do not bypass this on your own: stop and ask the user, "
+    "who alone can override it."
+)
 PR_PUBLISH_EFFECT = {
     "ready": "takes a draft pull request out of draft",
     "merge": "merges a pull request",
 }
-UNRESOLVED_PR_PUBLISH = re.compile(r"\bgh\b.*\bpr\b.*\b(ready|merge)\b", re.S)
+# `gh`, then `pr`, then `ready` or `merge`, each searched after the one before it: linear in the text
+UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge)\b"))
+
+
+OVERRIDE_VARIABLES = ("AITK_PR_READY", "SKIP_PR_GATE", "SKIP_PRECHECK")
+EXPORTING_BUILTINS = {"export", "declare", "typeset", "readonly", "local", "integer", "float"}
+# The fallback for command text that did not tokenize or nested too deep: a
+# literal assignment or append, or an export-family builtin (also behind
+# `builtin` or `command`) that mentions an override before the next separator.
+# The builtin and the mention are searched in order within each separated command
+# (`unresolved_sets_override`), never as one `builtin.*name` pattern, which
+# backtracks across the whole text from every builtin word.
+OVERRIDE_ASSIGNMENT = re.compile(r"\b(?:AITK_PR_READY|SKIP_PR_GATE|SKIP_PRECHECK)\+?=")
+EXPORTING_BUILTIN = re.compile(r"\b(?:export|declare|typeset|readonly|local|integer|float)\b")
+OVERRIDE_MENTION = re.compile(r"\b(?:AITK_PR_READY|SKIP_PR_GATE|SKIP_PRECHECK)\b")
+COMMAND_SEPARATOR = re.compile(r"[;&|\n]")
+# The message names no variable: hook output never spells an override out.
+OVERRIDE_MESSAGE = (
+    "BLOCKED: this command sets a toolkit override variable in its own environment. "
+    "Overrides count only from the environment the session started with; the user "
+    "sets one before launching the session. Stop and ask the user; do not work "
+    "around the hook."
+)
+
+
+def unresolved_sets_override(text: str) -> bool:
+    """The text-only form of `sets_override`, for a command that did not parse."""
+    if OVERRIDE_ASSIGNMENT.search(text):
+        return True
+    return any(
+        shell_tokens.words_in_order(command, EXPORTING_BUILTIN, OVERRIDE_MENTION) is not None
+        for command in COMMAND_SEPARATOR.split(text)
+    )
+
+
+def sets_override(found: shell_tokens.Command) -> bool:
+    """Whether one parsed command assigns, appends to or exports an override."""
+    for key, value in found.assignments.items():
+        if key.endswith("+"):
+            if key[:-1] in OVERRIDE_VARIABLES:
+                return True  # an append: the resulting value is unknown
+        elif key in OVERRIDE_VARIABLES and shell_tokens.truthy(value):
+            return True
+    if found.name in EXPORTING_BUILTINS:
+        flags = "".join(arg[1:] for arg in found.argv[1:] if arg[:1] in "-+" and "=" not in arg)
+        if (found.name in {"integer", "float"} or any(c.isalpha() and c not in "xgrp" for c in flags)) and (
+            OVERRIDE_MENTION.search(" ".join(found.argv[1:]))
+        ):
+            return True  # value-changing attributes make the literal unreliable
+        printing = found.name in {"declare", "typeset"} and "p" in flags
+        for arg in found.argv[1:]:
+            name, sep, value = arg.partition("=")
+            if sep and name.endswith("+"):
+                if name[:-1] in OVERRIDE_VARIABLES:
+                    return True
+            elif name in OVERRIDE_VARIABLES and ((not sep and not printing) or shell_tokens.truthy(value)):
+                return True  # a bare name exports a value the hook cannot see
+    return found.unresolved and unresolved_sets_override(found.text)
+
+
+def check_override_assignment(command: str, cwd: str) -> None:
+    """Overrides count only from the session environment, never from the command."""
+    for found in shell_tokens.commands(command, cwd, include_assignments=True):
+        if sets_override(found):
+            raise Blocked(OVERRIDE_MESSAGE)
 
 
 def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
@@ -794,12 +1116,17 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
     if shell_tokens.truthy(environ.get("AITK_PR_READY")):
         return
     for found in shell_tokens.commands(command, cwd):
+        if found.unreadable:
+            # the work budget is spent, or git is handed text that mentions a gated
+            # operation: the text cannot show what runs, so a contiguous `gh` in it
+            # proves nothing either way
+            raise block(PR_PUBLISH_UNREADABLE)
         if found.unresolved:
-            match = UNRESOLVED_PR_PUBLISH.search(found.text)
-            if match and not shell_tokens.truthy(found.assignments.get("AITK_PR_READY")):
+            match = shell_tokens.words_in_order(found.text, *UNRESOLVED_PR_PUBLISH)
+            if match:
                 raise block(PR_PUBLISH_MESSAGE.format(verb=match.group(1), effect=PR_PUBLISH_EFFECT[match.group(1)]))
             continue
-        if found.name != "gh":
+        if not found.is_gh:
             continue
         args = found.argv[1:]
         if {"-h", "--help"} & set(args):
@@ -809,8 +1136,6 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
             continue
         if words[1] == "ready" and "--undo" in args:
             continue  # converting back to a draft publishes nothing
-        if shell_tokens.truthy(found.assignments.get("AITK_PR_READY")):
-            continue
         raise block(PR_PUBLISH_MESSAGE.format(verb=words[1], effect=PR_PUBLISH_EFFECT[words[1]]))
 
 
@@ -818,6 +1143,7 @@ def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
     """Raise Blocked when `command`, run in `cwd`, breaks a guarded rule."""
     if not command or not cwd:
         return
+    check_override_assignment(command, cwd)
     try:
         tokens = shell_tokens.tokenize(command)
     except ValueError as error:
@@ -863,12 +1189,24 @@ def main() -> int:
         cwd = payload.get("cwd") or ""
         if not isinstance(command, str) or not isinstance(cwd, str):
             return 0
-        evaluate(command, cwd, dict(os.environ))
+        with shell_tokens.deadline(DEADLINE_SECONDS):
+            evaluate(command, cwd, dict(os.environ))
     except Blocked as blocked:
         print(str(blocked), file=sys.stderr)
         return 2
-    except Exception as error:  # noqa: BLE001 - an internal error blocks git and gh
-        if MENTIONS_GIT.search(command if isinstance(command, str) else raw):
+    except shell_tokens.DeadlineExceeded:
+        # A hook past its timeout fails open, so a command the guard could not finish
+        # reading blocks: its raw text can hide git behind quotes (`g'i't`) a mention
+        # match cannot see, and no ordinary command takes this long to read.
+        print(
+            "BLOCKED: this command is too large or complex for the git guard to check in "
+            "time. Run it as a simpler command; do not work around the hook.",
+            file=sys.stderr,
+        )
+        return 2
+    except Exception as error:  # noqa: BLE001 - an internal error blocks git, gh and overrides
+        text = command if isinstance(command, str) else raw
+        if MENTIONS_GIT.search(text) or OVERRIDE_MENTION.search(text):
             print(
                 f"BLOCKED: the git guard hook failed ({type(error).__name__}: {error}). "
                 "Stop and ask the user; do not work around the hook.",

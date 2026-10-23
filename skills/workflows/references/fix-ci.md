@@ -52,7 +52,8 @@ fix-ci <target> --no-pr          # commit and push only; skip the draft PR
    and for `WEAK` unless `--gate-strict`; a push after a locally failed check
    never is.
 7. **Review** changed repo-tracked files through `review-code`; the review
-   exception in `rules/gates.md` covers zero-logic and micro fixes. Record the
+   exception in `rules/gates.md` covers zero-logic and micro fixes off any CORE
+   path (`gate --exception` checks the numstat). Record the
    outcome with `bin/aitk project-state gate --gate review --result
    <envelope>` (`--exception zero-logic|micro-fix` for an exception) and paste
    the block it prints.
