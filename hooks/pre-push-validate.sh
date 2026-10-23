@@ -417,9 +417,30 @@ WARNINGS=""
 run_precommit() {
     cd "$REPO_ROOT" || return 99
     [[ -f .pre-commit-config.yaml ]] || return 99
-    if ! command -v pre-commit >/dev/null 2>&1; then
+    # Hooks must see the repo's own toolchain: pre-commit puts the bin dir of
+    # the Python it runs under first on PATH, so a pyenv-level `pre-commit`
+    # shadows the repo venv's pylint/mypy with another interpreter. Prefer the
+    # repo venv's bin dir when it holds its own pre-commit.
+    local venv_bin=""
+    for venv_bin in "$REPO_ROOT/.venv/bin" "$REPO_ROOT/venv/bin"; do
+        [[ -x "$venv_bin/pre-commit" ]] && break
+        venv_bin=""
+    done
+    if [[ -z $venv_bin ]] && ! command -v pre-commit >/dev/null 2>&1; then
         WARNINGS+=$'\n  - pre-commit config present but `pre-commit` not installed; install it so push-time lint matches CI.'
         return 99
+    fi
+    [[ -n $venv_bin ]] && local -x PATH="$venv_bin:$PATH"
+    # Base-relative hooks (pylint) diff against the branch being pushed to
+    # rather than master, so a release branch is not linted for its whole
+    # divergence from master. A caller's GITHUB_BASE_REF wins. The tracked
+    # branch comes from git's config, not from UPSTREAM, whose remote and
+    # branch names may both contain slashes.
+    if [[ -z ${GITHUB_BASE_REF:-} && -n $UPSTREAM ]]; then
+        local branch merge
+        branch=$(git symbolic-ref -q --short HEAD) &&
+            merge=$(git config --get "branch.$branch.merge") &&
+            local -x GITHUB_BASE_REF="${merge#refs/heads/}"
     fi
     # `--files` makes pre-commit operate on these files regardless of stage
     # gating. Each hook's own `files:` regex filters down further, so hooks
