@@ -50,7 +50,7 @@ TRIVIAL / STANDARD / COMPLEX · size S/M/L/XL · flags: <deep lenses or none>
 | Lane | Family | Raised | Accepted | Notes |
 |------|--------|--------|----------|-------|
 | independent | <provider/family> | N | N | always |
-| second-family | <provider/family> | N | N | COMPLEX or CORE |
+| second-family | <provider/family> | N | N | COMPLEX; CORE at 40+ lines or on a CORE path |
 | deep lens: <name> | <provider/family> | N | N | on flag |
 | verify-major | <provider/family> | N | N | CONFIRMED / REFUTED |
 

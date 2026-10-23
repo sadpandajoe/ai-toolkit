@@ -1292,7 +1292,9 @@ def review_exception(path: Path, kind: str, cwd: Path) -> dict[str, object]:
     """Evidence for a review exception (rules/gates.md, Review Exceptions).
 
     A zero-logic or micro-fix diff may pass review without a reviewer only on
-    a passing verification run recorded in this phase on the current tree.
+    a passing verification run recorded in this phase on the current tree. The
+    diff rule itself (`exception_refusal`) is applied by the CLI before this
+    record is written.
     """
     if kind not in REVIEW_EXCEPTIONS:
         raise ProjectStateError(f"review exception must be one of {', '.join(REVIEW_EXCEPTIONS)}")

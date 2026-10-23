@@ -2,6 +2,64 @@
 
 ## Unreleased
 
+- A pre-push check that runs past its budget now warns and the push proceeds;
+  a real lint or test failure still blocks. Each check runs in its own process
+  group with stdin closed, and the group (descendants included) is ended when
+  the check ends. Only a check the watchdog itself stopped after its deadline,
+  or that exited 0 after the watchdog's TERM, counts as overdue; any other
+  exit status or signal, and a pre-commit run that already printed a failed
+  hook, blocks. Check output is replayed when the check ends.
+- The git guard, the review gate and the pre-push hook read commands through
+  one shared tokenizer (`aitk/hooks/shell_tokens.py`). It follows every
+  command the shell would run: separators and fused operator runs (`;(`,
+  `)&&`), subshells, `sh -c` and `eval` payloads, command substitutions,
+  function bodies, wrappers (`env`, `sudo`, `timeout`, `xargs`, `flock`, `uv
+  run`, `find -exec`, ...), dashed entry points (`git-push`), git and gh in
+  any letter case, and `git -C` and `cd` directories. Text that git itself
+  runs (an inline alias, `rebase -x`, `bisect run`, `submodule foreach`,
+  `for-each-repo`) is not resolved: when it mentions a push or a gated PR
+  operation, the command blocks as unreadable. A push or PR creation whose
+  directory the hook cannot read literally (a variable, `--git-dir`, a glob)
+  blocks instead of being checked against the wrong repository; `cd
+  "$(git rev-parse --show-toplevel)"` is followed. Each hook stops itself
+  before its Claude Code timeout, because a PreToolUse hook that times out
+  does not block the tool call: the git guard and the review gate then
+  block, and the pre-push hook reads the command as unreadable. The scan is a tripwire, not a
+  sandbox; its known limits and accepted over-blocks are listed in the
+  `git_guard`, `review_gate` and `shell_tokens` module docstrings.
+- `bin/aitk review plan` calls the second-family lane on CORE impact only at
+  40 or more changed lines or on a CORE path: auth, payment or data integrity,
+  and in the toolkit repo also its `TOOLKIT_SENSITIVE` paths (routing manifest,
+  agents, build, installer, deliver, review plan, hooks, plugin manifests).
+  Either end of a rename counts, lockfiles and generated files included. The
+  line count leaves out lockfiles and generated files by name only, never by
+  a content header the diff author writes. The
+  plan discloses when a smaller CORE diff runs without the lane. PR plans read
+  the paginated REST file list, so a rename's origin reaches the CORE check.
+  Toolkit identity also counts committed HEAD or base evidence (or the PR's
+  base commit), so deleting a sentinel file in the diff cannot turn it off.
+- `bin/aitk project-state gate --exception` enforces what it can measure: a
+  micro-fix must be one counted file of ten changed lines or fewer by numstat
+  (lockfiles and generated files excluded by name), and either exception is
+  refused on a CORE path (either end of a rename, whatever the file's name or
+  header says), on a diff with no counted file, and in a repository with no
+  base to measure against. Zero-logic is the caller's declaration; the gate
+  does not read the change. `review plan` reports `exception_available` from
+  the same rule and reviews a TRIVIAL diff on a CORE path as STANDARD.
+- `AITK_PR_READY`, `SKIP_PR_GATE` and `SKIP_PRECHECK` count only from the
+  environment the session started with, and `no` and `off` are off everywhere
+  (the git guard, the review gate and the pre-push hook share one rule). The
+  git guard blocks a command that assigns, appends to or exports one, and it
+  fails closed on override names, including without Python; the review gate
+  and pre-push hook no longer read a command-prefix override.
+- `bin/aitk deliver` can never open a ready PR: `--ready` and its
+  `AITK_PR_READY` read are gone, and it always runs `gh pr create --draft`.
+  Taking a PR out of draft is the user running `gh pr ready` with
+  `AITK_PR_READY=1` set in the session environment, which the git guard
+  already enforces. A pre-existing non-draft PR is still reused as it is.
+- `fix-review` now makes a new commit on the current PR branch for every fix
+  by default; fixup, autosquash and force-push are an opt-in history rewrite,
+  used only when the user authorizes it for the round.
 - `bin/aitk model-run --experiment reviewer-runs-test --test-command <cmd>`
   lets the independent reviewer run one test from an allowlist given on the
   command line, in a disposable copy of its worktree, for the D11

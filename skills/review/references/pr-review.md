@@ -49,7 +49,7 @@ the route runner.
 
 <!-- aitk-model-route:review.pr-second-family -->
 Launch one more fresh reviewer worker on `review` (`deep-review` under
-`--deep`) for the plan's `second-family` lane (COMPLEX or CORE impact), on the
+`--deep`) for the plan's `second-family` lane (COMPLEX, or CORE impact at 40 or more changed lines or on an auth, payment or data-integrity path; in the toolkit repo, toolkit-sensitive paths too), on the
 provider the independent lane did not use, through `bin/aitk model-run`. It
 spends the other family's quota, which is why STANDARD PRs stay at one lane.
 

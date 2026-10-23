@@ -25,7 +25,8 @@ project-state init --workflow review-code --complexity <classified> --size
 (`init` refuses a different workflow without `--replace`). This is
 also the standalone entry for a change that fits no other workflow, such as a
 chore, when the user asks for a PR: the classifier decides between the review
-exception (zero-logic or micro-fix diffs) and the independent lane, and the
+exception (zero-logic or micro-fix diffs off any CORE path; `gate --exception`
+checks the numstat) and the independent lane, and the
 recorded gate is what lets `create-pr` proceed.
 
 Follow [skills/review/references/local-review.md](../../review/references/local-review.md)

@@ -23,10 +23,12 @@ Authorization mode: `invocation`. Invoking `create-pr` authorizes pushing the
 current feature branch and opening one draft PR for it through `bin/aitk
 deliver`; unrelated branches, history rewrites, and text the PII scrub
 rewrote stay outside that grant. Marking a PR ready for review, requesting
-reviewers, and merging need the user's own words. A non-draft PR needs them
-too, and then runs `AITK_PR_READY=1 bin/aitk deliver --ready …`. Never run `gh
-pr ready` or `gh pr edit` on an existing PR; reuse a draft or ready PR as it
-is.
+reviewers, and merging need the user's own words, and the user does them:
+`bin/aitk deliver` always opens a draft and has no ready flag, and the git
+guard lets `gh pr ready` and `gh pr merge` through only when the user set
+`AITK_PR_READY=1` in the environment the session started with (a variable typed
+into a command does not count). Never run `gh pr ready` or `gh pr edit` on an
+existing PR; reuse a draft or ready PR as it is.
 
 ## Steps
 

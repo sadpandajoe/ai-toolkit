@@ -50,7 +50,9 @@ from .review_plan import (
     default_metrics_file,
     evaluate as evaluate_lane_yield,
     excluded_reason,
+    exception_refusal,
     families as routing_families,
+    is_toolkit_pr,
     is_toolkit_repository,
     load_events,
     local_changes,
@@ -59,6 +61,7 @@ from .review_plan import (
     phase_base,
     plan as plan_review,
     pr_changes,
+    pr_metadata,
     provider_reachable,
     read_envelopes,
     record_demotions,
@@ -365,6 +368,26 @@ def _snapshot_or_none(path: Path) -> dict[str, object] | None:
         return None
 
 
+def _enforce_exception_diff(path: Path, kind: str) -> None:
+    """Refuse a review exception the diff does not earn (rules/gates.md, numstat).
+
+    Measures the same span `review plan` and `deliver` see; there is no `--base`,
+    because a caller-chosen base could shrink the measured diff.
+    """
+    repo = git_toplevel(Path.cwd())
+    if repo is None:
+        raise ProjectStateError("a review exception needs a git repository to measure the diff")
+    base = phase_base(_snapshot_or_none(path)) or review_branch_base(repo)
+    if base is None:
+        raise ProjectStateError(
+            "no base to measure the diff against (no last-phase tree, remote default branch or main/master found)"
+        )
+    files = local_changes(repo, base)
+    refusal = exception_refusal(kind, files, toolkit=is_toolkit_repository(repo, base, files=files))
+    if refusal:
+        raise ProjectStateError(f"review exception refused: {refusal}")
+
+
 def _project_state(arguments: argparse.Namespace) -> int:
     path = state_file(arguments.file)
     try:
@@ -420,6 +443,7 @@ def _project_state(arguments: argparse.Namespace) -> int:
                     if arguments.status != "PASS":
                         raise ProjectStateError("a review exception is a PASS")
                     review = review_exception(path, arguments.exception, Path.cwd())
+                    _enforce_exception_diff(path, arguments.exception)
                 else:
                     review = review_from_envelopes(_read_envelopes(arguments.result))
             result = record_gate(
@@ -440,7 +464,7 @@ def _project_state(arguments: argparse.Namespace) -> int:
             result = record_operation(path, arguments.id)
         else:
             result = update_phase(path, arguments.name, arguments.status, arguments.sha)
-    except (ProjectStateError, OSError, json.JSONDecodeError) as error:
+    except (ProjectStateError, ReviewPlanError, OSError, json.JSONDecodeError) as error:
         print(f"aitk project-state: {error}", file=sys.stderr)
         return 1
     block_format = getattr(arguments, "format", "line") == "block"
@@ -491,7 +515,6 @@ def _deliver(arguments: argparse.Namespace) -> int:
             message=arguments.message,
             base=arguments.base,
             no_pr=arguments.no_pr,
-            ready=arguments.ready,
         )
     )
     if arguments.json:
@@ -744,7 +767,9 @@ def _review_plan(arguments: argparse.Namespace, root: Path) -> int:
     if arguments.kind == "pr":
         if not arguments.pr:
             raise ReviewPlanError("--kind pr needs --pr <number|url|branch>")
-        files, title, base_branch = pr_changes(cwd, arguments.pr)
+        metadata = pr_metadata(cwd, arguments.pr)
+        files, title, base_branch = pr_changes(cwd, arguments.pr, metadata=metadata)
+        toolkit = is_toolkit_pr(cwd, metadata, files=files)
         titles = (arguments.title or title,)
         base = branch = base_branch
         extra["pr"] = arguments.pr
@@ -760,6 +785,7 @@ def _review_plan(arguments: argparse.Namespace, root: Path) -> int:
         if base is None:
             raise ReviewPlanError("no base: pass --base <rev> (no remote default branch or main/master found)")
         files = local_changes(repo, base)
+        toolkit = is_toolkit_repository(repo, base, files=files)
         complexity = arguments.complexity or (snapshot or {}).get("complexity")
         if complexity is None:
             raise ReviewPlanError("no complexity: pass --complexity or record the Complexity Gate first")
@@ -783,7 +809,7 @@ def _review_plan(arguments: argparse.Namespace, root: Path) -> int:
         security_sensitive=arguments.security_sensitive,
         architecture=arguments.architecture,
         refactor=arguments.refactor,
-        toolkit=is_toolkit_repository(repo),
+        toolkit=toolkit,
         deep=arguments.deep,
         adversarial=arguments.adversarial,
         reachable=_reachable(root, arguments),
@@ -1136,11 +1162,6 @@ def parser() -> argparse.ArgumentParser:
     delivery.add_argument("--message", help="commit message for uncommitted changes")
     delivery.add_argument("--base", help="base branch (default: the repository's default branch)")
     delivery.add_argument("--no-pr", action="store_true", help="stop after the push")
-    delivery.add_argument(
-        "--ready",
-        action="store_true",
-        help="open a non-draft PR; only when the user asked for one in words (needs AITK_PR_READY=1)",
-    )
     delivery.add_argument("--file", help="PROJECT.md path (default: ./PROJECT.md, else the one at the git root)")
     delivery.add_argument("--json", action="store_true")
     delivery.set_defaults(handler=_deliver)

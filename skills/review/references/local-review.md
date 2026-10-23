@@ -27,8 +27,9 @@ then the repo's quick preflight (build, lint, typecheck, tests on changed
 files). Run `bin/aitk review plan --parent <your provider> --impact <impact>`
 with the semantic flags and launch what it prints: lanes, providers, the
 verifier family, the delta rule, yield demotions, or `BLOCKED (degraded)`. A
-TRIVIAL zero-logic or micro-fix diff may take the review exception in
-`rules/gates.md`. BATCHED work reviews the transformation: wave one gets the
+TRIVIAL zero-logic or micro-fix (one file, ten lines or fewer) diff off any
+CORE path may take the review exception in `rules/gates.md`; `gate --exception`
+checks the numstat. BATCHED work reviews the transformation: wave one gets the
 full review, later identical waves record `Review: wave N verification-only`,
 and a deviating wave gets its own lane.
 

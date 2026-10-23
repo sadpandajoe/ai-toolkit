@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -758,6 +759,7 @@ class EvidenceRecordTests(unittest.TestCase):
                         "--result", str(envelope_path))
         self.assertEqual(1, misplaced.returncode)
         self.assertIn("use --gate review", misplaced.stderr)
+        (self.repo / "app.py").write_text("print('one')\nprint('two')\n")
         refused = run("project-state", "gate", "--gate", "review", "--status", "PASS", "--exception", "micro-fix")
         self.assertEqual(1, refused.returncode)
         self.assertIn("passing verification run", refused.stderr)
@@ -770,9 +772,80 @@ class EvidenceRecordTests(unittest.TestCase):
         self.assertEqual(0, allowed.returncode, allowed.stderr)
         record = json.loads(allowed.stdout)["snapshot"]["gates"]["review"]["review"]
         self.assertEqual("micro-fix", record["exception"])
+        self.assertEqual({"exception", "tree", "time"}, set(record))
+        (self.repo / "app.py").write_text("print('one')\n" + "".join(f"print({n})\n" for n in range(12)))
+        self.assertEqual(0, run("verify", "--run", "true").returncode)
+        large = run("project-state", "gate", "--gate", "review", "--status", "PASS", "--exception", "micro-fix")
+        self.assertEqual(1, large.returncode)
+        self.assertIn("review exception refused", large.stderr)
+        self.assertIn("at most 10 changed lines", large.stderr)
+        zero = run("project-state", "gate", "--gate", "review", "--status", "PASS", "--exception", "zero-logic")
+        self.assertEqual(0, zero.returncode, zero.stderr)
+        (self.repo / "app").mkdir()
+        (self.repo / "app/auth.py").write_text("x = 1\n")
+        self.assertEqual(0, run("verify", "--run", "true").returncode)
+        core = run("project-state", "gate", "--gate", "review", "--status", "PASS", "--exception", "zero-logic")
+        self.assertEqual(1, core.returncode)
+        self.assertIn("CORE path", core.stderr)
         failed = run("verify", "--run", "exit 4", "--json")
         self.assertEqual(1, failed.returncode)
         self.assertEqual(4, json.loads(failed.stdout)["run"]["exit_code"])
+
+    def test_cli_refuses_exceptions_after_toolkit_sentinel_changes(self) -> None:
+        manifest = "interfaces/model-routing.json"
+        aitk = [sys.executable, "-m", "aitk.cli", "--root", str(ROOT)]
+        environment = {"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"}
+
+        def seeded(name: str) -> Path:
+            repo = make_repo(self.base, name)
+            (repo / "interfaces").mkdir()
+            (repo / manifest).write_text('{"routes": []}\n' * 20)
+            (repo / "aitk").mkdir()
+            (repo / "aitk/__init__.py").write_text("")
+            git(repo, "add", "-A")
+            git(repo, "commit", "-q", "-m", "toolkit")
+            initialize(repo / "PROJECT.md", "fix-bug", "STANDARD", "S")
+            return repo
+
+        def run(repo: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run([*aitk, *arguments], cwd=repo, text=True, capture_output=True,
+                                  check=False, env=environment)
+
+        for scenario in ("rename", "deletion"):
+            repo = seeded(scenario)
+            if scenario == "rename":
+                (repo / "build").mkdir()
+                git(repo, "mv", manifest, "build/model-routing.json")
+            else:
+                git(repo, "rm", "-q", manifest)
+            # Neither working-tree sentinel remains: identity rests on the commit and the endpoint.
+            shutil.rmtree(repo / "aitk")
+            self.assertFalse((repo / manifest).exists())
+            verified = run(repo, "verify", "--run", "true")
+            self.assertEqual(0, verified.returncode, verified.stderr)
+            for kind in ("micro-fix", "zero-logic"):
+                with self.subTest(scenario=scenario, kind=kind):
+                    refused = run(repo, "project-state", "gate", "--gate", "review", "--status", "PASS",
+                                  "--exception", kind)
+                    self.assertEqual(1, refused.returncode, refused.stdout)
+                    self.assertIn(f"CORE path ({manifest})", refused.stderr)
+
+    def test_cli_refuses_an_exception_without_a_base_to_measure(self) -> None:
+        bare = self.base / "no-commits"
+        bare.mkdir()
+        git(bare, "init", "-q", "-b", "main")
+        environment = {"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"}
+        initialize(bare / "PROJECT.md", "fix-bug", "STANDARD", "S")
+        aitk = [sys.executable, "-m", "aitk.cli", "--root", str(ROOT)]
+        run = subprocess.run([*aitk, "verify", "--run", "true"], cwd=bare, text=True, capture_output=True,
+                             check=False, env=environment)
+        self.assertEqual(0, run.returncode, run.stderr)
+        refused = subprocess.run(
+            [*aitk, "project-state", "gate", "--gate", "review", "--status", "PASS", "--exception", "zero-logic"],
+            cwd=bare, text=True, capture_output=True, check=False, env=environment,
+        )
+        self.assertEqual(1, refused.returncode)
+        self.assertIn("no base to measure the diff against", refused.stderr)
 
     def test_format_block_prints_the_complexity_and_gate_blocks(self) -> None:
         from aitk.project_state import complexity_block, gate_block

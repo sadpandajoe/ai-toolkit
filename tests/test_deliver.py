@@ -10,6 +10,7 @@ block tests run the same scenarios against `aitk/deliver.py`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from pathlib import Path
@@ -307,17 +308,22 @@ class RefusalTests(DeliverTestCase):
         git(self.fixture.work, "checkout", "-q", "--detach")
         self.refuse("detached HEAD")
 
-    def test_ready_needs_the_users_override_and_still_needs_review(self) -> None:
-        self.fixture.change()
-        self.fixture.verify()
+    def test_deliver_has_no_ready_path(self) -> None:
+        # Only the user, with `gh pr ready` under the session-environment hook, takes a
+        # PR out of draft; deliver offers no flag for it, whatever the environment holds.
+        self.fixture.ready()
         head, remote = git(self.fixture.work, "rev-parse", "HEAD"), self.fixture.remote_refs()
-        refused = deliver(self.fixture.options(ready=True))
-        self.assertEqual("refused", refused.status)
-        self.assertIn("explicit request in words", refused.reason)
-        unreviewed = deliver(self.fixture.options(ready=True, env={**self.fixture.env, "AITK_PR_READY": "1"}))
-        self.assertEqual("refused", unreviewed.status)
-        self.assertIn("review=unrecorded", unreviewed.reason)
-        self.assert_untouched(head, remote)
+        self.assertNotIn("ready", {field.name for field in dataclasses.fields(DeliverOptions)})
+        with self.assertRaises(TypeError):
+            self.fixture.options(ready=True)
+        for env in ({}, {"AITK_PR_READY": "1"}):
+            refused = self.fixture.cli(
+                "--workflow", "create-feature", "--title", "Add x", "--body-file", str(self.fixture.body),
+                "--ready", **env,
+            )
+            self.assertEqual(2, refused.returncode, refused.stdout + refused.stderr)
+            self.assertIn("unrecognized arguments: --ready", refused.stderr)
+            self.assert_untouched(head, remote)
 
 
 class DeliveryTests(DeliverTestCase):
@@ -384,14 +390,14 @@ class DeliveryTests(DeliverTestCase):
         self.assertEqual(commits, git(self.fixture.work, "rev-list", "--count", "HEAD"))
         self.assertEqual(1, len(self.fixture.pulls()))
 
-    def test_ready_opens_a_non_draft_pr_with_the_override(self) -> None:
+    def test_the_users_ready_override_in_the_environment_still_opens_a_draft(self) -> None:
         self.fixture.ready()
-        result = deliver(self.fixture.options(ready=True, env={**self.fixture.env, "AITK_PR_READY": "1"}))
+        result = deliver(self.fixture.options(env={**self.fixture.env, "AITK_PR_READY": "1"}))
         self.assertEqual("delivered", result.status, result.reason)
         create = next(call for call in self.fixture.calls() if call[:2] == ["pr", "create"])
-        self.assertNotIn("--draft", create)
-        self.assertFalse(result.pr["draft"])
-        self.assertIn("Draft: no", self.fixture.project.read_text())
+        self.assertIn("--draft", create)
+        self.assertTrue(result.pr["draft"])
+        self.assertIn("Draft: yes", self.fixture.project.read_text())
 
     def test_no_pr_stops_after_the_push(self) -> None:
         self.fixture.ready()

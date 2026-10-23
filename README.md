@@ -60,8 +60,8 @@ downgraded. See `rules/model-assignment.md`.
 Quota: every subagent spends the limit of the provider it runs on. The
 independent review lane and the deep lenses run on Codex (Sol, then Astra for
 the deep routes) from a Claude parent and spend no Claude quota; the Fable
-planner on COMPLEX work, the Opus second-family review lane on COMPLEX or CORE
-diffs, and the Fable second vote do. Routed workers need Codex CLI 0.159.3 or newer and Claude Code 2.1.284
+planner on COMPLEX work, the Opus second-family review lane on COMPLEX diffs and on CORE diffs of 40 or more lines or on an auth, payment or data-integrity path (in the toolkit repo, its toolkit-sensitive paths too),
+and the Fable second vote do. Routed workers need Codex CLI 0.159.3 or newer and Claude Code 2.1.284
 or newer (`minimum_cli` in `interfaces/model-routing.json`). Use the toolkit's `review-code` workflow rather
 than a general-purpose multi-agent review command, keep the parent on Sonnet so
 any agent that inherits the parent model inherits Sonnet, and queue sessions
@@ -293,9 +293,9 @@ list of them.
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, commits of local workflow state files or `.ai-toolkit/`, and `gh pr ready`/`gh pr merge` unless the user set `AITK_PR_READY=1` |
+| `prevent-project-commit.sh` | PreToolUse (Bash) | Blocks unsafe git flags, force-pushes to main/master, commits of local workflow state files or `.ai-toolkit/`, and `gh pr ready`/`gh pr merge` unless the user set `AITK_PR_READY=1` in the session environment (a command that sets or exports it is blocked) |
 | `pre-push-validate.sh` | PreToolUse (Bash) | Runs repository-pinned lint and targeted tests before a push |
-| `require-review-gate.sh` | PreToolUse (Bash) | Blocks `gh pr create` unless the `PROJECT.md` snapshot records a review PASS backed by a reviewer record (`SKIP_PR_GATE=1` is the user's override) and the PR is a `--draft` (`AITK_PR_READY=1` is the user's override) |
+| `require-review-gate.sh` | PreToolUse (Bash) | Blocks `gh pr create` unless the `PROJECT.md` snapshot records a review PASS backed by a reviewer record (`SKIP_PR_GATE=1` in the session environment is the user's override) and the PR is a `--draft` (`AITK_PR_READY=1` in the session environment is the user's override; a command that sets or exports either is blocked) |
 | `check-plan-drift.sh` | Stop | Warns at turn end when PLAN.md outpaces PROJECT.md |
 | `observation-reminder.sh` | Stop | Says when ten or more unreviewed observations wait in `.ai-toolkit/observations.jsonl` |
 | `session-start.sh` | SessionStart (plugins only) | Prints the always-on rules and the provider binding pointer; on a new session, warns when a `bin/aitk install` is still in place |
