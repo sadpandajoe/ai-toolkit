@@ -53,6 +53,7 @@ case "${{{variable}:-pass}}" in
         echo "ruff..................................................................Passed" >&2
         exec sleep 30 ;;
     markerfail) : > "$FIXED_MARKER"; exit 1 ;;
+    report) echo "{name}: base=${{GITHUB_BASE_REF-unset}}" >&2; exit 1 ;;
     stdin) [ /dev/stdin -ef /dev/null ] || {{ echo "{name}: stdin is not /dev/null" >&2; exit 1; }} ;;
 esac
 exit 0
@@ -538,6 +539,49 @@ class PrePushHookTests(unittest.TestCase):
             self.run_hook("cd . && timeout 60 git push origin main", STUB_PRECOMMIT="fail"),
             "pre-commit failed",
         )
+
+    def test_pre_commit_runs_from_the_repo_venv_against_the_upstream_branch(self) -> None:
+        for venv in (".venv", "venv"):
+            stub = self.repo / venv / "bin" / "pre-commit"
+            stub.parent.mkdir(parents=True, exist_ok=True)
+            self.write_stub(stub, "STUB_PRECOMMIT", f"{venv}-pre-commit")
+            try:
+                # ahead of a pre-commit on PATH, and with none on PATH at all
+                for stubs in (True, False):
+                    with self.subTest(venv=venv, stubs=stubs):
+                        result = self.run_hook("git push", stubs=stubs, STUB_PRECOMMIT="report")
+                        self.assert_blocked(result, "pre-commit failed")
+                        self.assertRegex(result.stderr, rf"(?m)^{re.escape(venv)}-pre-commit: base=main$")
+                        self.assertNotRegex(result.stderr, r"(?m)^pre-commit: base=")
+            finally:
+                stub.unlink()
+                if venv == "venv":
+                    shutil.rmtree(self.repo / venv)
+
+    def test_a_callers_base_ref_wins_over_the_upstream_branch(self) -> None:
+        derived = self.run_hook("git push", STUB_PRECOMMIT="report")
+        self.assertRegex(derived.stderr, r"(?m)^pre-commit: base=main$")
+        kept = self.run_hook("git push", STUB_PRECOMMIT="report", GITHUB_BASE_REF="6.0-release")
+        self.assertRegex(kept.stderr, r"(?m)^pre-commit: base=6\.0-release$")
+
+    def test_the_base_ref_is_the_whole_tracked_branch_name(self) -> None:
+        # a local upstream, and a remote whose own name has a slash
+        for remote, ref in ((".", "refs/heads/release/6.0"), ("up/stream", "refs/remotes/up/stream/release/6.0")):
+            with self.subTest(remote=remote):
+                # branch.main.merge is multi-valued and @{u} reads the first, so
+                # the repo's own tracking config is swapped, not overridden by env
+                git(self.repo, "update-ref", ref, "origin/main")
+                git(self.repo, "config", "remote.up/stream.fetch", "+refs/heads/*:refs/remotes/up/stream/*")
+                git(self.repo, "config", "branch.main.remote", remote)
+                git(self.repo, "config", "branch.main.merge", "refs/heads/release/6.0")
+                try:
+                    result = self.run_hook("git push", STUB_PRECOMMIT="report")
+                finally:
+                    git(self.repo, "config", "branch.main.remote", "origin")
+                    git(self.repo, "config", "branch.main.merge", "refs/heads/main")
+                    git(self.repo, "config", "--remove-section", "remote.up/stream")
+                    git(self.repo, "update-ref", "-d", ref)
+                self.assertRegex(result.stderr, r"(?m)^pre-commit: base=release/6\.0$")
 
     def assert_warned(self, result: subprocess.CompletedProcess[str], reason: str) -> None:
         self.assertEqual(0, result.returncode, result.stderr)
