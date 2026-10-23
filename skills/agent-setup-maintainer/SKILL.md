@@ -10,6 +10,9 @@ description: Review, audit, update, or refactor AI coding-agent setup such as sk
 1. Read the relevant provider guidance templates under `config/` and the canonical interface manifest under `interfaces/`.
 2. Inspect relevant source files under `skills/`, `rules/`, `interfaces/`, `hooks/`, and `config/`. Inspect `build/` or installed copies only when validating adapters or install output.
 3. Before changing how a skill hands work to a worker, read [lessons.md](lessons.md).
+4. Starting a new skill or rule, or restructuring one, copy
+   [the skill template](../../docs/templates/SKILL.md) or
+   [the rule template](../../docs/templates/rule.md).
 
 ## Core principles
 

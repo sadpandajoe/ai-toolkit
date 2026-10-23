@@ -1,6 +1,6 @@
 # Skills
 
-Skills are domain-scoped Agent Skills selected when their description matches the task. Each skill lives in its own folder under `skills/` and follows the same anatomy.
+Skills are domain-scoped Agent Skills selected when their description matches the task. Each skill lives in its own folder under `skills/` and follows the same anatomy. Start a new skill from [docs/templates/SKILL.md](../docs/templates/SKILL.md) and a new rule from [docs/templates/rule.md](../docs/templates/rule.md).
 
 ## Folder Anatomy
 
@@ -33,7 +33,7 @@ Worker and specialist definitions live outside `skills/`: `agents/claude/` and `
 
 ## When each file fires
 
-- `rules.md` — scoped rules, read when a phase links them. Same shape as global `/rules` files.
+- `rules.md` — scoped rules, read when a phase links them. Same shape as global `/rules` files ([rule template](../docs/templates/rule.md)).
 - `gotchas.md` — "don't do X, here's what bit us." Concrete failure modes with incident references.
 - `lessons.md` — "do Y, here's what worked." Patterns the user has validated.
 - `references/*.md` — phase-specific steps the orchestrator reads inline or passes to a subagent. The umbrella `SKILL.md` routes to them by intent.
