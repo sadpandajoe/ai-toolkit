@@ -477,8 +477,9 @@ class RoutingManifestTests(RoutingTestCase):
         """Standing rule 6: a volatile selector is written down in few places.
 
         The catalog's selectors may appear in the manifest, the pricing table,
-        tests, the changelog, the migration notes and the generated Codex agent
-        files; anywhere else is a copy that drifts on the next model change.
+        the second-opinion script's pins, tests, the changelog, the migration
+        notes and the generated Codex agent files; anywhere else is a copy that
+        drifts on the next model change.
         """
         payload = json.loads((ROOT / "interfaces/model-routing.json").read_text())
         selectors = sorted(
@@ -487,8 +488,8 @@ class RoutingManifestTests(RoutingTestCase):
             for model in provider["models"].values()
         )
         allowed = re.compile(
-            r"(interfaces/model-routing\.json|aitk/pricing\.py|tests/.*|CHANGELOG\.md"
-            r"|docs/MIGRATION\.md|agents/codex/[^/]+\.toml)"
+            r"(interfaces/model-routing\.json|aitk/pricing\.py|scripts/second-opinion\.py"
+            r"|tests/.*|CHANGELOG\.md|docs/MIGRATION\.md|agents/codex/[^/]+\.toml)"
         )
         try:
             listing = subprocess.run(
