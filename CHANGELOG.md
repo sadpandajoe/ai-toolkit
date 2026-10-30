@@ -1,17 +1,48 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (unreleased)
 
-- Groundwork for retiring the `aitk` workflow engine. The git guard and its
-  shell tokenizer move to `hooks/lib/` and run as a standalone script
-  (`python3 -E -s hooks/lib/git_guard.py`), with no `aitk` import; the guard
-  keeps its own `STATE_FILES` list, held equal to `aitk.project_state`'s by a
-  test while both exist. `scripts/second-opinion.py` asks the other model
-  family for a read-only review (Codex from Claude Code, Claude otherwise)
-  with the reviewer contract inline and the diff on stdin; the models are
-  pinned at the top of the file. `scripts/check.py` runs the link,
-  frontmatter, plugin-manifest, personal-path and secret checks without the
-  runtime. `bin/aitk check` is unchanged and still the gate.
+The workflow engine is retired: the toolkit is facts and boundaries.
+Current models plan, verify and escalate on their own, so procedure, gates and
+routing that compensated for weaker models are removed, and what remains has
+to pass the admission rule in `AGENTS.md`. Remove a v0.3 install first with
+`git checkout 0.3.0 && ./install.sh --uninstall` (README, Migrating).
+
+- Removed: the `aitk` package and `bin/aitk` (project-state snapshots,
+  complexity/size/shape classification, PASS/RETRY/ESCALATE gates, `deliver`,
+  `verify --run`, review-lane planning, model routing and the route markers,
+  metrics, evals, the installer and its ledger), `interfaces/`, `evals/`,
+  `config/`, the generated agents and `agents/specialists/`, every rule but
+  `rules/universal.md`, and the `workflows`, `planning`, `pm`, `reporting`,
+  `testing`, `verification-loop`, `implement-change`, `preflight`,
+  `reflection`, `debug`, `qa`, `feedback`, `pr-watch` and
+  `archive-project-file` skills.
+- Skills are one per outcome and trigger on their descriptions: `fix-bug`,
+  `build-feature`, `fix-ci`, `review`, `address-feedback`, `create-pr`,
+  `watch-pr`, `test-pr` and `handoff` are new; `cherry-pick`, `shortcut`,
+  `superset-local`, `preset-rbac-setup`, `pgm` and `agent-setup-maintainer`
+  keep their facts and lose their procedure. About 55k words of skills,
+  rules and agents become about 19k.
+- Three hand-written agents, each a Claude `.md` and a Codex `.toml` with one
+  body: `reviewer`, `ci-investigator` and `qa-runner`.
+- `rules/universal.md` holds only the boundaries: authorization, the hooks,
+  before/after evidence for UI changes, PII, and precedence. There is no
+  review-before-PR gate; a PR opens as a draft when the change is believed
+  correct.
+- The git guard runs standalone from `hooks/lib/` and now also blocks a
+  non-draft `gh pr create` without `AITK_PR_READY=1`, the one check the
+  retired review gate held that still applies. The review-gate, plan-drift
+  and observation-reminder hooks are gone.
+- `skills/review/scripts/second-opinion.py` asks the other model family for a
+  read-only review of a diff, or with `--file` of a plan, and pins the models.
+- Install is the plugin on both CLIs; `install.sh` only links the Codex
+  agents, which a Codex plugin cannot ship. `scripts/check.py` replaces
+  `bin/aitk check`, and `scripts/show-cost.py` replaces `bin/aitk cost`.
+- `PROJECT_TEMPLATE.md` moves to `skills/handoff/project-template.md`; the
+  host table moves to `skills/test-pr/references/preset-environments.md`;
+  `scripts/superset-local/up.sh` moves to `skills/superset-local/scripts/`.
+
+## 0.3.0 — 2026-10-30 (the last engine release, tag `0.3.0`)
 
 - A pre-push check that runs past its budget now warns and the push proceeds;
   a real lint or test failure still blocks. Each check runs in its own process
@@ -205,8 +236,6 @@
 - `watch-pr` records `complexity` in the current vocabulary: `trivial` for a
   watch that dispatched no fix, otherwise the dispatched fix's `standard` or
   `complex`.
-
-## 0.3.0 — 2026-09-05
 
 - Gate runtime: only `RETRY` charges the attempt budget; `--editorial` records
   a wording-only fix without charging; `USER_DECISION` and `BLOCKED` never

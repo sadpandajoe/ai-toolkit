@@ -250,7 +250,7 @@ NODE = shutil.which("node")
 HOSTS = ROOT / "scripts" / "preset" / "hosts.mjs"
 RECORD = ROOT / "scripts" / "qa" / "record.mjs"
 
-# The table in rules/preset-environments.md, as scripts/preset/hosts.mjs reads it.
+# The table in skills/test-pr/references/preset-environments.md, as scripts/preset/hosts.mjs reads it.
 HOST_FIXTURE = {
     "localhost:8088": "local",
     "http://127.0.0.1:3000/": "local",
@@ -304,7 +304,7 @@ class NodeScriptTests(unittest.TestCase):
                 self.assertEqual(expected, json.loads(line)["environment"])
 
     def test_the_rule_lists_every_pattern_the_classifier_knows(self) -> None:
-        rule = (ROOT / "rules" / "preset-environments.md").read_text()
+        rule = (ROOT / "skills" / "test-pr" / "references" / "preset-environments.md").read_text()
         for pattern in (
             "*.app-stg.preset.io",
             "manage.app-stg.preset.io",
@@ -373,7 +373,6 @@ class NodeScriptTests(unittest.TestCase):
         self.assertIn("recordVideo", source)
         self.assertIn("__qa_cursor__", source)
         self.assertNotRegex(source, r"console\.(log|error)\([^)]*(password|creds|login)\b")
-        self.assertFalse((ROOT / "skills/qa/references/browser-recording/record-flow.template.mjs").exists())
 
 
 
@@ -701,7 +700,7 @@ sys.exit(1)
 class SupersetUpTests(unittest.TestCase):
     """NW-20: detection, a stubbed start, and a timeout; never edits source."""
 
-    SCRIPT = ROOT / "scripts" / "superset-local" / "up.sh"
+    SCRIPT = ROOT / "skills" / "superset-local" / "scripts" / "up.sh"
 
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()

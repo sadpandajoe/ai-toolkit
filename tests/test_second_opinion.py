@@ -1,4 +1,4 @@
-"""scripts/second-opinion.py: the cross-family, read-only review wrapper.
+"""skills/review/scripts/second-opinion.py: the cross-family, read-only review wrapper.
 
 Only command construction is tested here; a real run needs a provider login.
 """
@@ -15,7 +15,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "second-opinion.py"
+SCRIPT = ROOT / "skills" / "review" / "scripts" / "second-opinion.py"
 spec = importlib.util.spec_from_file_location("second_opinion", SCRIPT)
 second_opinion = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(second_opinion)
@@ -49,6 +49,12 @@ class CommandTests(unittest.TestCase):
         for rule in allowed:
             self.assertRegex(rule, r"^Bash\(git (log|show|diff|blame) \*\)$")
         self.assertIn("--restricted", command)
+
+    def test_the_contract_is_the_reviewer_body_without_frontmatter(self) -> None:
+        body = second_opinion.contract_body(second_opinion.CONTRACT.read_text())
+        self.assertFalse(body.startswith("---"))
+        self.assertNotIn("permissionMode:", body)
+        self.assertIn("[major]", body)
 
     def test_prompt_carries_the_brief_and_the_diff(self) -> None:
         prompt = second_opinion.build_prompt("+x\n", "main", "Fixes the race in save().")
@@ -84,6 +90,23 @@ class CliTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("<reviewer contract>", result.stdout)
         self.assertIn("diff against main", result.stdout)
+
+    def test_file_mode_reviews_a_file_instead_of_a_diff(self) -> None:
+        repo = self.repo()
+        (repo / "PLAN.md").write_text("1. Do the thing.\n")
+        result = self.run_script(repo, "--dry-run", "--via", "claude", "--file", "PLAN.md")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("characters on stdin, PLAN.md", result.stdout)
+        prompt = second_opinion.build_file_prompt("PLAN.md", "1. Do the thing.\n", "the request")
+        self.assertIn("before any code is written", prompt)
+        self.assertIn("the request", prompt)
+        self.assertIn("1. Do the thing.", prompt)
+
+    def test_file_mode_takes_no_paths(self) -> None:
+        repo = self.repo()
+        (repo / "PLAN.md").write_text("x\n")
+        result = self.run_script(repo, "--dry-run", "--file", "PLAN.md", "a.txt")
+        self.assertEqual(2, result.returncode)
 
     def test_no_changes_is_a_usage_error(self) -> None:
         result = self.run_script(self.repo(), "--dry-run")

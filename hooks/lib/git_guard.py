@@ -16,9 +16,10 @@ Blocked:
   earlier in the same command (`git add PROJECT.md && git commit`): the hook
   runs before the add, so the staged set is `git diff --cached` plus what those
   adds would stage;
-- `gh pr ready` and `gh pr merge`, unless the user set `AITK_PR_READY=1` in the
-  environment the session started with (set only when the user asked in
-  words). `SKIP_PR_GATE=1` does not lift them;
+- `gh pr create` (or `gh pr new`) without `--draft`, and `gh pr ready` and
+  `gh pr merge`, unless the user set `AITK_PR_READY=1` in the environment the
+  session started with (set only when the user asked in words). `SKIP_PR_GATE=1`
+  does not lift them;
 - a command that assigns or exports any toolkit override itself (a prefix, an
   assignment-only segment, `env`, `export`/`declare`/`typeset`/`readonly`/
   `local`, a literal `+=` append, inside `bash -c`, `eval`, `env -S`, a
@@ -53,10 +54,10 @@ literal text shows. Text that only mentions an assignment is allowed: `echo
 NAME=1`, `git push # NAME=1`, `git log --grep=NAME=1`, a commit message or a
 `git grep` pattern that carries export wording and a name.
 
-What actually protects the gates is elsewhere: `bin/aitk deliver` cannot open a
-ready PR (it has no flag and reads no override), and `gh pr ready`/`gh pr merge`
-read `AITK_PR_READY` only from the session environment. This check keeps the
-agent from shopping for an override it cannot get.
+What actually protects the PR boundary is elsewhere: a non-draft `gh pr create`,
+`gh pr ready` and `gh pr merge` read `AITK_PR_READY` only from the session
+environment. This check keeps the agent from shopping for an override it
+cannot get.
 
 Known limits of the scan, each a real override it does not see:
 - brace expansion that builds a name (`env {NAME,X}=1 ...`);
@@ -1055,9 +1056,45 @@ PR_PUBLISH_UNREADABLE = (
 PR_PUBLISH_EFFECT = {
     "ready": "takes a draft pull request out of draft",
     "merge": "merges a pull request",
+    "create": "without `--draft` opens a pull request ready for review (add `--draft`)",
+    "new": "without `--draft` opens a pull request ready for review (add `--draft`)",
 }
-# `gh`, then `pr`, then `ready` or `merge`, each searched after the one before it: linear in the text
-UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge)\b"))
+# `gh`, then `pr`, then the verb, each searched after the one before it: linear in the text
+UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new)\b"))
+# gh pr create flags that take a value, so the draft scan skips their values.
+CREATE_VALUE_FLAGS = {
+    "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file",
+    "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project",
+    "-r", "--reviewer", "-T", "--template", "-t", "--title", "-R", "--repo",
+    "--hostname",
+}
+CREATE_SHORT_VALUE = {"a", "B", "b", "F", "H", "l", "m", "p", "r", "T", "t", "R"}
+DRAFT_FLAG = re.compile(r"(?<![\w-])(?:--draft(?:=(?:true|1|t))?|-[A-Za-z]*d[A-Za-z]*)(?![\w=-])")
+
+
+def is_draft(args: list[str]) -> bool:
+    """Whether a `gh pr create` argument list asks for a draft PR."""
+    draft = False
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+            continue
+        if arg == "--":
+            break
+        if arg in CREATE_VALUE_FLAGS:
+            skip = True
+        elif arg == "--draft":
+            draft = True
+        elif arg.startswith("--draft="):
+            draft = arg.split("=", 1)[1].strip().lower() in {"true", "1", "t"}
+        elif arg.startswith("-") and not arg.startswith("--") and len(arg) > 1:
+            for char in arg[1:]:
+                if char == "d":
+                    draft = True
+                if char in CREATE_SHORT_VALUE:
+                    break
+    return draft
 
 
 OVERRIDE_VARIABLES = ("AITK_PR_READY", "SKIP_PR_GATE", "SKIP_PRECHECK")
@@ -1124,7 +1161,8 @@ def check_override_assignment(command: str, cwd: str) -> None:
 
 
 def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
-    """`gh pr ready` and `gh pr merge` need the user's AITK_PR_READY=1 (N4)."""
+    """A non-draft `gh pr create`, `gh pr ready` and `gh pr merge` need the
+    user's AITK_PR_READY=1, read only from the session environment."""
     if shell_tokens.truthy(environ.get("AITK_PR_READY")):
         return
     for found in shell_tokens.commands(command, cwd):
@@ -1135,7 +1173,8 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
             raise block(PR_PUBLISH_UNREADABLE)
         if found.unresolved:
             match = shell_tokens.words_in_order(found.text, *UNRESOLVED_PR_PUBLISH)
-            if match:
+            # Unparseable: trust `--draft` on a creation only when the raw text carries it.
+            if match and not (match.group(1) in {"create", "new"} and DRAFT_FLAG.search(found.text)):
                 raise block(PR_PUBLISH_MESSAGE.format(verb=match.group(1), effect=PR_PUBLISH_EFFECT[match.group(1)]))
             continue
         if not found.is_gh:
@@ -1144,7 +1183,9 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
         if {"-h", "--help"} & set(args):
             continue
         words = shell_tokens.positional(args, GH_GLOBAL_VALUE_FLAGS)
-        if words[:2] not in (["pr", "ready"], ["pr", "merge"]):
+        if words[:2] not in (["pr", "ready"], ["pr", "merge"], ["pr", "create"], ["pr", "new"]):
+            continue
+        if words[1] in {"create", "new"} and is_draft(args):
             continue
         if words[1] == "ready" and "--undo" in args:
             continue  # converting back to a draft publishes nothing
