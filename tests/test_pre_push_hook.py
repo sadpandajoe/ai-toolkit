@@ -496,7 +496,7 @@ class PrePushHookTests(unittest.TestCase):
         parser = re.search(r"read -r -d '' PARSER <<'PY'\n(.*?)\nPY\n", script, re.S).group(1)
         self.assertIn("DEADLINE = 15.0", parser)
         payload = json.dumps({"tool_input": {"command": "git push " + "sh " * 200000}, "cwd": str(self.repo)})
-        environment = {**os.environ, "PYTHONPATH": str(ROOT)}
+        environment = {**os.environ, "AITK_HOOK_LIB": str(ROOT / "hooks" / "lib")}
         # an expired deadline reads as an unreadable command ...
         expired = subprocess.run(
             ["python3", "-c", parser.replace("DEADLINE = 15.0", "DEADLINE = 0.05")],
@@ -507,8 +507,8 @@ class PrePushHookTests(unittest.TestCase):
         # ... which the hook turns into a block unless the user skips the checks
         copy = self.base / "deadline-copy"
         (copy / "hooks").mkdir(parents=True, exist_ok=True)
-        if not (copy / "aitk").exists():
-            (copy / "aitk").symlink_to(ROOT / "aitk")
+        if not (copy / "hooks" / "lib").exists():
+            (copy / "hooks" / "lib").symlink_to(ROOT / "hooks" / "lib")
         patched = copy / "hooks" / "pre-push-validate.sh"
         patched.write_text(script.replace("DEADLINE = 15.0", "DEADLINE = 0.05"))
         command = "git push " + "sh " * 200000

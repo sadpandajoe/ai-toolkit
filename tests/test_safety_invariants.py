@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -138,9 +139,12 @@ class SafetyInvariantTests(unittest.TestCase):
         self.assertIn("refuse", lowered)
 
     def test_all_local_workflow_state_is_hook_protected(self) -> None:
-        # The wrapper hands every command to aitk.hooks.git_guard, which blocks
-        # commits of the files in project_state.STATE_FILES.
-        from aitk.project_state import STATE_FILES
+        # The wrapper hands every command to hooks/lib/git_guard.py, which
+        # blocks commits of the files in its STATE_FILES.
+        hook_lib = str(ROOT / "hooks" / "lib")
+        sys.path.insert(0, hook_lib)
+        self.addCleanup(sys.path.remove, hook_lib)
+        from git_guard import STATE_FILES
 
         for stem in (
             "PROJECT",
@@ -151,8 +155,8 @@ class SafetyInvariantTests(unittest.TestCase):
             "CI_FIX",
         ):
             self.assertIn(f"{stem}.md", STATE_FILES)
-        self.assertIn("python3 -m aitk.hooks.git_guard", read("hooks/prevent-project-commit.sh"))
-        self.assertIn("from aitk.project_state import STATE_FILES", read("aitk/hooks/git_guard.py"))
+        # -E -s keep PYTHONPATH and the user site from replacing the guard's imports.
+        self.assertIn('python3 -E -s "$ROOT/hooks/lib/git_guard.py"', read("hooks/prevent-project-commit.sh"))
 
     def test_no_fenced_example_evals_its_arguments(self) -> None:
         files = tracked_files()

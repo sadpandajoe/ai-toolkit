@@ -38,8 +38,8 @@ import tempfile
 
 
 # Local workflow state: written into the target repository, never committed.
-# The git guard (aitk.hooks.git_guard) imports this list, so this module keeps
-# to the standard library.
+# The standalone git guard (hooks/lib/git_guard.py) keeps its own copy;
+# tests/test_git_guard_hook.py holds the two equal.
 STATE_FILES = (
     "PROJECT.md",
     "PROJECT_ARCHIVE.md",

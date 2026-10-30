@@ -1,4 +1,4 @@
-"""The git guard (aitk/hooks/git_guard.py) behind hooks/prevent-project-commit.sh.
+"""The git guard (hooks/lib/git_guard.py) behind hooks/prevent-project-commit.sh.
 
 Every case runs the wrapper end to end with a synthetic PreToolUse payload in a
 scratch repository under a fresh temporary directory, and checks the exit code:
@@ -23,11 +23,14 @@ import time
 import unittest
 from unittest import mock
 
-from aitk.hooks import git_guard, review_gate, shell_tokens
-from aitk.project_state import STATE_FILES
-
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "hooks" / "lib"))
+import git_guard  # noqa: E402
+import shell_tokens  # noqa: E402
+sys.path.pop(0)
+from aitk.hooks import review_gate  # noqa: E402
+
+STATE_FILES = git_guard.STATE_FILES
 WRAPPER = ROOT / "hooks" / "prevent-project-commit.sh"
 OVERRIDES = ("AITK_PR_READY", "SKIP_PR_GATE", "SKIP_PRECHECK")
 
@@ -1574,24 +1577,29 @@ class GitGuardHookTests(unittest.TestCase):
             )
             self.assertEqual(2, result.returncode, result.stderr)
 
-    def test_guard_import_loads_neither_doctor_nor_installer(self) -> None:
+    def test_guard_runs_without_the_aitk_package(self) -> None:
         probe = (
             "import json, sys\n"
-            "import aitk.hooks.git_guard, aitk.hooks.review_gate\n"
+            f"sys.path.insert(0, {str(ROOT / 'hooks' / 'lib')!r})\n"
+            "import git_guard\n"
             "print(json.dumps(sorted(name for name in sys.modules if name.startswith('aitk'))))\n"
         )
-        result = subprocess.run(
-            [sys.executable, "-c", probe],
-            text=True,
-            capture_output=True,
-            check=True,
-            cwd=ROOT,
-            env={**base_env(), "PYTHONPATH": str(ROOT)},
-        )
-        loaded = json.loads(result.stdout)
-        self.assertIn("aitk.project_state", loaded)
-        for heavy in ("aitk.doctor", "aitk.installer", "aitk.build", "aitk.routing_manifest"):
-            self.assertNotIn(heavy, loaded)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                [sys.executable, "-E", "-s", "-c", probe],
+                text=True,
+                capture_output=True,
+                check=True,
+                cwd=tmp,
+                env=base_env(),
+            )
+        self.assertEqual([], json.loads(result.stdout))
+
+    def test_state_files_match_project_state(self) -> None:
+        # Until project_state goes, the guard's own copy must not drift from it.
+        from aitk.project_state import STATE_FILES as RECORDED
+
+        self.assertEqual(RECORDED, STATE_FILES)
 
 
 if __name__ == "__main__":

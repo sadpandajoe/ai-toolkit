@@ -300,8 +300,9 @@ list of them.
 | `observation-reminder.sh` | Stop | Says when ten or more unreviewed observations wait in `.ai-toolkit/observations.jsonl` |
 | `session-start.sh` | SessionStart (plugins only) | Prints the always-on rules and the provider binding pointer; on a new session, warns when a `bin/aitk install` is still in place |
 
-The git guard and the review gate run `python3 -m aitk.hooks.*`; without
-python3 they block git and `gh` commands rather than let them through.
+The git guard runs the standalone `hooks/lib/git_guard.py` and the review
+gate runs `python3 -m aitk.hooks.review_gate`; without python3 they block git
+and `gh` commands rather than let them through.
 
 `./install.sh` (`bin/aitk install`) registers the hooks in
 `~/.claude/settings.json` by default, with this checkout's absolute path, and

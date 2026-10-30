@@ -61,7 +61,7 @@
 #
 # Bypass is the user's alone: SKIP_PRECHECK in the environment Claude Code or
 # Codex started with, set to anything but unset, empty, 0, false, no or off
-# (any case; the same rule as aitk/hooks/shell_tokens.py `truthy`). A prefix on
+# (any case; the same rule as hooks/lib/shell_tokens.py `truthy`). A prefix on
 # the push itself does not count (the git guard blocks it). The block message
 # never suggests it.
 #
@@ -138,7 +138,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # could not be read, nothing otherwise.
 read -r -d '' PARSER <<'PY'
 import json, os, sys
-from aitk.hooks import shell_tokens
+sys.path.insert(0, os.environ["AITK_HOOK_LIB"])
+import shell_tokens
 
 # In-process time limit: this hook fails open past its 300 s timeout, so the parse stops
 # itself, with the lint and test budgets and their grace periods below it (see the header).
@@ -202,12 +203,12 @@ if line:
     print(line)
 PY
 
-PARSED=$(printf '%s' "$INPUT" | (cd "$ROOT" && PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c "$PARSER")) || exit 0
+PARSED=$(printf '%s' "$INPUT" | (cd "$ROOT" && AITK_HOOK_LIB="$ROOT/hooks/lib" python3 -E -s -c "$PARSER")) || exit 0
 [[ $PARSED == push$'\t'* || $PARSED == unknown$'\t'* || $PARSED == unreadable$'\t'* ]] || exit 0
 IFS=$'\t' read -r KIND CWD <<<"$PARSED"
 
 # Bypass: the user's session env only. Same truthy rule as the toolkit's other
-# hooks (aitk.hooks.shell_tokens.truthy): unset, empty, 0, false, no and off in
+# hooks (hooks/lib/shell_tokens.py `truthy`): unset, empty, 0, false, no and off in
 # any case, padded or not, are off; anything else is on.
 SKIP_VALUE=${SKIP_PRECHECK:-}
 SKIP_VALUE=${SKIP_VALUE#"${SKIP_VALUE%%[![:space:]]*}"}
