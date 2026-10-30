@@ -1,7 +1,9 @@
 """The git guard: block git and gh commands that bypass the toolkit's safety rules.
 
-Run as `python3 -m aitk.hooks.git_guard` with the PreToolUse payload on stdin
-(`hooks/prevent-project-commit.sh` does this). Exit 0 allows, exit 2 blocks
+Run as `python3 -E -s hooks/lib/git_guard.py` with the PreToolUse payload on
+stdin (`hooks/prevent-project-commit.sh` does this). It imports only the
+standard library and its sibling `shell_tokens`, so it runs without the rest of
+the toolkit. Exit 0 allows, exit 2 blocks
 with the reason on stderr, which the agent sees.
 
 Blocked:
@@ -9,8 +11,8 @@ Blocked:
   and `commit.gpgsign=false` overrides, also through `-c`, `--config-env`,
   `GIT_CONFIG_*` and aliases;
 - `git push --no-verify`, force-pushing main or master, and deleting them;
-- a commit that includes a local workflow state file (`STATE_FILES` from
-  `aitk.project_state`) or any path under `.ai-toolkit/`, including files added
+- a commit that includes a local workflow state file (`STATE_FILES`) or any
+  path under `.ai-toolkit/`, including files added
   earlier in the same command (`git add PROJECT.md && git commit`): the hook
   runs before the add, so the staged set is `git diff --cached` plus what those
   adds would stage;
@@ -180,8 +182,18 @@ import subprocess
 import sys
 from typing import Iterator
 
-from aitk.hooks import shell_tokens
-from aitk.project_state import STATE_FILES
+import shell_tokens
+
+
+# Local workflow state that never belongs in a commit, matched by basename.
+STATE_FILES = (
+    "PROJECT.md",
+    "PROJECT_ARCHIVE.md",
+    "PLAN.md",
+    "WATCH.md",
+    "CHERRY_PICK.md",
+    "CI_FIX.md",
+)
 
 
 SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "|&"}

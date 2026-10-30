@@ -79,10 +79,12 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 
-from aitk.hooks.shell_tokens import Command, DeadlineExceeded, commands, deadline, positional, truthy
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hooks" / "lib"))
+from shell_tokens import Command, DeadlineExceeded, commands, deadline, positional, truthy  # noqa: E402
 
 
 # The in-process time limit of `main()`: a hook past its timeout in hooks/hooks.json (10 s)

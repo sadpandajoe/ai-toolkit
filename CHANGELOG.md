@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Groundwork for retiring the `aitk` workflow engine. The git guard and its
+  shell tokenizer move to `hooks/lib/` and run as a standalone script
+  (`python3 -E -s hooks/lib/git_guard.py`), with no `aitk` import; the guard
+  keeps its own `STATE_FILES` list, held equal to `aitk.project_state`'s by a
+  test while both exist. `scripts/second-opinion.py` asks the other model
+  family for a read-only review (Codex from Claude Code, Claude otherwise)
+  with the reviewer contract inline and the diff on stdin; the models are
+  pinned at the top of the file. `scripts/check.py` runs the link,
+  frontmatter, plugin-manifest, personal-path and secret checks without the
+  runtime. `bin/aitk check` is unchanged and still the gate.
+
 - A pre-push check that runs past its budget now warns and the push proceeds;
   a real lint or test failure still blocks. Each check runs in its own process
   group with stdin closed, and the group (descendants included) is ended when
@@ -60,6 +71,7 @@
 - `fix-review` now makes a new commit on the current PR branch for every fix
   by default; fixup, autosquash and force-push are an opt-in history rewrite,
   used only when the user authorizes it for the round.
+
 - `bin/aitk model-run --experiment reviewer-runs-test --test-command <cmd>`
   lets the independent reviewer run one test from an allowlist given on the
   command line, in a disposable copy of its worktree, for the D11
