@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# plugin-proof.sh — the phase 5 plugin proof, one provider at a time
+# plugin-proof.sh — the plugin proof, one provider at a time
 #
 # Installs this checkout as a plugin into a scratch HOME and checks, with real
 # model turns, that:
 #   1. the always-on rules reach the model (it quotes a line of rules/universal.md);
-#   2. the native agents and the PGM skill are available;
-#   3. a session reaches the toolkit's bin/aitk and runs `aitk list`;
+#   2. the agents and the skills, PGM included, are available;
+#   3. a session knows where the toolkit is installed;
 #   4. the git guard blocks `git commit --no-verify` in a session;
 #   5. an edit in the checkout reaches a new session after the plugin updates.
 # Each answer is saved under <scratch>/out/ next to a PASS or CHECK line; read
@@ -48,7 +48,7 @@ git -C "$repo" init -q && git -C "$repo" -c user.name=proof -c user.email=proof@
 
 ask() { # ask <name> <prompt>: one non-interactive model turn in the project
     if [ "$provider" = claude ]; then
-        (cd "$repo" && claude -p "$2" --allowedTools "Bash(aitk *)" "Bash(git *)" "Bash($checkout/bin/aitk *)") >"$out/$1.txt" 2>&1
+        (cd "$repo" && claude -p "$2" --allowedTools "Bash(git *)") >"$out/$1.txt" 2>&1
     else
         (cd "$repo" && codex exec --sandbox workspace-write "$2") >"$out/$1.txt" 2>&1
     fi
@@ -70,9 +70,8 @@ if [ "$provider" = claude ]; then
     claude plugin list
 else
     codex plugin marketplace add "$checkout" && codex plugin add ai-toolkit@ai-toolkit || exit 1
-    # Codex plugins cannot ship agents: link them as install.sh will (HK-13).
-    mkdir -p "$CODEX_HOME/agents"
-    for agent in "$checkout"/agents/codex/*.toml; do ln -sf "$agent" "$CODEX_HOME/agents/"; done
+    # Codex plugins cannot ship agents; install.sh links them.
+    "$checkout/install.sh" || exit 1
     echo
     echo "Trust the plugin hooks now: in another terminal run"
     echo "  cd '$repo' && HOME='$HOME' CODEX_HOME='$CODEX_HOME' codex"
@@ -85,17 +84,17 @@ line=$(sed -n 's/^- \*\*\(.*\)\*\*.*/\1/p' "$checkout/rules/universal.md" | head
 ask rules "Quote, word for word, the bold text of the first bullet in the AI Toolkit universal rules you were given at the start of this session. Output only the quote."
 if grep -qF -- "$line" "$out/rules.txt"; then result PASS rules "quoted: $line"; else result FAIL rules "expected: $line (see out/rules.txt)"; fi
 
-# 2. The native agents and the PGM skill.
-ask roster "List, one per line, the names of every subagent and every skill available to you whose name contains aitk or pgm. Output only the names."
+# 2. The agents and the skills.
+ask roster "List, one per line, the names of every subagent and every skill available to you. Output only the names."
 missing=""
-for name in aitk-implementer aitk-debugger aitk-planner aitk-tester pgm; do
+for name in reviewer ci-investigator qa-runner fix-bug review cherry-pick pgm; do
     grep -q -- "$name" "$out/roster.txt" || missing="$missing $name"
 done
 if [ -z "$missing" ]; then result CHECK roster "all named; confirm in out/roster.txt"; else result FAIL roster "missing:$missing"; fi
 
-# 3. A session reaches bin/aitk.
-ask aitk "Run the AI Toolkit's bin/aitk with the arguments 'list --json' using your shell tool (the session context says where the toolkit is installed), then print the command output verbatim."
-if grep -q '"command": *"list"' "$out/aitk.txt"; then result PASS aitk "list output returned"; else result FAIL aitk "no list output (see out/aitk.txt)"; fi
+# 3. A session knows where the toolkit is installed.
+ask root "Where is the AI Toolkit installed, according to your session context? Output only the absolute path."
+if grep -q "ai-toolkit\|checkout\|plugins" "$out/root.txt"; then result CHECK root "answered; confirm the path in out/root.txt"; else result FAIL root "no install path (see out/root.txt)"; fi
 
 # 4. The git guard blocks --no-verify.
 before=$(git -C "$repo" rev-list --count HEAD)

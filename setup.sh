@@ -160,13 +160,13 @@ main() {
     if command -v python3 &>/dev/null; then
         info "python3 available: $(python3 --version)"
     else
-        warn "python3 not found. bin/aitk and the git guard need Python 3.11 or newer;"
+        warn "python3 not found. The git guard needs Python 3.11 or newer;"
         echo "  without it the git guard blocks git and gh commands."
     fi
     if command -v jq &>/dev/null; then
         info "jq already installed: $(jq --version)"
     else
-        warn "jq not found (optional). The plan-drift and observation reminders stay silent without it."
+        warn "jq not found (optional). The statusline and the Shortcut helper use it."
         echo "  Install with: brew install jq (macOS) or apt-get install jq (Linux)"
     fi
 

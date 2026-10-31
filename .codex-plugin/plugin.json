@@ -1,7 +1,7 @@
 {
   "name": "ai-toolkit",
-  "version": "0.3.0",
-  "description": "Provider-portable workflows for AI-assisted software delivery",
+  "version": "0.4.0",
+  "description": "Skills, agents and safety hooks for AI-assisted software delivery on Claude Code and Codex",
   "author": {
     "name": "Joe Li",
     "url": "https://github.com/sadpandajoe"
@@ -13,8 +13,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "AI Toolkit",
-    "shortDescription": "Portable software delivery workflows",
-    "longDescription": "Run repeatable feature, bug, CI, testing, QA, review, pull request, and project-state workflows with durable safety and verification gates.",
+    "shortDescription": "Software delivery skills and safety hooks",
+    "longDescription": "Skills for features, bugs, CI, PR testing, review, pull requests and cherry-picks, with the facts each needs and git safety hooks.",
     "developerName": "Joe Li",
     "category": "Developer Tools",
     "capabilities": ["Skills", "Hooks"],

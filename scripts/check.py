@@ -24,7 +24,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTENT_DIRECTORIES = ("config", "docs", "extensions", "rules", "skills")
+CONTENT_DIRECTORIES = ("agents", "config", "docs", "extensions", "rules", "skills")
 IGNORED_PARTS = {".git", ".venv", "build", "dist", "node_modules", "site-packages", "venv", "__pycache__"}
 PLUGIN_MANIFESTS = (".claude-plugin/plugin.json", ".codex-plugin/plugin.json", ".claude-plugin/marketplace.json")
 

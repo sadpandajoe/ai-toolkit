@@ -1,44 +1,54 @@
-# Cherry-Pick Apply
-
-Use once the gate says the change proceeds.
+# Apply and Adapt
 
 ## Pick
 
-Take the parent count from the pre-flight row's `parents` column
-([batch.md](batch.md)); for a single pick, run
-`<skill-dir>/scripts/batch-preflight.sh <target-branch> <commit>`. One parent:
-`git cherry-pick -x <commit>`. A merge commit takes `-m 1` only when parent 1
-is the target-base side; otherwise stop as `Blocked: merge parent ambiguous`.
+Get the source commit's parent count from the pre-flight row
+(`<skill-dir>/scripts/batch-preflight.sh <target-branch> <commit>` for a single
+pick). One parent: `git cherry-pick -x <commit>`. A merge commit takes `-m 1`
+only when parent 1 is the target-base side; otherwise stop as `Blocked: merge
+parent ambiguous`.
 
-Excluded files that exist on both branches are reverted after the pick.
-Excluded files missing on the target arrive as modify/delete conflicts.
+Excluded files that exist on both branches are reverted after the pick;
+excluded files missing on the target arrive as modify/delete conflicts.
 
-## Modify/Delete Conflicts
+## Modify/delete conflicts
 
-1. `git rm <missing-files>`; this is the resolution, not a revert.
-2. Verify `.git/CHERRY_PICK_HEAD` still exists.
-3. Resolve any content conflicts in other files and stage them.
-4. `git cherry-pick --continue`.
+`git rm <missing-files>` is the resolution, not a revert. Resolve other
+conflicts, stage them, then `git cherry-pick --continue`. Before any
+`--continue`, `.git/CHERRY_PICK_HEAD` must exist; if it is gone, `git
+cherry-pick --abort` and re-run the pick ([gotchas.md](../gotchas.md) #2).
 
-Before any `--continue`, `.git/CHERRY_PICK_HEAD` must exist. If it is missing,
-do not continue: `git cherry-pick --abort` and re-run from the pick
-([gotchas.md](../gotchas.md), "CHERRY_PICK_HEAD missing").
+## Escalation ladder
 
-## Escalation Ladder
+In order; don't skip a step:
 
-Follow this order; do not skip steps.
+1. Resolve in place (`git rm`, edit markers), `git cherry-pick --continue`.
+2. `git cherry-pick --abort`, then `git cherry-pick -x <commit>` with a
+   different resolution.
+3. CHERRY_PICK_HEAD unrecoverable: resolve the files, `git commit -C <sha>`
+   (keeps author and message), then amend in the `(cherry picked from commit
+   <sha>)` line.
+4. Last resort, only when cherry-pick plus `git rm` cannot express the subset:
+   `git diff <commit>^..<commit> -- <files> | git apply --3way`. It loses the
+   author and the `-x` trailer ([gotchas.md](../gotchas.md) #6).
 
-1. **Resolve in place:** `git rm` for modify/delete, edit markers for content
-   conflicts, then `git cherry-pick --continue`.
-2. **Abort and re-run:** `git cherry-pick --abort`, then
-   `git cherry-pick -x <commit>` with a different resolution approach.
-3. **Manual commit:** when CHERRY_PICK_HEAD is unrecoverable after the re-run,
-   resolve the files, `git commit -C <sha>` (keeps the source author and
-   message), then amend in the `(cherry picked from commit <sha>)` line.
-4. **`git diff <commit>^..<commit> -- <files> | git apply --3way`:** last
-   resort, only when cherry-pick plus `git rm` cannot express the subset. It
-   loses the cherry-pick metadata.
+Partial picks still go through `git cherry-pick -x`; never prescribe
+`git apply` or `format-patch | git apply` to a worker for them.
 
-Hand off to adapt when a conflict needs code-level adaptation or inferred
-source intent; stay in apply for branch switching, the pick, state checks,
-staging and `--continue`. After `--continue`, hand off to validation.
+## Adapting conflicts
+
+- Adapt to the target's APIs rather than pulling in structural changes; take
+  only the functional part of a mixed commit.
+- Never resolve with `--theirs`/`--ours` wholesale. Taking the source side of a
+  conflicting region brings in whatever neighbouring source commits changed
+  there. After resolving each file, compare against `git diff
+  <commit>^..<commit> -- <file>`: lines that are neither in that diff nor
+  already on the target are leaks; strip them.
+- A required prerequisite is a stop, never silently pulled in. Reject when
+  preserving intent needs a broad refactor.
+- Ask the user when two behavior-preserving readings exist, the adaptation
+  changes visible behavior, or a bundled PR has sub-fixes that look unrelated
+  (list them with a reason each; the user usually wants the whole PR).
+- A dropped or trimmed bug fix can leave the bug live on the target through
+  another path; that goes in the report's next steps
+  ([gotchas.md](../gotchas.md) #3).

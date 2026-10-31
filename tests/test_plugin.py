@@ -12,11 +12,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
-
-import aitk
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,12 +38,12 @@ def handlers() -> list[tuple[str, dict]]:
 
 
 class PluginManifestTests(unittest.TestCase):
-    def test_both_manifests_name_the_plugin_and_carry_the_package_version(self) -> None:
-        for relative in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
-            with self.subTest(manifest=relative):
-                manifest = load(relative)
-                self.assertEqual("ai-toolkit", manifest["name"])
-                self.assertEqual(aitk.__version__, manifest["version"])
+    def test_both_manifests_name_the_plugin_and_carry_one_version(self) -> None:
+        claude, codex = load(".claude-plugin/plugin.json"), load(".codex-plugin/plugin.json")
+        self.assertEqual("ai-toolkit", claude["name"])
+        self.assertEqual("ai-toolkit", codex["name"])
+        self.assertRegex(claude["version"], r"^\d+\.\d+\.\d+$")
+        self.assertEqual(claude["version"], codex["version"])
 
     def test_component_paths_stay_inside_the_plugin_and_exist(self) -> None:
         for relative, keys in (
@@ -99,6 +98,27 @@ class PluginManifestTests(unittest.TestCase):
         self.assertNotIn("version", entry)
 
 
+
+class AgentParityTests(unittest.TestCase):
+    """Each agent ships as a Claude .md and a Codex .toml with one body."""
+
+    def test_every_agent_has_both_files_with_the_same_instructions(self) -> None:
+        claude = {path.stem: path for path in (ROOT / "agents/claude").glob("*.md")}
+        codex = {path.stem: path for path in (ROOT / "agents/codex").glob("*.toml")}
+        self.assertTrue(claude)
+        self.assertEqual(sorted(claude), sorted(codex))
+        for name in claude:
+            with self.subTest(agent=name):
+                text = claude[name].read_text()
+                self.assertTrue(text.startswith("---\n"))
+                head, body = text[4:].split("\n---\n", 1)
+                self.assertIn(f"name: {name}", head.splitlines())
+                toml = codex[name].read_text()
+                self.assertIn(f'name = "{name}"', toml.splitlines())
+                match = re.search(r"^developer_instructions = '''\n(.*?)'''", toml, re.S | re.M)
+                self.assertIsNotNone(match)
+                self.assertEqual(body.strip(), match.group(1).strip())
+
 class SessionStartHookTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -132,11 +152,8 @@ class SessionStartHookTests(unittest.TestCase):
         return result
 
     def assert_rules(self, output: str) -> None:
-        rules = load("interfaces/guidance.json")["always_on_rules"]
-        self.assertTrue(rules)
-        for rule in rules:
-            self.assertIn((ROOT / rule).read_text().strip(), output)
-        self.assertIn(f"{ROOT}/bin/aitk", output)
+        self.assertIn((ROOT / "rules/universal.md").read_text().strip(), output)
+        self.assertIn(f"installed at `{ROOT}`", output)
         # Claude Code keeps 10,000 characters of SessionStart output in context.
         self.assertLess(len(output), 10_000)
 
@@ -146,19 +163,15 @@ class SessionStartHookTests(unittest.TestCase):
         path.write_text(text)
         return path
 
-    def test_claude_gets_every_always_on_rule_and_the_claude_binding(self) -> None:
+    def test_claude_gets_the_rules_and_the_toolkit_root(self) -> None:
         output = self.run_hook(CLAUDE_PLUGIN_ROOT=str(ROOT)).stdout
         self.assert_rules(output)
-        self.assertIn(f"{ROOT}/config/providers/claude.md", output)
-        self.assertNotIn("config/providers/codex.md", output)
         self.assertNotIn(OLD_INSTALL, output)
 
-    def test_codex_gets_every_always_on_rule_and_the_codex_binding(self) -> None:
+    def test_codex_gets_the_rules_and_the_toolkit_root(self) -> None:
         # Codex sets PLUGIN_ROOT and, for compatibility, CLAUDE_PLUGIN_ROOT too.
         output = self.run_hook(PLUGIN_ROOT=str(ROOT), CLAUDE_PLUGIN_ROOT=str(ROOT)).stdout
         self.assert_rules(output)
-        self.assertIn(f"{ROOT}/config/providers/codex.md", output)
-        self.assertNotIn("config/providers/claude.md", output)
 
     def test_prints_nothing_outside_a_plugin(self) -> None:
         self.seed(".claude/CLAUDE.md", f"{MARKER}\n")
@@ -202,7 +215,7 @@ class SessionStartHookTests(unittest.TestCase):
                 result = self.run_hook(CLAUDE_PLUGIN_ROOT=str(ROOT))
                 self.assertIn(OLD_INSTALL, result.stdout)
                 self.assertIn(str(path), result.stdout)
-                self.assertIn("docs/MIGRATION.md", result.stdout)
+                self.assertIn("0.3.0", result.stdout)
                 self.assert_rules(result.stdout)
                 self.assertEqual(before, path.read_bytes())
 

@@ -1,6 +1,0 @@
-{
-  "version": 1,
-  "always_on_rules": [
-    "rules/universal.md"
-  ]
-}

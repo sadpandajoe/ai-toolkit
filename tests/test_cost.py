@@ -6,15 +6,35 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
+import importlib.util
 import unittest
 import warnings
 
-from aitk import cost
-from aitk.pricing import PRICING, PROMOTIONS, get_pricing
-
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "show-cost.py"
+spec = importlib.util.spec_from_file_location("show_cost", SCRIPT)
+cost = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cost)
+PRICING, PROMOTIONS, get_pricing = cost.PRICING, cost.PROMOTIONS, cost.get_pricing
+
+
+def pinned_selectors() -> list[str]:
+    """Every model the toolkit pins: agent frontmatter/TOML and second-opinion."""
+    found = set()
+    for path in (ROOT / "agents").rglob("*"):
+        if path.suffix in {".md", ".toml"}:
+            found.update(re.findall(r'^model\s*[:=]\s*"?([\w.-]+)"?\s*$', path.read_text(), re.M))
+    spec = importlib.util.spec_from_file_location(
+        "second_opinion", ROOT / "skills" / "review" / "scripts" / "second-opinion.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    found.update(model for tiers in module.MODELS.values() for model in tiers.values())
+    # Claude agent frontmatter names an alias (opus, sonnet); only full selectors are priced.
+    return sorted(model for model in found if "-" in model)
 
 
 class CostTests(unittest.TestCase):
@@ -28,16 +48,10 @@ class CostTests(unittest.TestCase):
 
         A missing price skews cost reports only, so it warns rather than fails.
         """
-        catalog = json.loads((ROOT / "interfaces" / "model-routing.json").read_text())
-        missing = sorted(
-            model["selector"]
-            for provider in catalog["providers"].values()
-            for model in provider["models"].values()
-            if model["selector"] not in PRICING
-        )
+        missing = [selector for selector in pinned_selectors() if selector not in PRICING]
         if missing:
             warnings.warn(
-                "routed selectors without an exact price in aitk/pricing.py: "
+                "pinned selectors without an exact price in scripts/show-cost.py: "
                 + ", ".join(missing)
             )
 
@@ -161,7 +175,7 @@ class CostTests(unittest.TestCase):
             self.assertEqual(0, session["models"]["claude-sonnet-5"]["unpriced"])
 
 class PricingMechanismTests(unittest.TestCase):
-    """One case per lookup mechanism in aitk.pricing, independent of rates."""
+    """One case per pricing lookup mechanism, independent of rates."""
 
     def test_exact_selector_returns_its_own_rates(self) -> None:
         for selector in PRICING:
@@ -259,7 +273,7 @@ class ShowCostCountingTests(unittest.TestCase):
         self.assertEqual(44.0, sessions[0]["total_cost"])
 
     def test_documented_invocation_runs_from_root_and_elsewhere(self) -> None:
-        """`bin/aitk cost` from the toolkit root and by absolute path from another cwd."""
+        """`scripts/show-cost.py` from the toolkit root and by absolute path from another cwd."""
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary) / "home"
             elsewhere = Path(temporary) / "elsewhere"
@@ -268,13 +282,13 @@ class ShowCostCountingTests(unittest.TestCase):
             env = {**os.environ, "HOME": str(home)}
             env.pop("PYTHONPATH", None)
             invocations = (
-                (ROOT, "bin/aitk"),
-                (elsewhere, str(ROOT / "bin" / "aitk")),
+                (ROOT, "scripts/show-cost.py"),
+                (elsewhere, str(SCRIPT)),
             )
             for cwd, command in invocations:
                 with self.subTest(cwd=str(cwd)):
                     result = subprocess.run(
-                        [command, "cost", "all"],
+                        [sys.executable, command, "all"],
                         cwd=cwd,
                         env=env,
                         capture_output=True,

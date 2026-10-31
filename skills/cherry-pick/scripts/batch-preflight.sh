@@ -12,7 +12,7 @@
 #                         number (not since reverted), or a target commit
 #                         carries "cherry picked from commit <sha>"
 #   NOT_MERGED          — the PR is open or closed without a merge commit
-#   NEEDS_INVESTIGATION — merged and not on the target; run investigate/gate
+#   NEEDS_INVESTIGATION — merged and not on the target; investigate before applying
 #   PREFLIGHT_BLOCKED   — missing PR, unknown SHA, or gh/git failure
 # `parents` is the source commit's parent count: 2 or more means a merge
 # commit, picked with `git cherry-pick -x -m 1 <sha>`; 1 means
