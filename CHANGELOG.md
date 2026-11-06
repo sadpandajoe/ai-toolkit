@@ -1,6 +1,30 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## Unreleased
+
+Hardening on top of 0.4.0. Each change is a fact or a hook- or script-enforced
+boundary; no procedure comes back.
+
+- A PR opens only for a tested tree. `scripts/verify.py -- <command>` runs
+  a check and records the tree it ran on; the git guard blocks `gh pr
+  create` until the newest run of each command on that exact tree passed.
+  `--partial` records related checks only, with what CI still runs, and the
+  PR's test plan states the level. The user's `SKIP_PR_GATE=1` lifts it.
+  Review stays advisory.
+- `rules/universal.md`: fix the behavior, not the test; attachment names and
+  private repositories are under the PII rule. The reviewer grades a
+  loosened, skipped or deleted test `[major]` unless the test was wrong.
+- `test-pr` names PR-bound evidence by the PR or a slug, never a ticket ID.
+- Codex: `install.sh` adds a marked hook-trust check to `AGENTS.md`, since
+  untrusted plugin hooks leave a session with no rules and no git guard;
+  `fix-ci` and `test-pr` say what to do when an agent's sandbox refuses the
+  network.
+- The PGM preflight is a script again (`extensions/pgm/skills/pgm/scripts/preflight.py`).
+- Tests hold the Codex agents' model and effort equal to `second-opinion.py`'s pins.
+- `superset-local` keeps three worktree failure modes: Node version, a stale
+  `.env.local`, a leaked venv.
+
+## 0.4.0 — 2026-11-06
 
 The workflow engine is retired: the toolkit is facts and boundaries.
 Current models plan, verify and escalate on their own, so procedure, gates and
@@ -27,8 +51,8 @@ to pass the admission rule in `AGENTS.md`. Remove a v0.3 install first with
   body: `reviewer`, `ci-investigator` and `qa-runner`.
 - `rules/universal.md` holds only the boundaries: authorization, the hooks,
   before/after evidence for UI changes, PII, and precedence. There is no
-  review-before-PR gate; a PR opens as a draft (and, with the hardening below,
-  only for a tested tree).
+  review-before-PR gate; a PR opens as a draft when the change is believed
+  correct.
 - The git guard runs standalone from `hooks/lib/` and now also blocks a
   non-draft `gh pr create` without `AITK_PR_READY=1`, the one check the
   retired review gate held that still applies. The review-gate, plan-drift
@@ -38,25 +62,6 @@ to pass the admission rule in `AGENTS.md`. Remove a v0.3 install first with
 - Install is the plugin on both CLIs; `install.sh` only links the Codex
   agents, which a Codex plugin cannot ship. `scripts/check.py` replaces
   `bin/aitk check`, and `scripts/show-cost.py` replaces `bin/aitk cost`.
-- Hardening on top of the engine removal:
-  - A PR opens only for a tested tree. `scripts/verify.py -- <command>` runs
-    a check and records the tree it ran on; the git guard blocks `gh pr
-    create` until the newest run of each command on that exact tree passed.
-    `--partial` records related checks only, with what CI still runs, and the
-    PR's test plan states the level. The user's `SKIP_PR_GATE=1` lifts it.
-    Review stays advisory.
-  - `rules/universal.md`: fix the behavior, not the test; attachment names and
-    private repositories are under the PII rule. The reviewer grades a
-    loosened, skipped or deleted test `[major]` unless the test was wrong.
-  - `test-pr` names PR-bound evidence by the PR or a slug, never a ticket ID.
-  - Codex: `install.sh` adds a marked hook-trust check to `AGENTS.md`, since
-    untrusted plugin hooks leave a session with no rules and no git guard;
-    `fix-ci` and `test-pr` say what to do when an agent's sandbox refuses the
-    network.
-  - The PGM preflight is a script again (`extensions/pgm/skills/pgm/scripts/preflight.py`).
-  - Tests hold the Codex agents' model and effort equal to `second-opinion.py`'s pins.
-  - `superset-local` keeps three worktree failure modes: Node version, a stale
-    `.env.local`, a leaked venv.
 - `PROJECT_TEMPLATE.md` moves to `skills/handoff/project-template.md`; the
   host table moves to `skills/test-pr/references/preset-environments.md`;
   `scripts/superset-local/up.sh` moves to `skills/superset-local/scripts/`.
