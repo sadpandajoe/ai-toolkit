@@ -19,7 +19,7 @@ if [[ $INPUT =~ \"command\"[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\.)*)\" ]]; the
 fi
 GUARDED=0
 # git and gh in any case (`GIT`, `Gh`): the filesystem may ignore it
-[[ $COMMAND =~ (^|[^[:alnum:]_])([Gg][Ii][Tt]|[Gg][Hh])([^[:alnum:]_]|$)|AITK_PR_READY|SKIP_PR_GATE|SKIP_PRECHECK ]] && GUARDED=1
+[[ $COMMAND =~ (^|[^[:alnum:]_])([Gg][Ii][Tt]|[Gg][Hh])([^[:alnum:]_]|$)|AITK_PR_READY|SKIP_PRECHECK ]] && GUARDED=1
 
 if ! command -v python3 >/dev/null 2>&1; then
     [[ "$GUARDED" -eq 0 ]] && exit 0

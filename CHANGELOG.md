@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 (unreleased)
+
+- The git guard no longer treats `SKIP_PR_GATE` as an override. Nothing has
+  read it since the review gate was retired in 0.4.0, so setting it is
+  harmless and it lifts nothing; `AITK_PR_READY` and `SKIP_PRECHECK` are the
+  only overrides. The guard tests' sample commands no longer name the removed
+  `bin/aitk deliver`.
+
 ## 0.4.0 — 2026-11-06
 
 The workflow engine is retired: the toolkit is facts and boundaries.

@@ -18,8 +18,7 @@ Blocked:
   adds would stage;
 - `gh pr create` (or `gh pr new`) without `--draft`, and `gh pr ready` and
   `gh pr merge`, unless the user set `AITK_PR_READY=1` in the environment the
-  session started with (set only when the user asked in words). `SKIP_PR_GATE=1`
-  does not lift them;
+  session started with (set only when the user asked in words);
 - a command that assigns or exports any toolkit override itself (a prefix, an
   assignment-only segment, `env`, `export`/`declare`/`typeset`/`readonly`/
   `local`, a literal `+=` append, inside `bash -c`, `eval`, `env -S`, a
@@ -1097,7 +1096,7 @@ def is_draft(args: list[str]) -> bool:
     return draft
 
 
-OVERRIDE_VARIABLES = ("AITK_PR_READY", "SKIP_PR_GATE", "SKIP_PRECHECK")
+OVERRIDE_VARIABLES = ("AITK_PR_READY", "SKIP_PRECHECK")
 EXPORTING_BUILTINS = {"export", "declare", "typeset", "readonly", "local", "integer", "float"}
 # The fallback for command text that did not tokenize or nested too deep: a
 # literal assignment or append, or an export-family builtin (also behind
@@ -1105,9 +1104,9 @@ EXPORTING_BUILTINS = {"export", "declare", "typeset", "readonly", "local", "inte
 # The builtin and the mention are searched in order within each separated command
 # (`unresolved_sets_override`), never as one `builtin.*name` pattern, which
 # backtracks across the whole text from every builtin word.
-OVERRIDE_ASSIGNMENT = re.compile(r"\b(?:AITK_PR_READY|SKIP_PR_GATE|SKIP_PRECHECK)\+?=")
+OVERRIDE_ASSIGNMENT = re.compile(r"\b(?:AITK_PR_READY|SKIP_PRECHECK)\+?=")
 EXPORTING_BUILTIN = re.compile(r"\b(?:export|declare|typeset|readonly|local|integer|float)\b")
-OVERRIDE_MENTION = re.compile(r"\b(?:AITK_PR_READY|SKIP_PR_GATE|SKIP_PRECHECK)\b")
+OVERRIDE_MENTION = re.compile(r"\b(?:AITK_PR_READY|SKIP_PRECHECK)\b")
 COMMAND_SEPARATOR = re.compile(r"[;&|\n]")
 # The message names no variable: hook output never spells an override out.
 OVERRIDE_MESSAGE = (
