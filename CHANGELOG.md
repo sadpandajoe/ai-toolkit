@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+Hardening on top of 0.4.0. Each change is a fact or a hook- or script-enforced
+boundary; no procedure comes back.
+
+- A PR opens only for a tested tree. `scripts/verify.py -- <command>` runs
+  a check and records the tree it ran on; the git guard blocks `gh pr
+  create` until the newest run of each command on that exact tree passed.
+  `--partial` records related checks only, with what CI still runs, and the
+  PR's test plan states the level. The user's `SKIP_PR_GATE=1` lifts it.
+  Review stays advisory.
+- `rules/universal.md`: fix the behavior, not the test; attachment names and
+  private repositories are under the PII rule. The reviewer grades a
+  loosened, skipped or deleted test `[major]` unless the test was wrong.
+- `test-pr` names PR-bound evidence by the PR or a slug, never a ticket ID.
+- Codex: `install.sh` adds a marked hook-trust check to `AGENTS.md`, since
+  untrusted plugin hooks leave a session with no rules and no git guard;
+  `fix-ci` and `test-pr` say what to do when an agent's sandbox refuses the
+  network.
+- The PGM preflight is a script again (`extensions/pgm/skills/pgm/scripts/preflight.py`).
+- Tests hold the Codex agents' model and effort equal to `second-opinion.py`'s pins.
+- `superset-local` keeps three worktree failure modes: Node version, a stale
+  `.env.local`, a leaked venv.
+
 ## 0.4.0 — 2026-11-06
 
 The workflow engine is retired: the toolkit is facts and boundaries.

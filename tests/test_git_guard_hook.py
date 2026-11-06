@@ -843,9 +843,12 @@ class GitGuardHookTests(unittest.TestCase):
         self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2)
         self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"SKIP_PR_GATE": "1"})
         self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"AITK_PR_READY": "0"})
-        self.assert_cases(PR_PUBLISH_ALLOW, self.clean, 0)
+        # The draft and publish rules alone: the verify gate on `gh pr create` has its
+        # own tests (tests/test_verify_gate.py), so its override is on here.
+        no_verify_gate = {"SKIP_PR_GATE": "1"}
+        self.assert_cases(PR_PUBLISH_ALLOW, self.clean, 0, env=no_verify_gate)
         self.assert_cases(PR_PUBLISH_LIMITS, self.clean, 0)
-        self.assert_cases(("gh pr create --fill",), self.clean, 0, env={"AITK_PR_READY": "1"})
+        self.assert_cases(("gh pr create --fill",), self.clean, 0, env={"AITK_PR_READY": "1", **no_verify_gate})
         self.assert_cases(
             ("gh pr merge 12 --squash", "gh pr ready 12", "nohup gh pr ready 12"),
             self.clean,
@@ -929,8 +932,11 @@ class GitGuardHookTests(unittest.TestCase):
         exhausted = [found for found in shell_tokens.commands(spent, cwd) if found.unreadable]
         self.assertEqual([None], [found.workdir for found in exhausted])
         self.assertTrue(all(found.unresolved for found in exhausted))
-        # the user's session override still lifts the block, as for any gh pr publish
-        git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1"})
+        # the user's session overrides still lift the block, as for any gh pr publish; an
+        # unreadable command could hide a `gh pr create`, so the verify gate's override counts too
+        git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1", "SKIP_PR_GATE": "1"})
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1"})
 
     def test_a_101_entry_config_prefix_with_an_alias_on_the_last_entry_blocks(self) -> None:
         # No count is parsed: the alias key anywhere in the prefix, next to a gated mention, blocks.

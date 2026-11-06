@@ -16,7 +16,7 @@ add the missing fact or boundary; never put the procedure back.
 ## Layout
 
 - `rules/universal.md`: the only always-on text, injected by
-  `hooks/session-start.sh`. Boundaries only; keep it under about 300 words.
+  `hooks/session-start.sh`. Boundaries only; keep it near 350 words.
 - `skills/<name>/SKILL.md`: one skill per outcome, triggered by its
   description alone. Frontmatter is exactly `name` and `description`. Start
   from [the template](../../docs/templates/SKILL.md). A script a skill runs

@@ -53,13 +53,21 @@ through.
 
 Dispatch the scenarios to the `qa-runner` agent so browser output stays out
 of this session. Its brief carries the toolkit root, the app URL, the role,
-the source id (`pr-NNNN`, `sc-NNNNN`), the scenarios, and the full text of
+the source id, the scenarios, and the full text of
 [references/browser-recording.md](references/browser-recording.md). For a UI
 change, ask for **before** (the base branch, or the environment without the
 change) and **after** (the PR) on the same scenarios; those are the PR's
 before/after evidence. Before needs the app running the base: capture it
-before the change is applied, or ask the user to switch the stack. Scenarios run sequentially in one recording; a failure
-is captured and the run moves on, with no retry until after the report.
+before the change is applied, or ask the user to switch the stack. Scenarios
+run sequentially in one recording; a failure is captured and the run moves on,
+with no retry until after the report. Codex's `workspace-write` sandbox can
+refuse the browser's network and the writes under `~/.qa-runner/` and
+`~/qa-recordings/`; when the agent reports that, run the scenarios in this
+session and keep only results and paths in the report.
+
+Every evidence file name starts with the source id, and PR attachments are
+public. Evidence bound for a PR uses `pr-NNNN`, or a short slug of the change
+before the PR exists; `sc-NNNNN` only for evidence that stays on the story.
 
 ## Resources
 
