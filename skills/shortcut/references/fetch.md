@@ -19,9 +19,6 @@ since `description` and `comments[].text` carry control characters that break
 raw `jq`; and joins every `search` page by following `next`.
 `SHORTCUT_API_BASE` overrides the host (tests use it).
 
-Story references (`sc-12345`, URLs, bare numbers) are parsed per
-`rules/input-detection.md`.
-
 ## Fields
 
 | Field | Shape |
@@ -52,7 +49,7 @@ $SC post /stories/search '{"completed_at_start":"2026-03-01T00:00:00Z","complete
 $SC post /stories/search '{"workflow_state_types":["started"],"group_id":"<team-uuid>"}'   # WIP; filter .blocked / .blocker client-side
 ```
 
-The primary workflow's name comes from `shortcut.primary_workflow` in the
+The primary workflow's name may be set as `shortcut.primary_workflow` in the
 target repo's `.ai-toolkit/config.json`; when it is missing, ask once.
 
 When REST still fails after the retry, or for one-off interactive lookups, the

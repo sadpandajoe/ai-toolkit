@@ -1,7 +1,7 @@
 """The shell tokenizer the PreToolUse hooks share.
 
-Lifted from the review gate so the git guard and the review gate read a Bash
-command the same way. `commands()` walks a command string and yields every
+The git guard and the pre-push check read a Bash command through it.
+`commands()` walks a command string and yields every
 simple command it can see, in order, with its wrapper-stripped argv:
 
 - separators: newlines, `;`, `&&`, `||`, `|`, `&`, `|&` and parentheses;

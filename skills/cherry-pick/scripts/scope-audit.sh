@@ -22,11 +22,11 @@
 # Exit codes:
 #   0 = clean: the result changes exactly the source's lines
 #   1 = flagged: extra or missing files or lines, or moved-code candidates —
-#       investigate in Step 2
+#       investigate with the hunk-level audit
 #   2 = invocation error
 #
-# This script produces mechanical signals only. The calling workflow must still
-# run the LLM hunk-level audit (Step 2 in references/validate.md).
+# This script produces mechanical signals only. The caller must still run the
+# hunk-level scope-leak audit in references/validate.md.
 
 set -euo pipefail
 

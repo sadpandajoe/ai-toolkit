@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The one Preset host classifier (rules/preset-environments.md).
+ * The one Preset host classifier (skills/test-pr/references/preset-environments.md).
  *
  *   import { classifyHost, refuseProduction } from '<toolkit-root>/scripts/preset/hosts.mjs';
  *   classifyHost('https://<ws>.us1a.app-stg.preset.io/') // { host, environment: 'staging' }
@@ -51,7 +51,7 @@ export function refuseProduction(input) {
   const result = classifyHost(input);
   if (!['local', 'staging', 'dev'].includes(result.environment)) {
     const why = result.environment === 'production' ? 'a production host' : 'not a known Preset test host';
-    throw new Error(`refusing ${result.host || String(input)}: ${why} (rules/preset-environments.md)`);
+    throw new Error(`refusing ${result.host || String(input)}: ${why} (skills/test-pr/references/preset-environments.md)`);
   }
   return result;
 }

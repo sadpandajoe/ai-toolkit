@@ -1,11 +1,10 @@
 # Communication Formatting
 
-Internal helper for `$pgm create-status-report` and `$pgm
-create-velocity-report`: turn report data, a status update or a risk summary
-into one audience's format. The audience is `--audience <mode>`, else what the
-request implies ("summarize for leadership" is executive, "this needs to be
-escalated" is escalation), else `delivery`. Thresholds (stalled days, review
-hours) are the `thresholds` values in `config.json` (`rules/pgm.md`).
+Turn report data, a status update or a risk summary into one audience's
+format. The audience is `--audience <mode>`, else what the request implies
+("summarize for leadership" is executive, "this needs to be escalated" is
+escalation), else `delivery`. Thresholds (stalled days, review hours) are the
+configured values (see the skill's thresholds table).
 
 ## Audience Templates
 

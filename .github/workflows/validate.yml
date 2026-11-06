@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  conformance:
+  validate:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -29,18 +29,9 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Generate path-resolved build output
-        run: bin/aitk build --with-pgm
-      - name: Run the complete conformance gate
-        run: bin/aitk check
+      - name: Run the repository checks
+        run: python scripts/check.py
+      - name: Run the tests
+        run: python -m unittest discover -s tests -v
       - name: Reject whitespace errors
         run: git diff --check
-      - name: Build an isolated wheel
-        run: python -m pip wheel --no-deps --wheel-dir dist .
-      - name: Smoke test the installed wheel outside the source tree
-        shell: bash
-        run: |
-          python -m venv "$RUNNER_TEMP/aitk-smoke"
-          "$RUNNER_TEMP/aitk-smoke/bin/python" -m pip install --no-deps dist/*.whl
-          cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/aitk-smoke/bin/aitk" --root "$GITHUB_WORKSPACE" list --json

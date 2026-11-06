@@ -1,90 +1,33 @@
-# Universal Principles
+# AI Toolkit Rules
 
-These rules load in every session, on Claude and on Codex; workflows and skills
-carry the detail. "(hook-enforced)" marks an absolute that a hook blocks even
-when this text is missed.
+These load in every session, on Claude Code and on Codex. Skills carry the
+domain facts; these are the boundaries.
 
-- **Multi-step and publishing work enters a workflow first.** A request whose
-  change takes several steps, or that will push or open a PR, loads the
-  `workflows` skill before the first edit or PR action, on intent alone, and
-  persists the routing snapshot before touching files. A contained edit with a
-  passing check runs inline: make it, run the check, report the result. Small
-  direct answers, read-only work, and fixed-procedure skills that change no
-  repo behavior (commit, archive) are exempt; a domain skill that edits
-  behavior runs inside the workflow, not instead of it.
-- **Read-only work stays read-only.** When the user describes a problem, asks a
-  question, or thinks out loud rather than asking for a change, the deliverable
-  is your assessment: report what you found and stop. Answers, reviews, and
-  diagnostics create or modify no workflow state unless the user asks for a
-  report artifact.
-- **Durable state is files, not chat.** `PROJECT.md` holds current state and the
-  routing snapshot; `PLAN.md` holds the active plan when one was needed. Both
-  are local-only, never committed (hook-enforced), and written only by the
-  parent session, so one writer keeps them consistent; workers return compact
-  handoffs (`rules/specialist-handoff.md`). Update them before each worker
-  dispatch and after each handoff, so a fresh session or worker can continue
-  from the files alone and no workflow needs, or asks for, a cleared context.
-  Resume from the files, never from remembered chat, which compaction loses.
-  State lives in the `PROJECT.md` block that `bin/aitk project-state` writes;
-  never hand-edit it.
-  To edit one that is a symlink, write to its
-  `readlink -f` target: Claude Code's Write and Edit refuse to write through a
-  symlink.
-- **No PII on public surfaces.** PR text, comments, and commit messages carry
-  no customer names, ticket IDs, internal URLs, or reporter identity; scrub
-  them per `rules/pii-scrub.md`.
-- **Evidence before completion.** A gate passes on a check that ran and its
-  result, never on inspection alone; a syntax-only check, or a command that
-  failed to start, is not that check. Report results as they happened: a
-  failure with its output, a skipped step as skipped. Never push after a failed
-  verification, because CI and reviewers would inherit a known failure.
-- **Resolve uncertainty yourself.** Investigate, read code, and run checks
-  rather than asking. Ask the user only for a genuine product, design, or scope
-  choice, a fact only they hold, or a protected effect; those are the only
-  `USER_DECISION` cases. A passing gate moves the workflow to its next step
-  without asking; only `USER_DECISION`, `BLOCKED`, and hard safety gates pause
-  it (`rules/gates.md`).
-- **Deliver the scope that was asked.** Make routine judgment calls yourself.
-  If the request looks mistaken or a better approach exists, say so in a
-  sentence and continue as asked. Cleanup, refactors, and fixes the task did
-  not call for go in the summary as suggestions.
-- **Deliver with `bin/aitk deliver`; promote only on request.** After
-  verification and review pass it commits, pushes the feature branch, and opens
-  a **draft** PR without asking; `--no-pr` stops at `pushed — awaiting PR
-  request`. Never from `main`. Hook-enforced: no `--no-verify`, no
-  `gh pr create` before review `PASS`, and no non-draft PR, ready, or merge
-  without the user's words (`AITK_PR_READY=1` in the environment the session
-  started with, never typed into a command; `deliver` never opens a ready
-  PR). Amend, rebase, and force-push
-  need explicit authorization (force-push or delete of `main` is
-  hook-enforced); invoking `cherry-pick` or `watch-pr` grants their
-  fast-forward pushes.
-- **Confirm before destructive actions.** Deleting data or branches, discarding
-  uncommitted work, stopping containers, and other irreversible effects outside
-  the change itself wait for the user's confirmation, because they cannot be
-  undone; the commits, pushes, and draft PR above are routine. Before starting
-  Docker stacks or large test runs, follow `rules/resource-management.md`.
-- **Review is independent.** Never review your own work inline, because the
-  author's context hides the author's mistakes; review and validation run cold
-  in a fresh context (`rules/specialist-handoff.md`), preferably on the other
-  provider. A routed specialist that reports `MODEL_ROUTE_UNAVAILABLE` stays
-  unavailable: no generic worker or cheaper model takes its place, since it
-  would grade below the route's standard.
-- **Record what overturned you.** When a user corrects you, a route was wrong,
-  or a specialist overturned a plan or RCA, record it with `bin/aitk observe
-  --kind <user-correction | misroute | specialist-invalidation> --detail
-  "<one sentence>"`.
-
-## Precedence
-
-When two rules disagree, the earlier source wins:
-
-1. safety and authorization in this file;
-2. gates and contracts (`rules/gates.md`, `interfaces/contracts.json`);
-3. the repository's own `AGENTS.md` and `CLAUDE.md`;
-4. toolkit orchestration and domain rules (model routing, testing,
-   implementation, review);
-5. `PROJECT.md` current state.
-
-Repository conventions beat toolkit style and domain rules; toolkit safety and
-authorization never yield to them.
+- **Read-only stays read-only.** A question, a described problem or thinking
+  out loud gets your assessment, not edits, until the user asks for a change.
+- **Authorization.** Committing on a feature branch, pushing it, and opening a
+  draft PR for it are routine. Ask first, and wait for the user's words,
+  before marking a PR ready, merging, amending or rebasing pushed commits,
+  force-pushing, touching production, or any destructive action outside the
+  change itself: deleting data or branches, discarding uncommitted work,
+  stopping containers. Invoking `cherry-pick` authorizes its pushes to the
+  target branch; invoking `watch-pr` authorizes pushing fixes to the watched
+  PR's branch.
+- **Stage explicit paths.** Never `git add -A` or `git add .`; unrelated work
+  and local notes ride along.
+- **Hooks are boundaries.** The git guard blocks `--no-verify`, force-pushing
+  or deleting `main`/`master`, committing local notes (`PROJECT.md`,
+  `PLAN.md` and the others the `handoff` skill lists) or `.ai-toolkit/`, a
+  non-draft PR, and `gh pr ready`/`gh pr merge`, unless the user started the
+  session with `AITK_PR_READY=1`; a command that sets or exports an override
+  is blocked. When the git guard blocks you, stop and tell the user; never work
+  around it. When the pre-push check fails, fix the failures and push again.
+- **Evidence for UI changes.** A change to anything a user sees carries before
+  and after screenshots or a short video, captured from the running app and
+  attached to the PR.
+- **No PII on public surfaces.** PR text, review replies, comments and commit
+  messages carry no customer or workspace names, ticket IDs (`sc-12345`),
+  internal URLs, reporter identity or credentials. Describe the configuration
+  instead; local notes may keep the IDs.
+- **Precedence.** These rules first, then the repository's own `AGENTS.md` or
+  `CLAUDE.md`, then the toolkit's skills.

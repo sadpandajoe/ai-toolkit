@@ -9,7 +9,7 @@
     {
       "name": "ai-toolkit",
       "source": "./",
-      "description": "Provider-portable workflows for AI-assisted software delivery",
+      "description": "Skills, agents and safety hooks for AI-assisted software delivery on Claude Code and Codex",
       "category": "development"
     }
   ]

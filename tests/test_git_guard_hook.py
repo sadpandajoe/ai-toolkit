@@ -4,8 +4,9 @@ Every case runs the wrapper end to end with a synthetic PreToolUse payload in a
 scratch repository under a fresh temporary directory, and checks the exit code:
 0 allows, 2 blocks. The cases port the retired shell smoke suite and add the
 P1 ones: commands behind `timeout`, `nohup`, `xargs` and `nice`,
-newline-separated commands, `git add <state> && git commit`, and `gh pr ready`
-and `gh pr merge` without the user's AITK_PR_READY=1.
+newline-separated commands, `git add <state> && git commit`, and a non-draft
+`gh pr create`, `gh pr ready` and `gh pr merge` without the user's
+AITK_PR_READY=1.
 """
 
 from __future__ import annotations
@@ -28,7 +29,6 @@ sys.path.insert(0, str(ROOT / "hooks" / "lib"))
 import git_guard  # noqa: E402
 import shell_tokens  # noqa: E402
 sys.path.pop(0)
-from aitk.hooks import review_gate  # noqa: E402
 
 STATE_FILES = git_guard.STATE_FILES
 WRAPPER = ROOT / "hooks" / "prevent-project-commit.sh"
@@ -282,6 +282,19 @@ PR_PUBLISH_BLOCK = (
     "bash -c 'gh pr merge 12'",
     "env FOO=1 gh pr ready 12",
     "gh pr merge 'unbalanced",
+    # A PR opens as a draft.
+    "gh pr create --title t --body b",
+    "gh pr create --fill",
+    "gh pr create --draft=false --fill",
+    "gh pr create -t d --fill",
+    "gh pr new --fill",
+    "git push -u origin HEAD && gh pr create --fill",
+    "git push -u origin HEAD\ngh pr create --fill",
+    "timeout 60 gh pr create --fill",
+    "bash -lc 'gh pr create --fill'",
+    "gh pr create --title $'it\\'s fixed' --body x",
+    "AITK_PR_READY=1 gh pr create --fill",
+    "env AITK_PR_READY=1 gh pr create --fill",
     # a typed override is not the user's: only the session environment counts
     "AITK_PR_READY=1 gh pr merge 12 --squash",
     "AITK_PR_READY=1 gh pr ready 12",
@@ -462,6 +475,11 @@ PR_PUBLISH_ALLOW = (
     "GH pr view 12",
     "gh pr checks 12",
     "gh pr create --draft --title t --body b",
+    "gh pr create -d --fill",
+    "gh pr create -fd",
+    "gh pr create --draft=true --fill",
+    "gh --repo o/r pr create --fill --draft",
+    "gh pr create --help",
     "echo gh pr merge",
     "printf 'gh pr merge\\n'",
     "setsid gh pr view 12",
@@ -824,8 +842,10 @@ class GitGuardHookTests(unittest.TestCase):
     def test_pr_ready_and_merge_need_the_users_override(self) -> None:
         self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2)
         self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"SKIP_PR_GATE": "1"})
+        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"AITK_PR_READY": "0"})
         self.assert_cases(PR_PUBLISH_ALLOW, self.clean, 0)
         self.assert_cases(PR_PUBLISH_LIMITS, self.clean, 0)
+        self.assert_cases(("gh pr create --fill",), self.clean, 0, env={"AITK_PR_READY": "1"})
         self.assert_cases(
             ("gh pr merge 12 --squash", "gh pr ready 12", "nohup gh pr ready 12"),
             self.clean,
@@ -838,6 +858,14 @@ class GitGuardHookTests(unittest.TestCase):
         merge = self.run_hook("gh pr merge 12", self.clean)
         self.assertIn("ask the user", merge.stderr)
         self.assertNotIn("AITK_PR_READY", merge.stderr)
+
+    def test_a_non_draft_pr_is_sent_back_for_a_draft(self) -> None:
+        result = self.run_hook("gh pr create --fill", self.clean)
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn("--draft", result.stderr)
+        self.assertIn("stop and ask the user", result.stderr)
+        # The override is the user's to set; the message never spells it out.
+        self.assertNotIn("AITK_PR_READY", result.stderr)
 
     def test_a_long_run_of_rescan_words_stays_fast_and_blocks(self) -> None:
         # Every later rescan word used to be rescanned again from each of its own later
@@ -1373,25 +1401,11 @@ class GitGuardHookTests(unittest.TestCase):
         # the timer is disarmed afterwards
         self.assertEqual((0.0, 0.0), signal.getitimer(signal.ITIMER_REAL))
 
-    def test_the_review_gate_stops_itself_before_its_hook_timeout_and_blocks(self) -> None:
-        def slow(*_args: object) -> None:
-            time.sleep(10)
-
-        payload = json.dumps({"tool_input": {"command": "gh pr create --fill"}, "cwd": str(self.clean)})
-        with mock.patch.object(review_gate, "DEADLINE_SECONDS", 0.05), mock.patch.object(
-            review_gate, "evaluate", slow
-        ), mock.patch("sys.stdin", io.StringIO(payload)), mock.patch("sys.stderr", io.StringIO()) as stderr:
-            started = time.monotonic()
-            self.assertEqual(2, review_gate.main())
-            self.assertLess(time.monotonic() - started, 5.0)
-            self.assertIn("too large or complex", stderr.getvalue())
-
     def test_the_in_process_deadlines_sit_below_the_hook_timeouts(self) -> None:
         hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["hooks"]
         timeouts = {Path(h["command"].split("/hooks/")[1].rstrip('"')).name: h["timeout"] for h in hooks}
         # a margin for interpreter start-up and the wrapper around the deadline
         self.assertLessEqual(git_guard.DEADLINE_SECONDS + 5, timeouts["prevent-project-commit.sh"])
-        self.assertLessEqual(review_gate.DEADLINE_SECONDS + 3, timeouts["require-review-gate.sh"])
 
     def test_heads_are_compared_without_case(self) -> None:
         self.assertEqual(["GIT", "status"], shell_tokens.git_argv(["GIT", "status"]))
@@ -1595,11 +1609,6 @@ class GitGuardHookTests(unittest.TestCase):
             )
         self.assertEqual([], json.loads(result.stdout))
 
-    def test_state_files_match_project_state(self) -> None:
-        # Until project_state goes, the guard's own copy must not drift from it.
-        from aitk.project_state import STATE_FILES as RECORDED
-
-        self.assertEqual(RECORDED, STATE_FILES)
 
 
 if __name__ == "__main__":

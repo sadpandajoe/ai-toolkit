@@ -1,35 +1,54 @@
 #!/bin/sh
+#
+# install.sh — link the Codex agents, which a Codex plugin cannot ship.
+#
+# Everything else installs as a plugin (README, Install):
+#   claude plugin marketplace add <this checkout> && claude plugin install ai-toolkit@ai-toolkit
+#   codex plugin marketplace add <this checkout> && codex plugin add ai-toolkit@ai-toolkit
+#
+# Usage: ./install.sh [--uninstall]
+#
+# Idempotent and non-destructive: it links agents/codex/*.toml into
+# ${CODEX_HOME:-~/.codex}/agents/, leaves any file there that is not its own
+# link untouched (and says so), and --uninstall removes only links that point
+# into this checkout.
+
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-PYTHON=${PYTHON:-python3}
-
-if ! command -v "$PYTHON" >/dev/null 2>&1; then
-    printf '%s\n' "AI Toolkit requires Python 3.11 or newer (cannot find $PYTHON)." >&2
-    exit 2
-fi
-if ! "$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
-    printf '%s\n' "AI Toolkit requires Python 3.11 or newer." >&2
-    exit 2
-fi
+TARGET=${CODEX_HOME:-$HOME/.codex}/agents
 
 case "${1:-}" in
     --uninstall)
-        shift
-        exec "$ROOT/bin/aitk" uninstall "$@"
+        [ -d "$TARGET" ] || exit 0
+        for link in "$TARGET"/*.toml; do
+            [ -L "$link" ] || continue
+            case $(readlink "$link") in
+                "$ROOT"/agents/codex/*) rm "$link" && echo "removed $link" ;;
+            esac
+        done
+        exit 0
         ;;
-    --rollback)
-        shift
-        exec "$ROOT/bin/aitk" rollback "$@"
-        ;;
-    --with-pgm)
-        shift
-        exec "$ROOT/bin/aitk" install --with-pgm "$@"
-        ;;
-    "")
-        exec "$ROOT/bin/aitk" install
-        ;;
+    "") ;;
     *)
-        exec "$ROOT/bin/aitk" install "$@"
+        sed -n '3,15p' "$0"
+        exit 2
         ;;
 esac
+
+mkdir -p "$TARGET"
+for agent in "$ROOT"/agents/codex/*.toml; do
+    link=$TARGET/$(basename "$agent")
+    if [ -L "$link" ] && [ "$(readlink "$link")" = "$agent" ]; then
+        continue
+    fi
+    if [ -e "$link" ] || [ -L "$link" ]; then
+        echo "skipped $link: a different file is already there" >&2
+        continue
+    fi
+    ln -s "$agent" "$link" && echo "linked $link"
+done
+
+if grep -qF '# >>> ai-toolkit managed guidance >>>' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md" 2>/dev/null; then
+    echo "note: an older bin/aitk install is still in place; run 'git checkout 0.3.0 && ./install.sh --uninstall' in that checkout first" >&2
+fi

@@ -26,28 +26,6 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/pre-push-validate.sh\"",
             "timeout": 300,
             "statusMessage": "Validating push"
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/require-review-gate.sh\"",
-            "timeout": 10,
-            "statusMessage": "Checking review gate"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/check-plan-drift.sh\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}/hooks/observation-reminder.sh\"",
-            "timeout": 10
           }
         ]
       }
