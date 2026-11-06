@@ -26,7 +26,9 @@ never reason from the status name.
 Send log gathering and classification to the `ci-investigator` agent, so raw
 logs stay out of this session. Use one agent per independent failure when
 there are several; each returns one record per failure. Read the logs yourself
-only for a single short failure.
+only for a single short failure. Codex's sandbox can refuse the agent's
+network calls: then save the logs to files without reading them (`gh run view
+<id> --log-failed > <file>`) and hand it the paths.
 
 A failure is ours only if both hold:
 - the failing file or test is in our diff;

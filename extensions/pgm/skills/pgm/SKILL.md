@@ -13,26 +13,11 @@ description: Program-management reports from configured delivery data (Shortcut 
 
 ## Before collecting anything
 
-Stop before any collection, with no report written, unless all of these hold,
-and say which one failed (never print a credential value):
-
-- `$PGM_DIR` is set, is a real directory (not a symlink), and holds a readable
-  JSON `config.json` (not a symlink).
-- `config.json` has non-empty `teams` (each with `name` and `id` or `uuid`),
-  `members` (each with `name`, a GitHub handle as `github` or
-  `github_handle`, a Shortcut ID as `shortcut_id` or `shortcut_uuid`, and a
-  team assignment via `team`, `team_id`, `team_uuid` or `teams` that names a
-  configured team), `repos` (each with `name`, a `path` that exists, a team
-  relationship, and `strategy` `per_member` or `all_prs`), and `bots` as a list
-  of account names.
-- Shortcut access: `SHORTCUT_API_TOKEN`, or a Shortcut connector in this
-  session.
-- GitHub access: `gh` installed and authenticated (`GH_TOKEN`,
-  `GITHUB_TOKEN`, or `gh auth status`), or a GitHub connector.
-- Velocity only: `month` as `YYYY-MM`, `date_range` with exactly `start` and
-  `end` as `YYYY-MM-DD` (start not after end), and the pipeline files `run.md`,
-  `collect_github.py`, `collect_shortcut.py`, `analyze.py` and `report.py` in
-  `$PGM_DIR` (regular files, not symlinks).
+Run `python3 <skill-dir>/scripts/preflight.py status|velocity` (add
+`--shortcut-connector` or `--github-connector` when this session has that
+connector instead of a token or `gh`). Exit 1: stop with the findings it
+prints, before any collection and with no report written. Exit 0 prints the
+effective thresholds.
 
 ## Config and thresholds
 
@@ -42,8 +27,8 @@ and org notes. Read it every run; never hardcode members, team counts,
 repository counts or a sprint model. Default to flow signals: WIP, cycle time,
 throughput, stalled work, blockers.
 
-The optional `thresholds` object overrides these defaults; an unknown key or a
-non-positive value is a config error:
+The optional `thresholds` object overrides these defaults (the preflight
+rejects an unknown key or a non-positive value):
 
 | Key | Default | Flags |
 |---|---|---|

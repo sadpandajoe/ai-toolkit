@@ -3,9 +3,11 @@
 # prevent-project-commit.sh — provider-neutral PreToolUse hook (wrapper)
 #
 # The git guard: blocks unsafe git flags, force-pushes to main/master, commits
-# of local workflow state or .ai-toolkit/, and `gh pr ready`/`gh pr merge`
-# without the user's AITK_PR_READY=1 from the session environment, and any
-# command that sets or exports an override itself. The logic and its known
+# of local workflow state or .ai-toolkit/, `gh pr ready`/`gh pr merge` and a
+# non-draft PR without the user's AITK_PR_READY=1 from the session environment,
+# `gh pr create` without a passing scripts/verify.py record on its tree (the
+# user's SKIP_PR_GATE=1 lifts that one), and any command that sets or exports
+# an override itself. The logic and its known
 # limits live in hooks/lib/git_guard.py.
 #
 # Exit codes: 0 allow, 2 block (reason on stderr). Fails closed when python3
