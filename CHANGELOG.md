@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 (unreleased)
+
+- `cherry-pick` is trimmed by the admission rule (3,923 → 3,204 words):
+  restated procedure and the rules repeated across `gotchas.md` and the
+  references are cut, and script output is left to each script's header.
+  The incidents, script commands, org-data keys, authorization, validation
+  labels, row vocabulary and report formats stay.
+
 ## 0.4.0 — 2026-11-06
 
 The workflow engine is retired: the toolkit is facts and boundaries.

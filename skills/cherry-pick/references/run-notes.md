@@ -2,9 +2,9 @@
 
 ## Row vocabulary
 
-`CHERRY_PICK.md` is local working notes: target and source branch, the
-pre-flight rows, waves, and one row per cherry. No diffs, raw logs or worker
-transcripts; refs, one-line outcomes and short decisive excerpts only.
+`CHERRY_PICK.md` holds the target and source branch, the pre-flight rows, and
+one row per cherry: refs, one-line outcomes and short decisive excerpts, never
+diffs, raw logs or worker transcripts.
 
 Row columns: Order, PR, Source SHA, Result, Target SHA, Scope Audit,
 Validation, Push, Adaptation, Owner-notified, Notes.
@@ -28,7 +28,9 @@ Validation, Push, Adaptation, Owner-notified, Notes.
 ## Final summary
 
 Lead with the answer to the user's question (is the fix on the branch?), then
-the table, then actionable next steps only, no recap.
+the table, then actionable next steps only, no recap. Detailed notes are
+required for any row that is not `Applied` with `None` adaptation, in
+dependency order when rows depended on each other.
 
 ```markdown
 ## Cherry-Pick Summary
@@ -51,6 +53,3 @@ the table, then actionable next steps only, no recap.
 - <e.g. "the encoding bug likely affects the target via another path; needs a separate fix">
 - <validation gaps, pending PRs to pick once merged, unblock candidates>
 ```
-
-Detailed notes are required for any row that is not `Applied` with `None`
-adaptation; keep the dependency order when rows depended on each other.
