@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 — 2026-11-06
 
 The workflow engine is retired: the toolkit is facts and boundaries.
 Current models plan, verify and escalate on their own, so procedure, gates and
