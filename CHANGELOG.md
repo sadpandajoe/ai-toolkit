@@ -2,6 +2,11 @@
 
 ## 0.4.1 (unreleased)
 
+- The git guard no longer treats `SKIP_PR_GATE` as an override. Nothing has
+  read it since the review gate was retired in 0.4.0, so setting it is
+  harmless and it lifts nothing; `AITK_PR_READY` and `SKIP_PRECHECK` are the
+  only overrides. The guard tests' sample commands no longer name the removed
+  `bin/aitk deliver`.
 - `cherry-pick` is trimmed by the admission rule (3,923 → 3,204 words):
   restated procedure and the rules repeated across `gotchas.md` and the
   references are cut, and script output is left to each script's header.
