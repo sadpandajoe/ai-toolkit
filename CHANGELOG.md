@@ -7,6 +7,11 @@
   harmless and it lifts nothing; `AITK_PR_READY` and `SKIP_PRECHECK` are the
   only overrides. The guard tests' sample commands no longer name the removed
   `bin/aitk deliver`.
+- `cherry-pick` is trimmed by the admission rule (3,923 → 3,204 words):
+  restated procedure and the rules repeated across `gotchas.md` and the
+  references are cut, and script output is left to each script's header.
+  The incidents, script commands, org-data keys, authorization, validation
+  labels, row vocabulary and report formats stay.
 
 ## 0.4.0 — 2026-11-06
 
