@@ -110,7 +110,8 @@ def _team_assignments(entry: dict[str, object]) -> list[str]:
 
 
 def _valid_date(value: object) -> bool:
-    if not isinstance(value, str):
+    # fromisoformat also takes `20261101` and week dates, and start/end compare as text
+    if not isinstance(value, str) or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None:
         return False
     try:
         date.fromisoformat(value)

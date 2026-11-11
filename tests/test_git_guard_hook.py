@@ -854,11 +854,12 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertIn("stay out of commits", result.stderr)
 
     def test_pr_ready_and_merge_need_the_users_override(self) -> None:
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2)
+        # Every case runs where the commit has a passing verify record, so a block on a
+        # creation comes from the draft rule, not from the verify gate.
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2)
         # the retired v0.3 override in the session environment lifts nothing either
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"SKIP_PR_GATE": "1"})
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"AITK_PR_READY": "0"})
-        # Creations run in the repository whose commit has a passing verify record.
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2, env={"SKIP_PR_GATE": "1"})
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2, env={"AITK_PR_READY": "0"})
         self.assert_cases(PR_PUBLISH_ALLOW, self.verified, 0)
         self.assert_cases(PR_PUBLISH_LIMITS, self.clean, 0)
         self.assert_cases(("gh pr create --fill",), self.verified, 0, env={"AITK_PR_READY": "1"})
@@ -876,7 +877,7 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertNotIn("AITK_PR_READY", merge.stderr)
 
     def test_a_non_draft_pr_is_sent_back_for_a_draft(self) -> None:
-        result = self.run_hook("gh pr create --fill", self.clean)
+        result = self.run_hook("gh pr create --fill", self.verified)
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("--draft", result.stderr)
         self.assertIn("stop and ask the user", result.stderr)

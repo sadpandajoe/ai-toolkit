@@ -29,13 +29,26 @@ BEGIN='# >>> ai-toolkit hook check >>>'
 END='# <<< ai-toolkit hook check <<<'
 CHECK='AI Toolkit is installed as a Codex plugin. Its session-start hook puts a section headed "AI Toolkit Rules" in your context. If that section is missing, Codex has not trusted the plugin'"'"'s hooks, so its git guard is not running either: before any commit, push or pull request, tell the user to trust the ai-toolkit hooks in /hooks.'
 
-# Remove the marked block from AGENTS.md, writing through a symlink in place.
+# Remove each complete marked block from AGENTS.md, writing through a symlink in
+# place. A start marker with no end marker after it is the user's edit: its lines
+# stay, so nothing past the block is ever lost.
 remove_check() {
     [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE" || return 0
     tmp=$(mktemp "${TMPDIR:-/tmp}/aitk-agents.XXXXXX")
-    awk -v b="$BEGIN" -v e="$END" '$0 == b { skip = 1; next } skip && $0 == e { skip = 0; next } !skip' \
-        "$AGENTS_FILE" >"$tmp" && cat "$tmp" >"$AGENTS_FILE"
+    awk -v b="$BEGIN" -v e="$END" '
+        !held && $0 == b { held = 1; buf = $0 "\n"; next }
+        held { buf = buf $0 "\n"; if ($0 == e) { held = 0; buf = "" }; next }
+        { print }
+        END { if (held) printf "%s", buf }
+    ' "$AGENTS_FILE" >"$tmp" && cat "$tmp" >"$AGENTS_FILE"
     rm -f "$tmp"
+}
+
+# Whether AGENTS.md holds a start marker with no end marker after it.
+incomplete_check() {
+    [ -f "$AGENTS_FILE" ] && awk -v b="$BEGIN" -v e="$END" '
+        $0 == b { open = 1 } $0 == e { open = 0 } END { exit open ? 0 : 1 }
+    ' "$AGENTS_FILE"
 }
 
 case "${1:-}" in
@@ -46,7 +59,9 @@ case "${1:-}" in
                 "$ROOT"/agents/codex/*) rm "$link" && echo "removed $link" ;;
             esac
         done
-        if [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE"; then
+        if incomplete_check; then
+            echo "left $AGENTS_FILE alone: its hook check has no end marker ($END); remove it by hand" >&2
+        elif [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE"; then
             remove_check && echo "removed the hook check from $AGENTS_FILE"
         fi
         exit 0
@@ -72,7 +87,9 @@ for agent in "$ROOT"/agents/codex/*.toml; do
 done
 
 block=$(printf '%s\n%s\n%s' "$BEGIN" "$CHECK" "$END")
-if [ -f "$AGENTS_FILE" ] && awk -v b="$BEGIN" -v e="$END" '$0 == b { on = 1 } on { print } $0 == e { exit }' \
+if incomplete_check; then
+    echo "left $AGENTS_FILE alone: its hook check has no end marker ($END); fix or remove it, then run ./install.sh again" >&2
+elif [ -f "$AGENTS_FILE" ] && awk -v b="$BEGIN" -v e="$END" '$0 == b { on = 1 } on { print } $0 == e { exit }' \
     "$AGENTS_FILE" | grep -qxF -- "$CHECK"; then
     :
 else

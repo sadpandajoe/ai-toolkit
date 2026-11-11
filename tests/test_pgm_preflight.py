@@ -171,6 +171,18 @@ class PGMPreflightTests(unittest.TestCase):
             preflight("create-velocity-report", self.pgm_dir, **self.options()).status,
         )
 
+    def test_velocity_dates_must_be_written_yyyy_mm_dd(self) -> None:
+        for name in ("run.md", "collect_github.py", "collect_shortcut.py", "analyze.py", "report.py"):
+            (self.pgm_dir / name).write_text("# fixture\n")
+        for start, end in (("20261101", "2026-11-30"), ("2026-W44-1", "2026-11-30"), ("2026-11-01", "2026-11-30 ")):
+            with self.subTest(start=start, end=end):
+                config = valid_config(True)
+                config["date_range"] = {"start": start, "end": end}
+                (self.pgm_dir / "config.json").write_text(json.dumps(config))
+                result = preflight("create-velocity-report", self.pgm_dir, **self.options())
+                self.assertEqual("blocked", result.status)
+                self.assertTrue(any("YYYY-MM-DD" in item for item in result.findings), result.findings)
+
     def test_thresholds_default_when_absent_and_read_when_set(self) -> None:
         config = valid_config()
         (self.pgm_dir / "config.json").write_text(json.dumps(config))

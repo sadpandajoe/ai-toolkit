@@ -84,19 +84,24 @@ def _paths(out: str | None) -> list[str]:
     return [path for path in (out or "").split("\0") if path]
 
 
-def worktree_changes(top: str, base: str, skip: Skip) -> dict[str, str | None] | None:
-    """Every path whose working-tree content differs from `base`, with its blob id."""
+def worktree_changes(
+    top: str, base: str, skip: Skip, outputs: frozenset[str] = frozenset()
+) -> tuple[dict[str, str | None], set[str]] | None:
+    """Every path whose working-tree content differs from `base`, with its blob id, and
+    which of those git does not track. Untracked `outputs` (files an earlier check
+    created, such as `.coverage`) are left out: they are what a check wrote, not the
+    tree under test."""
     tracked = git(top, "diff", "--name-only", "--no-renames", "-z", base, "--")
     untracked = git(top, "ls-files", "--others", "--exclude-standard", "-z")
     if tracked is None or untracked is None:
         return None
-    changes: dict[str, str | None] = {}
     # An untracked nested repository lists as `dir/`; only an explicit `git add` commits it.
-    nested = {path for path in _paths(untracked) if path.endswith("/")}
-    for path in sorted((set(_paths(tracked)) | set(_paths(untracked))) - nested):
+    loose = {path for path in _paths(untracked) if not path.endswith("/") and path not in outputs}
+    changes: dict[str, str | None] = {}
+    for path in sorted(set(_paths(tracked)) | loose):
         if not skip(path):
             changes[path] = blob_id(top, path)
-    return changes
+    return changes, loose & set(changes)
 
 
 def tracked(top: str, paths: set[str]) -> set[str]:
@@ -140,6 +145,11 @@ def load(top: str) -> list[dict]:
     ]
 
 
+def outputs(records: list[dict]) -> frozenset[str]:
+    """Untracked files earlier checks created."""
+    return frozenset(p for r in records for p in r.get("outputs", []) if isinstance(p, str))
+
+
 def append(top: str, record: dict) -> Path:
     path = Path(top) / RECORD
     path.parent.mkdir(exist_ok=True)
@@ -150,10 +160,22 @@ def append(top: str, record: dict) -> Path:
     return path
 
 
-def new_record(base: str, changes: dict, command: str, exit_code: int, level: str, left_to_ci: str, stable: bool) -> dict:
+def new_record(
+    base: str,
+    changes: dict,
+    command: str,
+    exit_code: int,
+    level: str,
+    left_to_ci: str,
+    stable: bool,
+    untracked: set[str] | None = None,
+    created: set[str] | None = None,
+) -> dict:
     return {
         "base": base,
         "changes": changes,
+        "untracked": sorted(untracked or ()),
+        "outputs": sorted(created or ()),
         "command": command,
         "exit": exit_code,
         "level": level,
@@ -181,6 +203,15 @@ def describe_mismatch(tested: dict, committed: dict | None) -> str:
     return "; ".join(parts)
 
 
+def _covers_with_extras(record: dict, committed: dict) -> bool:
+    """The record saw every committed change, plus only untracked files the commit left out."""
+    changes = record["changes"]
+    untracked = set(record.get("untracked", []))
+    return all(changes.get(path, "missing") == blob for path, blob in committed.items()) and all(
+        path in committed or path in untracked for path in changes
+    )
+
+
 def verdict(top: str, target: str, skip: Skip) -> tuple[bool, str, dict | None]:
     """Whether `target` has a passing record: (ok, reason when not, the record)."""
     records = load(top)
@@ -192,7 +223,14 @@ def verdict(top: str, target: str, skip: Skip) -> tuple[bool, str, dict | None]:
         base = record["base"]
         if base not in cache:
             cache[base] = committed_changes(top, base, target, skip)
-        if cache[base] is not None and cache[base] == record["changes"]:
+        committed = cache[base]
+        if committed is None:
+            continue
+        if committed == record["changes"]:
+            matching.append(record)
+        elif record["exit"] != 0 and _covers_with_extras(record, committed):
+            # A failure counts against this tree even when untracked files the commit
+            # left out sat next to it: a leftover must not hide a newer failure.
             matching.append(record)
     if not matching:
         newest = records[-1]

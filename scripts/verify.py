@@ -92,10 +92,12 @@ def main(argv: list[str]) -> int:
         parser.error("--partial needs the checks CI still runs")
 
     base = verify_record.commit(top) or verify_record.EMPTY_TREE
-    before = verify_record.worktree_changes(top, base, is_protected_path)
-    if before is None:
+    known_outputs = verify_record.outputs(verify_record.load(top))
+    read = verify_record.worktree_changes(top, base, is_protected_path, known_outputs)
+    if read is None:
         print("verify: git could not read the working tree", file=sys.stderr)
         return 2
+    before, untracked = read
 
     shown = command[0] if len(command) == 1 else shlex.join(command)
     run = ["sh", "-c", command[0]] if len(command) == 1 else command
@@ -107,13 +109,18 @@ def main(argv: list[str]) -> int:
     except KeyboardInterrupt:
         exit_code = 130
 
-    after = verify_record.worktree_changes(top, base, is_protected_path) or {}
+    after = (verify_record.worktree_changes(top, base, is_protected_path, known_outputs) or ({}, set()))[0]
     # A file the run itself created and git does not track (a cache, a report) is output,
-    # not a change to the tree under test; an edit to anything that was there is.
+    # not a change to the tree under test, and later runs leave it out too; an edit to
+    # anything that was there is a change.
     created = set(after) - set(before)
-    stable = all(after.get(path) == blob for path, blob in before.items()) and not verify_record.tracked(top, created)
+    created_tracked = verify_record.tracked(top, created)
+    stable = all(after.get(path) == blob for path, blob in before.items()) and not created_tracked
     level = "partial" if args.partial else "strong"
-    record = verify_record.new_record(base, before, shown, exit_code, level, (args.partial or "").strip(), stable)
+    record = verify_record.new_record(
+        base, before, shown, exit_code, level, (args.partial or "").strip(), stable,
+        untracked=untracked, created=created - created_tracked,
+    )
     path = verify_record.append(top, record)
     exclude_record_directory(top)
 

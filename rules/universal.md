@@ -20,9 +20,10 @@ boundaries.
   lists) or `.ai-toolkit/`, and, unless the user started the session with
   `AITK_PR_READY=1`, a non-draft PR and `gh pr ready`/`gh pr merge`. It blocks
   `gh pr create` until `<toolkit-root>/scripts/verify.py` has recorded a
-  passing check on that exact tree. A command that sets an override is blocked. Never work
-  around the guard: run the real check it asks for, or stop and tell the
-  user. When the pre-push check fails, fix it and push again.
+  passing check on that exact tree. A command that sets an override is
+  blocked. Never work around the guard: run the real check it asks for, or
+  stop and tell the user. When the pre-push check fails, fix it and push
+  again.
 - **Fix the behavior, not the test.** Loosen or delete a failing test only
   when the test itself is wrong, and say why in the PR.
 - **Evidence for UI changes.** A user-visible change carries before and after

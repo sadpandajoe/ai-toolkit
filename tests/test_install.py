@@ -65,6 +65,18 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn("old wording", text)
         self.assertIn("before\nafter\n", text)
 
+    def test_a_block_missing_its_end_marker_is_left_alone(self) -> None:
+        self.codex.mkdir()
+        broken = f"mine\n{BEGIN}\nold wording\nthe user's own text below\n"
+        self.agents_md.write_text(broken)
+        install = self.run_install()
+        self.assertEqual(0, install.returncode, install.stderr)
+        self.assertIn("no end marker", install.stderr)
+        self.assertEqual(broken, self.agents_md.read_text())
+        uninstall = self.run_install("--uninstall")
+        self.assertIn("no end marker", uninstall.stderr)
+        self.assertEqual(broken, self.agents_md.read_text())
+
     def test_a_symlinked_agents_md_is_written_through(self) -> None:
         self.codex.mkdir()
         real = self.home / "dotfiles-AGENTS.md"

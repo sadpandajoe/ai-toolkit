@@ -68,8 +68,8 @@ that with `git diff --raw <base> HEAD`: a run before the commit counts once the
 commit holds exactly what was tested, and any edit in between does not. The
 newest run of each command on that tree must have passed. `--partial` marks a
 run of related checks only and names what CI still runs; the PR's test plan
-carries the level. Nothing is written inside `.git`, which Codex keeps
-read-only.
+carries the level. The record and the fingerprint stay outside `.git`, which
+Codex keeps read-only; adding `.ai-toolkit/` to `info/exclude` is best effort.
 
 The gate has no off switch. A session-wide one is easy to leave on, and v0.3
 told users to start sessions with `SKIP_PR_GATE=1`, so an old name would have

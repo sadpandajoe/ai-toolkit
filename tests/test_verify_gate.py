@@ -59,9 +59,13 @@ class VerifyGateTests(unittest.TestCase):
         self.git("add", "--", *paths)
         self.git("commit", "-q", "-m", message)
 
-    def verify(self, *command: str, partial: str | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def verify(
+        self, *command: str, partial: str | None = None, cwd: Path | None = None, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
         args = [sys.executable, str(VERIFY)] + (["--partial", partial] if partial else []) + ["--", *command]
-        return subprocess.run(args, cwd=cwd or self.repo, env=clean_env(), capture_output=True, text=True, check=False)
+        return subprocess.run(
+            args, cwd=cwd or self.repo, env={**clean_env(), **(env or {})}, capture_output=True, text=True, check=False
+        )
 
     def gate(self, command: str = CREATE, env: dict[str, str] | None = None, cwd: Path | None = None) -> str | None:
         """The block message, or None when the guard allows the command."""
@@ -159,6 +163,24 @@ class VerifyGateTests(unittest.TestCase):
     def test_files_a_check_creates_are_output_not_changes(self) -> None:
         self.assertEqual(0, self.verify("sh", "-c", "echo report > report.txt").returncode)
         self.assertIsNone(self.gate())
+
+    def test_a_file_an_earlier_check_left_behind_cannot_hide_a_newer_failure(self) -> None:
+        check = "touch .coverage; [ -z \"$FAIL\" ]"
+        self.assertEqual(0, self.verify(check).returncode)
+        self.assertIsNone(self.gate())
+        # the same command fails on the same commit, next to the file its first run left
+        self.assertEqual(1, self.verify(check, env={"FAIL": "1"}).returncode)
+        self.assert_blocked("the newest run of", "failed (exit 1)")
+        # and passes again: the leftover is output, so the run still matches the commit
+        self.verify(check)
+        self.assertIsNone(self.gate())
+
+    def test_an_untracked_leftover_from_outside_verify_cannot_hide_a_failure(self) -> None:
+        self.verify("true")
+        self.write(".coverage", "left by a plain test run\n")
+        self.verify("false")
+        self.verify("true")  # passes with the leftover present: does not match the commit
+        self.assert_blocked("the newest run of `false` on this tree failed")
 
     def test_local_notes_never_count(self) -> None:
         self.write("PROJECT.md", "notes\n")
