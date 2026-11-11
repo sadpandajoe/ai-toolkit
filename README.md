@@ -106,8 +106,8 @@ Existing `PROJECT.md` files keep working as plain notes (see `handoff`).
 
 | Hook | Event | Behavior |
 |---|---|---|
-| `session-start.sh` | SessionStart | Prints the toolkit root and `rules/universal.md`; warns once when a v0.3 install is still in place |
-| `prevent-project-commit.sh` | PreToolUse (Bash) | Runs `hooks/lib/git_guard.py`: blocks `--no-verify` and other hook bypasses, force-pushing or deleting `main`/`master`, commits of local notes (`PROJECT.md`, `PLAN.md`, `WATCH.md`, `CHERRY_PICK.md`, `CI_FIX.md`, `PROJECT_ARCHIVE.md`) or `.ai-toolkit/`, and a non-draft `gh pr create`, `gh pr ready` or `gh pr merge` unless the user started the session with `AITK_PR_READY=1`. It also blocks `gh pr create` until `scripts/verify.py` has recorded a passing check on that exact tree, unless the user started the session with `SKIP_PR_GATE=1`. A command that sets or exports `AITK_PR_READY`, `SKIP_PR_GATE` or `SKIP_PRECHECK` itself is blocked |
+| `session-start.sh` | SessionStart | Prints the toolkit root and `rules/universal.md`; warns once when a v0.3 install is still in place, or when v0.3's `SKIP_PR_GATE` is still set |
+| `prevent-project-commit.sh` | PreToolUse (Bash) | Runs `hooks/lib/git_guard.py`: blocks `--no-verify` and other hook bypasses, force-pushing or deleting `main`/`master`, commits of local notes (`PROJECT.md`, `PLAN.md`, `WATCH.md`, `CHERRY_PICK.md`, `CI_FIX.md`, `PROJECT_ARCHIVE.md`) or `.ai-toolkit/`, and a non-draft `gh pr create`, `gh pr ready` or `gh pr merge` unless the user started the session with `AITK_PR_READY=1`. It also blocks `gh pr create` until `scripts/verify.py` has recorded a passing check on that exact tree; no override lifts that. A command that sets or exports `AITK_PR_READY` or `SKIP_PRECHECK` itself is blocked |
 | `pre-push-validate.sh` | PreToolUse (Bash) | Runs the repository's pre-commit (from the repo venv when it has one, or ruff) on changed files and pytest on changed test files before a push; a check past its time budget warns instead of blocking; `SKIP_PRECHECK=1` in the session environment skips it |
 
 The git guard fails closed: without python3 it blocks git and `gh` commands

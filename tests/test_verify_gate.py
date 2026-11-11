@@ -80,8 +80,7 @@ class VerifyGateTests(unittest.TestCase):
 
     def test_no_record_blocks_and_names_the_script(self) -> None:
         message = self.assert_blocked("no check has been recorded", "scripts/verify.py", "--partial")
-        # the user's override is never spelled out
-        self.assertNotIn("SKIP_PR_GATE", message)
+        self.assertIn("with their agreement, record the closest real check", message)
 
     def test_a_check_on_the_clean_commit_opens_the_pr(self) -> None:
         self.write("app.py", "print('two')\n")
@@ -188,10 +187,16 @@ class VerifyGateTests(unittest.TestCase):
             verify_record.append(str(self.repo), verify_record.new_record("x", {}, "true", 0, "strong", "", True))
         self.assertEqual(verify_record.KEEP, len(verify_record.load(str(self.repo))))
 
-    def test_only_the_users_session_override_lifts_the_gate(self) -> None:
-        self.assertIsNone(self.gate(env={"SKIP_PR_GATE": "1"}))
-        self.assert_blocked(env={"AITK_PR_READY": "1"}, command="gh pr create --fill")
-        self.assertIn("override", self.gate(command=f"SKIP_PR_GATE=1 {CREATE}"))
+    def test_no_override_lifts_the_gate(self) -> None:
+        # v0.3's retired override and the ready-PR override both leave it on
+        for env in ({"SKIP_PR_GATE": "1"}, {"AITK_PR_READY": "1"}, {"SKIP_PRECHECK": "1"}):
+            with self.subTest(env=env):
+                self.assert_blocked("no check has been recorded", env=env)
+        self.assert_blocked("no check has been recorded", env={"AITK_PR_READY": "1"}, command="gh pr create --fill")
+        self.assert_blocked("no check has been recorded", command=f"SKIP_PR_GATE=1 {CREATE}")
+        # the way past it when nothing meaningful runs: a disclosed partial record
+        self.verify("git diff --check", partial="nothing to test: docs only")
+        self.assertIsNone(self.gate())
 
     def test_the_directory_the_command_runs_in_is_the_one_checked(self) -> None:
         other = Path(self.temporary.name).resolve() / "other"

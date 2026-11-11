@@ -1,16 +1,25 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (unreleased)
 
-Hardening on top of 0.4.0. Each change is a fact or a hook- or script-enforced
-boundary; no procedure comes back.
-
+- The git guard no longer treats `SKIP_PR_GATE` as an override. Nothing has
+  read it since the review gate was retired in 0.4.0, so setting it is
+  harmless and it lifts nothing; `AITK_PR_READY` and `SKIP_PRECHECK` are the
+  only overrides. The guard tests' sample commands no longer name the removed
+  `bin/aitk deliver`.
+- `cherry-pick` is trimmed by the admission rule (3,923 → 3,204 words):
+  restated procedure and the rules repeated across `gotchas.md` and the
+  references are cut, and script output is left to each script's header.
+  The incidents, script commands, org-data keys, authorization, validation
+  labels, row vocabulary and report formats stay.
 - A PR opens only for a tested tree. `scripts/verify.py -- <command>` runs
   a check and records the tree it ran on; the git guard blocks `gh pr
   create` until the newest run of each command on that exact tree passed.
   `--partial` records related checks only, with what CI still runs, and the
-  PR's test plan states the level. The user's `SKIP_PR_GATE=1` lifts it.
-  Review stays advisory.
+  PR's test plan states the level. It has no off switch: when nothing
+  meaningful can run, the user's agreement goes into a `--partial` record.
+  Review stays advisory. The session-start hook warns once when
+  `SKIP_PR_GATE` is still set from v0.3, since it lifts nothing.
 - `rules/universal.md`: fix the behavior, not the test; attachment names and
   private repositories are under the PII rule. The reviewer grades a
   loosened, skipped or deleted test `[major]` unless the test was wrong.

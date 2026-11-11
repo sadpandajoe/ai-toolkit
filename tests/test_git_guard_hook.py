@@ -32,7 +32,7 @@ sys.path.pop(0)
 
 STATE_FILES = git_guard.STATE_FILES
 WRAPPER = ROOT / "hooks" / "prevent-project-commit.sh"
-OVERRIDES = ("AITK_PR_READY", "SKIP_PR_GATE", "SKIP_PRECHECK")
+OVERRIDES = ("AITK_PR_READY", "SKIP_PRECHECK")
 
 
 def git(repo: Path, *args: str, env: dict[str, str] | None = None) -> None:
@@ -273,6 +273,7 @@ PR_PUBLISH_BLOCK = (
     "gh pr merge",
     "gh -R owner/repo pr merge 12",
     "gh pr merge --auto --squash 12",
+    # a retired override (SKIP_PR_GATE, v0.3) lifts nothing
     "SKIP_PR_GATE=1 gh pr ready 12",
     "SKIP_PR_GATE=1 gh pr merge 12",
     "timeout 30 gh pr merge 12",
@@ -548,41 +549,41 @@ PR_PUBLISH_ALLOW = (
 OVERRIDE_ASSIGNMENT_BLOCK = (
     # operator runs the lexer used to fuse into one token are split, so the subshell or
     # function body after them is read
-    "(>/dev/null AITK_PR_READY=1 bin/aitk deliver)",
-    "f()( AITK_PR_READY=1 bin/aitk deliver ); f",
-    "f()(AITK_PR_READY=1 bin/aitk deliver); f",
-    "true;(AITK_PR_READY=1 bin/aitk deliver)",
-    "true;(AITK_PR_READY='0 1' bin/aitk deliver)",
+    "(>/dev/null AITK_PR_READY=1 ./ship.sh)",
+    "f()( AITK_PR_READY=1 ./ship.sh ); f",
+    "f()(AITK_PR_READY=1 ./ship.sh); f",
+    "true;(AITK_PR_READY=1 ./ship.sh)",
+    "true;(AITK_PR_READY='0 1' ./ship.sh)",
     "true;(typeset -xF SKIP_PRECHECK=0)",
-    "(true)&&AITK_PR_READY=1 bin/aitk deliver",
-    "true&&(AITK_PR_READY=1 bin/aitk deliver)",
-    "true|(AITK_PR_READY=1 bin/aitk deliver)",
+    "(true)&&AITK_PR_READY=1 ./ship.sh",
+    "true&&(AITK_PR_READY=1 ./ship.sh)",
+    "true|(AITK_PR_READY=1 ./ship.sh)",
     "AITK_PR_READY=1 gh pr ready 12",
-    "env SKIP_PR_GATE=1 gh pr create --draft --fill",
+    "env SKIP_PRECHECK=1 gh pr create --draft --fill",
     "SKIP_PRECHECK=1 git push",
-    "export AITK_PR_READY=1; bin/aitk deliver --ready",
-    "AITK_PR_READY=1 uv run aitk deliver --ready",
+    "export AITK_PR_READY=1; ./ship.sh --ready",
+    "AITK_PR_READY=1 uv run ship --ready",
     "eval -- 'SKIP_PRECHECK=1 true'",
-    "builtin eval -- 'SKIP_PR_GATE=1 true'",
+    "builtin eval -- 'AITK_PR_READY=1 true'",
     "bash -c -- 'SKIP_PRECHECK=1 true'",
-    "uv run bash -c -- 'AITK_PR_READY=1 bin/aitk deliver'",
+    "uv run bash -c -- 'AITK_PR_READY=1 ./ship.sh'",
     "bash -c 'AITK_PR_READY=1 gh pr ready 12'",
     "AITK_PR_READY=yes gh pr view 12",
-    "AITK_PR_READY=1; export AITK_PR_READY; uv run aitk deliver --ready",
-    "set -a; AITK_PR_READY=1; uv run aitk deliver --ready",
+    "AITK_PR_READY=1; export AITK_PR_READY; uv run ship --ready",
+    "set -a; AITK_PR_READY=1; uv run ship --ready",
     "SKIP_PRECHECK=1; git push",
     "AITK_PR_READY=1",
     "env AITK_PR_READY=1",
     "{{ AITK_PR_READY=1; }}; gh pr ready 12",
     "export AITK_PR_READY",
-    "typeset -x SKIP_PR_GATE",
+    "typeset -x SKIP_PRECHECK",
     "declare -x AITK_PR_READY=1; gh pr ready 12",
     "readonly SKIP_PRECHECK=1; git push",
-    "export AITK_PR_READY=1 SKIP_PR_GATE=1",
+    "export FOO=1 SKIP_PRECHECK=1",
     "bash -c 'AITK_PR_READY=1; export AITK_PR_READY; gh pr ready 12'",
-    "x=$(SKIP_PR_GATE=1; gh pr create --fill)",
-    "export AITK_PR_READY; uv run aitk deliver --ready 'unbalanced",
-    "AITK_PR_READY+=1 uv run aitk deliver --ready",
+    "x=$(SKIP_PRECHECK=1; gh pr create --fill)",
+    "export AITK_PR_READY; uv run ship --ready 'unbalanced",
+    "AITK_PR_READY+=1 uv run ship --ready",
     "AITK_PR_READY+=0",
     "AITK_PR_READY+=false",
     "AITK_PR_READY+=",
@@ -592,94 +593,94 @@ OVERRIDE_ASSIGNMENT_BLOCK = (
     "command export AITK_PR_READY=1",
     "command builtin export AITK_PR_READY+=1",
     "builtin command export AITK_PR_READY=1",
-    "builtin declare -x SKIP_PR_GATE+=false",
+    "builtin declare -x SKIP_PRECHECK+=false",
     "bash -c 'AITK_PR_READY+=1; true'",
     "builtin eval 'SKIP_PRECHECK+=1; true'",
-    "env -S 'AITK_PR_READY+=1 uv run aitk deliver --ready'",
+    "env -S 'AITK_PR_READY+=1 uv run ship --ready'",
     "AITK_PR_READY=1 bash -c ''",
-    "AITK_PR_READY+=1 uv run aitk deliver --ready 'unbalanced",
-    "builtin export AITK_PR_READY; uv run aitk deliver --ready 'unbalanced",
+    "AITK_PR_READY+=1 uv run ship --ready 'unbalanced",
+    "builtin export AITK_PR_READY; uv run ship --ready 'unbalanced",
     # redirections stand anywhere in a simple command, ahead of a prefix too
-    "2>&1 AITK_PR_READY=1 bin/aitk deliver --ready",
-    "2>/dev/null AITK_PR_READY=1 bin/aitk deliver --ready",
-    ">out.txt SKIP_PR_GATE=1 gh pr create --fill",
+    "2>&1 AITK_PR_READY=1 ./ship.sh --ready",
+    "2>/dev/null AITK_PR_READY=1 ./ship.sh --ready",
+    ">out.txt SKIP_PRECHECK=1 gh pr create --fill",
     "&>>log.txt SKIP_PRECHECK=1 git push",
-    "env >out.txt AITK_PR_READY=1 bin/aitk deliver --ready",
+    "env >out.txt AITK_PR_READY=1 ./ship.sh --ready",
     # a function body runs when the function is called
-    "f() {{ AITK_PR_READY=1 bin/aitk deliver --ready; }}; f",
-    "function f {{ AITK_PR_READY=1 bin/aitk deliver --ready; }}; f",
-    "function f() {{ export SKIP_PR_GATE=1; }}; f",
+    "f() {{ AITK_PR_READY=1 ./ship.sh --ready; }}; f",
+    "function f {{ AITK_PR_READY=1 ./ship.sh --ready; }}; f",
+    "function f() {{ export SKIP_PRECHECK=1; }}; f",
     # env, a shell or eval behind a wrapper the tokenizer does not know
-    "setsid env AITK_PR_READY=1 bin/aitk deliver --ready",
-    "uv run env SKIP_PR_GATE=1 gh pr create --fill",
-    "find . -exec env AITK_PR_READY=1 bin/aitk deliver --ready \\;",
-    "setsid bash -c 'export AITK_PR_READY=1; bin/aitk deliver --ready'",
+    "setsid env AITK_PR_READY=1 ./ship.sh --ready",
+    "uv run env SKIP_PRECHECK=1 gh pr create --fill",
+    "find . -exec env AITK_PR_READY=1 ./ship.sh --ready \\;",
+    "setsid bash -c 'export AITK_PR_READY=1; ./ship.sh --ready'",
     "echo env AITK_PR_READY=1",
     # arithmetic and nameref declarations: the value is not the literal text
     "declare -ix AITK_PR_READY=false",
     "declare -i count='AITK_PR_READY=1'",
     "declare -n ref=AITK_PR_READY; ref=1",
     # value-changing attributes and quoted or split values the scan resolves
-    "integer -x AITK_PR_READY=1; bin/aitk deliver --ready",
-    "float -x AITK_PR_READY=0; bin/aitk deliver --ready",
-    "false=1; typeset -xF AITK_PR_READY=false; bin/aitk deliver --ready",
-    "typeset -xZ5 AITK_PR_READY=0; bin/aitk deliver --ready",
-    "AITK_PR_READY='0 1' bin/aitk deliver --ready",
-    "bash -c 'AITK_PR_READ''Y=1 bin/aitk deliver --ready'",
-    "eval 'AITK_PR_READ''Y=\"0 1\" bin/aitk deliver --ready'",
-    "AITK_PR_READY\\\n=1 bin/aitk deliver --ready",
+    "integer -x AITK_PR_READY=1; ./ship.sh --ready",
+    "float -x AITK_PR_READY=0; ./ship.sh --ready",
+    "false=1; typeset -xF AITK_PR_READY=false; ./ship.sh --ready",
+    "typeset -xZ5 AITK_PR_READY=0; ./ship.sh --ready",
+    "AITK_PR_READY='0 1' ./ship.sh --ready",
+    "bash -c 'AITK_PR_READ''Y=1 ./ship.sh --ready'",
+    "eval 'AITK_PR_READ''Y=\"0 1\" ./ship.sh --ready'",
+    "AITK_PR_READY\\\n=1 ./ship.sh --ready",
 )
 
 # Known limits of the token scan (the git_guard module docstring lists the
 # classes). Each is a real override the scan does not see, so the hook allows it:
-# a tripwire, not a sandbox. The protection that holds is elsewhere: `bin/aitk
-# deliver` cannot open a ready PR, and `gh pr ready`/`gh pr merge` read the
-# override only from the session environment. The test below pins this list so a
+# a tripwire, not a sandbox. The protection that holds is elsewhere: a non-draft
+# `gh pr create`, `gh pr ready` and `gh pr merge` read the override only from the
+# session environment. The test below pins this list so a
 # fix moves the case into OVERRIDE_ASSIGNMENT_BLOCK and the docstring stays true.
 OVERRIDE_SCAN_LIMITS = (
     # a redirection operator erased together with a quoted or numeric option value
-    "env -u '>' AITK_PR_READY=1 bin/aitk deliver",
-    "env -u 1 >/dev/null AITK_PR_READY=1 bin/aitk deliver",
+    "env -u '>' AITK_PR_READY=1 ./ship.sh",
+    "env -u 1 >/dev/null AITK_PR_READY=1 ./ship.sh",
     # shell-specific grammar: zsh anonymous functions and precommand modifiers, a
     # function named after a wrapper, a `-c --` payload, a nameref set by a plain value
-    "() {{ AITK_PR_READY=1 bin/aitk deliver; }}",
-    "env() {{ AITK_PR_READY=1 bin/aitk deliver; }}; env",
-    "nocorrect AITK_PR_READY=1 bin/aitk deliver",
-    "repeat 1 AITK_PR_READY=1 bin/aitk deliver",
-    "coproc AITK_PR_READY=1 bin/aitk deliver",
-    "declare -n r; r=AITK_PR_READY; declare -x r=1; bin/aitk deliver",
+    "() {{ AITK_PR_READY=1 ./ship.sh; }}",
+    "env() {{ AITK_PR_READY=1 ./ship.sh; }}; env",
+    "nocorrect AITK_PR_READY=1 ./ship.sh",
+    "repeat 1 AITK_PR_READY=1 ./ship.sh",
+    "coproc AITK_PR_READY=1 ./ship.sh",
+    "declare -n r; r=AITK_PR_READY; declare -x r=1; ./ship.sh",
     # brace expansion builds the name
-    "env {{AITK_PR_READY,X}}=1 bin/aitk deliver",
-    "export {{AITK_PR_READY,X}}=1; bin/aitk deliver",
+    "env {{AITK_PR_READY,X}}=1 ./ship.sh",
+    "export {{AITK_PR_READY,X}}=1; ./ship.sh",
     # arithmetic and parameter-expansion setters (these export under `set -a`)
-    "set -a; (( AITK_PR_READY = 1 )); bin/aitk deliver",
+    "set -a; (( AITK_PR_READY = 1 )); ./ship.sh",
     "set -a; let SKIP_PRECHECK++; git push",
-    "export AITK_PR_READY=0; ((++AITK_PR_READY)); bin/aitk deliver",
-    "let AITK_PR_READY=1; bin/aitk deliver",
-    "AITK_PR_READY[0]=1; bin/aitk deliver",
-    "set -a; : ${{AITK_PR_READY:=1}}; bin/aitk deliver",
-    "set -a; : ${{AITK_PR_READY=1}}; bin/aitk deliver",
+    "export AITK_PR_READY=0; ((++AITK_PR_READY)); ./ship.sh",
+    "let AITK_PR_READY=1; ./ship.sh",
+    "AITK_PR_READY[0]=1; ./ship.sh",
+    "set -a; : ${{AITK_PR_READY:=1}}; ./ship.sh",
+    "set -a; : ${{AITK_PR_READY=1}}; ./ship.sh",
     # values the tokenizer reads as falsy or empty
-    "AITK_PR_READY=(1) bin/aitk deliver",
-    "AITK_PR_READY=0\r1 bin/aitk deliver",
-    "AITK_PR_READY=<(true) bin/aitk deliver",
+    "AITK_PR_READY=(1) ./ship.sh",
+    "AITK_PR_READY=0\r1 ./ship.sh",
+    "AITK_PR_READY=<(true) ./ship.sh",
     # a name quoted with a locale string
-    "export AITK_PR_$\"READY\"=1; bin/aitk deliver",
+    "export AITK_PR_$\"READY\"=1; ./ship.sh",
     # write targets that are not assignments, scripts run separately, names built at run time
-    "set -a; read AITK_PR_READY <<< 1; bin/aitk deliver",
-    "set -a; printf -v AITK_PR_READY 1; bin/aitk deliver",
-    "set -a; mapfile -t AITK_PR_READY <<< 1; bin/aitk deliver",
-    "source ./set-override.sh; bin/aitk deliver",
-    ". ./set-override.sh; bin/aitk deliver",
-    "v=AITK_PR_READY; export \"${{!v}}\"=1; bin/aitk deliver",
-    "X=READY; eval \"AITK_PR_$X=1\"; bin/aitk deliver",
-    "export $'\\x41ITK_PR_READY=1'; bin/aitk deliver",
-    "env $(printf 'AITK_PR_READY=1') bin/aitk deliver",
+    "set -a; read AITK_PR_READY <<< 1; ./ship.sh",
+    "set -a; printf -v AITK_PR_READY 1; ./ship.sh",
+    "set -a; mapfile -t AITK_PR_READY <<< 1; ./ship.sh",
+    "source ./set-override.sh; ./ship.sh",
+    ". ./set-override.sh; ./ship.sh",
+    "v=AITK_PR_READY; export \"${{!v}}\"=1; ./ship.sh",
+    "X=READY; eval \"AITK_PR_$X=1\"; ./ship.sh",
+    "export $'\\x41ITK_PR_READY=1'; ./ship.sh",
+    "env $(printf 'AITK_PR_READY=1') ./ship.sh",
     # an alias body is quoted text, and a profile write alters later shell startup
-    "alias deliver='AITK_PR_READY=1 bin/aitk deliver'; deliver",
+    "alias deliver='AITK_PR_READY=1 ./ship.sh'; deliver",
     "echo 'export AITK_PR_READY=1' >> ~/.zshrc",
     # heredoc bodies are skipped, so a body piped to a shell is not read
-    "bash <<'EOF'\nAITK_PR_READY=1 bin/aitk deliver\nEOF",
+    "bash <<'EOF'\nAITK_PR_READY=1 ./ship.sh\nEOF",
     "cat <<'EOF'\nSKIP_PRECHECK=1\nEOF",
 )
 
@@ -700,7 +701,7 @@ OVERRIDE_ASSIGNMENT_ALLOW = (
     # ordinary commands whose text happens to carry export wording and a name
     "git commit -m 'fix: export check' -m 'AITK_PR_READY=1 now counts only from the session'",
     "git grep 'integer.*AITK_PR_READY'",
-    "git grep -n 'declare -n.*SKIP_PR_GATE'",
+    "git grep -n 'declare -n.*SKIP_PRECHECK'",
     "echo AITK_PR_READY=0",
     "echo AITK_PR_READY=false",
     "echo AITK_PR_READY=no",
@@ -710,13 +711,13 @@ OVERRIDE_ASSIGNMENT_ALLOW = (
     "echo AITK_PR_READY='FALSE'",
     "echo AITK_PR_READY=\"off\"",
     "builtin export AITK_PR_READY=0",
-    "command builtin export SKIP_PR_GATE=false",
+    "command builtin export AITK_PR_READY=false",
     "builtin command export SKIP_PRECHECK=",
     "FOO+=x git status",
     "AITK_PR_READY=0 gh pr view 12",
     "AITK_PR_READY=0",
     "export AITK_PR_READY=0",
-    "export SKIP_PR_GATE=",
+    "export SKIP_PRECHECK=",
     "unset AITK_PR_READY",
     "printenv AITK_PR_READY",
     "FOO=1 git status",
@@ -736,6 +737,19 @@ class GitGuardHookTests(unittest.TestCase):
         cls.global_config = base / "global.gitconfig"
         cls.staged = cls.make_repo(base / "staged")
         cls.clean = cls.make_repo(base / "clean")
+        # A commit with a passing scripts/verify.py record, so `gh pr create` cases test
+        # the draft rule alone (the verify gate has its own tests/test_verify_gate.py).
+        cls.verified = cls.make_repo(base / "verified")
+        (cls.verified / "app.py").write_text("x = 1\n")
+        git(cls.verified, "add", "app.py")
+        git(cls.verified, "commit", "-q", "-m", "base")
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "verify.py"), "--", "true"],
+            cwd=cls.verified,
+            env=base_env(),
+            capture_output=True,
+            check=True,
+        )
         cls.alt_index = base / "alt.index"
 
         # PROJECT.md staged in the default index of one repository, and every
@@ -841,14 +855,13 @@ class GitGuardHookTests(unittest.TestCase):
 
     def test_pr_ready_and_merge_need_the_users_override(self) -> None:
         self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2)
+        # the retired v0.3 override in the session environment lifts nothing either
         self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"SKIP_PR_GATE": "1"})
         self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"AITK_PR_READY": "0"})
-        # The draft and publish rules alone: the verify gate on `gh pr create` has its
-        # own tests (tests/test_verify_gate.py), so its override is on here.
-        no_verify_gate = {"SKIP_PR_GATE": "1"}
-        self.assert_cases(PR_PUBLISH_ALLOW, self.clean, 0, env=no_verify_gate)
+        # Creations run in the repository whose commit has a passing verify record.
+        self.assert_cases(PR_PUBLISH_ALLOW, self.verified, 0)
         self.assert_cases(PR_PUBLISH_LIMITS, self.clean, 0)
-        self.assert_cases(("gh pr create --fill",), self.clean, 0, env={"AITK_PR_READY": "1", **no_verify_gate})
+        self.assert_cases(("gh pr create --fill",), self.verified, 0, env={"AITK_PR_READY": "1"})
         self.assert_cases(
             ("gh pr merge 12 --squash", "gh pr ready 12", "nohup gh pr ready 12"),
             self.clean,
@@ -932,11 +945,11 @@ class GitGuardHookTests(unittest.TestCase):
         exhausted = [found for found in shell_tokens.commands(spent, cwd) if found.unreadable]
         self.assertEqual([None], [found.workdir for found in exhausted])
         self.assertTrue(all(found.unresolved for found in exhausted))
-        # the user's session overrides still lift the block, as for any gh pr publish; an
-        # unreadable command could hide a `gh pr create`, so the verify gate's override counts too
-        git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1", "SKIP_PR_GATE": "1"})
-        with self.assertRaises(git_guard.Blocked):
+        # AITK_PR_READY lifts the publish check's block, but an unreadable command could
+        # hide a `gh pr create`, and the verify gate has no override, so it still blocks
+        with self.assertRaises(git_guard.Blocked) as caught:
             git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1"})
+        self.assertIn("could not be read in full", str(caught.exception))
 
     def test_a_101_entry_config_prefix_with_an_alias_on_the_last_entry_blocks(self) -> None:
         # No count is parsed: the alias key anywhere in the prefix, next to a gated mention, blocks.
@@ -1098,7 +1111,7 @@ class GitGuardHookTests(unittest.TestCase):
                 self.assertIn(f"gh pr {verb}", str(caught.exception))
         for text in (
             'bash -c "export AITK_PR_READY \'"',
-            'bash -c "echo hi; declare -x SKIP_PR_GATE \'"',
+            'bash -c "echo hi; declare -x AITK_PR_READY \'"',
             'bash -c "builtin export SKIP_PRECHECK=1 \'"',
             'bash -c "' + unmatched_export + 'SKIP_PRECHECK \'"',
         ):
@@ -1454,9 +1467,9 @@ class GitGuardHookTests(unittest.TestCase):
 
     def test_commands_yield_assignment_only_segments_only_when_asked(self) -> None:
         cwd = str(self.clean)
-        text = "AITK_PR_READY=1; export AITK_PR_READY; uv run aitk deliver --ready"
+        text = "AITK_PR_READY=1; export AITK_PR_READY; uv run ship --ready"
         self.assertEqual(
-            [["export", "AITK_PR_READY"], ["uv", "run", "aitk", "deliver", "--ready"]],
+            [["export", "AITK_PR_READY"], ["uv", "run", "ship", "--ready"]],
             [c.argv for c in shell_tokens.commands(text, cwd)],
         )
         found = list(shell_tokens.commands(text, cwd, include_assignments=True))
@@ -1465,10 +1478,10 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertEqual(["export", "AITK_PR_READY"], found[1].argv)
 
         # the nested path: the assignment comes out before `true`
-        nested = list(shell_tokens.commands("bash -c 'SKIP_PR_GATE=1; true'", cwd, include_assignments=True))
+        nested = list(shell_tokens.commands("bash -c 'SKIP_PRECHECK=1; true'", cwd, include_assignments=True))
         self.assertEqual([[], ["true"]], [c.argv for c in nested])
-        self.assertEqual({"SKIP_PR_GATE": "1"}, nested[0].assignments)
-        self.assertEqual([["true"]], [c.argv for c in shell_tokens.commands("bash -c 'SKIP_PR_GATE=1; true'", cwd)])
+        self.assertEqual({"SKIP_PRECHECK": "1"}, nested[0].assignments)
+        self.assertEqual([["true"]], [c.argv for c in shell_tokens.commands("bash -c 'SKIP_PRECHECK=1; true'", cwd)])
 
         # appends: default recognition is unchanged, the opt-in one keeps the raw key
         self.assertFalse(shell_tokens.is_assignment("FOO+=x"))
@@ -1552,7 +1565,7 @@ class GitGuardHookTests(unittest.TestCase):
             override = self.run_hook("export AITK_PR_READY=1", self.clean, wrapper_env=env)
             self.assertEqual(2, override.returncode, override.stderr)
             self.assertNotIn("AITK_PR_READY", override.stderr)
-            newline = self.run_hook("\nAITK_PR_READY=1 bin/aitk deliver --ready", self.clean, wrapper_env=env)
+            newline = self.run_hook("\nAITK_PR_READY=1 ./ship.sh --ready", self.clean, wrapper_env=env)
             self.assertEqual(2, newline.returncode, newline.stderr)
             allowed = self.run_hook("ls -la", self.clean, wrapper_env=env)
             self.assertEqual(0, allowed.returncode, allowed.stderr)

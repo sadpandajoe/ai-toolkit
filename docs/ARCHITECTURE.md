@@ -69,8 +69,14 @@ commit holds exactly what was tested, and any edit in between does not. The
 newest run of each command on that tree must have passed. `--partial` marks a
 run of related checks only and names what CI still runs; the PR's test plan
 carries the level. Nothing is written inside `.git`, which Codex keeps
-read-only. The user's `SKIP_PR_GATE=1`, set before the session starts, lifts
-it.
+read-only.
+
+The gate has no off switch. A session-wide one is easy to leave on, and v0.3
+told users to start sessions with `SKIP_PR_GATE=1`, so an old name would have
+switched the new gate off unseen (the session-start hook now warns when it is
+still set). When nothing meaningful can run, the user's agreement goes into a
+`--partial` record the PR discloses; a misfire is escaped by opening the PR
+from the user's own terminal, where the hook does not run.
 
 The gate checks that tests ran, not that the change was reviewed: a recorded
 command run is something a hook can check, while whether a review was good

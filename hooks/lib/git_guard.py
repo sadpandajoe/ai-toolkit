@@ -18,15 +18,15 @@ Blocked:
   adds would stage;
 - `gh pr create` (or `gh pr new`) without `--draft`, and `gh pr ready` and
   `gh pr merge`, unless the user set `AITK_PR_READY=1` in the environment the
-  session started with (set only when the user asked in words). `SKIP_PR_GATE=1`
-  does not lift them;
+  session started with (set only when the user asked in words);
 - `gh pr create` (or `gh pr new`) whose commit has no passing check recorded on
   its exact tree by `scripts/verify.py` (`check_pr_verified`, the record format
-  in `verify_record`), unless the user set `SKIP_PR_GATE=1` in the session
-  environment. `AITK_PR_READY=1` does not lift it. The PR's commit is HEAD of
-  the directory the command runs in, or its `--head` branch when that resolves
-  locally; a directory the guard cannot follow, and a creation it cannot read,
-  block;
+  in `verify_record`). No session override lifts it: when nothing meaningful
+  can run, the user's agreement goes into a `--partial` record, or the user
+  opens the PR from their own terminal, where this hook does not run. The PR's
+  commit is HEAD of the directory the command runs in, or its `--head` branch
+  when that resolves locally; a directory the guard cannot follow, and a
+  creation it cannot read, block;
 - a command that assigns or exports any toolkit override itself (a prefix, an
   assignment-only segment, `env`, `export`/`declare`/`typeset`/`readonly`/
   `local`, a literal `+=` append, inside `bash -c`, `eval`, `env -S`, a
@@ -1105,7 +1105,7 @@ def is_draft(args: list[str]) -> bool:
     return draft
 
 
-OVERRIDE_VARIABLES = ("AITK_PR_READY", "SKIP_PR_GATE", "SKIP_PRECHECK")
+OVERRIDE_VARIABLES = ("AITK_PR_READY", "SKIP_PRECHECK")
 EXPORTING_BUILTINS = {"export", "declare", "typeset", "readonly", "local", "integer", "float"}
 # The fallback for command text that did not tokenize or nested too deep: a
 # literal assignment or append, or an export-family builtin (also behind
@@ -1113,9 +1113,9 @@ EXPORTING_BUILTINS = {"export", "declare", "typeset", "readonly", "local", "inte
 # The builtin and the mention are searched in order within each separated command
 # (`unresolved_sets_override`), never as one `builtin.*name` pattern, which
 # backtracks across the whole text from every builtin word.
-OVERRIDE_ASSIGNMENT = re.compile(r"\b(?:AITK_PR_READY|SKIP_PR_GATE|SKIP_PRECHECK)\+?=")
+OVERRIDE_ASSIGNMENT = re.compile(r"\b(?:AITK_PR_READY|SKIP_PRECHECK)\+?=")
 EXPORTING_BUILTIN = re.compile(r"\b(?:export|declare|typeset|readonly|local|integer|float)\b")
-OVERRIDE_MENTION = re.compile(r"\b(?:AITK_PR_READY|SKIP_PR_GATE|SKIP_PRECHECK)\b")
+OVERRIDE_MENTION = re.compile(r"\b(?:AITK_PR_READY|SKIP_PRECHECK)\b")
 COMMAND_SEPARATOR = re.compile(r"[;&|\n]")
 # The message names no variable: hook output never spells an override out.
 OVERRIDE_MESSAGE = (
@@ -1205,7 +1205,8 @@ PR_VERIFY_MESSAGE = (
     "Run the change's own test or acceptance command through "
     "`python3 {script} -- <command>`; when only related checks can run here, add "
     "`--partial \"<what CI still runs>\"`. A command that checks nothing is working "
-    "around the hook. If nothing can run for this change, stop and ask the user."
+    "around the hook. If nothing meaningful can run for this change, stop and ask the "
+    "user; with their agreement, record the closest real check with `--partial`."
 )
 PR_VERIFY_UNREADABLE = (
     "this command could not be read in full, so the guard cannot tell which commit a "
@@ -1251,10 +1252,8 @@ def require_verified(workdir: str, head: str | None) -> None:
 
 
 def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
-    """`gh pr create` needs a passing `scripts/verify.py` record on the tree it opens;
-    only the user's SKIP_PR_GATE=1 from the session environment lifts it."""
-    if shell_tokens.truthy(environ.get("SKIP_PR_GATE")):
-        return
+    """`gh pr create` needs a passing `scripts/verify.py` record on the tree it opens.
+    No override lifts it (`environ` is unused, kept for the checks' shared signature)."""
     for found in shell_tokens.commands(command, cwd):
         if found.unreadable:
             raise block(PR_VERIFY_UNREADABLE)
