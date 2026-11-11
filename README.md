@@ -124,10 +124,15 @@ in `/hooks`, or all of them with `hooks = false` under `[features]` in
   above the prompt in the terminal, desktop, VS Code and mobile: the model and
   effort each request really went out with (a fallback is flagged), context,
   5h and weekly limits with resets, cost, repo, branch and changed files,
-  the last turn's prompt-cache hit rate, turns and session length, idle time
-  past the prompt-cache TTL, and `AITK_PR_READY` or `SKIP_PRECHECK` when the
-  session started with either. A plan limit toasts once at 80% and once at
-  95% per window.
+  the last turn's prompt-cache hit rate, the branch's PR checks (external
+  status contexts included, read with `gh` after each turn and every 2
+  minutes), turns and session length, a countdown to the prompt cache
+  expiring, a chart of tokens per prompt, and `AITK_PR_READY` or
+  `SKIP_PRECHECK` when the session started with either. Toasts: a plan limit
+  at 80% and 95% per window, a PR check newly failing or all green, and a
+  context past 250k tokens, which the band then offers to compact. The cache
+  TTL (5 or 60 minutes) is learned from the first turn after an idle gap
+  between the two and kept across sessions; until then it shows with `?`.
   Load it from `~/.claude/settings.json`:
   `"env": {"CLAUDE_CODE_PLUGIN_DIRS": "~/opt/code/ai-toolkit/statusline/aitk-status"}`,
   and drop `statusLine` so the terminal doesn't show both. Thresholds are the

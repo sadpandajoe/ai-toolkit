@@ -20,6 +20,19 @@ export type Git = {
   changes: number
 }
 
+/** The branch's pull request and its checks, from `gh pr view`. */
+export type Pr = {
+  number: number
+  url: string
+  /** OPEN, MERGED or CLOSED. */
+  state: string
+  isDraft: boolean
+  passed: number
+  pending: number
+  /** Names of the failed checks (Actions runs and external status contexts). */
+  failing: string[]
+}
+
 /** The main loop's last model request. */
 export type Step = { model: string; effort?: string }
 
@@ -39,6 +52,15 @@ declare module 'claude-code' {
       cacheHit: number | null
       /** Limit warnings already toasted, as `kind@resetsAt@level`, so each fires once per window. */
       toasted: Shaped<string[]>
+      pr: Shaped<Pr | null>
+      /** Tokens each main-loop prompt used (input, cache and output), oldest first. */
+      perPrompt: Shaped<number[]>
+      /** Prompt-cache TTL in minutes: learned from a turn after an idle gap, else 5. */
+      cacheTtl: number
+      /** Whether the TTL was learned rather than assumed. */
+      isTtlLearned: boolean
+      /** Whether the compact suggestion has toasted since the context last grew past it. */
+      compactToasted: boolean
     }
   }
 }

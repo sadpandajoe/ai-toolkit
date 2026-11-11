@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Git, Step, Usage } from '../types'
+import type { Git, Pr, Step, Usage } from '../types'
 
 // The AI Toolkit status band: the figures `statusline/statusline-command.sh`
 // prints, drawn above the prompt on every surface (terminal, desktop, vscode,
@@ -15,6 +15,11 @@ const now = atom({ plugin: 'aitk-status', key: 'now' } as const, 0)
 const overrides = atom({ plugin: 'aitk-status', key: 'overrides' } as const, [], { shape: 'overrides-1' })
 const cacheHit = atom({ plugin: 'aitk-status', key: 'cacheHit' } as const, null)
 const toasted = atom({ plugin: 'aitk-status', key: 'toasted' } as const, [], { shape: 'toasted-1' })
+const pr = atom({ plugin: 'aitk-status', key: 'pr' } as const, null, { shape: 'pr-1' })
+const perPrompt = atom({ plugin: 'aitk-status', key: 'perPrompt' } as const, [], { shape: 'per-prompt-1' })
+const cacheTtl = atom({ plugin: 'aitk-status', key: 'cacheTtl' } as const, 5)
+const isTtlLearned = atom({ plugin: 'aitk-status', key: 'isTtlLearned' } as const, false)
+const compactToasted = atom({ plugin: 'aitk-status', key: 'compactToasted' } as const, false)
 
 // The user's thresholds, carried over from the bash status line.
 // Context: the cost knee /usage flags is past 150k input tokens, whatever the
@@ -28,9 +33,21 @@ const LIMIT_HIGH = 90
 // Session cost, US dollars.
 const COST_WARN = 3
 const COST_HIGH = 8
-// Idle past the prompt-cache TTL means the next turn re-reads the whole
-// context at full price. 5 minutes is the API default; a 1-hour cache needs 60.
-const CACHE_TTL_MINUTES = 5
+// Idle past the prompt-cache TTL means the next turn re-writes the whole
+// context to the cache. The TTL is 5 minutes (the API default) or 60; the mod
+// learns which from the first turn after an idle gap between the two (a warm
+// cache after 6 to 55 minutes means 60) and keeps it across sessions.
+const CACHE_TTL_DEFAULT = 5
+const TTL_STORE_KEY = 'cacheTtlMinutes'
+// Suggest /compact past this many context tokens, or at CONTEXT_HIGH_PERCENT
+// of the window. No published point where a 1M window starts to hallucinate:
+// recall and attention to early instructions fall off gradually as the
+// context grows, so this is a preference, matching the red context meter.
+const COMPACT_SUGGEST_TOKENS = 250_000
+// How often the branch's PR checks are read while the session is open.
+const PR_POLL_MS = 120_000
+// Prompts kept for the per-prompt token chart.
+const PER_PROMPT_KEPT = 24
 // A turn that reads less of its input from the cache than this paid to
 // re-write it: idle past the TTL, a model or effort switch, a compaction.
 const CACHE_HIT_WARN = 80
@@ -66,8 +83,17 @@ const bar = (percent: number) => {
   return '█'.repeat(filled) + '░'.repeat(10 - filled)
 }
 
+const SPARKS = '▁▂▃▄▅▆▇█'
+// Scaled from the smallest prompt to the largest, so growth shows.
+const sparkline = (values: readonly number[]) => {
+  const low = Math.min(...values)
+  const range = Math.max(...values) - low
+  return values.map(v => (range === 0 ? '▄' : SPARKS[Math.floor(((v - low) / range) * 7.999)] ?? '▁')).join('')
+}
+
 const span = (ms: number) => {
   const minutes = Math.max(0, Math.floor(ms / 60_000))
+  if (ms > 0 && minutes === 0) return '<1m'
   if (minutes >= 1440) return `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`
   if (minutes >= 60) return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
   return `${minutes}m`
@@ -139,6 +165,84 @@ async function warnLimits($: EngineInterface, limits: Usage['limits']) {
   if (fresh.length > 0) await update($, toasted, list => [...list, ...fresh].slice(-40))
 }
 
+// statusCheckRollup holds Actions runs and external status contexts (Jenkins
+// and the like), which `gh run list` never shows.
+const PASSED = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED'])
+const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE'])
+
+type Check = { __typename?: string; name?: string; context?: string; status?: string; conclusion?: string; state?: string }
+
+export const readChecks = (checks: readonly Check[]) => {
+  const out = { passed: 0, pending: 0, failing: [] as string[] }
+  for (const c of checks) {
+    const verdict = c.__typename === 'StatusContext' ? c.state ?? '' : c.status === 'COMPLETED' ? c.conclusion ?? '' : 'PENDING'
+    if (PASSED.has(verdict)) out.passed += 1
+    else if (FAILED.has(verdict)) out.failing.push(c.name ?? c.context ?? '?')
+    else out.pending += 1
+  }
+  return out
+}
+
+let isGhMissing = false
+
+const readPr = async ($: EngineInterface): Promise<Pr | null> => {
+  if (isGhMissing) return null
+  const cwd = await $.session.cwd()
+  const ran = await $.process
+    .run(['gh', 'pr', 'view', '--json', 'number,url,state,isDraft,statusCheckRollup'], { cwd, timeoutMs: 20_000 })
+    .catch(() => null)
+  if (ran === null || ran.exitCode === 127) {
+    isGhMissing = ran === null || ran.exitCode === 127
+    return null
+  }
+  if (ran.exitCode !== 0) return null // no PR for this branch, or gh not signed in
+  const view = JSON.parse(ran.stdout) as {
+    number: number
+    url: string
+    state: string
+    isDraft: boolean
+    statusCheckRollup?: Check[] | null
+  }
+  return { number: view.number, url: view.url, state: view.state, isDraft: view.isDraft, ...readChecks(view.statusCheckRollup ?? []) }
+}
+
+async function refreshPr($: EngineInterface) {
+  const next = await readPr($).catch(() => null)
+  const prev = await read($, pr)
+  await update($, pr, () => next)
+  if (!next || !prev || prev.number !== next.number || next.state !== 'OPEN') return
+  const isNewFailure = next.failing.some(name => !prev.failing.includes(name))
+  if (isNewFailure) {
+    $.ui.toast(`PR #${next.number}: CI failing (${next.failing.slice(0, 3).join(', ')})`, { timeoutMs: 10_000 })
+  } else if (next.failing.length === 0 && next.pending === 0 && (prev.pending > 0 || prev.failing.length > 0)) {
+    $.ui.toast(`PR #${next.number}: CI green`, { timeoutMs: 6000 })
+  }
+}
+
+async function suggestCompact($: EngineInterface, measured: Usage) {
+  const isDue =
+    measured.tokens !== undefined &&
+    (measured.tokens >= COMPACT_SUGGEST_TOKENS || (measured.percent ?? 0) >= CONTEXT_HIGH_PERCENT)
+  const hasToasted = await read($, compactToasted)
+  if (isDue && !hasToasted) {
+    $.ui.toast(`Context at ${kilo(measured.tokens ?? 0)} tokens: a good point to /compact`, { timeoutMs: 8000 })
+  }
+  if (isDue !== hasToasted) await update($, compactToasted, () => isDue)
+}
+
+// The first turn after an idle gap between the two TTLs says which one holds.
+async function learnTtl($: EngineInterface, gapMs: number, hit: number) {
+  if (gapMs < 6 * 60_000 || gapMs > 55 * 60_000) return
+  const ttl = hit >= CACHE_HIT_HIGH ? 60 : 5
+  await $.store.set(TTL_STORE_KEY, ttl)
+  await update($, cacheTtl, () => ttl)
+  await update($, isTtlLearned, () => true)
+}
+
+async function compact($: EngineInterface) {
+  await $.session.compact()
+}
+
 async function tick($: EngineInterface) {
   const value = await $.clock.now()
   await update($, now, () => value)
@@ -155,19 +259,36 @@ export const register: Register = on => {
     await update($, overrides, () => set)
     const startedNow = await $.clock.now()
     await update($, now, () => startedNow)
-    $.clock.every(60_000, () => void tick($))
+    $.clock.every(30_000, () => void tick($))
+    const stored = await $.store.get(TTL_STORE_KEY).catch(() => undefined)
+    if (stored === 5 || stored === 60) {
+      await update($, cacheTtl, () => stored)
+      await update($, isTtlLearned, () => true)
+    }
     await refreshGit($)
+    await refreshPr($)
+    $.clock.every(PR_POLL_MS, () => void refreshPr($))
     return result
   })
 
   on('session.measure', async ($, e, next) => {
     const measured = await update($, usage, previous => readUsage(e, previous?.startedAt ?? 0))
-    if (measured) await warnLimits($, measured.limits)
+    if (measured) {
+      await warnLimits($, measured.limits)
+      await suggestCompact($, measured)
+    }
     return next(e)
   })
 
+  // the idle gap before the running turn, read when it completes
+  let gapMs = 0
+
   on('turn.start', async ($, e, next) => {
-    if (e.agentId === undefined) await update($, idleSince, () => null)
+    if (e.agentId === undefined) {
+      const [since, started] = [await read($, idleSince), await $.clock.now()]
+      gapMs = since === null ? 0 : started - since
+      await update($, idleSince, () => null)
+    }
     return next(e)
   })
 
@@ -191,16 +312,21 @@ export const register: Register = on => {
       if (u && input > 0) {
         const hit = Math.round((100 * u.cache_read_input_tokens) / input)
         await update($, cacheHit, () => hit)
+        await learnTtl($, gapMs, hit)
+        const total = input + u.output_tokens
+        await update($, perPrompt, list => [...list, total].slice(-PER_PROMPT_KEPT))
       }
+      gapMs = 0
       await refreshGit($)
+      await refreshPr($)
     }
     return result
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const { Box, Link, Text } = $.ui.resolve(e)
-    const [u, g, s, idle, clock, flags, model, turns, hit] = await Promise.all([
+    const { Box, Button, Link, Text } = $.ui.resolve(e)
+    const [u, g, s, idle, clock, flags, model, turns, hit, p, prompts, ttl, isLearned] = await Promise.all([
       read($, usage),
       read($, git),
       read($, step),
@@ -210,6 +336,10 @@ export const register: Register = on => {
       $.session.model(),
       $.session.turns(),
       read($, cacheHit),
+      read($, pr),
+      read($, perPrompt),
+      read($, cacheTtl),
+      read($, isTtlLearned),
     ])
 
     const sep = <Text dimColor> │ </Text>
@@ -261,7 +391,7 @@ export const register: Register = on => {
       contextPart,
       hit !== null && (
         <Text>
-          <Text dimColor>cache </Text>
+          <Text dimColor>cache hit </Text>
           <Text color={hit >= CACHE_HIT_WARN ? 'success' : hit >= CACHE_HIT_HIGH ? 'warning' : 'error'}>{hit}%</Text>
         </Text>
       ),
@@ -273,6 +403,42 @@ export const register: Register = on => {
 
     // Line 2: where the work is, how long it has run, and what is relaxed.
     const idleMs = idle !== null && clock > 0 ? clock - idle : 0
+    const leftMs = ttl * 60_000 - idleMs
+    const assumed = isLearned ? '' : '?'
+    const cacheTimer =
+      leftMs > 0 ? (
+        <Text color={leftMs <= 60_000 ? 'warning' : undefined} dimColor={leftMs > 60_000}>
+          cache {span(leftMs)} left{assumed}
+        </Text>
+      ) : (
+        <Text color="warning">
+          cache expired{assumed}
+          {u?.tokens !== undefined ? ` · next prompt re-caches ${kilo(u.tokens)}` : ''}
+        </Text>
+      )
+    const prPart =
+      p &&
+      (p.state !== 'OPEN' ? (
+        <Text dimColor>
+          PR #{p.number} {p.state.toLowerCase()}
+        </Text>
+      ) : (
+        <Text>
+          <Link href={p.url} label={`PR #${p.number}${p.isDraft ? ' draft' : ''}`} />
+          {p.failing.length > 0 ? (
+            <Text color="error">
+              {' '}✗ {p.failing.length} failing ({p.failing.slice(0, 2).join(', ')}
+              {p.failing.length > 2 ? ', …' : ''})
+            </Text>
+          ) : p.pending > 0 ? (
+            <Text color="warning"> ● {p.pending} running</Text>
+          ) : p.passed > 0 ? (
+            <Text color="success"> ✓ {p.passed} passed</Text>
+          ) : (
+            <Text dimColor> no checks</Text>
+          )}
+        </Text>
+      ))
     const line2 = join([
       g && (
         <Text>
@@ -285,17 +451,36 @@ export const register: Register = on => {
       <Text dimColor>
         {turns} turns{u && u.startedAt > 0 && clock > 0 ? ` · ${span(clock - u.startedAt)}` : ''}
       </Text>,
-      idleMs >= 60_000 && !e.props.isWorking && (
-        <Text color={idleMs >= CACHE_TTL_MINUTES * 60_000 ? 'warning' : undefined} dimColor={idleMs < CACHE_TTL_MINUTES * 60_000}>
-          idle {span(idleMs)}
-          {idleMs >= CACHE_TTL_MINUTES * 60_000 ? ' · cache cold' : ''}
-        </Text>
-      ),
+      prPart,
+      idle !== null && clock > 0 && !e.props.isWorking && cacheTimer,
       ...flags.map(flag => (
         <Text color="error" bold>
           {flag}
         </Text>
       )),
+    ])
+
+    // Line 3: tokens per prompt, and the compact suggestion.
+    const isCompactDue =
+      u?.tokens !== undefined && (u.tokens >= COMPACT_SUGGEST_TOKENS || (u.percent ?? 0) >= CONTEXT_HIGH_PERCENT)
+    const last = prompts[prompts.length - 1]
+    const line3 = join([
+      last !== undefined && (
+        <Text>
+          <Text dimColor>per prompt </Text>
+          <Text>{sparkline(prompts)}</Text>
+          <Text> {kilo(last)}</Text>
+          <Text dimColor>
+            {' '}· avg {kilo(Math.round(prompts.reduce((a, b) => a + b, 0) / prompts.length))} · max {kilo(Math.max(...prompts))}
+          </Text>
+        </Text>
+      ),
+      isCompactDue && (
+        <Box flexDirection="row">
+          <Text color="warning">context {kilo(u.tokens ?? 0)}: consider /compact </Text>
+          {!e.props.isWorking && <Button key="compact" label="Compact now" onPress={() => compact($)} />}
+        </Box>
+      ),
     ])
 
     return (
@@ -306,6 +491,11 @@ export const register: Register = on => {
         <Box flexDirection="row" flexWrap="wrap">
           {line2}
         </Box>
+        {line3.length > 0 && (
+          <Box flexDirection="row" flexWrap="wrap">
+            {line3}
+          </Box>
+        )}
       </Box>
     )
   })

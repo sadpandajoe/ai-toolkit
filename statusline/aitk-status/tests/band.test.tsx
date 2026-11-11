@@ -17,8 +17,14 @@ const BAND = {
 
 const T0 = Date.parse('2026-11-11T12:00:00Z')
 
-const engine = (on: On, env: Record<string, string>) => {
+const engine = (on: On, env: Record<string, string>, gh?: () => { exitCode: number; stdout: string }) => {
   const clock = mock.clock(on, { now: T0 })
+  const store = new Map<string, unknown>()
+  on('store.get', (_, e) => ({ value: store.get(e.key) }))
+  on('store.set', (_, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.measure', (_, e) => ({ changed: e.changed }))
   on('session.usage', () => ({
@@ -32,6 +38,10 @@ const engine = (on: On, env: Record<string, string>) => {
   }))
   on('env.get', (_, e) => ({ value: env[e.name] }))
   on('process.run', (_, e) => {
+    if (e.argv[0] === 'gh') {
+      const res = gh?.() ?? { exitCode: 1, stdout: '' }
+      return { value: { ...res, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
     const args = e.argv.slice(3).join(' ')
     const out: Record<string, string> = {
       'rev-parse --show-toplevel': '/w/ai-toolkit\n',
@@ -42,7 +52,7 @@ const engine = (on: On, env: Record<string, string>) => {
       value: { exitCode: args in out ? 0 : 1, stdout: out[args] ?? '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
     }
   })
-  return clock
+  return { advance: clock.advance, store }
 }
 
 test('the band shows model, usage, git and overrides', async ($, on) => {
@@ -69,7 +79,7 @@ test('the band shows model, usage, git and overrides', async ($, on) => {
   }
 })
 
-test('idle past the cache TTL is flagged', async ($, on) => {
+test('the cache countdown runs out after the TTL', async ($, on) => {
   const clock = engine(on, {})
   on('turn.complete', (_, e) => ({ text: e.answer }))
   await $.session.start({ cwd: '/w/ai-toolkit', surface: 'desktop', isInteractive: true })
@@ -77,7 +87,8 @@ test('idle past the cache TTL is flagged', async ($, on) => {
   await clock.advance(7 * 60_000)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /^idle/ }))?.text).toBe('idle 7m · cache cold')
+  // the TTL is not learned yet, so it is assumed (5 minutes) and marked `?`
+  expect((await ui.find({ type: 'Text', text: /^cache expired/ }))?.text).toBe('cache expired?')
   await ui.unmount()
 })
 
@@ -129,6 +140,91 @@ test('the band shows the last turn\'s cache hit rate', async ($, on) => {
     },
   })
   const ui = await $.ui.mount({ ...BAND, surface: 'mobile' })
-  expect((await ui.find({ type: 'Text', text: /^cache / }))?.text).toBe('cache 90%')
+  expect((await ui.find({ type: 'Text', text: /^cache hit / }))?.text).toBe('cache hit 90%')
+  expect((await ui.find({ type: 'Text', text: /^cache .* left/ }))?.text).toBe('cache 5m left?')
+  expect((await ui.find({ type: 'Text', text: /^per prompt / }))?.text).toBe('per prompt ▄ 101k · avg 101k · max 101k')
+  await ui.unmount()
+})
+
+const turn = (id: string, read: number, write: number) => ({
+  turnId: id,
+  answer: 'done',
+  durationMs: 1000,
+  isAborted: false,
+  reason: 'answer' as const,
+  usage: { model: 'claude-opus-5-5', input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: write, cache_read_input_tokens: read },
+})
+
+test('a warm cache after a 20-minute gap teaches a 1-hour TTL, kept in the store', async ($, on) => {
+  const clock = engine(on, {})
+  on('turn.start', (_, e) => ({ turnId: e.turnId }) as never)
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  await $.session.start({ cwd: '/w/ai-toolkit', surface: 'desktop', isInteractive: true })
+  await $.turn.complete(turn('t1', 0, 10_000))
+  await clock.advance(20 * 60_000)
+  await $.turn.start({ turnId: 't2', prompt: 'go' } as never)
+  await $.turn.complete(turn('t2', 10_000, 1_000))
+  expect(clock.store.get('cacheTtlMinutes')).toBe(60)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^cache .* left/ }))?.text).toBe('cache 1h00m left')
+  expect((await ui.find({ type: 'Text', text: /^per prompt / }))?.text).toBe('per prompt ▁█ 11k · avg 11k · max 11k')
+  await ui.unmount()
+})
+
+const pending = { __typename: 'CheckRun', name: 'python', status: 'IN_PROGRESS', conclusion: '' }
+const view = (checks: object[]) => ({
+  exitCode: 0,
+  stdout: JSON.stringify({ number: 72, url: 'https://github.com/acme/ai-toolkit/pull/72', state: 'OPEN', isDraft: true, statusCheckRollup: checks }),
+})
+
+test('the PR checks show, external contexts included, and a new failure toasts', async ($, on) => {
+  let checks: object[] = [pending, { __typename: 'StatusContext', context: 'jenkins', state: 'SUCCESS' }]
+  engine(on, {}, () => view(checks))
+  const toasts: string[] = []
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  await $.session.start({ cwd: '/w/ai-toolkit', surface: 'terminal', isInteractive: true })
+
+  let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /^PR #72/ }))?.text).toBe('PR #72 draft ● 1 running')
+  await ui.unmount()
+
+  checks = [{ ...pending, status: 'COMPLETED', conclusion: 'FAILURE' }, { __typename: 'StatusContext', context: 'jenkins', state: 'SUCCESS' }]
+  await $.turn.complete({ turnId: 't1', answer: 'done', durationMs: 1, isAborted: false, reason: 'answer' })
+  expect(toasts).toEqual(['PR #72: CI failing (python)'])
+  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /^PR #72/ }))?.text).toBe('PR #72 draft ✗ 1 failing (python)')
+  await ui.unmount()
+
+  checks = [{ ...pending, status: 'COMPLETED', conclusion: 'SUCCESS' }, { __typename: 'StatusContext', context: 'jenkins', state: 'SUCCESS' }]
+  await $.turn.complete({ turnId: 't2', answer: 'done', durationMs: 1, isAborted: false, reason: 'answer' })
+  expect(toasts).toEqual(['PR #72: CI failing (python)', 'PR #72: CI green'])
+})
+
+test('past the compact threshold the band suggests /compact once and its button compacts', async ($, on) => {
+  engine(on, {})
+  const toasts: string[] = []
+  let compactions = 0
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('session.compact', () => {
+    compactions += 1
+    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never
+  })
+  await $.session.start({ cwd: '/w/ai-toolkit', surface: 'terminal', isInteractive: true })
+  const at = (tokens: number) => ({ context: { tokens, window: 1_000_000, percent: tokens / 10_000 }, rateLimits: [], changed: ['context' as const] })
+  for (const tokens of [200_000, 260_000, 300_000]) await $.session.measure(at(tokens))
+  expect(toasts).toEqual(['Context at 260k tokens: a good point to /compact'])
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /consider/ }))?.text).toBe('context 300k: consider /compact ')
+  await ui.press({ key: 'compact' })
+  expect(compactions).toBe(1)
   await ui.unmount()
 })
