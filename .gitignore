@@ -11,3 +11,7 @@ __pycache__/
 /WATCH.md
 build/
 .DS_Store
+
+# written by Claude Code when it loads the status mod
+/statusline/aitk-status/.claude-plugin/types/
+/statusline/aitk-status/tsconfig.json

@@ -1,0 +1,6 @@
+{
+  "name": "aitk-status",
+  "version": "0.1.0",
+  "description": "AI Toolkit status band: model and effort, context, plan limits, cost, git state and the toolkit's hook overrides, on every surface",
+  "types": "./types/index.d.ts"
+}

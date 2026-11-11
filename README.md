@@ -120,9 +120,20 @@ in `/hooks`, or all of them with `hooks = false` under `[features]` in
 - `python3 scripts/show-cost.py [today|<N>d|month|all|YYYY-MM-DD]`: token
   usage and API-equivalent cost from Claude Code sessions, subagents
   included. Codex keeps no usage records, and unknown models stay unpriced.
-- `statusline/statusline-command.sh`: an optional Claude Code status line
-  (model, effort, session length, cost, context and rate-limit bars, branch).
-  Point `statusLine` in `~/.claude/settings.json` at it:
+- `statusline/aitk-status/`: the status line as a Claude Code mod, a band
+  above the prompt in the terminal, desktop, VS Code and mobile: the model and
+  effort each request really went out with (a fallback is flagged), context,
+  5h and weekly limits with resets, cost, repo, branch and changed files,
+  turns and session length, idle time past the prompt-cache TTL, and
+  `AITK_PR_READY` or `SKIP_PRECHECK` when the session started with either.
+  Load it from `~/.claude/settings.json`:
+  `"env": {"CLAUDE_CODE_PLUGIN_DIRS": "~/opt/code/ai-toolkit/statusline/aitk-status"}`,
+  and drop `statusLine` so the terminal doesn't show both. Thresholds are the
+  constants at the top of `hooks/register.tsx`; `claude plugin test
+  statusline/aitk-status` runs its tests.
+- `statusline/statusline-command.sh`: the same figures as a `statusLine`
+  command, for Claude Code without mods. Point `statusLine` in
+  `~/.claude/settings.json` at it:
   `{"type": "command", "command": "bash ~/opt/code/ai-toolkit/statusline/statusline-command.sh"}`.
   It needs `jq`.
 - `scripts/plugin-proof.sh claude|codex`: installs the plugin into a scratch
