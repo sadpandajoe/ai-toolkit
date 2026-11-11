@@ -91,3 +91,44 @@ test('the band yields to a survey', async ($, on) => {
   expect((await survey.find({ type: 'Text' }))?.text).toBe('engine')
   await survey.unmount()
 })
+
+const limit = (percentUsed: number) => ({
+  context: { window: 200_000 },
+  rateLimits: [{ kind: 'five_hour', percentUsed, resetsAt: '2026-11-11T15:00:00Z' }],
+  changed: ['rateLimits' as const],
+})
+
+test('a plan limit toasts once at 80% and once at 95% per window', async ($, on) => {
+  engine(on, {})
+  const toasts: string[] = []
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: '/w/ai-toolkit', surface: 'terminal', isInteractive: true })
+  for (const percent of [60, 81, 83, 96, 99]) await $.session.measure(limit(percent))
+  expect(toasts).toEqual(['5-hour limit at 81%', '5-hour limit at 96%'])
+})
+
+test('the band shows the last turn\'s cache hit rate', async ($, on) => {
+  engine(on, {})
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  await $.session.start({ cwd: '/w/ai-toolkit', surface: 'terminal', isInteractive: true })
+  await $.turn.complete({
+    turnId: 't1',
+    answer: 'done',
+    durationMs: 1000,
+    isAborted: false,
+    reason: 'answer',
+    usage: {
+      model: 'claude-opus-5-5',
+      input_tokens: 1_000,
+      output_tokens: 500,
+      cache_creation_input_tokens: 9_000,
+      cache_read_input_tokens: 90_000,
+    },
+  })
+  const ui = await $.ui.mount({ ...BAND, surface: 'mobile' })
+  expect((await ui.find({ type: 'Text', text: /^cache / }))?.text).toBe('cache 90%')
+  await ui.unmount()
+})

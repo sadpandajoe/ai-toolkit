@@ -14,8 +14,9 @@
   labels, row vocabulary and report formats stay.
 - The status line ships as a mod, `statusline/aitk-status/`, drawn on every
   Claude Code surface. Beside the bash line's figures it shows the model a
-  request really went out with, idle time past the prompt-cache TTL and the
-  `AITK_PR_READY`/`SKIP_PRECHECK` overrides. It counts turns instead of
+  request really went out with, the last turn's prompt-cache hit rate, idle
+  time past the prompt-cache TTL and the `AITK_PR_READY`/`SKIP_PRECHECK`
+  overrides, and toasts when a plan limit crosses 80% and 95%. It counts turns instead of
   transcript lines, takes the session length from the engine instead of the
   transcript file's birth time, counts each changed path once, and turns the
   context meter on absolute tokens (150k/250k) or 80% of the window, so a

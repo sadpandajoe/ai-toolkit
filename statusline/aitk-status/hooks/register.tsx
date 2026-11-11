@@ -13,6 +13,8 @@ const step = atom({ plugin: 'aitk-status', key: 'step' } as const, null, { shape
 const idleSince = atom({ plugin: 'aitk-status', key: 'idleSince' } as const, null)
 const now = atom({ plugin: 'aitk-status', key: 'now' } as const, 0)
 const overrides = atom({ plugin: 'aitk-status', key: 'overrides' } as const, [], { shape: 'overrides-1' })
+const cacheHit = atom({ plugin: 'aitk-status', key: 'cacheHit' } as const, null)
+const toasted = atom({ plugin: 'aitk-status', key: 'toasted' } as const, [], { shape: 'toasted-1' })
 
 // The user's thresholds, carried over from the bash status line.
 // Context: the cost knee /usage flags is past 150k input tokens, whatever the
@@ -29,6 +31,12 @@ const COST_HIGH = 8
 // Idle past the prompt-cache TTL means the next turn re-reads the whole
 // context at full price. 5 minutes is the API default; a 1-hour cache needs 60.
 const CACHE_TTL_MINUTES = 5
+// A turn that reads less of its input from the cache than this paid to
+// re-write it: idle past the TTL, a model or effort switch, a compaction.
+const CACHE_HIT_WARN = 80
+const CACHE_HIT_HIGH = 50
+// A plan window crossing these raises a toast, once per level and window.
+const LIMIT_TOASTS = [95, 80]
 
 // hooks/lib/shell_tokens.py `truthy`: unset, empty, 0, false, no and off are off.
 const truthy = (value: string | undefined) =>
@@ -114,6 +122,23 @@ async function refreshGit($: EngineInterface) {
   await update($, git, () => value)
 }
 
+const LIMIT_NAMES: Record<string, string> = { five_hour: '5-hour', seven_day: 'weekly', spend_limit: 'spend' }
+
+async function warnLimits($: EngineInterface, limits: Usage['limits']) {
+  const seen = await read($, toasted)
+  const fresh: string[] = []
+  for (const l of limits) {
+    const level = LIMIT_TOASTS.find(at => l.percentUsed >= at)
+    if (level === undefined) continue
+    const id = `${l.kind}@${l.resetsAt ?? ''}@${level}`
+    if (seen.includes(id)) continue
+    // a 95% toast stands for the 80% one of the same window too
+    fresh.push(id, ...LIMIT_TOASTS.filter(at => at < level).map(at => `${l.kind}@${l.resetsAt ?? ''}@${at}`))
+    $.ui.toast(`${LIMIT_NAMES[l.kind] ?? l.kind} limit at ${Math.round(l.percentUsed)}%`, { timeoutMs: 8000 })
+  }
+  if (fresh.length > 0) await update($, toasted, list => [...list, ...fresh].slice(-40))
+}
+
 async function tick($: EngineInterface) {
   const value = await $.clock.now()
   await update($, now, () => value)
@@ -136,7 +161,8 @@ export const register: Register = on => {
   })
 
   on('session.measure', async ($, e, next) => {
-    await update($, usage, previous => readUsage(e, previous?.startedAt ?? 0))
+    const measured = await update($, usage, previous => readUsage(e, previous?.startedAt ?? 0))
+    if (measured) await warnLimits($, measured.limits)
     return next(e)
   })
 
@@ -160,6 +186,12 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       const ended = await $.clock.now()
       await update($, idleSince, () => ended)
+      const u = e.usage
+      const input = u ? u.input_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens : 0
+      if (u && input > 0) {
+        const hit = Math.round((100 * u.cache_read_input_tokens) / input)
+        await update($, cacheHit, () => hit)
+      }
       await refreshGit($)
     }
     return result
@@ -168,7 +200,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const { Box, Link, Text } = $.ui.resolve(e)
-    const [u, g, s, idle, clock, flags, model, turns] = await Promise.all([
+    const [u, g, s, idle, clock, flags, model, turns, hit] = await Promise.all([
       read($, usage),
       read($, git),
       read($, step),
@@ -177,6 +209,7 @@ export const register: Register = on => {
       read($, overrides),
       $.session.model(),
       $.session.turns(),
+      read($, cacheHit),
     ])
 
     const sep = <Text dimColor> │ </Text>
@@ -226,6 +259,12 @@ export const register: Register = on => {
         {s && !sameModel(s.model, model) && <Text color="warning"> (fallback from {modelLabel(model)})</Text>}
       </Text>,
       contextPart,
+      hit !== null && (
+        <Text>
+          <Text dimColor>cache </Text>
+          <Text color={hit >= CACHE_HIT_WARN ? 'success' : hit >= CACHE_HIT_HIGH ? 'warning' : 'error'}>{hit}%</Text>
+        </Text>
+      ),
       ...limitParts,
       u?.costUsd !== undefined && (
         <Text color={tone(u.costUsd, COST_WARN, COST_HIGH)}>${u.costUsd.toFixed(2)}</Text>

@@ -35,6 +35,10 @@ declare module 'claude-code' {
       now: number
       /** `AITK_PR_READY` and `SKIP_PRECHECK` as the session started with them. */
       overrides: Shaped<string[]>
+      /** Share of the last main-loop turn's input tokens read from the prompt cache, 0 to 100. */
+      cacheHit: number | null
+      /** Limit warnings already toasted, as `kind@resetsAt@level`, so each fires once per window. */
+      toasted: Shaped<string[]>
     }
   }
 }
