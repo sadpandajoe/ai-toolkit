@@ -119,5 +119,23 @@ class CliTests(unittest.TestCase):
         self.assertEqual(2, result.returncode)
 
 
+class ModelPinTests(unittest.TestCase):
+    """A model release changes the pins in two places; these keep them in step."""
+
+    def test_codex_agents_run_the_standard_codex_review_model_and_effort(self) -> None:
+        import tomllib
+
+        for path in sorted((ROOT / "agents" / "codex").glob("*.toml")):
+            with self.subTest(agent=path.name):
+                agent = tomllib.loads(path.read_text())
+                self.assertEqual(second_opinion.MODELS["codex"]["standard"], agent["model"])
+                self.assertEqual(second_opinion.EFFORT["standard"], agent["model_reasoning_effort"])
+
+    def test_the_claude_reviewer_alias_names_the_standard_claude_model_family(self) -> None:
+        text = (ROOT / "agents" / "claude" / "reviewer.md").read_text()
+        alias = next(line.split(":", 1)[1].strip() for line in text.splitlines() if line.startswith("model:"))
+        self.assertIn(f"-{alias}-", second_opinion.MODELS["claude"]["standard"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,14 @@ Blocked:
 - `gh pr create` (or `gh pr new`) without `--draft`, and `gh pr ready` and
   `gh pr merge`, unless the user set `AITK_PR_READY=1` in the environment the
   session started with (set only when the user asked in words);
+- `gh pr create` (or `gh pr new`) whose commit has no passing check recorded on
+  its exact tree by `scripts/verify.py` (`check_pr_verified`, the record format
+  in `verify_record`). No session override lifts it: when nothing meaningful
+  can run, the user's agreement goes into a `--partial` record, or the user
+  opens the PR from their own terminal, where this hook does not run. The PR's
+  commit is HEAD of the directory the command runs in, or its `--head` branch
+  when that resolves locally; a directory the guard cannot follow, and a
+  creation it cannot read, block;
 - a command that assigns or exports any toolkit override itself (a prefix, an
   assignment-only segment, `env`, `export`/`declare`/`typeset`/`readonly`/
   `local`, a literal `+=` append, inside `bash -c`, `eval`, `env -S`, a
@@ -183,6 +191,7 @@ import sys
 from typing import Iterator
 
 import shell_tokens
+import verify_record
 
 
 # Local workflow state that never belongs in a commit, matched by basename.
@@ -1191,6 +1200,83 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
         raise block(PR_PUBLISH_MESSAGE.format(verb=words[1], effect=PR_PUBLISH_EFFECT[words[1]]))
 
 
+PR_VERIFY_MESSAGE = (
+    "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. "
+    "Run the change's own test or acceptance command through "
+    "`python3 {script} -- <command>`; when only related checks can run here, add "
+    "`--partial \"<what CI still runs>\"`. A command that checks nothing is working "
+    "around the hook. If nothing meaningful can run for this change, stop and ask the "
+    "user; with their agreement, record the closest real check with `--partial`."
+)
+PR_VERIFY_UNREADABLE = (
+    "this command could not be read in full, so the guard cannot tell which commit a "
+    "`gh pr create` in it would open, or whether a check passed on it. Run `gh pr create` "
+    "as a plain command from the repository."
+)
+VERIFY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts", "verify.py")
+CREATE_WORD = re.compile(r"\b(create|new)\b")
+
+
+def head_flag(args: list[str]) -> str | None:
+    """The value of `gh pr create --head`/`-H`, if given."""
+    for index, arg in enumerate(args):
+        if arg == "--":
+            break
+        if arg in {"-H", "--head"} and index + 1 < len(args):
+            return args[index + 1]
+        if arg.startswith("--head="):
+            return arg.split("=", 1)[1]
+        if arg.startswith("-H") and len(arg) > 2:
+            return arg[2:]
+    return None
+
+
+def require_verified(workdir: str, head: str | None) -> None:
+    top = verify_record.toplevel(workdir)
+    if top is None:
+        raise block(PR_VERIFY_MESSAGE.format(reason=f"`{workdir}` is not inside a git checkout", script=VERIFY_SCRIPT))
+    target = None
+    if head:
+        branch = head.split(":", 1)[-1]
+        target = verify_record.commit(top, branch)
+        if target is None:
+            reason = f"its `--head` branch `{head}` is not a local branch the guard can read"
+            raise block(PR_VERIFY_MESSAGE.format(reason=reason, script=VERIFY_SCRIPT))
+    else:
+        target = verify_record.commit(top)
+        if target is None:
+            raise block(PR_VERIFY_MESSAGE.format(reason="this checkout has no commit yet", script=VERIFY_SCRIPT))
+    ok, reason, _ = verify_record.verdict(top, target, is_protected_path)
+    if not ok:
+        raise block(PR_VERIFY_MESSAGE.format(reason=reason, script=VERIFY_SCRIPT))
+
+
+def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
+    """`gh pr create` needs a passing `scripts/verify.py` record on the tree it opens.
+    No override lifts it (`environ` is unused, kept for the checks' shared signature)."""
+    for found in shell_tokens.commands(command, cwd):
+        if found.unreadable:
+            raise block(PR_VERIFY_UNREADABLE)
+        if found.unresolved:
+            if shell_tokens.words_in_order(found.text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
+                raise block(PR_VERIFY_UNREADABLE)
+            continue
+        if not found.is_gh:
+            continue
+        args = found.argv[1:]
+        if {"-h", "--help"} & set(args):
+            continue
+        words = shell_tokens.positional(args, GH_GLOBAL_VALUE_FLAGS)
+        if words[:2] not in (["pr", "create"], ["pr", "new"]):
+            continue
+        if found.workdir is None:
+            raise block(
+                "the guard cannot follow the directory this `gh pr create` runs in, so it "
+                "cannot check which commit it opens. Run it as a plain command from the repository."
+            )
+        require_verified(found.workdir, head_flag(args))
+
+
 def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
     """Raise Blocked when `command`, run in `cwd`, breaks a guarded rule."""
     if not command or not cwd:
@@ -1212,6 +1298,7 @@ def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
         raise block("git commit/push inside command substitution or process substitution bypasses safety checks")
 
     check_pr_publish(command, cwd, environ)
+    check_pr_verified(command, cwd, environ)
 
     actions: list[dict] = []
     for action in parse_git_actions(tokens, cwd):

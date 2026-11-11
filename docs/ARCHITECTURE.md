@@ -15,8 +15,8 @@ A line, file or module exists only if it is one of these:
 1. **A fact the model can't infer.** Preset and Superset hosts and
    credentials, the external CI that `gh run list` doesn't show, cherry-pick
    incidents, browser-recording traps, the user's thresholds and preferences.
-2. **A boundary a hook or script enforces.** The git guard, the production
-   refusals in the Preset scripts.
+2. **A boundary a hook or script enforces.** The git guard and its verify
+   gate, the production refusals in the Preset scripts, the PGM preflight.
 3. **A format surviving code parses.** For example, the host table that
    `scripts/preset/hosts.mjs` and its test hold in step.
 4. **A Claude Code ↔ Codex portability shim.**
@@ -58,6 +58,32 @@ read-only commands only. The reviewer contract goes in as system or developer
 instructions, and the diff (or a file such as `PLAN.md`) on stdin, so the
 worker needs no file pointers.
 
+## The PR gate
+
+A draft PR opens only for a tree a check passed on. `scripts/verify.py -- <command>`
+runs the check and records, in `.ai-toolkit/verify.json`, the commit it
+started from and the blob id of every path the working tree changed
+(`hooks/lib/verify_record.py`). Before `gh pr create`, the git guard compares
+that with `git diff --raw <base> HEAD`: a run before the commit counts once the
+commit holds exactly what was tested, and any edit in between does not. The
+newest run of each command on that tree must have passed. `--partial` marks a
+run of related checks only and names what CI still runs; the PR's test plan
+carries the level. The record and the fingerprint stay outside `.git`, which
+Codex keeps read-only; adding `.ai-toolkit/` to `info/exclude` is best effort.
+
+The gate has no off switch. A session-wide one is easy to leave on, and v0.3
+told users to start sessions with `SKIP_PR_GATE=1`, so an old name would have
+switched the new gate off unseen (the session-start hook now warns when it is
+still set). When nothing meaningful can run, the user's agreement goes into a
+`--partial` record the PR discloses; a misfire is escaped by opening the PR
+from the user's own terminal, where the hook does not run.
+
+The gate checks that tests ran, not that the change was reviewed: a recorded
+command run is something a hook can check, while whether a review was good
+enough is a judgment, so review stays in the `review` skill. The record is a
+tripwire against forgetting, not proof: it shows what ran, so a command that
+checks nothing is visible in the record.
+
 ## Local notes
 
 `PROJECT.md`, `PROJECT_ARCHIVE.md`, `PLAN.md`, `WATCH.md`, `CHERRY_PICK.md`
@@ -71,4 +97,7 @@ Both CLIs install the repository root as a plugin from the one-plugin
 marketplace in `.claude-plugin/marketplace.json`. Claude Code discovers
 `skills/` and `hooks/hooks.json` by convention, and its manifest adds the PGM
 skill and the agents. The Codex manifest names the skills and hooks. Codex
-runs plugin hooks only after the user trusts them in `/hooks`.
+runs plugin hooks only after the user trusts them in `/hooks`; until then
+neither the rules nor the git guard reach a session, so `install.sh` adds a
+marked block to `${CODEX_HOME:-~/.codex}/AGENTS.md` that tells the model to
+stop and ask for the trust when the rules are missing.

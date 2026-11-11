@@ -12,6 +12,26 @@
   references are cut, and script output is left to each script's header.
   The incidents, script commands, org-data keys, authorization, validation
   labels, row vocabulary and report formats stay.
+- A PR opens only for a tested tree. `scripts/verify.py -- <command>` runs
+  a check and records the tree it ran on; the git guard blocks `gh pr
+  create` until the newest run of each command on that exact tree passed.
+  `--partial` records related checks only, with what CI still runs, and the
+  PR's test plan states the level. It has no off switch: when nothing
+  meaningful can run, the user's agreement goes into a `--partial` record.
+  Review stays advisory. The session-start hook warns once when
+  `SKIP_PR_GATE` is still set from v0.3, since it lifts nothing.
+- `rules/universal.md`: fix the behavior, not the test; attachment names and
+  private repositories are under the PII rule. The reviewer grades a
+  loosened, skipped or deleted test `[major]` unless the test was wrong.
+- `test-pr` names PR-bound evidence by the PR or a slug, never a ticket ID.
+- Codex: `install.sh` adds a marked hook-trust check to `AGENTS.md`, since
+  untrusted plugin hooks leave a session with no rules and no git guard;
+  `fix-ci` and `test-pr` say what to do when an agent's sandbox refuses the
+  network.
+- The PGM preflight is a script again (`extensions/pgm/skills/pgm/scripts/preflight.py`).
+- Tests hold the Codex agents' model and effort equal to `second-opinion.py`'s pins.
+- `superset-local` keeps three worktree failure modes: Node version, a stale
+  `.env.local`, a leaked venv.
 
 ## 0.4.0 — 2026-11-06
 

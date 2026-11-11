@@ -737,6 +737,19 @@ class GitGuardHookTests(unittest.TestCase):
         cls.global_config = base / "global.gitconfig"
         cls.staged = cls.make_repo(base / "staged")
         cls.clean = cls.make_repo(base / "clean")
+        # A commit with a passing scripts/verify.py record, so `gh pr create` cases test
+        # the draft rule alone (the verify gate has its own tests/test_verify_gate.py).
+        cls.verified = cls.make_repo(base / "verified")
+        (cls.verified / "app.py").write_text("x = 1\n")
+        git(cls.verified, "add", "app.py")
+        git(cls.verified, "commit", "-q", "-m", "base")
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "verify.py"), "--", "true"],
+            cwd=cls.verified,
+            env=base_env(),
+            capture_output=True,
+            check=True,
+        )
         cls.alt_index = base / "alt.index"
 
         # PROJECT.md staged in the default index of one repository, and every
@@ -841,13 +854,15 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertIn("stay out of commits", result.stderr)
 
     def test_pr_ready_and_merge_need_the_users_override(self) -> None:
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2)
+        # Every case runs where the commit has a passing verify record, so a block on a
+        # creation comes from the draft rule, not from the verify gate.
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2)
         # the retired v0.3 override in the session environment lifts nothing either
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"SKIP_PR_GATE": "1"})
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"AITK_PR_READY": "0"})
-        self.assert_cases(PR_PUBLISH_ALLOW, self.clean, 0)
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2, env={"SKIP_PR_GATE": "1"})
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2, env={"AITK_PR_READY": "0"})
+        self.assert_cases(PR_PUBLISH_ALLOW, self.verified, 0)
         self.assert_cases(PR_PUBLISH_LIMITS, self.clean, 0)
-        self.assert_cases(("gh pr create --fill",), self.clean, 0, env={"AITK_PR_READY": "1"})
+        self.assert_cases(("gh pr create --fill",), self.verified, 0, env={"AITK_PR_READY": "1"})
         self.assert_cases(
             ("gh pr merge 12 --squash", "gh pr ready 12", "nohup gh pr ready 12"),
             self.clean,
@@ -862,7 +877,7 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertNotIn("AITK_PR_READY", merge.stderr)
 
     def test_a_non_draft_pr_is_sent_back_for_a_draft(self) -> None:
-        result = self.run_hook("gh pr create --fill", self.clean)
+        result = self.run_hook("gh pr create --fill", self.verified)
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("--draft", result.stderr)
         self.assertIn("stop and ask the user", result.stderr)
@@ -931,8 +946,11 @@ class GitGuardHookTests(unittest.TestCase):
         exhausted = [found for found in shell_tokens.commands(spent, cwd) if found.unreadable]
         self.assertEqual([None], [found.workdir for found in exhausted])
         self.assertTrue(all(found.unresolved for found in exhausted))
-        # the user's session override still lifts the block, as for any gh pr publish
-        git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1"})
+        # AITK_PR_READY lifts the publish check's block, but an unreadable command could
+        # hide a `gh pr create`, and the verify gate has no override, so it still blocks
+        with self.assertRaises(git_guard.Blocked) as caught:
+            git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1"})
+        self.assertIn("could not be read in full", str(caught.exception))
 
     def test_a_101_entry_config_prefix_with_an_alias_on_the_last_entry_blocks(self) -> None:
         # No count is parsed: the alias key anywhere in the prefix, next to a gated mention, blocks.

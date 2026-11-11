@@ -15,12 +15,17 @@ it.
 
 ## Before opening
 
-Open the PR when you are confident it is correct: the change's tests and the
-repo's checks ran green on this tree, and anything risky had a `review`. A UI
-change needs its before and after screenshots or video in hand; capture them
-with the `test-pr` skill. `gh` cannot upload images,
-so list the media files under the test plan and tell the user to drag them in,
-unless the repository has another convention.
+The git guard blocks `gh pr create` until `<toolkit-root>/scripts/verify.py`
+has recorded a passing check on the exact tree being opened. Run the change's
+failing or acceptance command through it, `verify.py -- <command>` (strong),
+or, when only related checks can run here, `verify.py --partial "<what CI
+still runs>" -- <command>` (partial). A run before the commit counts once the
+commit holds exactly what it tested; `verify.py --status` checks HEAD.
+
+Anything risky should have had a `review`. A UI change needs its before and
+after screenshots or video in hand; capture them with the `test-pr` skill.
+`gh` cannot upload images, so list the media files under the test plan and
+tell the user to drag them in, unless the repository has another convention.
 
 ## Title
 
@@ -37,12 +42,14 @@ Fill the repository's PR template when there is one
 - **Summary**: what changed and why, for a reader who doesn't know the
   codebase;
 - **Changes**: grouped by area, not a file list;
-- **Test plan**: what ran, plus the UI media;
+- **Test plan**: what ran and its level (strong, or partial with what CI still
+  runs), what did not run, plus the UI media;
 - **Related**.
 
 For a bug fix with a confirmed root cause, replace Changes with **Incident
-Root Cause**, **Latent Bugs / Hardening** (omit when there are none) and
-**Fix**. That keeps the blocking cause apart from opportunistic hardening.
+Root Cause** (saying whether it was reproduced, and how), **Latent Bugs /
+Hardening** (omit when there are none) and **Fix**. That keeps the blocking
+cause apart from opportunistic hardening.
 
 Describe the PR as it stands, not how it was built, and make the body as long
 as the change needs. Use only terms a reader can find in the code, the commits

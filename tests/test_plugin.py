@@ -134,7 +134,7 @@ class SessionStartHookTests(unittest.TestCase):
         env = {
             key: value
             for key, value in os.environ.items()
-            if key not in {*PLUGIN_VARIABLES, "CODEX_HOME", "CLAUDE_CONFIG_DIR"}
+            if key not in {*PLUGIN_VARIABLES, "CODEX_HOME", "CLAUDE_CONFIG_DIR", "SKIP_PR_GATE"}
         }
         env["HOME"] = str(self.home)
         env.update(variables)
@@ -230,6 +230,17 @@ class SessionStartHookTests(unittest.TestCase):
         self.assertIn(str(codex), output)
         self.assertIn(str(claude), output)
 
+    def test_warns_once_about_the_retired_skip_pr_gate(self) -> None:
+        for value in ("1", "0", ""):
+            with self.subTest(value=value):
+                result = self.run_hook(CLAUDE_PLUGIN_ROOT=str(ROOT), SKIP_PR_GATE=value)
+                self.assertIn("SKIP_PR_GATE is set", result.stdout)
+                self.assertIn("does nothing now", result.stdout)
+                self.assert_rules(result.stdout)
+        resumed = self.run_hook(json.dumps({"source": "resume"}), CLAUDE_PLUGIN_ROOT=str(ROOT), SKIP_PR_GATE="1")
+        self.assertNotIn("SKIP_PR_GATE", resumed.stdout)
+        self.assertNotIn("SKIP_PR_GATE", self.run_hook(CLAUDE_PLUGIN_ROOT=str(ROOT)).stdout)
+
     def test_warns_only_when_the_session_starts(self) -> None:
         self.seed(".claude/CLAUDE.md", f"{MARKER}\n")
         for source in ("resume", "clear", "compact"):
@@ -268,7 +279,7 @@ class PluginHookCommandTests(unittest.TestCase):
         env = {
             key: value
             for key, value in os.environ.items()
-            if key not in {*PLUGIN_VARIABLES, "CODEX_HOME", "CLAUDE_CONFIG_DIR"}
+            if key not in {*PLUGIN_VARIABLES, "CODEX_HOME", "CLAUDE_CONFIG_DIR", "SKIP_PR_GATE"}
         }
         env["HOME"] = str(self.work)
         env[variable] = str(ROOT)

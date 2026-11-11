@@ -46,11 +46,12 @@ claude plugin install ai-toolkit@ai-toolkit
 # Codex: skills and hooks ship in the plugin; trust the hooks in /hooks afterwards
 codex plugin marketplace add ~/opt/code/ai-toolkit
 codex plugin add ai-toolkit@ai-toolkit
-./install.sh        # links agents/codex/*.toml, which a Codex plugin cannot ship
+./install.sh        # links agents/codex/*.toml (a Codex plugin cannot ship agents) and adds a hook-trust check to ~/.codex/AGENTS.md
 ```
 
 `./install.sh` is idempotent and leaves files it didn't create alone;
-`./install.sh --uninstall` removes only its own links.
+`./install.sh --uninstall` removes only its own links and its marked block in
+`AGENTS.md`.
 
 A plugin can't ship `permissions`, so add these deny rules to
 `~/.claude/settings.json` yourself if you want the git bypasses refused before
@@ -105,8 +106,8 @@ Existing `PROJECT.md` files keep working as plain notes (see `handoff`).
 
 | Hook | Event | Behavior |
 |---|---|---|
-| `session-start.sh` | SessionStart | Prints the toolkit root and `rules/universal.md`; warns once when a v0.3 install is still in place |
-| `prevent-project-commit.sh` | PreToolUse (Bash) | Runs `hooks/lib/git_guard.py`: blocks `--no-verify` and other hook bypasses, force-pushing or deleting `main`/`master`, commits of local notes (`PROJECT.md`, `PLAN.md`, `WATCH.md`, `CHERRY_PICK.md`, `CI_FIX.md`, `PROJECT_ARCHIVE.md`) or `.ai-toolkit/`, and a non-draft `gh pr create`, `gh pr ready` or `gh pr merge` unless the user started the session with `AITK_PR_READY=1`; a command that sets or exports `AITK_PR_READY` or `SKIP_PRECHECK` itself is blocked |
+| `session-start.sh` | SessionStart | Prints the toolkit root and `rules/universal.md`; warns once when a v0.3 install is still in place, or when v0.3's `SKIP_PR_GATE` is still set |
+| `prevent-project-commit.sh` | PreToolUse (Bash) | Runs `hooks/lib/git_guard.py`: blocks `--no-verify` and other hook bypasses, force-pushing or deleting `main`/`master`, commits of local notes (`PROJECT.md`, `PLAN.md`, `WATCH.md`, `CHERRY_PICK.md`, `CI_FIX.md`, `PROJECT_ARCHIVE.md`) or `.ai-toolkit/`, and a non-draft `gh pr create`, `gh pr ready` or `gh pr merge` unless the user started the session with `AITK_PR_READY=1`. It also blocks `gh pr create` until `scripts/verify.py` has recorded a passing check on that exact tree; no override lifts that. A command that sets or exports `AITK_PR_READY` or `SKIP_PRECHECK` itself is blocked |
 | `pre-push-validate.sh` | PreToolUse (Bash) | Runs the repository's pre-commit (from the repo venv when it has one, or ruff) on changed files and pytest on changed test files before a push; a check past its time budget warns instead of blocking; `SKIP_PRECHECK=1` in the session environment skips it |
 
 The git guard fails closed: without python3 it blocks git and `gh` commands
@@ -117,6 +118,11 @@ in `/hooks`, or all of them with `hooks = false` under `[features]` in
 
 ## Scripts
 
+- `python3 scripts/verify.py [--partial "<what CI still runs>"] -- <command>`:
+  runs a check and records the tree it ran on in `.ai-toolkit/verify.json`.
+  The git guard opens a PR only for a tree whose newest run of each command
+  passed; `--status` says whether HEAD has one. See
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-pr-gate).
 - `python3 scripts/show-cost.py [today|<N>d|month|all|YYYY-MM-DD]`: token
   usage and API-equivalent cost from Claude Code sessions, subagents
   included. Codex keeps no usage records, and unknown models stay unpriced.
