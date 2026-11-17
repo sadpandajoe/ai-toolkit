@@ -1208,6 +1208,20 @@ PR_VERIFY_MESSAGE = (
     "around the hook. If nothing meaningful can run for this change, stop and ask the "
     "user; with their agreement, record the closest real check with `--partial`."
 )
+PR_VERIFY_FAILED = (
+    "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. Only a pass "
+    "of that same command on this tree clears it; another command, `--partial` included, "
+    "does not. Fix what fails and run it again through `python3 {script} -- <command>`; if "
+    "the command itself is wrong, stop and tell the user."
+)
+PR_VERIFY_UNCOMMITTED = (
+    "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. This checkout "
+    "also holds changes the commit doesn't ({paths}); every check run here includes them, so "
+    "a new run cannot match the commit. Commit them if they belong to the change (a run made "
+    "before the commit counts once the commit holds exactly what it tested); otherwise stop "
+    "and tell the user. Deleting, reverting or ignoring work you didn't make to get past this "
+    "is working around the hook."
+)
 PR_VERIFY_UNREADABLE = (
     "this command could not be read in full, so the guard cannot tell which commit a "
     "`gh pr create` in it would open, or whether a check passed on it. Run `gh pr create` "
@@ -1246,9 +1260,27 @@ def require_verified(workdir: str, head: str | None) -> None:
         target = verify_record.commit(top)
         if target is None:
             raise block(PR_VERIFY_MESSAGE.format(reason="this checkout has no commit yet", script=VERIFY_SCRIPT))
-    ok, reason, _ = verify_record.verdict(top, target, is_protected_path)
-    if not ok:
-        raise block(PR_VERIFY_MESSAGE.format(reason=reason, script=VERIFY_SCRIPT))
+    ok, reason, record = verify_record.verdict(top, target, is_protected_path)
+    if ok:
+        return
+    # Rerunning a check cannot help while the checkout holds what the commit doesn't,
+    # or after a failure only that command's pass clears: say so, or the model loops.
+    pending = uncommitted(top, target)
+    if pending:
+        paths = verify_record.listing(pending)
+        raise block(PR_VERIFY_UNCOMMITTED.format(reason=reason, paths=paths))
+    if record is not None and record["exit"] != 0:
+        raise block(PR_VERIFY_FAILED.format(reason=reason, script=VERIFY_SCRIPT))
+    raise block(PR_VERIFY_MESSAGE.format(reason=reason, script=VERIFY_SCRIPT))
+
+
+def uncommitted(top: str, target: str) -> list[str]:
+    """What a check run in this checkout would see that `target` lacks, when it is HEAD."""
+    if target != verify_record.commit(top):
+        return []
+    outputs = verify_record.outputs(verify_record.load(top))
+    read = verify_record.worktree_paths(top, target, is_protected_path, outputs)
+    return read[0] if read else []
 
 
 def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:

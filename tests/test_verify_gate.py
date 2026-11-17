@@ -124,13 +124,24 @@ class VerifyGateTests(unittest.TestCase):
         self.verify("true")
         self.commit("app.py")
         self.assert_blocked("tested but not in the commit: scratch.py")
+        # rerunning cannot clear it while the file is still here, so the message says what can
+        self.verify("true")
+        message = self.assert_blocked(
+            "changes the commit doesn't (scratch.py)", "Commit them if they belong", "stop and tell the user"
+        )
+        self.assertNotIn("record the closest real check", message)
 
     def test_a_failing_check_blocks_until_that_command_passes_on_the_tree(self) -> None:
         self.assertEqual(3, self.verify("sh", "-c", "exit 3").returncode)
         self.assert_blocked("failed (exit 3)")
-        # another command passing does not clear it: the failed one has to pass again
+        # another command passing does not clear it, a partial one included: the failed one
+        # has to pass again, and the message says so instead of offering `--partial`
         self.verify("true")
-        self.assert_blocked("the newest run of `sh -c 'exit 3'` on this tree failed (exit 3)")
+        self.verify("true", partial="the full suite")
+        message = self.assert_blocked(
+            "the newest run of `sh -c 'exit 3'` on this tree failed (exit 3)", "Only a pass of that same command"
+        )
+        self.assertNotIn("record the closest real check", message)
         self.verify("sh", "-c", "exit 0")
         self.verify("sh -c 'exit 3' || true")
         self.assert_blocked("sh -c 'exit 3'")

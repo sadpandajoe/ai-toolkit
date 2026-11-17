@@ -84,24 +84,31 @@ def _paths(out: str | None) -> list[str]:
     return [path for path in (out or "").split("\0") if path]
 
 
-def worktree_changes(
+def worktree_paths(
     top: str, base: str, skip: Skip, outputs: frozenset[str] = frozenset()
-) -> tuple[dict[str, str | None], set[str]] | None:
-    """Every path whose working-tree content differs from `base`, with its blob id, and
-    which of those git does not track. Untracked `outputs` (files an earlier check
-    created, such as `.coverage`) are left out: they are what a check wrote, not the
-    tree under test."""
+) -> tuple[list[str], set[str]] | None:
+    """Every path whose working-tree content differs from `base`, and which of those git
+    does not track. Untracked `outputs` (files an earlier check created, such as
+    `.coverage`) are left out: they are what a check wrote, not the tree under test."""
     tracked = git(top, "diff", "--name-only", "--no-renames", "-z", base, "--")
     untracked = git(top, "ls-files", "--others", "--exclude-standard", "-z")
     if tracked is None or untracked is None:
         return None
     # An untracked nested repository lists as `dir/`; only an explicit `git add` commits it.
     loose = {path for path in _paths(untracked) if not path.endswith("/") and path not in outputs}
-    changes: dict[str, str | None] = {}
-    for path in sorted(set(_paths(tracked)) | loose):
-        if not skip(path):
-            changes[path] = blob_id(top, path)
-    return changes, loose & set(changes)
+    paths = [path for path in sorted(set(_paths(tracked)) | loose) if not skip(path)]
+    return paths, loose & set(paths)
+
+
+def worktree_changes(
+    top: str, base: str, skip: Skip, outputs: frozenset[str] = frozenset()
+) -> tuple[dict[str, str | None], set[str]] | None:
+    """`worktree_paths`, with each path's blob id."""
+    read = worktree_paths(top, base, skip, outputs)
+    if read is None:
+        return None
+    paths, untracked = read
+    return {path: blob_id(top, path) for path in paths}, untracked
 
 
 def tracked(top: str, paths: set[str]) -> set[str]:
@@ -185,6 +192,10 @@ def new_record(
     }
 
 
+def listing(paths: list[str]) -> str:
+    return ", ".join(paths[:5]) + (f" and {len(paths) - 5} more" if len(paths) > 5 else "")
+
+
 def describe_mismatch(tested: dict, committed: dict | None) -> str:
     if committed is None:
         return "its starting commit is no longer in this repository"
@@ -198,8 +209,7 @@ def describe_mismatch(tested: dict, committed: dict | None) -> str:
         ("changed since the run", differ),
     ):
         if paths:
-            shown = ", ".join(paths[:5]) + (f" and {len(paths) - 5} more" if len(paths) > 5 else "")
-            parts.append(f"{label}: {shown}")
+            parts.append(f"{label}: {listing(paths)}")
     return "; ".join(parts)
 
 
@@ -213,7 +223,8 @@ def _covers_with_extras(record: dict, committed: dict) -> bool:
 
 
 def verdict(top: str, target: str, skip: Skip) -> tuple[bool, str, dict | None]:
-    """Whether `target` has a passing record: (ok, reason when not, the record)."""
+    """Whether `target` has a passing record: (ok, reason when not, the passing record,
+    or the failed or unstable one that blocks it)."""
     records = load(top)
     if not records:
         return False, "no check has been recorded in this checkout", None
@@ -241,7 +252,7 @@ def verdict(top: str, target: str, skip: Skip) -> tuple[bool, str, dict | None]:
         newest_per_command[record["command"]] = record
     for record in newest_per_command.values():
         if record["exit"] != 0:
-            return False, f"the newest run of `{record['command']}` on this tree failed (exit {record['exit']})", None
+            return False, f"the newest run of `{record['command']}` on this tree failed (exit {record['exit']})", record
         if record.get("stable") is False:
-            return False, f"`{record['command']}` changed files while it ran, so it did not check this tree", None
+            return False, f"`{record['command']}` changed files while it ran, so it did not check this tree", record
     return True, "", matching[-1]
