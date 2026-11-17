@@ -30,6 +30,8 @@
   network.
 - The PGM preflight is a script again (`extensions/pgm/skills/pgm/scripts/preflight.py`).
 - Tests hold the Codex agents' model and effort equal to `second-opinion.py`'s pins.
+- `second-opinion.py`'s deep Claude tier moves to `claude-fable-5-2`, and
+  `show-cost.py` prices it.
 - `superset-local` keeps three worktree failure modes: Node version, a stale
   `.env.local`, a leaked venv.
 

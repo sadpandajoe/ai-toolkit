@@ -40,7 +40,7 @@ class CommandTests(unittest.TestCase):
     def test_claude_cannot_write_and_runs_only_read_only_git(self) -> None:
         command = second_opinion.build_command("claude", "deep", Path("/repo"), "contract")
         self.assertEqual("plan", command[command.index("--permission-mode") + 1])
-        self.assertEqual("claude-fable-5-1", command[command.index("--model") + 1])
+        self.assertEqual("claude-fable-5-2", command[command.index("--model") + 1])
         self.assertEqual("xhigh", command[command.index("--effort") + 1])
         disallowed = command[command.index("--disallowedTools") + 1 : command.index("--tools")]
         self.assertEqual(["Write", "Edit", "NotebookEdit"], disallowed)
