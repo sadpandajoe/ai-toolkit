@@ -134,12 +134,16 @@ def committed_changes(top: str, base: str, target: str, skip: Skip) -> dict[str,
     return changes
 
 
-def load(top: str) -> list[dict]:
+def _read(top: str) -> dict:
     try:
         data = json.loads((Path(top) / RECORD).read_text())
     except (OSError, ValueError):
-        return []
-    records = data.get("records") if isinstance(data, dict) else None
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def load(top: str) -> list[dict]:
+    records = _read(top).get("records")
     if not isinstance(records, list):
         return []
     return [
@@ -152,17 +156,23 @@ def load(top: str) -> list[dict]:
     ]
 
 
-def outputs(records: list[dict]) -> frozenset[str]:
-    """Untracked files earlier checks created."""
-    return frozenset(p for r in records for p in r.get("outputs", []) if isinstance(p, str))
+def known_outputs(top: str) -> frozenset[str]:
+    """Untracked files earlier checks created. They are kept apart from the capped records:
+    only the run that first creates a file records it, so dropping that record would turn
+    a check's own output into a change to the tree."""
+    data = _read(top)
+    listed = data.get("outputs") if isinstance(data.get("outputs"), list) else []
+    from_records = [p for r in load(top) for p in r.get("outputs", [])]
+    return frozenset(p for p in [*listed, *from_records] if isinstance(p, str))
 
 
 def append(top: str, record: dict) -> Path:
     path = Path(top) / RECORD
     path.parent.mkdir(exist_ok=True)
+    outputs = sorted(known_outputs(top) | set(record.get("outputs", [])))
     records = (load(top) + [record])[-KEEP:]
     temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"records": records}, indent=1) + "\n")
+    temporary.write_text(json.dumps({"records": records, "outputs": outputs}, indent=1) + "\n")
     os.replace(temporary, path)
     return path
 

@@ -139,7 +139,9 @@ class VerifyGateTests(unittest.TestCase):
         self.verify("true")
         self.verify("true", partial="the full suite")
         message = self.assert_blocked(
-            "the newest run of `sh -c 'exit 3'` on this tree failed (exit 3)", "Only a pass of that same command"
+            "the newest run of `sh -c 'exit 3'` on this tree failed (exit 3)",
+            "Only a pass of that same command",
+            "a different command does not",
         )
         self.assertNotIn("record the closest real check", message)
         self.verify("sh", "-c", "exit 0")
@@ -249,6 +251,118 @@ class VerifyGateTests(unittest.TestCase):
         self.assertIsNone(self.gate(command=f"{CREATE} --head feature"))
         self.assert_blocked(command=f"{CREATE} --head other")
         self.assert_blocked("not a local branch", command=f"{CREATE} -H someone:missing")
+
+    def test_flags_are_read_the_way_gh_reads_them(self) -> None:
+        # a flag's value is no flag: `-h` as a title or `--help` as a body asks for no help
+        self.assert_blocked("no check has been recorded", command="gh pr create --draft --title -h --body x")
+        self.assert_blocked("no check has been recorded", command="gh pr create --draft --title t --body --help")
+        self.assert_blocked("no check has been recorded", command="gh pr new --draft --fill")
+        self.verify("true")
+        self.git("switch", "-q", "-c", "other")
+        self.write("app.py", "print('other')\n")
+        self.commit("app.py")
+        self.git("switch", "-q", "feature")
+        # `-H` bundled after another short flag still names the head branch
+        for command in ("gh pr create -dH other --fill", "gh pr create --fill -dHother"):
+            with self.subTest(command=command):
+                self.assert_blocked(command=command)
+        # and a title that starts with `-H` names none
+        self.assertIsNone(self.gate(command=f'{CREATE} --title "-Hotfix for login"'))
+        # two different heads: which one gh opens is not the guard's guess to make
+        self.assert_blocked("more than one `--head`", command=f"{CREATE} --head feature --head other")
+
+    def test_a_head_inside_a_flag_value_is_not_the_head(self) -> None:
+        self.verify("true")
+        self.write("app.py", "print('untested')\n")
+        self.commit("app.py")
+        # HEAD~1 has the passing record; `--head=HEAD~1` here is the body, so HEAD is opened
+        self.assert_blocked(command=f"{CREATE} --body --head=HEAD~1")
+        self.assert_blocked(command="gh pr create --draft --fill -b -HHEAD~1")
+
+    def test_a_head_branch_that_is_not_checked_out_says_where_to_run_the_check(self) -> None:
+        self.verify("true")
+        self.git("switch", "-q", "-c", "other")
+        self.write("app.py", "print('other')\n")
+        self.commit("app.py")
+        self.git("switch", "-q", "feature")
+        # a run here records this checkout, never `other`, however often it repeats
+        self.verify("true")
+        message = self.assert_blocked("checkout of `other`", command=f"{CREATE} --head other")
+        self.assertNotIn("record the closest real check", message)
+        message = self.assert_blocked("checkout of that branch", command=f"{CREATE} -H someone:missing")
+        self.assertNotIn("record the closest real check", message)
+
+    def test_outside_a_checkout_or_before_a_commit_the_block_says_so(self) -> None:
+        outside = Path(self.temporary.name) / "outside"
+        outside.mkdir()
+        message = self.assert_blocked("not inside a git checkout", "from the repository", cwd=outside)
+        self.assertNotIn("record the closest real check", message)
+        empty = Path(self.temporary.name) / "empty"
+        empty.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=empty, env=clean_env(), check=True)
+        message = self.assert_blocked("no commit yet", "Commit the change", cwd=empty)
+        self.assertNotIn("record the closest real check", message)
+
+    def test_after_an_unstable_run_only_that_command_clears_the_tree(self) -> None:
+        self.verify("echo x >> app.py")
+        self.git("checkout", "--", "app.py")
+        self.verify("true")
+        message = self.assert_blocked("changed files while it ran", "that same command")
+        self.assertNotIn("record the closest real check", message)
+
+    def test_a_check_that_restores_a_deleted_file_does_not_count(self) -> None:
+        (self.repo / "app.py").unlink()
+        self.assertIn("changed files while it ran", self.verify("git checkout -- app.py").stderr)
+
+    def test_check_outputs_stay_outputs_past_the_record_cap(self) -> None:
+        self.verify("echo r > report.txt")
+        for _ in range(verify_record.KEEP):
+            self.verify("true")
+        self.write("app.py", "print('two')\n")
+        self.commit("app.py")
+        self.verify("true")
+        self.assertIsNone(self.gate())
+
+    def test_an_unreadable_creation_blocks_even_as_a_draft(self) -> None:
+        self.verify("true")
+        message = self.assert_blocked(
+            "could not be read in full", command="bash -c \"gh pr create --draft --title 'x\""
+        )
+        self.assertIn("cannot rule out", message)
+
+    def test_a_command_that_cannot_start_records_nothing(self) -> None:
+        result = self.verify("no-such-command-here --flag")
+        self.assertEqual(127, result.returncode)
+        self.assertIn("nothing recorded", result.stderr)
+        self.assertEqual([], verify_record.load(str(self.repo)))
+        self.assert_blocked("no check has been recorded")
+
+    def test_an_unquoted_compound_command_is_refused(self) -> None:
+        (self.repo / "sub").mkdir()
+        result = self.verify("cd", "sub")
+        self.assertEqual(2, result.returncode)
+        self.assertIn("one quoted argument", result.stderr)
+        self.assertEqual([], verify_record.load(str(self.repo)))
+
+    def test_a_check_before_the_first_commit_counts_once_it_is_committed(self) -> None:
+        fresh = Path(self.temporary.name) / "fresh"
+        fresh.mkdir()
+        run = lambda *a: subprocess.run(a, cwd=fresh, env=clean_env(), check=True, capture_output=True)
+        run("git", "init", "-q", "-b", "feature")
+        run("git", "config", "user.email", "test@example.com")
+        run("git", "config", "user.name", "Test")
+        (fresh / "app.py").write_text("print('one')\n")
+        self.assertEqual(0, self.verify("true", cwd=fresh).returncode)
+        run("git", "add", "app.py")
+        run("git", "commit", "-q", "-m", "first")
+        self.assertIsNone(self.gate(cwd=fresh))
+
+    def test_status_without_a_record_exits_1(self) -> None:
+        status = subprocess.run(
+            [sys.executable, str(VERIFY), "--status"], cwd=self.repo, env=clean_env(), capture_output=True, text=True
+        )
+        self.assertEqual(1, status.returncode)
+        self.assertIn("no check has been recorded", status.stderr)
 
     def test_other_gh_commands_and_help_pass(self) -> None:
         for command in ("gh pr view 12", "gh pr create --help", "gh pr list", "echo gh pr create"):

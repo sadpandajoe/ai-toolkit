@@ -19,8 +19,10 @@ The git guard blocks `gh pr create` until `<toolkit-root>/scripts/verify.py`
 has recorded a passing check on the exact tree being opened. Run the change's
 failing or acceptance command through it, `verify.py -- <command>` (strong),
 or, when only related checks can run here, `verify.py --partial "<what CI
-still runs>" -- <command>` (partial). A run before the commit counts once the
-commit holds exactly what it tested; `verify.py --status` checks HEAD.
+still runs>" -- <command>` (partial). A compound command goes in as one quoted
+argument (`verify.py -- "cd frontend && npm test"`). A run before the commit
+counts once the commit holds exactly what it tested; `verify.py --status`
+checks HEAD.
 
 Anything risky should have had a `review`. A UI change needs its before and
 after screenshots or video in hand; capture them with the `test-pr` skill.

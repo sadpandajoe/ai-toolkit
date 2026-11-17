@@ -37,6 +37,12 @@ from git_guard import is_protected_path  # noqa: E402
 
 sys.path.pop(0)
 
+# Words a shell runs itself. As the program to run they change nothing and exit 0 (macOS
+# ships /usr/bin/cd), which is what an unquoted `verify.py -- cd frontend && npm test` does.
+SHELL_ONLY = {"cd", "pushd", "popd", "source", ".", "export", "set", "unset", "alias"}
+# A shell's exit codes for a command it found but could not run, or did not find.
+COULD_NOT_START = {126, 127}
+
 
 def exclude_record_directory(top: str) -> None:
     """Keep `.ai-toolkit/` out of `git status`; best effort (`.git` may be read-only)."""
@@ -90,9 +96,14 @@ def main(argv: list[str]) -> int:
         parser.error("give the command to run after --")
     if args.partial is not None and not args.partial.strip():
         parser.error("--partial needs the checks CI still runs")
+    if len(command) > 1 and command[0] in SHELL_ONLY:
+        parser.error(
+            f"`{command[0]}` checks nothing as a program of its own; pass a compound command as "
+            'one quoted argument: verify.py -- "cd frontend && npm test"'
+        )
 
     base = verify_record.commit(top) or verify_record.EMPTY_TREE
-    known_outputs = verify_record.outputs(verify_record.load(top))
+    known_outputs = verify_record.known_outputs(top)
     read = verify_record.worktree_changes(top, base, is_protected_path, known_outputs)
     if read is None:
         print("verify: git could not read the working tree", file=sys.stderr)
@@ -104,10 +115,14 @@ def main(argv: list[str]) -> int:
     try:
         exit_code = subprocess.run(run, check=False).returncode
     except OSError as error:
-        print(f"verify: could not run {shown}: {error}", file=sys.stderr)
-        exit_code = 127
+        print(f"verify: could not run {shown}: {error}; nothing recorded", file=sys.stderr)
+        return 127
     except KeyboardInterrupt:
         exit_code = 130
+    if exit_code in COULD_NOT_START:
+        # a typo is no failed check: recording it would block the tree until that typo passes
+        print(f"verify: {shown} could not start (exit {exit_code}); nothing recorded", file=sys.stderr)
+        return exit_code
 
     after = (verify_record.worktree_changes(top, base, is_protected_path, known_outputs) or ({}, set()))[0]
     # A file the run itself created and git does not track (a cache, a report) is output,
@@ -115,7 +130,8 @@ def main(argv: list[str]) -> int:
     # anything that was there is a change.
     created = set(after) - set(before)
     created_tracked = verify_record.tracked(top, created)
-    stable = all(after.get(path) == blob for path, blob in before.items()) and not created_tracked
+    # a path gone from `after` matches its base again: the run restored or reverted it
+    stable = all(path in after and after[path] == blob for path, blob in before.items()) and not created_tracked
     level = "partial" if args.partial else "strong"
     record = verify_record.new_record(
         base, before, shown, exit_code, level, (args.partial or "").strip(), stable,

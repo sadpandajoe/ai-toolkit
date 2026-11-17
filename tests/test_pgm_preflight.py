@@ -84,6 +84,13 @@ class PGMPreflightTests(unittest.TestCase):
         )
         self.assertNotIn("not json", " ".join(result.findings))
 
+        (self.pgm_dir / "config.json").write_bytes(b"\xff\xfe{}")
+        result = preflight("create-status-report", self.pgm_dir, **self.options())
+        self.assertEqual("blocked", result.status)
+        self.assertTrue(
+            any("not valid readable JSON" in item for item in result.findings)
+        )
+
     def test_incomplete_config_and_missing_authorization_are_actionable(self) -> None:
         (self.pgm_dir / "config.json").write_text(json.dumps({"teams": []}))
         result = preflight(
@@ -141,6 +148,14 @@ class PGMPreflightTests(unittest.TestCase):
             "team relationship",
         ):
             self.assertIn(expected, text)
+
+    def test_a_strategy_that_is_not_a_string_is_a_finding(self) -> None:
+        config = valid_config()
+        config["repos"][0]["strategy"] = ["all_prs"]
+        (self.pgm_dir / "config.json").write_text(json.dumps(config))
+        result = preflight("create-status-report", self.pgm_dir, **self.options())
+        self.assertEqual("blocked", result.status)
+        self.assertTrue(any("strategy" in item for item in result.findings))
 
     def test_valid_status_configuration_is_ready(self) -> None:
         (self.pgm_dir / "config.json").write_text(json.dumps(valid_config()))

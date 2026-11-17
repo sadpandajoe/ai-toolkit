@@ -31,17 +31,30 @@ CHECK='AI Toolkit is installed as a Codex plugin. Its session-start hook puts a 
 
 # Remove each complete marked block from AGENTS.md, writing through a symlink in
 # place. A start marker with no end marker after it is the user's edit: its lines
-# stay, so nothing past the block is ever lost.
+# stay, so nothing past the block is ever lost; so do a held start marker's lines
+# when another start marker follows before any end marker. Fails, keeping the
+# rewritten copy and saying where, when AGENTS.md cannot be rewritten.
 remove_check() {
     [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE" || return 0
-    tmp=$(mktemp "${TMPDIR:-/tmp}/aitk-agents.XXXXXX")
+    tmp=$(mktemp "${TMPDIR:-/tmp}/aitk-agents.XXXXXX") || return 1
     awk -v b="$BEGIN" -v e="$END" '
+        held && $0 == b { printf "%s", buf; buf = $0 "\n"; next }
         !held && $0 == b { held = 1; buf = $0 "\n"; next }
         held { buf = buf $0 "\n"; if ($0 == e) { held = 0; buf = "" }; next }
         { print }
         END { if (held) printf "%s", buf }
-    ' "$AGENTS_FILE" >"$tmp" && cat "$tmp" >"$AGENTS_FILE"
+    ' "$AGENTS_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
+    if ! cat "$tmp" >"$AGENTS_FILE"; then
+        echo "could not rewrite $AGENTS_FILE; what it should hold is in $tmp" >&2
+        return 1
+    fi
     rm -f "$tmp"
+}
+
+# Whether AGENTS.md is there but cannot be written (read-only, or a symlink into
+# a store such as home-manager's): then it is left alone.
+read_only_check() {
+    [ -e "$AGENTS_FILE" ] && [ ! -w "$AGENTS_FILE" ]
 }
 
 # Whether AGENTS.md holds a start marker with no end marker after it.
@@ -59,10 +72,15 @@ case "${1:-}" in
                 "$ROOT"/agents/codex/*) rm "$link" && echo "removed $link" ;;
             esac
         done
-        if incomplete_check; then
+        if ! { [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE"; }; then
+            :
+        elif read_only_check; then
+            echo "left $AGENTS_FILE alone: it is not writable; remove its hook check by hand" >&2
+        elif incomplete_check; then
             echo "left $AGENTS_FILE alone: its hook check has no end marker ($END); remove it by hand" >&2
-        elif [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE"; then
-            remove_check && echo "removed the hook check from $AGENTS_FILE"
+        else
+            remove_check || exit 1
+            echo "removed the hook check from $AGENTS_FILE"
         fi
         exit 0
         ;;
@@ -92,8 +110,11 @@ if incomplete_check; then
 elif [ -f "$AGENTS_FILE" ] && awk -v b="$BEGIN" -v e="$END" '$0 == b { on = 1 } on { print } $0 == e { exit }' \
     "$AGENTS_FILE" | grep -qxF -- "$CHECK"; then
     :
+elif read_only_check; then
+    echo "left $AGENTS_FILE alone: it is not writable; add the hook check by hand if you want it:" >&2
+    printf '%s\n' "$block" >&2
 else
-    remove_check
+    remove_check || exit 1
     mkdir -p "$(dirname -- "$AGENTS_FILE")"
     if [ -s "$AGENTS_FILE" ] && [ -n "$(tail -c 1 "$AGENTS_FILE")" ]; then
         printf '\n' >>"$AGENTS_FILE"

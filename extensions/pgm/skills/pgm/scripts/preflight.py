@@ -36,7 +36,7 @@ VELOCITY_FILES = (
     "analyze.py",
     "report.py",
 )
-# Report thresholds a PGM config may override (extensions/pgm/rules/pgm.md).
+# Report thresholds a PGM config may override (the thresholds table in ../SKILL.md).
 THRESHOLD_DEFAULTS: dict[str, float] = {
     "stalled_days": 5,
     "pr_review_hours": 48,
@@ -240,7 +240,7 @@ def _validate_config(workflow: str, payload: object) -> list[str]:
                         f"config field repos entry {index} has an unknown team relationship"
                     )
                 strategy = entry.get("strategy", entry.get("collection_strategy"))
-                if strategy not in {"per_member", "all_prs"}:
+                if not isinstance(strategy, str) or strategy not in {"per_member", "all_prs"}:
                     problems.append(
                         f"config field repos entry {index} needs strategy per_member or all_prs"
                     )
@@ -296,7 +296,7 @@ def preflight(
     else:
         try:
             payload = json.loads(config.read_text())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):  # JSONDecodeError and UnicodeDecodeError are ValueErrors
             findings.append("PGM config.json is not valid readable JSON")
         else:
             findings.extend(_validate_config(workflow, payload))

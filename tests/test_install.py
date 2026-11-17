@@ -99,5 +99,28 @@ class InstallTests(unittest.TestCase):
         self.assertEqual("mine\n", (agents / "reviewer.toml").read_text())
 
 
+    def test_a_read_only_agents_file_is_left_alone_and_install_still_succeeds(self) -> None:
+        self.codex.mkdir(parents=True)
+        original = f"mine\n{BEGIN}\nold check\n{END}\n"
+        self.agents_md.write_text(original)
+        self.agents_md.chmod(0o444)
+        for args in ((), ("--uninstall",)):
+            with self.subTest(args=args):
+                result = self.run_install(*args)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("not writable", result.stderr)
+                self.assertNotIn("hook check", result.stdout)
+                self.assertEqual(original, self.agents_md.read_text())
+
+    def test_a_second_start_marker_keeps_the_users_text_before_it(self) -> None:
+        self.codex.mkdir(parents=True)
+        self.agents_md.write_text(f"mine\n{BEGIN}\nuser text\n{BEGIN}\nold\n{END}\n")
+        self.run_install("--uninstall")
+        text = self.agents_md.read_text()
+        self.assertIn("mine", text)
+        self.assertIn("user text", text)
+        self.assertNotIn("old", text)
+
+
 if __name__ == "__main__":
     unittest.main()

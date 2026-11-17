@@ -7,14 +7,14 @@ Playwright run with `recordVideo` and an injected cursor dot, producing a
 ```bash
 node <toolkit-root>/scripts/qa/record.mjs \
   --url https://<ws>.us1a.app-stg.preset.io/ --role viewer \
-  --source-id sc-NNNNN --name explore-link \
-  --flow ~/.qa-runner/flows/sc-NNNNN-explore-link.mjs   # --headless to hide the browser
+  --source-id pr-NNNN --name explore-link \
+  --flow ~/.qa-runner/flows/pr-NNNN-explore-link.mjs   # --headless to hide the browser
 ```
 
 A flow is a module whose default export drives the scenario after login:
 
 ```js
-// ~/.qa-runner/flows/sc-NNNNN-explore-link.mjs
+// ~/.qa-runner/flows/pr-NNNN-explore-link.mjs
 export default async ({ page, context, url, role }) => {
   await page.getByRole('link', { name: /dashboards/i }).click();
   // ... the scenario's steps and checks

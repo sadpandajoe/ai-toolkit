@@ -24,9 +24,10 @@ Blocked:
   in `verify_record`). No session override lifts it: when nothing meaningful
   can run, the user's agreement goes into a `--partial` record, or the user
   opens the PR from their own terminal, where this hook does not run. The PR's
-  commit is HEAD of the directory the command runs in, or its `--head` branch
-  when that resolves locally; a directory the guard cannot follow, and a
-  creation it cannot read, block;
+  commit is HEAD of the directory the command runs in, as `shell_tokens` models
+  it (a `cd` in a subshell or an untaken branch counts as taken), or its
+  `--head` branch when that resolves locally; a directory the guard knows it
+  cannot follow, and a creation it cannot read, block;
 - a command that assigns or exports any toolkit override itself (a prefix, an
   assignment-only segment, `env`, `export`/`declare`/`typeset`/`readonly`/
   `local`, a literal `+=` append, inside `bash -c`, `eval`, `env -S`, a
@@ -1200,86 +1201,127 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
         raise block(PR_PUBLISH_MESSAGE.format(verb=words[1], effect=PR_PUBLISH_EFFECT[words[1]]))
 
 
-PR_VERIFY_MESSAGE = (
-    "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. "
-    "Run the change's own test or acceptance command through "
-    "`python3 {script} -- <command>`; when only related checks can run here, add "
-    "`--partial \"<what CI still runs>\"`. A command that checks nothing is working "
-    "around the hook. If nothing meaningful can run for this change, stop and ask the "
-    "user; with their agreement, record the closest real check with `--partial`."
+PR_VERIFY_BLOCK = "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. {remedy}"
+VERIFY_REMEDY_RUN = (
+    "Run the change's own test or acceptance command through `python3 {script} -- <command>`; "
+    "when only related checks can run here, add `--partial \"<what CI still runs>\"`. A command "
+    "that checks nothing is working around the hook. If nothing meaningful can run for this "
+    "change, stop and ask the user; with their agreement, record the closest real check with `--partial`."
 )
-PR_VERIFY_FAILED = (
-    "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. Only a pass "
-    "of that same command on this tree clears it; another command, `--partial` included, "
-    "does not. Fix what fails and run it again through `python3 {script} -- <command>`; if "
-    "the command itself is wrong, stop and tell the user."
+VERIFY_REMEDY_FAILED = (
+    "Only a pass of that same command on this tree clears it; a different command does not. Fix "
+    "what fails and run it again through `python3 {script} -- <command>`; if the command itself "
+    "is wrong, stop and tell the user."
 )
-PR_VERIFY_UNCOMMITTED = (
-    "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. This checkout "
-    "also holds changes the commit doesn't ({paths}); every check run here includes them, so "
-    "a new run cannot match the commit. Commit them if they belong to the change (a run made "
-    "before the commit counts once the commit holds exactly what it tested); otherwise stop "
-    "and tell the user. Deleting, reverting or ignoring work you didn't make to get past this "
-    "is working around the hook."
+VERIFY_REMEDY_UNSTABLE = (
+    "Only a run of that same command that leaves the files as they were clears this tree; a "
+    "different command does not. Run it again through `python3 {script} -- <command>`; if it "
+    "rewrites files every time, commit what it writes or stop and tell the user."
 )
+VERIFY_REMEDY_UNCOMMITTED = (
+    "This checkout also holds changes the commit doesn't ({paths}); every check run here includes "
+    "them, so a new run cannot match the commit. Commit them if they belong to the change (a run "
+    "made before the commit counts once the commit holds exactly what it tested); otherwise stop "
+    "and tell the user. Deleting, reverting or ignoring work you didn't make to get past this is "
+    "working around the hook."
+)
+VERIFY_REMEDY_OTHER_BRANCH = (
+    "`verify.py` records the checkout it runs in, so run the check in a checkout of `{branch}` "
+    "and open the PR from there."
+)
+VERIFY_REMEDY_NO_BRANCH = "Open the PR from a checkout of that branch, after its check passed there."
+VERIFY_REMEDY_NO_CHECKOUT = "Run `gh pr create` from the repository, after its check passed there."
+VERIFY_REMEDY_NO_COMMIT = "Commit the change first, then run its check through `python3 {script} -- <command>`."
 PR_VERIFY_UNREADABLE = (
-    "this command could not be read in full, so the guard cannot tell which commit a "
-    "`gh pr create` in it would open, or whether a check passed on it. Run `gh pr create` "
-    "as a plain command from the repository."
+    "this command could not be read in full, so the guard cannot rule out a `gh pr create` in it, "
+    "and the PR gate has no override. Run `gh pr create` as a plain command from the repository "
+    "and the rest as plain commands; if this one cannot be split, stop and tell the user."
 )
 VERIFY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts", "verify.py")
 CREATE_WORD = re.compile(r"\b(create|new)\b")
 
 
-def head_flag(args: list[str]) -> str | None:
-    """The value of `gh pr create --head`/`-H`, if given."""
-    for index, arg in enumerate(args):
+def create_flags(args: list[str]) -> tuple[bool, bool, list[str]]:
+    """`gh pr create`'s arguments as gh reads them: whether they ask for help, whether for a
+    draft, and every `--head` given. A value flag takes the next word whatever it looks like
+    (`--title -h`), and short flags bundle (`-dH other`, `-dHother`, `-H=other`)."""
+    asks_help = draft = False
+    heads: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
         if arg == "--":
             break
-        if arg in {"-H", "--head"} and index + 1 < len(args):
-            return args[index + 1]
-        if arg.startswith("--head="):
-            return arg.split("=", 1)[1]
-        if arg.startswith("-H") and len(arg) > 2:
-            return arg[2:]
-    return None
+        if arg.startswith("--"):
+            name, given, value = arg.partition("=")
+            if name == "--help":
+                asks_help = True
+            elif name == "--draft":
+                draft = not given or value.strip().lower() in {"true", "1", "t"}
+            elif name in CREATE_VALUE_FLAGS:
+                if not given:
+                    value = args[index] if index < len(args) else ""
+                    index += 1
+                if name == "--head":
+                    heads.append(value)
+        elif arg.startswith("-") and len(arg) > 1:
+            for position, char in enumerate(arg[1:], start=2):
+                if char == "h":
+                    asks_help = True
+                elif char == "d":
+                    draft = True
+                elif char in CREATE_SHORT_VALUE:
+                    value = arg[position:]
+                    if value.startswith("="):
+                        value = value[1:]
+                    elif not value:
+                        value = args[index] if index < len(args) else ""
+                        index += 1
+                    if char == "H":
+                        heads.append(value)
+                    break
+    return asks_help, draft, heads
 
 
-def require_verified(workdir: str, head: str | None) -> None:
+def refuse(reason: str, remedy: str, **values: str) -> Blocked:
+    return block(PR_VERIFY_BLOCK.format(reason=reason, remedy=remedy.format(script=VERIFY_SCRIPT, **values)))
+
+
+def require_verified(workdir: str, heads: list[str]) -> None:
     top = verify_record.toplevel(workdir)
     if top is None:
-        raise block(PR_VERIFY_MESSAGE.format(reason=f"`{workdir}` is not inside a git checkout", script=VERIFY_SCRIPT))
-    target = None
-    if head:
-        branch = head.split(":", 1)[-1]
+        raise refuse(f"`{workdir}` is not inside a git checkout", VERIFY_REMEDY_NO_CHECKOUT)
+    if len(set(heads)) > 1:
+        named = ", ".join(f"`{head}`" for head in heads)
+        raise refuse(f"it names more than one `--head` branch ({named})", "Give `--head` once.")
+    current = verify_record.commit(top)
+    branch = heads[0].split(":", 1)[-1] if heads else ""
+    if heads:
         target = verify_record.commit(top, branch)
         if target is None:
-            reason = f"its `--head` branch `{head}` is not a local branch the guard can read"
-            raise block(PR_VERIFY_MESSAGE.format(reason=reason, script=VERIFY_SCRIPT))
+            raise refuse(f"its `--head` branch `{heads[0]}` is not a local branch the guard can read", VERIFY_REMEDY_NO_BRANCH)
     else:
-        target = verify_record.commit(top)
+        target = current
         if target is None:
-            raise block(PR_VERIFY_MESSAGE.format(reason="this checkout has no commit yet", script=VERIFY_SCRIPT))
+            raise refuse("this checkout has no commit yet", VERIFY_REMEDY_NO_COMMIT)
     ok, reason, record = verify_record.verdict(top, target, is_protected_path)
     if ok:
         return
-    # Rerunning a check cannot help while the checkout holds what the commit doesn't,
-    # or after a failure only that command's pass clears: say so, or the model loops.
+    # Name a remedy that can lift this block, or the model loops on one that cannot.
+    if target != current:
+        raise refuse(reason, VERIFY_REMEDY_OTHER_BRANCH, branch=branch)
     pending = uncommitted(top, target)
     if pending:
-        paths = verify_record.listing(pending)
-        raise block(PR_VERIFY_UNCOMMITTED.format(reason=reason, paths=paths))
-    if record is not None and record["exit"] != 0:
-        raise block(PR_VERIFY_FAILED.format(reason=reason, script=VERIFY_SCRIPT))
-    raise block(PR_VERIFY_MESSAGE.format(reason=reason, script=VERIFY_SCRIPT))
+        raise refuse(reason, VERIFY_REMEDY_UNCOMMITTED, paths=verify_record.listing(pending))
+    if record is not None:
+        raise refuse(reason, VERIFY_REMEDY_FAILED if record["exit"] != 0 else VERIFY_REMEDY_UNSTABLE)
+    raise refuse(reason, VERIFY_REMEDY_RUN)
 
 
 def uncommitted(top: str, target: str) -> list[str]:
-    """What a check run in this checkout would see that `target` lacks, when it is HEAD."""
-    if target != verify_record.commit(top):
-        return []
-    outputs = verify_record.outputs(verify_record.load(top))
-    read = verify_record.worktree_paths(top, target, is_protected_path, outputs)
+    """What a check run in this checkout would see that its commit `target` lacks."""
+    read = verify_record.worktree_paths(top, target, is_protected_path, verify_record.known_outputs(top))
     return read[0] if read else []
 
 
@@ -1296,17 +1338,18 @@ def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
         if not found.is_gh:
             continue
         args = found.argv[1:]
-        if {"-h", "--help"} & set(args):
-            continue
         words = shell_tokens.positional(args, GH_GLOBAL_VALUE_FLAGS)
         if words[:2] not in (["pr", "create"], ["pr", "new"]):
+            continue
+        asks_help, _, heads = create_flags(args)
+        if asks_help:
             continue
         if found.workdir is None:
             raise block(
                 "the guard cannot follow the directory this `gh pr create` runs in, so it "
                 "cannot check which commit it opens. Run it as a plain command from the repository."
             )
-        require_verified(found.workdir, head_flag(args))
+        require_verified(found.workdir, heads)
 
 
 def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:

@@ -64,9 +64,14 @@ A draft PR opens only for a tree a check passed on. `scripts/verify.py -- <comma
 runs the check and records, in `.ai-toolkit/verify.json`, the commit it
 started from and the blob id of every path the working tree changed
 (`hooks/lib/verify_record.py`). Before `gh pr create`, the git guard compares
-that with `git diff --raw <base> HEAD`: a run before the commit counts once the
-commit holds exactly what was tested, and any edit in between does not. The
-newest run of each command on that tree must have passed. `--partial` marks a
+that with `git diff --raw <base> <commit>`, where the commit is HEAD or the
+`--head` branch: a run before the commit counts once the commit holds exactly
+what was tested, and any edit in between does not. The newest run of each
+command on that tree must have passed, so a failed run blocks the tree until
+that same command passes there or the tree changes; a command that could not
+start (exit 126 or 127) records nothing. Untracked files a check creates are
+its outputs, remembered apart from the records and left out of later runs.
+`--partial` marks a
 run of related checks only and names what CI still runs; the PR's test plan
 carries the level. The record and the fingerprint stay outside `.git`, which
 Codex keeps read-only; adding `.ai-toolkit/` to `info/exclude` is best effort.
@@ -82,7 +87,18 @@ The gate checks that tests ran, not that the change was reviewed: a recorded
 command run is something a hook can check, while whether a review was good
 enough is a judgment, so review stays in the `review` skill. The record is a
 tripwire against forgetting, not proof: it shows what ran, so a command that
-checks nothing is visible in the record.
+checks nothing is visible in the record. Its known limits:
+
+- it keeps the last 20 runs, so 20 further runs on an unchanged tree drop a
+  failure;
+- it is a plain file: deleting it or writing it by hand goes unseen;
+- the guard reads the command's text, so `gh` behind a variable or an escape,
+  `gh alias set`, `gh api .../pulls` and connector tools open a PR unseen;
+- the directory a `gh pr create` runs in comes from `shell_tokens`' static
+  model: a `cd` in a subshell or an untaken branch counts as taken, and a
+  directory the same command creates, `cd -`, `popd`, `GIT_DIR` and
+  `GIT_WORK_TREE` are not followed;
+- it checks the local commit, while the PR shows the pushed branch.
 
 ## Local notes
 
