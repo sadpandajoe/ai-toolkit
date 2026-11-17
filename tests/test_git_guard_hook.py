@@ -285,6 +285,9 @@ PR_PUBLISH_BLOCK = (
     "gh pr merge 'unbalanced",
     # A PR opens as a draft.
     "gh pr create --title t --body b",
+    # a flag's value is no request for help: gh opens a non-draft PR titled `-h`
+    "gh pr create --title -h --body x",
+    "gh pr create -t t --body --help",
     "gh pr create --fill",
     "gh pr create --draft=false --fill",
     "gh pr create -t d --fill",

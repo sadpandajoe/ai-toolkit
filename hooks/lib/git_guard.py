@@ -1189,12 +1189,14 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
         if not found.is_gh:
             continue
         args = found.argv[1:]
-        if {"-h", "--help"} & set(args):
-            continue
         words = shell_tokens.positional(args, GH_GLOBAL_VALUE_FLAGS)
         if words[:2] not in (["pr", "ready"], ["pr", "merge"], ["pr", "create"], ["pr", "new"]):
             continue
-        if words[1] in {"create", "new"} and is_draft(args):
+        if words[1] in {"create", "new"}:
+            # a flag's value is no request for help (`--title -h`): read the flags as gh does
+            if create_flags(args)[0] or is_draft(args):
+                continue
+        elif {"-h", "--help"} & set(args):
             continue
         if words[1] == "ready" and "--undo" in args:
             continue  # converting back to a draft publishes nothing
