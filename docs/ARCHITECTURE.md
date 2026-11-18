@@ -69,8 +69,9 @@ that with `git diff --raw <base> <commit>`, where the commit is HEAD or the
 what was tested, and any edit in between does not. The newest run of each
 command on that tree must have passed, so a failed run blocks the tree until
 that same command passes there or the tree changes. A command whose first
-program is not there (exit 126 or 127, and no such program on PATH) records
-nothing; one that ran and then exited 126 or 127 is a failure. Untracked files
+word is no program on PATH and no builtin or keyword of `sh` (exit 126 or 127,
+no expansion in the word, no leading `PATH=`) records nothing; one that ran and
+then exited 126 or 127 is a failure. Untracked files
 a check creates are its outputs, remembered apart from the records, left out
 of later runs, and forgotten once deleted.
 `--partial` marks a
@@ -100,7 +101,13 @@ checks nothing is visible in the record. Its known limits:
   model: a `cd` in a subshell or an untaken branch counts as taken, and a
   directory the same command creates, `cd -`, `popd`, `GIT_DIR` and
   `GIT_WORK_TREE` are not followed;
-- it checks the local commit, while the PR shows the pushed branch.
+- it checks the local commit, while the PR shows the pushed branch;
+- the could-not-start rule reads only the first word, so a check that goes on to
+  run more after a missing first program (`"no-such-tool; exit 127"`), a leading
+  redirection (`"2>err.log ./run-tests.sh"`) or a function it defines
+  (`"f() { exit 127; }; f"`) records nothing; and the other way, a typo behind
+  `exec` or an expansion (`"exec pytets"`, `"$HOME/bin/pytets"`) records a
+  failure only the user can get past.
 
 ## Local notes
 

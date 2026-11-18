@@ -369,6 +369,79 @@ class VerifyGateTests(unittest.TestCase):
         self.assert_blocked("failed (exit 127)")
         self.assertIn("report.txt", verify_record.known_outputs(str(self.repo)))
 
+    def assert_recorded_failure(self, command: str, code: int, **kwargs) -> None:
+        result = self.verify(command, **kwargs)
+        self.assertEqual(code, result.returncode, result.stderr)
+        self.assertNotIn("nothing recorded", result.stderr)
+        records = verify_record.load(str(self.repo))
+        self.assertTrue(records, "nothing was recorded")
+        self.assertEqual((command, code), (records[-1]["command"], records[-1]["exit"]))
+
+    def test_a_first_word_the_shell_resolves_is_a_check_that_ran(self) -> None:
+        for command in (
+            "exit 127",
+            "if true; then exit 127; fi",
+            "exec sh -c 'exit 127'",
+            "{ exit 127; }",
+            "${AITK_UNSET_FOR_TEST:-sh} -c 'exit 127'",
+        ):
+            with self.subTest(command=command):
+                self.assert_recorded_failure(command, 127)
+        with self.subTest(command="exit 126"):
+            self.assert_recorded_failure("exit 126", 126)
+
+    def test_a_first_word_with_an_expansion_is_a_check_that_ran(self) -> None:
+        home = Path(self.temporary.name).resolve() / "home"
+        home.mkdir()
+        tool = home / "tool"
+        tool.write_text("#!/bin/sh\nexit 127\n")
+        tool.chmod(0o755)
+        self.assert_recorded_failure("~/tool", 127, env={"HOME": str(home)})
+
+    def test_a_path_assignment_in_front_is_a_check_that_ran(self) -> None:
+        self.write("bin/tool", "#!/bin/sh\nexit 127\n")
+        (self.repo / "bin" / "tool").chmod(0o755)
+        self.assert_recorded_failure("PATH=./bin:$PATH tool", 127)
+
+    def test_the_argv_form_that_exits_127_is_a_failure(self) -> None:
+        result = self.verify("sh", "-c", "exit 127")
+        self.assertEqual(127, result.returncode)
+        self.assertNotIn("nothing recorded", result.stderr)
+        records = verify_record.load(str(self.repo))
+        self.assertTrue(records, "nothing was recorded")
+        self.assertEqual(127, records[-1]["exit"])
+
+    def test_a_stale_pass_cannot_survive_a_127_of_the_same_command(self) -> None:
+        check = "exit ${AITK_CODE:-0}"
+        self.assertEqual(0, self.verify(check).returncode)
+        self.assertIsNone(self.gate())
+        self.assertEqual(127, self.verify(check, env={"AITK_CODE": "127"}).returncode)
+        self.assert_blocked("failed (exit 127)")
+
+    def test_a_script_that_is_missing_or_not_executable_records_nothing(self) -> None:
+        self.write("check.sh", "#!/bin/sh\nexit 0\n")
+        for command, code in (("./missing.sh", 127), ("./check.sh", 126)):
+            with self.subTest(command=command):
+                result = self.verify(command)
+                self.assertEqual(code, result.returncode)
+                self.assertIn("nothing recorded", result.stderr)
+                self.assertEqual([], verify_record.load(str(self.repo)))
+
+    @unittest.skipUnless(os.path.exists("/bin/dash"), "needs /bin/dash")
+    def test_a_dash_sh_reads_the_same_way(self) -> None:
+        shims = Path(self.temporary.name).resolve() / "shims"
+        shims.mkdir()
+        (shims / "sh").symlink_to("/bin/dash")
+        env = {"PATH": f"{shims}{os.pathsep}{os.environ.get('PATH', '')}"}
+        self.write("check.sh", "#!/bin/sh\nexit 0\n")
+        self.assert_recorded_failure("exit 127", 127, env=env)
+        for command, code in (("no-such-command-here", 127), ("./check.sh", 126)):
+            with self.subTest(command=command):
+                result = self.verify(command, env=env)
+                self.assertEqual(code, result.returncode)
+                self.assertIn("nothing recorded", result.stderr)
+        self.assertEqual(1, len(verify_record.load(str(self.repo))))
+
     def test_an_unquoted_compound_command_is_refused(self) -> None:
         (self.repo / "sub").mkdir()
         for command in (("cd", "sub"), ("ulimit", "-n", "1024"), ("umask", "022"), ("cd",)):

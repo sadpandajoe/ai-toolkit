@@ -11,10 +11,12 @@ at the repository's top level: the commit it started from, the exact
 uncommitted content it saw, the command, its exit code and its level. Exits
 with the command's exit code.
 
-A program that could not start (exit 126 or 127, and no such program on PATH)
-records nothing, so a typo blocks nothing; a check that ran and then exited 126
-or 127 is a failure. A shell builtin (`cd`, `umask`, ...) checks nothing as the
-whole command, so it is refused: pass a compound as one quoted argument.
+A program that could not start (exit 126 or 127, and a first word that is no
+program on PATH, no builtin or keyword of `sh`, with no expansion in it and no
+leading `PATH=`) records nothing, so a typo blocks nothing; a check that ran
+and then exited 126 or 127 (`exit 127`, `exec ...`) is a failure. A shell
+builtin (`cd`, `umask`, ...) checks nothing as the whole command, so it is
+refused: pass a compound as one quoted argument.
 
 Levels:
   strong   (default) the change's own failing or acceptance command passed here;
@@ -55,13 +57,16 @@ SHELL_ONLY = {
 COULD_NOT_START = {126, 127}
 # What ends one shell command and starts another in a single quoted argument.
 SEPARATORS = set(";&|\n")
+# A first word with one of these is expanded by the shell, so verify cannot say what it ran.
+UNRESOLVED = set("$`~*?[{")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
-def first_word(command: list[str]) -> str | None:
+def leading_words(command: list[str]) -> tuple[str | None, bool]:
     """The program a command starts with, past any leading `NAME=value`, with `;`, `&&` and
-    `(` split off (`"pytest;exit 127"`); None when a single argument does not split as
-    shell words (a heredoc with an apostrophe), or starts with an operator."""
+    `(` split off (`"pytest;exit 127"`), and whether a skipped assignment was `PATH=`. The
+    program is None when a single argument does not split as shell words (a heredoc with an
+    apostrophe), or starts with an operator."""
     operators = ""
     words = command
     if len(command) == 1:
@@ -71,20 +76,51 @@ def first_word(command: list[str]) -> str | None:
         try:
             words = list(lexer)
         except ValueError:
-            return None
+            return None, False
+    path_set = False
     for word in words:
         if not ASSIGNMENT.match(word):
-            return None if not word or word[0] in operators else word
-    return None
+            return (None if not word or word[0] in operators else word), path_set
+        path_set = path_set or word.startswith("PATH=")
+    return None, path_set
+
+
+def first_word(command: list[str]) -> str | None:
+    """The program a command starts with; see `leading_words`."""
+    return leading_words(command)[0]
+
+
+def shell_resolves(word: str) -> bool:
+    """Whether `sh` resolves the word (a program, builtin, keyword, function or alias).
+    Only a clean `missing` answer is False: `command -v` exits 1 in bash and 127 in dash
+    for a word it does not find, so the exit code says nothing and the output does."""
+    script = 'if command -v "$1" >/dev/null 2>&1; then echo found; else echo missing; fi'
+    try:
+        done = subprocess.run(
+            ["sh", "-c", script, "sh", word],
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return not (done.returncode == 0 and done.stdout == b"missing\n")
 
 
 def could_not_start(command: list[str], exit_code: int) -> bool:
     """Whether a 126/127 exit means the program was never there, rather than a check that
-    ran and failed (`"echo r > report.txt; exit 127"`). Unknown counts as ran."""
+    ran and failed (`"echo r > report.txt; exit 127"`). Unknown counts as ran: a first word
+    with an expansion or a leading `PATH=` is one verify cannot look up, and `sh` resolves
+    a keyword or builtin (`exit 127`, `exec ...`) itself. A word with `/` is looked up
+    with `which` alone, since dash's `command -v` finds a file that is not executable."""
     if exit_code not in COULD_NOT_START:
         return False
-    word = first_word(command)
-    return word is not None and word not in SHELL_ONLY and shutil.which(word) is None
+    word, path_set = leading_words(command)
+    if word is None or word in SHELL_ONLY or shutil.which(word) is not None:
+        return False
+    if len(command) > 1:
+        return True
+    if path_set or word.startswith("-") or UNRESOLVED.intersection(word):
+        return False
+    return "/" in word or not shell_resolves(word)
 
 
 def exclude_record_directory(top: str) -> None:
