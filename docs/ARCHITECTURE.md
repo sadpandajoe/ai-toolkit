@@ -68,9 +68,11 @@ that with `git diff --raw <base> <commit>`, where the commit is HEAD or the
 `--head` branch: a run before the commit counts once the commit holds exactly
 what was tested, and any edit in between does not. The newest run of each
 command on that tree must have passed, so a failed run blocks the tree until
-that same command passes there or the tree changes; a command that could not
-start (exit 126 or 127) records nothing. Untracked files a check creates are
-its outputs, remembered apart from the records and left out of later runs.
+that same command passes there or the tree changes. A command whose first
+program is not there (exit 126 or 127, and no such program on PATH) records
+nothing; one that ran and then exited 126 or 127 is a failure. Untracked files
+a check creates are its outputs, remembered apart from the records, left out
+of later runs, and forgotten once deleted.
 `--partial` marks a
 run of related checks only and names what CI still runs; the PR's test plan
 carries the level. The record and the fingerprint stay outside `.git`, which

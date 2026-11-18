@@ -161,16 +161,32 @@ def known_outputs(top: str) -> frozenset[str]:
     only the run that first creates a file records it, so dropping that record would turn
     a check's own output into a change to the tree."""
     data = _read(top)
-    listed = data.get("outputs") if isinstance(data.get("outputs"), list) else []
-    from_records = [p for r in load(top) for p in r.get("outputs", [])]
-    return frozenset(p for p in [*listed, *from_records] if isinstance(p, str))
+    found = [*_listed(data)]
+    for record in load(top):
+        found.extend(_listed(record))
+    return frozenset(found)
+
+
+def _listed(data: dict) -> list[str]:
+    outputs = data.get("outputs")
+    return [p for p in outputs if isinstance(p, str)] if isinstance(outputs, list) else []
 
 
 def append(top: str, record: dict) -> Path:
+    """Add `record`, keep the newest KEEP, and forget outputs no longer on disk: a path a
+    later change creates under that name is part of the change, not a check's output."""
     path = Path(top) / RECORD
     path.parent.mkdir(exist_ok=True)
-    outputs = sorted(known_outputs(top) | set(record.get("outputs", [])))
-    records = (load(top) + [record])[-KEEP:]
+
+    def present(paths: list[str]) -> list[str]:
+        return sorted({p for p in paths if os.path.lexists(os.path.join(top, p))})
+
+    outputs = present([*known_outputs(top), *_listed(record)])
+    records = []
+    for kept in (load(top) + [record])[-KEEP:]:
+        if "outputs" in kept:
+            kept = {**kept, "outputs": present(_listed(kept))}
+        records.append(kept)
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps({"records": records, "outputs": outputs}, indent=1) + "\n")
     os.replace(temporary, path)

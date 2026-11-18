@@ -257,13 +257,23 @@ class VerifyGateTests(unittest.TestCase):
         self.assert_blocked("no check has been recorded", command="gh pr create --draft --title -h --body x")
         self.assert_blocked("no check has been recorded", command="gh pr create --draft --title t --body --help")
         self.assert_blocked("no check has been recorded", command="gh pr new --draft --fill")
+        # nor is `--help=false`, or a value of a flag gh has and the guard must know;
+        # help is read only as a word of its own, never inside a bundle (`-fh`)
+        for command in (
+            "gh pr create --draft --help=false --fill",
+            "gh pr create --draft --fill --attach -h.png",
+            "gh pr create --draft --fill --recover -h",
+            "gh pr create --draft -fh",
+        ):
+            with self.subTest(command=command):
+                self.assert_blocked("no check has been recorded", command=command)
         self.verify("true")
         self.git("switch", "-q", "-c", "other")
         self.write("app.py", "print('other')\n")
         self.commit("app.py")
         self.git("switch", "-q", "feature")
         # `-H` bundled after another short flag still names the head branch
-        for command in ("gh pr create -dH other --fill", "gh pr create --fill -dHother"):
+        for command in ("gh pr create -dH other --fill", "gh pr create --fill -dHother", f"{CREATE} -H=other"):
             with self.subTest(command=command):
                 self.assert_blocked(command=command)
         # and a title that starts with `-H` names none
@@ -278,6 +288,15 @@ class VerifyGateTests(unittest.TestCase):
         # HEAD~1 has the passing record; `--head=HEAD~1` here is the body, so HEAD is opened
         self.assert_blocked(command=f"{CREATE} --body --head=HEAD~1")
         self.assert_blocked(command="gh pr create --draft --fill -b -HHEAD~1")
+
+    def test_a_head_given_as_another_flags_value_is_not_the_head(self) -> None:
+        self.verify("true")
+        self.git("switch", "-q", "-c", "other")
+        self.write("app.py", "print('other')\n")
+        self.commit("app.py")
+        self.git("switch", "-q", "feature")
+        # `--head=other` is the file to attach: gh opens the verified current branch
+        self.assertIsNone(self.gate(command=f"{CREATE} --attach --head=other"))
 
     def test_a_head_branch_that_is_not_checked_out_says_where_to_run_the_check(self) -> None:
         self.verify("true")
@@ -337,12 +356,42 @@ class VerifyGateTests(unittest.TestCase):
         self.assertEqual([], verify_record.load(str(self.repo)))
         self.assert_blocked("no check has been recorded")
 
+    def test_a_program_that_is_not_there_records_nothing_in_either_form(self) -> None:
+        result = self.verify("no-such-command-here", "--flag")
+        self.assertEqual(127, result.returncode)
+        self.assertIn("nothing recorded", result.stderr)
+        self.assertEqual([], verify_record.load(str(self.repo)))
+
+    def test_a_check_that_ran_and_exited_127_is_a_failure(self) -> None:
+        # it ran (and wrote its report) before a later step was missing: that is a failure
+        self.assertEqual(127, self.verify("echo r > report.txt; exit 127").returncode)
+        self.verify("true")
+        self.assert_blocked("failed (exit 127)")
+        self.assertIn("report.txt", verify_record.known_outputs(str(self.repo)))
+
     def test_an_unquoted_compound_command_is_refused(self) -> None:
         (self.repo / "sub").mkdir()
-        result = self.verify("cd", "sub")
-        self.assertEqual(2, result.returncode)
-        self.assertIn("one quoted argument", result.stderr)
-        self.assertEqual([], verify_record.load(str(self.repo)))
+        for command in (("cd", "sub"), ("ulimit", "-n", "1024"), ("umask", "022"), ("cd",)):
+            with self.subTest(command=command):
+                result = self.verify(*command)
+                self.assertEqual(2, result.returncode)
+                self.assertIn("one quoted argument", result.stderr)
+                self.assertEqual([], verify_record.load(str(self.repo)))
+        # a quoted compound runs
+        self.assertEqual(0, self.verify("cd sub && true").returncode)
+
+    def test_outputs_that_are_gone_are_forgotten(self) -> None:
+        self.verify("echo r > report.txt")
+        (self.repo / "report.txt").unlink()
+        self.verify("true")
+        self.assertNotIn("report.txt", verify_record.known_outputs(str(self.repo)))
+
+    def test_outputs_that_are_not_a_list_are_ignored(self) -> None:
+        record = {"base": "x", "changes": {}, "command": "true", "exit": 0, "outputs": 5}
+        (self.repo / ".ai-toolkit").mkdir(exist_ok=True)
+        (self.repo / ".ai-toolkit" / "verify.json").write_text(json.dumps({"records": [record], "outputs": "report.txt"}))
+        self.assertEqual(frozenset(), verify_record.known_outputs(str(self.repo)))
+        self.assertEqual(0, self.verify("true").returncode)
 
     def test_a_check_before_the_first_commit_counts_once_it_is_committed(self) -> None:
         fresh = Path(self.temporary.name) / "fresh"

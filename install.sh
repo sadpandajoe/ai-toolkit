@@ -31,14 +31,15 @@ CHECK='AI Toolkit is installed as a Codex plugin. Its session-start hook puts a 
 
 # Remove each complete marked block from AGENTS.md, writing through a symlink in
 # place. A start marker with no end marker after it is the user's edit: its lines
-# stay, so nothing past the block is ever lost; so do a held start marker's lines
-# when another start marker follows before any end marker. Fails, keeping the
+# stay, so nothing past the block is ever lost. When another start marker follows
+# before any end marker, the held lines stay but the orphaned marker goes, or the
+# next install would refuse over a block with no end. Fails, keeping the
 # rewritten copy and saying where, when AGENTS.md cannot be rewritten.
 remove_check() {
     [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE" || return 0
     tmp=$(mktemp "${TMPDIR:-/tmp}/aitk-agents.XXXXXX") || return 1
     awk -v b="$BEGIN" -v e="$END" '
-        held && $0 == b { printf "%s", buf; buf = $0 "\n"; next }
+        held && $0 == b { printf "%s", substr(buf, length(b) + 2); buf = $0 "\n"; next }
         !held && $0 == b { held = 1; buf = $0 "\n"; next }
         held { buf = buf $0 "\n"; if ($0 == e) { held = 0; buf = "" }; next }
         { print }

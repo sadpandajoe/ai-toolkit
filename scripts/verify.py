@@ -11,6 +11,11 @@ at the repository's top level: the commit it started from, the exact
 uncommitted content it saw, the command, its exit code and its level. Exits
 with the command's exit code.
 
+A program that could not start (exit 126 or 127, and no such program on PATH)
+records nothing, so a typo blocks nothing; a check that ran and then exited 126
+or 127 is a failure. A shell builtin (`cd`, `umask`, ...) checks nothing as the
+whole command, so it is refused: pass a compound as one quoted argument.
+
 Levels:
   strong   (default) the change's own failing or acceptance command passed here;
   partial  only related checks can run here; `--partial` names what CI still runs.
@@ -26,7 +31,9 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -38,10 +45,46 @@ from git_guard import is_protected_path  # noqa: E402
 sys.path.pop(0)
 
 # Words a shell runs itself. As the program to run they change nothing and exit 0 (macOS
-# ships /usr/bin/cd), which is what an unquoted `verify.py -- cd frontend && npm test` does.
-SHELL_ONLY = {"cd", "pushd", "popd", "source", ".", "export", "set", "unset", "alias"}
+# ships /usr/bin/cd, umask, ulimit and others), which is what an unquoted
+# `verify.py -- cd frontend && npm test` does.
+SHELL_ONLY = {
+    "cd", "pushd", "popd", "source", ".", "export", "set", "unset", "alias",
+    "ulimit", "umask", "type", "hash", "read", "wait",
+}
 # A shell's exit codes for a command it found but could not run, or did not find.
 COULD_NOT_START = {126, 127}
+# What ends one shell command and starts another in a single quoted argument.
+SEPARATORS = set(";&|\n")
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def first_word(command: list[str]) -> str | None:
+    """The program a command starts with, past any leading `NAME=value`, with `;`, `&&` and
+    `(` split off (`"pytest;exit 127"`); None when a single argument does not split as
+    shell words (a heredoc with an apostrophe), or starts with an operator."""
+    operators = ""
+    words = command
+    if len(command) == 1:
+        lexer = shlex.shlex(command[0], posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        operators = lexer.punctuation_chars
+        try:
+            words = list(lexer)
+        except ValueError:
+            return None
+    for word in words:
+        if not ASSIGNMENT.match(word):
+            return None if not word or word[0] in operators else word
+    return None
+
+
+def could_not_start(command: list[str], exit_code: int) -> bool:
+    """Whether a 126/127 exit means the program was never there, rather than a check that
+    ran and failed (`"echo r > report.txt; exit 127"`). Unknown counts as ran."""
+    if exit_code not in COULD_NOT_START:
+        return False
+    word = first_word(command)
+    return word is not None and word not in SHELL_ONLY and shutil.which(word) is None
 
 
 def exclude_record_directory(top: str) -> None:
@@ -96,9 +139,10 @@ def main(argv: list[str]) -> int:
         parser.error("give the command to run after --")
     if args.partial is not None and not args.partial.strip():
         parser.error("--partial needs the checks CI still runs")
-    if len(command) > 1 and command[0] in SHELL_ONLY:
+    lone = len(command) == 1 and not SEPARATORS & set(command[0])
+    if (len(command) > 1 or lone) and first_word(command) in SHELL_ONLY:
         parser.error(
-            f"`{command[0]}` checks nothing as a program of its own; pass a compound command as "
+            f"`{first_word(command)}` checks nothing as a program of its own; pass a compound command as "
             'one quoted argument: verify.py -- "cd frontend && npm test"'
         )
 
@@ -119,7 +163,7 @@ def main(argv: list[str]) -> int:
         return 127
     except KeyboardInterrupt:
         exit_code = 130
-    if exit_code in COULD_NOT_START:
+    if could_not_start(command, exit_code):
         # a typo is no failed check: recording it would block the tree until that typo passes
         print(f"verify: {shown} could not start (exit {exit_code}); nothing recorded", file=sys.stderr)
         return exit_code

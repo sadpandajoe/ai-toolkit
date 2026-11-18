@@ -99,6 +99,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual("mine\n", (agents / "reviewer.toml").read_text())
 
 
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root writes read-only files")
     def test_a_read_only_agents_file_is_left_alone_and_install_still_succeeds(self) -> None:
         self.codex.mkdir(parents=True)
         original = f"mine\n{BEGIN}\nold check\n{END}\n"
@@ -120,6 +121,17 @@ class InstallTests(unittest.TestCase):
         self.assertIn("mine", text)
         self.assertIn("user text", text)
         self.assertNotIn("old", text)
+        self.assertNotIn(BEGIN, text)  # no orphan marker that would stop the next install
+
+    def test_an_uninstall_that_cannot_rewrite_says_so(self) -> None:
+        self.codex.mkdir(parents=True)
+        original = f"mine\n{BEGIN}\nold check\n{END}\n"
+        self.agents_md.write_text(original)
+        env = {**os.environ, "HOME": str(self.home), "CODEX_HOME": str(self.codex), "TMPDIR": str(self.home / "missing")}
+        result = subprocess.run(["sh", str(INSTALL), "--uninstall"], env=env, capture_output=True, text=True, check=False)
+        self.assertEqual(1, result.returncode)
+        self.assertNotIn("removed the hook check", result.stdout)
+        self.assertEqual(original, self.agents_md.read_text())
 
 
 if __name__ == "__main__":

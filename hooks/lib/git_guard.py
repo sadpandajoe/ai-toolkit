@@ -1075,7 +1075,7 @@ CREATE_VALUE_FLAGS = {
     "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file",
     "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project",
     "-r", "--reviewer", "-T", "--template", "-t", "--title", "-R", "--repo",
-    "--hostname",
+    "--hostname", "--attach", "--recover",
 }
 CREATE_SHORT_VALUE = {"a", "B", "b", "F", "H", "l", "m", "p", "r", "T", "t", "R"}
 DRAFT_FLAG = re.compile(r"(?<![\w-])(?:--draft(?:=(?:true|1|t))?|-[A-Za-z]*d[A-Za-z]*)(?![\w=-])")
@@ -1213,7 +1213,8 @@ VERIFY_REMEDY_RUN = (
 VERIFY_REMEDY_FAILED = (
     "Only a pass of that same command on this tree clears it; a different command does not. Fix "
     "what fails and run it again through `python3 {script} -- <command>`; if the command itself "
-    "is wrong, stop and tell the user."
+    "is wrong, stop and tell the user, who can open the PR from their own terminal, where this "
+    "hook does not run."
 )
 VERIFY_REMEDY_UNSTABLE = (
     "Only a run of that same command that leaves the files as they were clears this tree; a "
@@ -1243,11 +1244,13 @@ VERIFY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.
 CREATE_WORD = re.compile(r"\b(create|new)\b")
 
 
-def create_flags(args: list[str]) -> tuple[bool, bool, list[str]]:
-    """`gh pr create`'s arguments as gh reads them: whether they ask for help, whether for a
-    draft, and every `--head` given. A value flag takes the next word whatever it looks like
-    (`--title -h`), and short flags bundle (`-dH other`, `-dHother`, `-H=other`)."""
-    asks_help = draft = False
+def create_flags(args: list[str]) -> tuple[bool, list[str]]:
+    """`gh pr create`'s arguments as gh reads them: whether they ask for help, and every
+    `--head` given. A value flag takes the next word whatever it looks like (`--title -h`),
+    and short flags bundle (`-dH other`, `-dHother`, `-H=other`). Help is only a bare `-h`
+    or `--help`: gh honours `--help=false` and runs the command, so reading anything wider
+    as help would let a real `gh pr create` through."""
+    asks_help = False
     heads: list[str] = []
     index = 0
     while index < len(args):
@@ -1255,13 +1258,11 @@ def create_flags(args: list[str]) -> tuple[bool, bool, list[str]]:
         index += 1
         if arg == "--":
             break
-        if arg.startswith("--"):
+        if arg in {"-h", "--help"}:
+            asks_help = True
+        elif arg.startswith("--"):
             name, given, value = arg.partition("=")
-            if name == "--help":
-                asks_help = True
-            elif name == "--draft":
-                draft = not given or value.strip().lower() in {"true", "1", "t"}
-            elif name in CREATE_VALUE_FLAGS:
+            if name in CREATE_VALUE_FLAGS:
                 if not given:
                     value = args[index] if index < len(args) else ""
                     index += 1
@@ -1269,11 +1270,7 @@ def create_flags(args: list[str]) -> tuple[bool, bool, list[str]]:
                     heads.append(value)
         elif arg.startswith("-") and len(arg) > 1:
             for position, char in enumerate(arg[1:], start=2):
-                if char == "h":
-                    asks_help = True
-                elif char == "d":
-                    draft = True
-                elif char in CREATE_SHORT_VALUE:
+                if char in CREATE_SHORT_VALUE:
                     value = arg[position:]
                     if value.startswith("="):
                         value = value[1:]
@@ -1283,7 +1280,7 @@ def create_flags(args: list[str]) -> tuple[bool, bool, list[str]]:
                     if char == "H":
                         heads.append(value)
                     break
-    return asks_help, draft, heads
+    return asks_help, heads
 
 
 def refuse(reason: str, remedy: str, **values: str) -> Blocked:
@@ -1343,7 +1340,7 @@ def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
         words = shell_tokens.positional(args, GH_GLOBAL_VALUE_FLAGS)
         if words[:2] not in (["pr", "create"], ["pr", "new"]):
             continue
-        asks_help, _, heads = create_flags(args)
+        asks_help, heads = create_flags(args)
         if asks_help:
             continue
         if found.workdir is None:
