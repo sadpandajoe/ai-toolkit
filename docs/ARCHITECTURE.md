@@ -100,11 +100,14 @@ checks nothing is visible in the record. Its known limits:
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
   model: a subshell's `cd` is restored, and a `cd` that may not have run (after
   `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in
-  an if/while/until/for/select/case body, in an `eval` or a function, or in text
-  with a quoted paren) leaves the directory unknown until an absolute `cd`;
+  an if/while/until/for/select/case body, in an `eval`, or in text with a quoted
+  or escaped operator character, `find -exec ... \;` included, an accepted
+  over-block) leaves the directory unknown until an absolute `cd`, and so does
+  everything after a function definition that a `cd` follows;
   `cd -`, `popd` and a bare `pushd` leave it unknown too, which blocks the
   decisions that need it. A directory the same command creates, `GIT_DIR`,
-  `GIT_WORK_TREE`, a sourced file's `cd`, `CDPATH` and `pushd +N` are not
+  `GIT_WORK_TREE`, a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`,
+  `>/dev/null cd X`, `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"` are not
   followed;
 - it checks the local commit, while the PR shows the pushed branch;
 - the could-not-start rule reads only the first word, so a check that goes on to

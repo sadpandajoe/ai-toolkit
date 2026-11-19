@@ -50,9 +50,12 @@ the hook cannot read, `gh api` calls, and programs that run git themselves are
 not seen. Directory changes follow `shell_tokens`' rules (`cd`, `pushd`, `git -C`,
 `env -C`): `cd -`, `popd`, a bare `pushd`, a target the shell expands, a `cd` that may
 not have run (after `||`, after `&&` once the list ends, in a pipeline, in a list ended
-by `&`, in an if/while/until/for/select/case body), an `eval` or a function that
-changes directory, and every `cd` in text with a quoted paren leave the directory
-unknown until a subshell restores it or an absolute `cd` re-anchors it, and so do
+by `&`, in an if/while/until/for/select/case body), an `eval` that changes directory,
+every `cd` in text with a quoted or escaped operator character (so an unescaped
+`find -exec ... \\;` too) and everything after a function definition followed by a
+`cd` leave the directory unknown until a subshell restores it or an absolute `cd`
+re-anchors it (not after a function). Not modelled: a sourced file's `cd`, `CDPATH`,
+`pushd +N`, `cd ~-`, `>/dev/null cd X`, `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"`, and so do
 `--git-dir`/`--work-tree` values the shell expands. Where the directory is unknown
 the guard cannot read the repository, so it blocks what needs it: a force push or a
 delete whose branch it cannot read, a commit whose staged files it cannot read, and a
@@ -96,8 +99,7 @@ Known limits of the scan, each a real override it does not see:
   (`declare -n r; r=NAME; declare -x r=1`);
 - `read`, `printf -v` and `mapfile` (write targets, not assignments),
   `source`/`.` and scripts run separately, dynamically built names (`${!v}`,
-  `eval "AITK_PR_$X=1"`), ANSI-C-quoted names (`$'\\x41ITK_PR_READY=1'`),
-  substitution-built assignments (`env $(printf '...') ...`), aliases (the body
+  `eval "AITK_PR_$X=1"`), substitution-built assignments (`env $(printf '...') ...`), aliases (the body
   is quoted text) and profile writes, which alter later shell startup rather
   than this command.
 
@@ -323,7 +325,7 @@ def expand_shell_payload(command_text: str, positional: list[str]) -> list[str]:
     if not nested:
         return []
     expanded = shell_tokens.Tokens()
-    expanded.quoted_parens = getattr(nested, "quoted_parens", False)
+    expanded.quoted_operators = getattr(nested, "quoted_operators", False)
     positional_zero = positional[0] if positional else ""
     positional_args = positional[1:] if positional else []
     for token in nested:
@@ -469,8 +471,9 @@ def segment_end_index(tokens: list[str], start: int) -> int:
     return end
 
 
-def new_action(workdir: str | None, aliases: dict, env: dict) -> dict:
+def new_action(workdir: str | None, aliases: dict, env: dict, untrusted: bool = False) -> dict:
     action = {
+        "untrusted": untrusted,
         "subcommand": None,
         "index": None,
         "args": [],
@@ -715,7 +718,7 @@ def parse_git_actions(
             # `git-*` word is an ordinary executable. The action is built here, from its own
             # segment: splicing the tokens, or keeping the rest of the line per action, would
             # cost the whole remaining text every time.
-            action = new_action(current_workdir, inherited_alias_map, env_assignments)
+            action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted)
             action["subcommand"] = dashed[1]
             action["index"] = i
             action["args"] = tokens[i + 1 : segment_end_index(tokens, i + 1)]
@@ -735,7 +738,7 @@ def parse_git_actions(
             if subcommand is None and args:
                 subcommand = args[0]
                 args = args[1:]
-            action = new_action(current_workdir, inherited_alias_map, env_assignments)
+            action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted)
             action["subcommand"] = subcommand
             action["index"] = i
             action["args"] = args
@@ -761,7 +764,7 @@ def parse_git_actions(
             i += 1
             continue
 
-        action = new_action(current_workdir, inherited_alias_map, env_assignments)
+        action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted)
         j = i + 1
         while j < count:
             opt = tokens[j]
@@ -832,6 +835,7 @@ def parse_git_actions(
                         dict(shell_vars),
                         dict(shell_functions),
                         dict(action.get("aliases", {})),
+                        parens_untrusted,
                     )
                     for nested_action in nested_actions:
                         nested_action["configs"] = action["configs"] + nested_action.get("configs", [])
@@ -907,6 +911,7 @@ def expand_configured_alias(action: dict) -> list[dict]:
         1,
         action.get("env", {}),
         inherited_aliases=action.get("aliases", {}),
+        parens_untrusted=action.get("untrusted", False),
     )
     for nested_action in nested:
         nested_action["configs"] = action.get("configs", []) + nested_action.get("configs", [])
@@ -1022,6 +1027,9 @@ PUSH_BRANCH_UNREADABLE = (
 )
 
 
+EXPANSION = re.compile(r"[$`]")
+
+
 def check_push(action: dict) -> None:
     args = own_args(action.get("args", []))
     for raw_config in action.get("configs", []):
@@ -1096,10 +1104,16 @@ def check_push(action: dict) -> None:
         has_explicit_ref = True
         deleting_ref = refspec.startswith(":")
         dest = refspec.rsplit(":", 1)[-1]
-        if dest == "HEAD":
+        if dest == "HEAD" or dest in shell_tokens.CURRENT_BRANCH_SUBSTITUTIONS:
             if branch_output is None and (push_force or delete_push or deleting_ref):
                 raise block(PUSH_BRANCH_UNREADABLE)
             dest = current_branch
+        elif EXPANSION.search(dest) and (push_force or delete_push or deleting_ref):
+            raise block(
+                "the guard cannot read which branch this push updates (its destination "
+                f"`{dest}` is expanded by the shell), and force-pushing or deleting main/master "
+                "is not allowed. Name the branch (`git push --force origin <branch>`)."
+            )
         if re.fullmatch(r"(refs/heads/)?(main|master)", dest or ""):
             dest_main = True
             if deleting_ref:
@@ -1492,7 +1506,11 @@ def main() -> int:
         return 2
     except Exception as error:  # noqa: BLE001 - an internal error blocks git, gh and overrides
         text = command if isinstance(command, str) else raw
-        if MENTIONS_GIT.search(text) or OVERRIDE_MENTION.search(text):
+        # quoting can hide the word from a raw match (`g'i't`): read it as the shell does
+        if any(
+            MENTIONS_GIT.search(form) or OVERRIDE_MENTION.search(form)
+            for form in (text, shell_tokens.unquoted(text))
+        ):
             print(
                 f"BLOCKED: the git guard hook failed ({type(error).__name__}: {error}). "
                 "Stop and ask the user; do not work around the hook.",

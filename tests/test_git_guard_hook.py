@@ -566,6 +566,8 @@ PR_PUBLISH_ALLOW = (
 
 # Blocked whatever they run: the command sets, appends to or exports an override.
 OVERRIDE_ASSIGNMENT_BLOCK = (
+    # an ANSI-C-quoted name is decoded before the lexer reads it
+    "export $'\\x41ITK_PR_READY=1'; ./ship.sh",
     # operator runs the lexer used to fuse into one token are split, so the subshell or
     # function body after them is read
     "(>/dev/null AITK_PR_READY=1 ./ship.sh)",
@@ -693,7 +695,6 @@ OVERRIDE_SCAN_LIMITS = (
     ". ./set-override.sh; ./ship.sh",
     "v=AITK_PR_READY; export \"${{!v}}\"=1; ./ship.sh",
     "X=READY; eval \"AITK_PR_$X=1\"; ./ship.sh",
-    "export $'\\x41ITK_PR_READY=1'; ./ship.sh",
     "env $(printf 'AITK_PR_READY=1') ./ship.sh",
     # an alias body is quoted text, and a profile write alters later shell startup
     "alias deliver='AITK_PR_READY=1 ./ship.sh'; deliver",
@@ -928,6 +929,42 @@ class GitGuardHookTests(unittest.TestCase):
             ("echo ')'; gh pr view 1", here),
             # an absolute cd makes the directory known again
             (f"false && cd other; cd {here} && gh pr view 1", here),
+            # case bodies are bodies, and their parens are pattern syntax
+            ("case x in a) cd other;; esac; gh pr view 1", None),
+            ("case x in a) true;; esac; (cd other); gh pr view 1", here),
+            ("case x in (a) true;; esac; (cd other); gh pr view 1", here),
+            ("while x; do cd other; done; gh pr view 1", None),
+            ("until x; do cd other; done; gh pr view 1", None),
+            # a group that ends in `&` or a pipe, or only runs conditionally
+            ("{ cd other; } & gh pr view 1", None),
+            ("{ cd other; } | cat; gh pr view 1", None),
+            ("x && { cd other; }; gh pr view 1", None),
+            ("x && cd other || gh pr view 1", None),
+            # the exact words `cd`, `pushd`, `popd`, after builtin/command/time prefixes
+            ("time -p cd other && gh pr view 1", other),
+            ("time cd other && gh pr view 1", other),
+            ("CD other && gh pr view 1", here),
+            ("/usr/bin/cd other && gh pr view 1", here),
+            ("command -v cd; gh pr view 1", here),
+            ("command -V cd; gh pr view 1", here),
+            # a function runs where it is called: once one is defined, a cd after it is unknown
+            ("function f { cd other; }; f; gh pr view 1", None),
+            ("f()\n{\n  cd other\n}\ngh pr view 1", None),
+            ("function f\n{\n  cd other\n}\ngh pr view 1", None),
+            ("f ( ) { cd other; }; gh pr view 1", None),
+            ("f() { echo '}'; cd other; }; gh pr view 1", None),
+            ("f() { gh pr view 1; }; cd other; f", None),
+            (f"f() {{ cd other; }}; cd {here}; gh pr view 1", None),
+            # fi, done and esac close a body only as the first word of a segment
+            ("case x in a) true;; done) cd other;; esac; gh pr view 1", None),
+            ("if false; then command fi; cd other; fi; gh pr view 1", None),
+            ("if false; then X=1 fi; cd other; fi; gh pr view 1", None),
+            # a quoted or escaped operator, or a paren in ${...}, is a bare token
+            ("echo '('; cd other; echo ')'; gh pr view 1", None),
+            ("echo \\(; cd other; echo \\); gh pr view 1", None),
+            ("echo ${x:-(}; cd other; echo ${y:-)}; gh pr view 1", None),
+            ("echo ';' cd other ';'; gh pr view 1", None),
+            ("find . -exec true {} \\; ; cd other && gh pr view 1", None),
         ):
             with self.subTest(command=command):
                 walked = [found for found in shell_tokens.commands(command, here) if found.is_gh]
@@ -956,10 +993,75 @@ class GitGuardHookTests(unittest.TestCase):
             ("(cd {main} && git status); git push --force", feature, 0),
             # an ungated command never blocks on an unknown directory
             ("false && cd {feature}; git status", main, 0),
+            # fake parens never restore: the cd between them runs here
+            ("echo '('; cd {main}; echo ')'; git push --force", feature, 2),
+            ("echo \\(; cd {main}; echo \\); git push --force", feature, 2),
+            ("echo ${{x:-(}}; cd {main}; echo ${{y:-)}}; git push --force", feature, 2),
+            ("echo ';' cd {main} ';'; git push --force", feature, 2),
+            # only the exact builtin words move the shell
+            ("CD {feature}; git push --force", main, 2),
+            ("/usr/bin/cd {feature}; git push --force", main, 2),
+            ("time -p cd {feature} && git push --force", main, 0),
+            ("command cd {feature} && git push --force", main, 0),
+            # a function's cd runs at the call
+            ("f() {{ cd {main}; }}; cd {feature}; f; git push --force", feature, 2),
+            ("f()\n{{\n  cd {feature}\n}}\ngit push --force", main, 2),
         ):
             command = template.format(main=main, feature=feature)
             with self.subTest(command=command):
                 self.assertEqual(expected, self.run_hook(command, cwd).returncode)
+
+    def test_the_two_readers_walk_a_payload_under_the_same_doubt(self) -> None:
+        here = str(self.clean)
+        for command, expected in (
+            ("echo ')'; bash -c 'cd /usr && git push'", None),
+            ("false && cd /tmp; env -C /usr git push", None),
+            ("bash -c 'cd /usr && git push'", "/usr"),
+            ("env -C /usr git push", "/usr"),
+        ):
+            with self.subTest(command=command):
+                walked = [c for c in shell_tokens.commands(command, here) if c.name == "git"]
+                self.assertEqual([expected], [c.workdir for c in walked])
+        # the alias recursions keep the flag
+        self.assertTrue(
+            git_guard.parse_git_actions(
+                shell_tokens.tokenize("echo ')'; git -c alias.p=push p"), here
+            )[0]["untrusted"]
+        )
+
+    def test_a_crash_in_the_guard_blocks_what_quoting_hides(self) -> None:
+        deep = "f() { " * 400 + ":; " + "}; " * 400
+        self.assertEqual(2, self.run_hook(deep + "g'i't commit --no-verify -m x", self.clean).returncode)
+        # an internal error reads the unquoted text, not only the raw one
+        with mock.patch.object(git_guard, "evaluate", side_effect=RuntimeError("boom")):
+            for command, expected in (("g'i't push", 2), ("echo hello", 0)):
+                with self.subTest(command=command):
+                    stdin = io.StringIO(json.dumps({"tool_input": {"command": command}, "cwd": "/"}))
+                    with mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stderr", io.StringIO()):
+                        self.assertEqual(expected, git_guard.main())
+
+    def test_ansi_c_quoting_does_not_hide_the_rest_of_the_command(self) -> None:
+        self.assertEqual(2, self.run_hook("echo $'\\'' ; git commit --no-verify -m x #'", self.clean).returncode)
+        self.assertEqual(0, self.run_hook("printf $'a\\nb'; git status", self.clean).returncode)
+        self.assertEqual(["printf", "a\nb", ";", "git", "status"], shell_tokens.tokenize("printf $'a\\nb'; git status")[:5][:2] + [";", "git", "status"])
+        self.assertEqual(["echo", "'", ";", "echo"], shell_tokens.tokenize("echo $'\\'' ; echo"))
+        with self.assertRaises(ValueError):
+            shell_tokens.tokenize("echo $'abc")
+
+    def test_a_push_destination_behind_an_expansion_is_unknown(self) -> None:
+        for command, repo, expected in (
+            ("git push --force origin $BR", self.clean, 2),
+            ("git push --force origin $BR", self.feature, 2),
+            ("git push --delete origin `echo x`", self.feature, 2),
+            ("git push origin $BR", self.clean, 0),
+            ("git push --force origin \"$(git branch --show-current)\"", self.clean, 2),
+            ("git push --force origin \"$(git branch --show-current)\"", self.feature, 0),
+            ("git push --force origin $(git branch --show-current)", self.clean, 2),
+            ("git push --force origin $(git branch --show-current)", self.feature, 0),
+            ("git push --force origin `git branch --show-current`", self.feature, 0),
+        ):
+            with self.subTest(command=command, repo=repo.name):
+                self.assertEqual(expected, self.run_hook(command, repo).returncode)
 
     def test_ordinary_commands_are_allowed(self) -> None:
         self.assert_cases(CLEAN_ALLOW, self.clean, 0)

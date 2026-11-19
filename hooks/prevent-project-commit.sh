@@ -18,12 +18,21 @@ COMMAND=$INPUT
 if [[ $INPUT =~ \"command\"[[:space:]]*:[[:space:]]*\"(([^\"\\]|\\.)*)\" ]]; then
     COMMAND=${BASH_REMATCH[1]}
 fi
-GUARDED=0
+GUARD_WORDS='(^|[^[:alnum:]_])([Gg][Ii][Tt]|[Gg][Hh])([^[:alnum:]_]|$)|AITK_PR_READY|SKIP_PRECHECK'
 # git and gh in any case (`GIT`, `Gh`): the filesystem may ignore it
-[[ $COMMAND =~ (^|[^[:alnum:]_])([Gg][Ii][Tt]|[Gg][Hh])([^[:alnum:]_]|$)|AITK_PR_READY|SKIP_PRECHECK ]] && GUARDED=1
+GUARDED=0
+[[ $COMMAND =~ $GUARD_WORDS ]] && GUARDED=1
+# Only when python cannot run: the same match with the quote characters and backslashes
+# removed (`g'i't`). Replacing them in a large command is slow in bash, so it is not done
+# on the normal path.
+guarded_unquoted() {
+    [[ "$GUARDED" -eq 1 ]] && return 0
+    local plain=${COMMAND//[\'\"\\\`]/}
+    [[ $plain =~ $GUARD_WORDS ]]
+}
 
 if ! command -v python3 >/dev/null 2>&1; then
-    [[ "$GUARDED" -eq 0 ]] && exit 0
+    guarded_unquoted || exit 0
     echo "BLOCKED: python3 is not on PATH, so the git guard cannot check this command. Install Python 3.11 or newer; do not work around the hook." >&2
     exit 2
 fi
@@ -34,6 +43,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 printf '%s' "$INPUT" | python3 -E -s "$ROOT/hooks/lib/git_guard.py"
 status=$?
 [[ "$status" -eq 0 || "$status" -eq 2 ]] && exit "$status"
-[[ "$GUARDED" -eq 0 ]] && exit 0
+guarded_unquoted || exit 0
 echo "BLOCKED: the git guard could not run (exit $status). Stop and ask the user; do not work around the hook." >&2
 exit 2

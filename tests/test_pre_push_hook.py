@@ -501,6 +501,9 @@ class PrePushHookTests(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assert_unknown_repository(self.run_hook(command))
+        # deeply nested function definitions are read, not a crash
+        deep = "f() { " * 400 + ":; " + "}; " * 400
+        self.assertEqual(0, self.run_hook(deep + "git push").returncode)
         # a subshell's cd does not leak: the push runs where the session is
         self.assert_blocked(self.run_hook("(cd sub); git push", STUB_PRECOMMIT="fail"), "pre-commit failed")
 
@@ -533,6 +536,26 @@ class PrePushHookTests(unittest.TestCase):
         )
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("could not be read in full", result.stderr)
+
+    def test_a_parser_crash_blocks_a_push_and_lets_other_commands_through(self) -> None:
+        script = HOOK.read_text()
+        crashing = "for found in shell_tokens.commands(command, cwd):"
+        self.assertIn(crashing, script)
+        copy = self.base / "crash-copy"
+        (copy / "hooks").mkdir(parents=True, exist_ok=True)
+        if not (copy / "hooks" / "lib").exists():
+            (copy / "hooks" / "lib").symlink_to(ROOT / "hooks" / "lib")
+        patched = copy / "hooks" / "pre-push-validate.sh"
+        patched.write_text(script.replace(crashing, "for found in [1 // 0]:"))
+        for command, expected in (("g'i't pu'sh' origin main", 2), ("git push", 2), ("echo hello", 0)):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    [shutil.which("bash"), str(patched)],
+                    input=json.dumps({"tool_input": {"command": command}, "cwd": str(self.repo)}),
+                    text=True, capture_output=True, check=False, timeout=120,
+                    env={"PATH": os.pathsep.join([str(self.stubs), str(self.tool_dir(TOOLS))]), "HOME": str(self.base)},
+                )
+                self.assertEqual(expected, result.returncode, result.stderr)
 
     def test_the_git_value_flags_come_from_the_shared_tokenizer(self) -> None:
         script = HOOK.read_text()
