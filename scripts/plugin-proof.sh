@@ -13,9 +13,14 @@
 # the CHECK lines yourself, since a model's wording varies.
 #
 # Usage: scripts/plugin-proof.sh claude|codex [--home DIR]
-#   --home DIR  reuse a scratch HOME you already logged in to (the default is a
-#               new one; log in there first with `HOME=DIR claude` or
-#               `HOME=DIR codex login`, or export the provider's API key)
+#   --home DIR  reuse a scratch HOME you already prepared (the default is a
+#               new one)
+# Claude auth: a `/login` under a scratch HOME is not kept on macOS (the
+# keychain lives under the real HOME). Run `claude setup-token` in your normal
+# environment (it prints a one-year token and saves nothing; a Pro, Max, Team
+# or Enterprise plan) and export it as CLAUDE_CODE_OAUTH_TOKEN, or export
+# ANTHROPIC_API_KEY, which takes precedence and bills the API account.
+# Codex auth: `HOME=DIR codex login`, or export its API key.
 #
 # It never touches your real HOME: the plugin, its settings and the copy of
 # this checkout it edits all live in the scratch HOME. Codex runs plugin hooks
@@ -24,7 +29,7 @@
 
 set -u
 provider=${1:-}
-case $provider in claude | codex) shift ;; *) sed -n '3,23p' "$0"; exit 2 ;; esac
+case $provider in claude | codex) shift ;; *) sed -n '3,27p' "$0"; exit 2 ;; esac
 scratch=""
 if [ "${1:-}" = --home ]; then scratch=${2:?--home needs a directory}; fi
 [ -n "$scratch" ] || scratch=$(mktemp -d "${TMPDIR:-/tmp}/aitk-proof.XXXXXX")

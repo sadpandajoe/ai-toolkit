@@ -110,6 +110,11 @@ Existing `PROJECT.md` files keep working as plain notes (see `handoff`).
 | `prevent-project-commit.sh` | PreToolUse (Bash) | Runs `hooks/lib/git_guard.py`: blocks `--no-verify` and other hook bypasses, force-pushing or deleting `main`/`master`, commits of local notes (`PROJECT.md`, `PLAN.md`, `WATCH.md`, `CHERRY_PICK.md`, `CI_FIX.md`, `PROJECT_ARCHIVE.md`) or `.ai-toolkit/`, and a non-draft `gh pr create` or `gh pr revert`, `gh pr ready` or `gh pr merge` unless the user started the session with `AITK_PR_READY=1`. It also blocks `gh pr create` until `scripts/verify.py` has recorded a passing check on that exact tree; no override lifts that. A command that sets or exports `AITK_PR_READY` or `SKIP_PRECHECK` itself is blocked |
 | `pre-push-validate.sh` | PreToolUse (Bash) | Runs the repository's pre-commit (from the repo venv when it has one, or ruff) on changed files and pytest on changed test files before a push; a check past its time budget warns instead of blocking; `SKIP_PRECHECK=1` in the session environment skips it |
 
+The hooks see Bash commands only: a GitHub MCP connector's tools that open,
+ready or merge a pull request are not checked. If you connect one, deny those
+tools in `permissions.deny` in `~/.claude/settings.json`, as with the git
+bypass rules above.
+
 The git guard fails closed: without python3 it blocks git and `gh` commands
 rather than let them through. To turn the hooks off, Codex can disable each one
 in `/hooks`, or all of them with `hooks = false` under `[features]` in
