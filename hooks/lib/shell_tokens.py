@@ -1135,6 +1135,7 @@ class Command:
     unresolved: bool = False
     text: str = ""
     unreadable: bool = False
+    after_paren: bool = False  # follows a `)`: `$(command -v gh) pr merge` leaves `pr merge` here
 
     @property
     def name(self) -> str:
@@ -1295,21 +1296,7 @@ def commands(
             if include_assignments and effects.assignments:
                 yield Command([], assignments, target)
             continue
-        yield Command(rest, assignments, target)
-
-
-def positional(args: list[str], value_flags: set[str]) -> list[str]:
-    """Non-option arguments, skipping the values of `value_flags`."""
-    found: list[str] = []
-    skip = False
-    for arg in args:
-        if skip:
-            skip = False
-        elif arg in value_flags:
-            skip = True
-        elif not arg.startswith("-"):
-            found.append(arg)
-    return found
+        yield Command(rest, assignments, target, after_paren=first > 0 and tokens[first - 1] == ")")
 
 
 def truthy(value: str | None) -> bool:

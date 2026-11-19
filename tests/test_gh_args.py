@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import random
-import re
 import sys
 import unittest
 
@@ -99,7 +98,7 @@ def new_allows(verb: str, args: list[str]) -> bool:
 
 COMMON = ["-h", "--help", "--help=false", "-dh", "--", "-", "-R", "-R=o/r", "--repo", "--repo=o/r",
           "--hostname", "--hostname=h", "-t=", "-d=", "-d=false", "-fd=false", "-d=true",
-          "--draft=yes", "--draft=true", "--draft=false", "--undo=true", "--undo=false", "--bogus",
+          "-d=t", "-f=t", "--draft=yes", "--draft=true", "--draft=false", "--undo=true", "--undo=false", "--bogus",
           "-x", "-ft", "-fdt", "-dtx", "--title=-d", "--body=-h", "-h=false", "x", "-d", "-t", "t"]
 VERB_FLAGS = {
     "create": ["--draft", "-d", "--title", "-t", "--body", "-b", "-H", "--head", "--head=x",
@@ -110,11 +109,55 @@ VERB_FLAGS = {
 }
 
 
-# A short cluster that ends in a value flag with nothing after it (`-ft`, `-dH`) takes the next
-# word as its value, as pflag does. The old `is_draft` knew only the exact `-t` and read that
-# word as a flag, so it called a real draft (`-ft --repo -d`) not a draft: the one place the
-# new rules allow what the old ones blocked, and gh agrees with the new reading.
-OLD_MISREAD = re.compile(r"-[A-Za-z]+[aBbFHlmprTtR]")
+def old_takes_next_word(arg: str) -> bool:
+    """Whether the old short-flag scan took the word after `arg` as its value: its first value
+    character (`-ft`, `-dH`, `-d=t`) is the last one."""
+    if not arg.startswith("-") or arg.startswith("--") or len(arg) < 2 or arg in OLD_CREATE_VALUE_FLAGS:
+        return False  # the exact `-t` was always read right
+    for position, char in enumerate(arg[1:], start=2):
+        if char in OLD_CREATE_SHORT_VALUE:
+            return position == len(arg)
+    return False
+
+
+# The old `is_draft` and `create_flags` took the word after such an argument for a flag, so
+# `-ft --repo -d` or `-d=t -h` read as not a draft or not help, where pflag takes it as the
+# value and gh agrees with the new reading. The one widening the test accepts: dropping that
+# word (or reading `-d=t` as complete) makes the old rules allow the sample too.
+def pflag_fixed(sample: list[str], clusters: bool = True) -> list[str] | None:
+    """`sample` with the old scan's misreads undone, or None when it has none."""
+    fixed: list[str] = []
+    skip = False
+    changed = False
+    for index, arg in enumerate(sample):
+        if skip:
+            skip = False
+            continue
+        if old_takes_next_word(arg) and ("=" in arg or index + 1 < len(sample)):
+            changed = True
+            if "=" in arg:  # `-d=t` is complete: the next word is read as a flag
+                fixed.append(arg.split("=")[0])
+            elif clusters:  # `-ft` takes the next word as its value (is_draft only; create_flags knew it)
+                fixed.append(arg)
+                skip = True
+            else:
+                fixed.append(arg)
+        else:
+            fixed.append(arg)
+    return fixed if changed else None
+
+
+def old_misread(verb: str, sample: list[str]) -> bool:
+    fixed = pflag_fixed(sample)
+    return verb in {"create", "new"} and fixed is not None and old_allows(verb, ["pr", verb, *fixed])
+
+
+def last_undo_is_true(sample: list[str]) -> bool:
+    """`--undo=<true>` is the last `--undo` form, and no `--` comes before it."""
+    forms = [i for i, arg in enumerate(sample) if arg == "--undo" or arg.startswith("--undo=")]
+    if "--" in sample:
+        forms = [i for i in forms if i < sample.index("--")]
+    return bool(forms) and sample[forms[-1]].startswith("--undo=") and sample[forms[-1]][7:] in gh_args.TRUE
 
 
 class OnlyTightensTests(unittest.TestCase):
@@ -129,20 +172,29 @@ class OnlyTightensTests(unittest.TestCase):
                 if not new_allows(verb, args) or old_allows(verb, args):
                     continue
                 # gh turns `--undo=<true>` into the conversion to a draft: it publishes nothing
-                if verb == "ready" and any(arg.startswith("--undo=") and arg[7:] in gh_args.TRUE for arg in sample):
+                if verb == "ready" and last_undo_is_true(sample):
                     continue
-                if verb in {"create", "new"} and any(OLD_MISREAD.fullmatch(arg) for arg in sample):
+                if old_misread(verb, sample):
                     continue
                 widened.append(f"{verb} {sample}")
         self.assertEqual([], widened[:10])
+
+    def test_the_exemptions_stay_narrow(self) -> None:
+        self.assertFalse(new_allows("ready", ["pr", "ready", "--undo=true", "--undo=false"]))
+        self.assertFalse(new_allows("ready", ["pr", "ready", "--", "--undo=true"]))
+        self.assertFalse(new_allows("create", ["pr", "create", "-fb", "x"]))
+        self.assertTrue(last_undo_is_true(["--undo=false", "--undo=true"]))
+        self.assertFalse(last_undo_is_true(["--undo=true", "--undo"]))
+        self.assertFalse(last_undo_is_true(["--", "--undo=true"]))
 
     def test_help_in_the_verify_gate_only_tightens(self) -> None:
         rng = random.Random(7)
         alphabet = COMMON + VERB_FLAGS["create"]
         for _ in range(20000):
             args = ["pr", "create", *[rng.choice(alphabet) for _ in range(rng.randint(0, 5))]]
-            if gh_args.walk(args, "create").asks_help:
-                self.assertTrue(old_create_flags(args)[0], args)
+            if gh_args.walk(args, "create").asks_help and not old_create_flags(args)[0]:
+                fixed = pflag_fixed(args[2:], clusters=False)
+                self.assertTrue(fixed is not None and old_create_flags(["pr", "create", *fixed])[0], args)
 
 
 class WalkTests(unittest.TestCase):
@@ -183,19 +235,38 @@ class WalkTests(unittest.TestCase):
 
 
 class VerbTests(unittest.TestCase):
+    def test_h_is_no_boolean_above_the_verb(self) -> None:
+        self.assertEqual(["merge"], [v for v, _ in gh_args.pr_commands(["pr", "-sb", "-h", "12", "merge"])])
+        self.assertEqual([], gh_args.pr_commands(["pr", "-h", "view", "checks"]))
+        self.assertEqual(["pr"], gh_args.cobra_words(["--help", "pr"]))
+
+    def test_expansions_flag_positionals_and_cuts(self) -> None:
+        self.assertTrue(gh_args.walk(["12", "--undo", "$X"], "ready").expanded)
+        self.assertFalse(gh_args.walk(["--title", "$X", "--draft"], "create").expanded)
+        self.assertTrue(gh_args.walk(["--draft"], "create", cut=True).expanded)
+        self.assertFalse(gh_args.walk(["--draft", "--", "$X"], "create").expanded)
+        self.assertEqual(["merge"], [v for v, _ in gh_args.pr_commands(["gh`", "pr", "merge"], expands=True)])
+
     def test_both_readings(self) -> None:
-        self.assertEqual(["merge"], gh_args.pr_verbs(["pr", "-t", "view", "merge", "12"]))
-        self.assertEqual(["create"], gh_args.pr_verbs(["pr", "-t", "list", "create", "--fill"]))
-        self.assertEqual([], gh_args.pr_verbs(["pr", "-R", "o/r", "view", "12"]))
-        self.assertEqual(["merge"], gh_args.pr_verbs(["pr", "-t", "merge"]))  # the guard's reading
+        self.assertEqual(["merge"], verbs(["pr", "-t", "view", "merge", "12"]))
+        self.assertEqual(["create"], verbs(["pr", "-t", "list", "create", "--fill"]))
+        self.assertEqual([], verbs(["pr", "-R", "o/r", "view", "12"]))
+        self.assertEqual(["merge"], verbs(["pr", "-t", "merge"]))  # the guard's reading
 
     def test_expansions(self) -> None:
-        self.assertEqual([gh_args.UNKNOWN], gh_args.pr_verbs(["pr", "$V", "12"]))
-        self.assertEqual([gh_args.UNKNOWN], gh_args.pr_verbs(["$SUB", "merge", "12"]))
-        self.assertEqual([], gh_args.pr_verbs(["pr", "view", "$N"]))
-        self.assertEqual([], gh_args.pr_verbs(["run", "view", "$ID"]))
-        self.assertEqual(["merge"], gh_args.pr_verbs(["pr", "merge", "12"], expands=True))
-        self.assertEqual([], gh_args.pr_verbs(["$FILE"], expands=True))
+        self.assertEqual([gh_args.UNKNOWN], verbs(["pr", "$V", "12"]))
+        self.assertEqual([gh_args.UNKNOWN], verbs(["$SUB", "merge", "12"]))
+        self.assertEqual([gh_args.UNKNOWN], verbs(["pr", "{merge,}", "12"]))
+        self.assertEqual([], verbs(["pr", "view", "$N"]))
+        self.assertEqual([], verbs(["run", "view", "$ID"]))
+        self.assertEqual([], verbs(["--jq", "$Q", "api", "/x"]))
+        self.assertEqual([], verbs(["pr", "--json", "$F", "view", "12"]))
+        self.assertEqual(["merge"], verbs(["pr", "merge", "12"], expands=True))
+        self.assertEqual([], verbs(["$FILE"], expands=True))
+
+
+def verbs(args: list[str], expands: bool = False) -> list[str]:
+    return [verb for verb, _ in gh_args.pr_commands(args, expands)]
 
 
 if __name__ == "__main__":

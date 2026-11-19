@@ -21,6 +21,7 @@ sys.path.pop(0)
 VERIFY = ROOT / "scripts" / "verify.py"
 WRAPPER = ROOT / "hooks" / "prevent-project-commit.sh"
 CREATE = "gh pr create --draft --fill"
+READY = {"AITK_PR_READY": "1"}  # past the draft rule, to reach the verify gate
 OVERRIDES = ("AITK_PR_READY", "SKIP_PR_GATE", "SKIP_PRECHECK")
 
 
@@ -251,6 +252,19 @@ class VerifyGateTests(unittest.TestCase):
         self.assertIsNone(self.gate(command=f"{CREATE} --head feature"))
         self.assert_blocked(command=f"{CREATE} --head other")
         self.assert_blocked("not a local branch", command=f"{CREATE} -H someone:missing")
+
+    def test_a_word_that_may_hide_a_flag_or_a_command_is_a_creation_the_gate_checks(self) -> None:
+        for command in (
+            "$(command -v gh) pr create --draft --fill",
+            "`which gh` pr create --draft --fill",
+            '"${GH:-gh}" pr create --draft --fill',
+            "{gh,} pr create --draft --fill",
+        ):
+            with self.subTest(command=command):
+                self.assert_blocked("no check has been recorded", command=command)
+        self.assert_blocked("Spell the flags out", command="H='--head other'; gh pr create --draft --fill $H", env=READY)
+        self.assert_blocked("`--some-new-flag`", "gh 2.103.0", command="gh pr create --draft --fill --some-new-flag", env=READY)
+        self.assert_blocked("Write the command and the verb literally", command="gh pr $V --draft --fill", env=READY)
 
     def test_flags_are_read_the_way_gh_reads_them(self) -> None:
         # a flag's value is no flag: `-h` as a title or `--help` as a body asks for no help

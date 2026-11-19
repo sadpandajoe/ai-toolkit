@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
 from pathlib import Path
 import shutil
 import signal
@@ -327,6 +328,43 @@ PR_PUBLISH_BLOCK = (
     # `--repo` takes `--undo` as its value, and `--undo=false` is no undo
     "gh pr ready 12 --repo --undo",
     "gh pr ready 12 --undo=false",
+    # `-h` is no cobra boolean at the root or `pr` level: it takes the next word
+    "gh pr -sb -h 12 merge",
+    "gh -sb -h 12 pr merge",
+    "gh pr -sb --h 12 merge",
+    "gh pr -db -h 12 revert --draft=false",
+    "gh pr -rb -h create merge",
+    # text the guard cannot parse: every gated match counts, a draft flag only in its own command
+    "gh pr revert 9 --draft && gh pr ready 12 'x",
+    "gh pr create -d --fill; gh pr merge 12 'x",
+    "gh pr create --fill; ls -d . 'x",
+    "gh pr revert 9; ls -d . 'x",
+    # a command name behind an expansion, in every form
+    '"${{GH:-/usr/local/bin/gh}}" pr merge 12',
+    '"$(realpath /usr/local/bin/gh)" pr merge 12',
+    "g=gx; ${{g/x/h}} pr merge 12",
+    "$(command -v gh) pr merge 12",
+    "`which gh` pr merge 12",
+    "{{gh,}} pr merge 12",
+    "gh {{pr,}} merge 12",
+    "gh pr {{merge,}} 12",
+    "gh pr merg[e] 12",
+    # a positional that may become a flag grants no draft, help or undo
+    "X=--draft=false; gh pr create --fill --draft $X",
+    "X=--undo=false; gh pr ready 12 --undo $X",
+    "X=--help=false; gh pr merge 12 --squash --help $X",
+    "X=--help=false; gh pr create --fill --help $X",
+    "gh pr create --fill --draft {{--draft=false,}}",
+    "gh pr ready --undo \"$PR\"",
+    # flags past an unquoted substitution are not read
+    "gh pr create --draft --fill --title $(echo t) --draft=false",
+    "gh pr ready 12 --undo $(true) --undo=false",
+    "gh pr create --draft --fill --title >(cat) --draft=false",
+    # the unknown verb
+    "gh pr $V 12",
+    "gh $SUB list",
+    'gh "$@"',
+    "for v in view checks; do gh pr $v 12; done",
     # a flag's value is no request for help: gh opens a non-draft PR titled `-h`
     "gh pr create --title -h --body x",
     "gh pr create -t t --body --help",
@@ -492,6 +530,12 @@ PR_PUBLISH_BLOCK = (
 # environment: no override there, no ready PR from the toolkit's own commands.
 PR_PUBLISH_LIMITS = (
     "watch 'gh pr ready 12'",
+    # a variable that holds more than the name, and one behind an unknown wrapper
+    "c='gh pr'; $c merge 12",
+    "c='gh pr merge'; $c 12",
+    "c='gh pr merge 12'; $c",
+    "g=gh; setsid $g pr merge 12",
+    'setsid "$GH" pr merge 12',
     "tmux new-session -d 'gh pr merge 12'",
     # other places git runs a shell it was given: filters
     "git filter-branch --index-filter 'gh pr ready 12' HEAD",
@@ -532,6 +576,10 @@ PR_PUBLISH_ALLOW = (
     "gh pr view $N --json body",
     "gh pr -R o/r view 12",
     "gh run view $ID --log-failed",
+    'gh --jq "$Q" api /x',
+    "gh pr --json $F view 12",
+    'gh pr create --title "$T" -b "$B" --draft --fill',
+    "gh pr -h view checks",
     "gh pr merge --help",
     "gh pr view 12",
     "GH pr view 12",
@@ -1108,6 +1156,26 @@ class GitGuardHookTests(unittest.TestCase):
     def test_ordinary_commands_are_allowed(self) -> None:
         self.assert_cases(CLEAN_ALLOW, self.clean, 0)
         self.assert_cases(("echo --no-verify", "echo git commit --no-verify"), self.staged, 0)
+
+    def test_nested_text_the_guard_cannot_parse_is_read_in_every_gated_match(self) -> None:
+        for inner in (
+            "gh pr revert 9 -d; gh pr merge 12",
+            "gh pr revert 9 --draft && gh pr ready 12",
+            "gh pr create -d --fill; gh pr merge 12",
+            "gh pr create --fill; ls -d .",
+            "gh pr revert 9; ls -d .",
+        ):
+            command = inner
+            for _ in range(5):
+                command = "sh -c " + shlex.quote(command)
+            with self.subTest(inner=inner):
+                result = self.run_hook(command, self.verified)
+                self.assertEqual(2, result.returncode, result.stderr)
+
+    def test_an_unreadable_verb_asks_for_the_literal_command(self) -> None:
+        result = self.run_hook("gh pr $V 12", self.verified)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("Write the command and the verb literally", result.stderr)
 
     def test_state_commit_names_the_files(self) -> None:
         result = self.run_hook("git add .ai-toolkit/config.json && git commit -m config", self.clean)

@@ -98,8 +98,12 @@ checks nothing is visible in the record. Its known limits:
 - the guard reads the command's text. `gh` behind a variable or an escape
   (`"$GH" pr ready 12`) and a verb a variable hides (`gh pr $V 12`) are gated,
   and flags are read as gh's pflag does, from gh 2.103.0's tables
-  (`hooks/lib/gh_args.py`; a flag a newer gh adds grants no draft or help). A
-  function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and
+  (`hooks/lib/gh_args.py`; a flag a newer gh adds grants no draft or help),
+  and `gh pr revert` is gated like `create`. A positional word with an expansion
+  grants no draft, help or undo (accepted over-block: `gh pr ready --undo
+  "$PR"`). A function wrapper (`g() { gh "$@"; }; g pr merge 12`), an expanded
+  name behind an unknown wrapper (`g=gh; setsid $g pr merge 12`), a variable
+  that holds more than the name (`c='gh pr'; $c merge 12`), `gh` aliases and
   extensions, `gh api .../pulls` and connector tools open a PR unseen;
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
   model: a subshell's `cd` is restored, and a `cd` that may not have run (after

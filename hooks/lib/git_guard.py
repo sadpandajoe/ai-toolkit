@@ -16,7 +16,7 @@ Blocked:
   earlier in the same command (`git add PROJECT.md && git commit`): the hook
   runs before the add, so the staged set is `git diff --cached` plus what those
   adds would stage;
-- `gh pr create` (or `gh pr new`) without `--draft`, and `gh pr ready` and
+- `gh pr create` (or `gh pr new`, `gh pr revert`) without `--draft`, and `gh pr ready` and
   `gh pr merge`, unless the user set `AITK_PR_READY=1` in the environment the
   session started with (set only when the user asked in words);
 - `gh pr create` (or `gh pr new`) whose commit has no passing check recorded on
@@ -139,7 +139,7 @@ with a `git` word, and `git config alias.NAME ...`; a bare `alias.NAME` word alo
 wrapper in front), are only checked for a MENTION of a gated operation after the quote characters,
 backslashes and backticks are removed (`shell_tokens.mentions_gated`: `gh` followed
 later by `pr`, `git` followed later by `push`, a bare `push`, `pr ready`/`merge`/
-`create`/`new`). A mention makes the command unreadable and it blocks. No alias is
+`create`/`new`/`revert`). A mention makes the command unreadable and it blocks. No alias is
 looked up, so a builtin and an alias are not told apart. Plain `git rebase -x 'make
 test'`, `git bisect run ./t.sh`, `git submodule foreach 'echo $name'` and `git -c
 alias.st=status st` are not affected. Budget: the traversal charges the characters of
@@ -157,10 +157,17 @@ alias that is never invoked, `git rebase -x 'echo push'`, a filename such as
 head (`echo '()' '{' gh pr ready 12`). Flags and the verb are read as gh's own parser
 does (`gh_args`, with the flag tables of gh 2.103.0: a version assumption, so a flag a newer
 gh adds is unknown and grants no draft, help or undo). A command name or verb that holds a
-`$` or a backtick (`"$GH" pr ready 12`, `gh pr $V 12`) is read as gh or as an unknown verb,
-which is gated; `gh pr revert` is gated like `create`. Known limits, each a real `gh pr
+variable, substitution, brace or glob (`"$GH" pr ready 12`, `$(command -v gh) pr merge 12`,
+`{gh,} pr merge 12`, `gh pr $V 12`) is read as gh or as an unknown verb (cobra's reading
+decides it), which is gated; `gh pr revert` is gated like `create`. A positional word with an
+expansion (`--draft $X`), or flags after an unquoted `$(`/`<(`, grant no draft, help or undo
+(accepted over-block: `gh pr ready --undo "$PR"`), and a creation with one fails the verify
+gate. Known limits, each a real `gh pr
 ready`/`merge` it does not see (pinned in `PR_PUBLISH_LIMITS`): `gh` reached through a
-function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and extensions, a
+function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and extensions, an
+expanded name behind an unknown wrapper (`g=gh; setsid $g pr merge 12`: rescanning from every
+expansion word could spend the work budget on ordinary commands), a variable that holds more
+than the name (`c='gh pr'; $c merge 12`), a
 quoted command string handed to a wrapper that runs it through a shell without `-c` (`watch 'gh pr ready 12'`, `tmux new-session '...'`), every
 git config value or tool option that runs a shell other than an inline alias (`git
 filter-branch` filters, `git -c core.pager=...`, `-c credential.helper='!...'`, `git
@@ -1159,9 +1166,14 @@ PR_PUBLISH_EFFECT = {
     "create": "without `--draft` opens a pull request ready for review (add `--draft`)",
     "new": "without `--draft` opens a pull request ready for review (add `--draft`)",
     "revert": "without `--draft` opens a pull request ready for review (add `--draft`)",
-    gh_args.UNKNOWN: "names a verb the guard cannot read (a shell expansion), which may publish or merge",
 }
-PR_PUBLISH_VERB = {gh_args.UNKNOWN: "<verb>"}
+PR_PUBLISH_UNKNOWN = (
+    "the guard cannot read which gh command or verb this runs (a shell expansion in its name "
+    "or verb), and `gh pr ready`, `gh pr merge` and a non-draft `gh pr create` need the user's "
+    "explicit request in words (rules/universal.md). Write the command and the verb literally "
+    "(`gh pr view 12`, not `gh pr $V 12`)."
+)
+PR_PUBLISH_UNTRUSTED = " The guard cannot rely on this command's flags ({why}); spell them out."
 # `gh`, then `pr`, then the verb, each searched after the one before it: linear in the text
 UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new|revert)\b"))
 DRAFT_FLAG = re.compile(r"(?<![\w-])(?:--draft(?:=(?:true|1|t))?|-[A-Za-z]*d[A-Za-z]*)(?![\w=-])")
@@ -1231,7 +1243,7 @@ def check_override_assignment(command: str, cwd: str) -> None:
 
 
 def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
-    """A non-draft `gh pr create`, `gh pr ready` and `gh pr merge` need the
+    """A non-draft `gh pr create`/`new`/`revert`, `gh pr ready` and `gh pr merge` need the
     user's AITK_PR_READY=1, read only from the session environment."""
     if shell_tokens.truthy(environ.get("AITK_PR_READY")):
         return
@@ -1242,14 +1254,46 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
             # proves nothing either way
             raise block(PR_PUBLISH_UNREADABLE)
         if found.unresolved:
-            match = shell_tokens.words_in_order(found.text, *UNRESOLVED_PR_PUBLISH)
-            # Unparseable: trust `--draft` on a creation only when the raw text carries it.
-            if match and not (match.group(1) in {"create", "new", "revert"} and DRAFT_FLAG.search(found.text)):
-                raise block(PR_PUBLISH_MESSAGE.format(verb=match.group(1), effect=PR_PUBLISH_EFFECT[match.group(1)]))
+            for verb in unresolved_gated(found.text):
+                raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
             continue
-        for verb in gh_verbs(found):
-            if not publishes_nothing(verb, gh_args.walk(found.argv[1:], verb)):
-                raise block(PR_PUBLISH_MESSAGE.format(verb=PR_PUBLISH_VERB.get(verb, verb), effect=PR_PUBLISH_EFFECT[verb]))
+        for verb, args, cut in gh_verbs(found):
+            flags = gh_args.walk(args, verb, cut)
+            if verb == gh_args.UNKNOWN:
+                raise block(PR_PUBLISH_UNKNOWN)
+            if not publishes_nothing(verb, flags):
+                note = "" if flags.trusted else PR_PUBLISH_UNTRUSTED.format(why=untrusted_reason(flags, cut))
+                raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]) + note)
+
+
+def unresolved_gated(text: str) -> Iterator[str]:
+    """The gated verb of every `gh pr VERB` in text that did not parse. `ready` and `merge`
+    always count; a creation or revert counts unless a draft flag sits in the same separated
+    command. Each search starts where the last match ended, so the scan is linear."""
+    for command in COMMAND_SEPARATOR.split(text):
+        position = 0
+        drafted = None  # DRAFT_FLAG is searched at most once per command
+        while True:
+            match = None
+            for pattern in UNRESOLVED_PR_PUBLISH:
+                match = pattern.search(command, position)
+                if match is None:
+                    break
+                position = match.end()
+            if match is None:
+                break
+            if drafted is None:
+                drafted = DRAFT_FLAG.search(command) is not None
+            if match.group(1) in {"ready", "merge"} or not drafted:
+                yield match.group(1)
+
+
+def untrusted_reason(flags: gh_args.Flags, cut: bool) -> str:
+    if flags.unknown_flags:
+        return f"it has the flag `{flags.unknown_flags[0]}`, which gh 2.103.0 does not have"
+    if cut:
+        return "an unquoted `$(` or `<(` ends the words the guard can read"
+    return "a word with a variable, brace or glob may become a flag"
 
 
 def publishes_nothing(verb: str, flags: gh_args.Flags) -> bool:
@@ -1262,14 +1306,26 @@ def publishes_nothing(verb: str, flags: gh_args.Flags) -> bool:
     return verb == "merge" and flags.asks_help
 
 
-def gh_verbs(found: shell_tokens.Command) -> list[str]:
-    """The gated `gh pr` verbs one command can run (see `gh_args.pr_verbs`). A command
-    name that holds an expansion (`"$GH"`, `$g`) is read as gh."""
+CUT_TOKENS = {"$", "<", ">"}  # what an unquoted `$(`, `<(` or `>(` leaves at the end of a command
+
+
+def gh_verbs(found: shell_tokens.Command) -> list[tuple[str, list[str], bool]]:
+    """The gated `gh pr` verbs one command can run, with the arguments to read for each and
+    whether the command is cut by a substitution (see `gh_args.pr_commands`). A command name
+    that holds an expansion (`"$GH"`, `${g/x/h}`, `{gh,}`), or a command that follows a `)`
+    (`$(command -v gh) pr merge`), is read as gh."""
+    if not found.argv:
+        return []
+    cut = found.argv[-1] in CUT_TOKENS
     if found.is_gh:
-        return gh_args.pr_verbs(found.argv[1:])
-    if found.argv and gh_args.has_expansion(found.name):
-        return gh_args.pr_verbs(found.argv[1:], expands=True)
-    return []
+        commands = gh_args.pr_commands(found.argv[1:])
+    elif gh_args.has_expansion(found.argv[0]):
+        commands = gh_args.pr_commands(found.argv[1:], expands=True)
+    elif found.after_paren:
+        commands = gh_args.pr_commands(found.argv, expands=True)
+    else:
+        return []
+    return [(verb, args, cut) for verb, args in commands]
 
 
 PR_VERIFY_BLOCK = "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. {remedy}"
@@ -1308,6 +1364,21 @@ PR_VERIFY_UNREADABLE = (
     "this command could not be read in full, so the guard cannot rule out a `gh pr create` in it, "
     "and the PR gate has no override. Run `gh pr create` as a plain command from the repository "
     "and the rest as plain commands; if this one cannot be split, stop and tell the user."
+)
+PR_VERIFY_UNKNOWN = (
+    "the guard cannot read which gh command or verb this runs (a shell expansion), so it cannot "
+    "rule out a `gh pr create`, and the PR gate has no override. Write the command and the "
+    "verb literally."
+)
+PR_VERIFY_UNKNOWN_FLAG = (
+    "`gh pr create` has the flag `{flag}`, which the guard does not know (it knows gh 2.103.0's "
+    "flags), so it cannot tell which branch it opens (`--head` may hide behind it), and the PR "
+    "gate has no override. Use only flags gh 2.103.0 has."
+)
+PR_VERIFY_EXPANDED = (
+    "`gh pr create` has a word with a variable, brace or glob that may become a flag (`--head x`), "
+    "so the guard cannot tell which branch it opens, and the PR gate has no override. Spell "
+    "the flags out."
 )
 VERIFY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts", "verify.py")
 CREATE_WORD = re.compile(r"\b(create|new)\b")
@@ -1364,12 +1435,18 @@ def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
             if shell_tokens.words_in_order(found.text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
                 raise block(PR_VERIFY_UNREADABLE)
             continue
-        for verb in gh_verbs(found):
+        for verb, args, cut in gh_verbs(found):
             if verb not in {"create", "new", gh_args.UNKNOWN}:
                 continue  # a revert's tree is made on the server
-            flags = gh_args.walk(found.argv[1:], verb)
-            if flags.asks_help and verb != gh_args.UNKNOWN:
+            if verb == gh_args.UNKNOWN:
+                raise block(PR_VERIFY_UNKNOWN)
+            flags = gh_args.walk(args, verb, cut)
+            if flags.asks_help:
                 continue
+            if flags.unknown_flags:
+                raise block(PR_VERIFY_UNKNOWN_FLAG.format(flag=flags.unknown_flags[0]))
+            if flags.expanded:
+                raise block(PR_VERIFY_EXPANDED)
             if found.workdir is None:
                 raise block(
                     "the guard cannot follow the directory this `gh pr create` runs in, so it "
