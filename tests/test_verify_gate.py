@@ -257,6 +257,11 @@ class VerifyGateTests(unittest.TestCase):
         self.assert_blocked("no check has been recorded", command="gh pr create --draft --title -h --body x")
         self.assert_blocked("no check has been recorded", command="gh pr create --draft --title t --body --help")
         self.assert_blocked("no check has been recorded", command="gh pr new --draft --fill")
+        # the verb as gh finds it (an unknown flag before it takes the next word), or one the
+        # guard cannot read, is a creation the gate checks
+        for command in ("gh pr -t list create --draft --fill", "V=create; gh pr $V --draft --fill"):
+            with self.subTest(command=command):
+                self.assert_blocked(command=command)
         # nor is `--help=false`, or a value of a flag gh has and the guard must know;
         # help is read only as a word of its own, never inside a bundle (`-fh`)
         for command in (

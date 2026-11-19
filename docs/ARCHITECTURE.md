@@ -95,8 +95,12 @@ checks nothing is visible in the record. Its known limits:
 - it keeps the last 20 runs, so 20 further runs on an unchanged tree drop a
   failure;
 - it is a plain file: deleting it or writing it by hand goes unseen;
-- the guard reads the command's text, so `gh` behind a variable or an escape,
-  `gh alias set`, `gh api .../pulls` and connector tools open a PR unseen;
+- the guard reads the command's text. `gh` behind a variable or an escape
+  (`"$GH" pr ready 12`) and a verb a variable hides (`gh pr $V 12`) are gated,
+  and flags are read as gh's pflag does, from gh 2.103.0's tables
+  (`hooks/lib/gh_args.py`; a flag a newer gh adds grants no draft or help). A
+  function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and
+  extensions, `gh api .../pulls` and connector tools open a PR unseen;
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
   model: a subshell's `cd` is restored, and a `cd` that may not have run (after
   `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in

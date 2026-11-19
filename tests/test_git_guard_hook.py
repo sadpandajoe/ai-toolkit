@@ -299,6 +299,34 @@ PR_PUBLISH_BLOCK = (
     "gh pr merge 'unbalanced",
     # A PR opens as a draft.
     "gh pr create --title t --body b",
+    # the verb as gh finds it: an unknown flag before it takes the next word as its value
+    "gh pr -t view merge 12",
+    "gh pr --body view merge 12",
+    "gh pr -t list create --fill",
+    # a verb or a gh the guard cannot read
+    "V=merge; gh pr $V 12",
+    'gh "$SUB" merge 12',
+    "g=gh; $g pr merge 12",
+    '"$GH" pr ready 12',
+    "${{GH}} pr merge 12",
+    # gh pr revert opens a pull request
+    "gh pr revert 12",
+    "gh pr revert 12 --title -d",
+    # flags as pflag reads them: `-d` is the title, a value it cannot parse sets nothing
+    "gh pr create -ft -d",
+    "gh pr create -d=false --fill",
+    "gh pr create -fd=false",
+    "gh pr create --draft=tRuE --fill",
+    "gh pr create --draft=yes --fill",
+    # a flag the tables do not know grants no draft, help or undo
+    "gh pr create --some-new-flag --draft --fill",
+    # a flag's value is no request for help, on every verb
+    "gh pr merge 12 --squash --body -h",
+    "gh pr merge 12 -b --help",
+    "gh pr merge 12 --subject -h",
+    # `--repo` takes `--undo` as its value, and `--undo=false` is no undo
+    "gh pr ready 12 --repo --undo",
+    "gh pr ready 12 --undo=false",
     # a flag's value is no request for help: gh opens a non-draft PR titled `-h`
     "gh pr create --title -h --body x",
     "gh pr create -t t --body --help",
@@ -463,7 +491,6 @@ PR_PUBLISH_BLOCK = (
 # guard does not see, so it is allowed. The protection that holds is the session
 # environment: no override there, no ready PR from the toolkit's own commands.
 PR_PUBLISH_LIMITS = (
-    "g=gh; $g pr merge 12",
     "watch 'gh pr ready 12'",
     "tmux new-session -d 'gh pr merge 12'",
     # other places git runs a shell it was given: filters
@@ -490,6 +517,21 @@ PR_PUBLISH_LIMITS = (
 
 PR_PUBLISH_ALLOW = (
     "gh pr ready 12 --undo",
+    "gh pr ready 12 --undo=true",
+    "gh pr ready --undo -R o/r 12",
+    "gh pr revert 12 --draft",
+    "gh pr revert 12 -d -t t",
+    "gh pr create -d=true --fill",
+    "gh pr create --draft=T --fill",
+    "gh pr create -fd=1",
+    "gh pr create --fill -t x -d",
+    "gh pr merge -h",
+    "gh -R o/r pr merge --help",
+    '"$GH" pr view 12',
+    "gh pr view \"$N\"",
+    "gh pr view $N --json body",
+    "gh pr -R o/r view 12",
+    "gh run view $ID --log-failed",
     "gh pr merge --help",
     "gh pr view 12",
     "GH pr view 12",

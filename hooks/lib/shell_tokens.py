@@ -572,7 +572,7 @@ class Payload:
 
 
 QUOTING = re.compile(r"['\"\\`]")
-GATED_BARE = re.compile(r"\bpush\b|\bpr\s+(?:ready|merge|create|new)\b")
+GATED_BARE = re.compile(r"\bpush\b|\bpr\s+(?:ready|merge|create|new|revert)\b")
 WORD_GH = re.compile(r"\bgh\b", re.I)
 WORD_GIT = re.compile(r"\bgit\b", re.I)
 WORD_PR = re.compile(r"\bpr\b")

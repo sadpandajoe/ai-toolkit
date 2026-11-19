@@ -154,10 +154,14 @@ on commands that only carry such a word after an unknown head (`ssh host gh pr m
 words git runs (a commit message that says `gh pr merge` next to `-c alias.x=...`, an
 alias that is never invoked, `git rebase -x 'echo push'`, a filename such as
 `./push.sh`), and on a quoted `()` followed by a quoted `{`, which reads as a function
-head (`echo '()' '{' gh pr ready 12`). Known limits, each a real `gh pr ready`/`merge`
-it does not see (pinned in `PR_PUBLISH_LIMITS`): `gh` reached through a variable
-(`g=gh; $g pr merge 12`), a quoted command string handed to a wrapper that runs it
-through a shell without `-c` (`watch 'gh pr ready 12'`, `tmux new-session '...'`), every
+head (`echo '()' '{' gh pr ready 12`). Flags and the verb are read as gh's own parser
+does (`gh_args`, with the flag tables of gh 2.103.0: a version assumption, so a flag a newer
+gh adds is unknown and grants no draft, help or undo). A command name or verb that holds a
+`$` or a backtick (`"$GH" pr ready 12`, `gh pr $V 12`) is read as gh or as an unknown verb,
+which is gated; `gh pr revert` is gated like `create`. Known limits, each a real `gh pr
+ready`/`merge` it does not see (pinned in `PR_PUBLISH_LIMITS`): `gh` reached through a
+function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and extensions, a
+quoted command string handed to a wrapper that runs it through a shell without `-c` (`watch 'gh pr ready 12'`, `tmux new-session '...'`), every
 git config value or tool option that runs a shell other than an inline alias (`git
 filter-branch` filters, `git -c core.pager=...`, `-c credential.helper='!...'`, `git
 difftool -x`, `sequence.editor`, `core.editor`, `diff.external`, `core.sshCommand` and
@@ -205,6 +209,7 @@ import subprocess
 import sys
 from typing import Iterator
 
+import gh_args
 import shell_tokens
 import verify_record
 
@@ -229,7 +234,6 @@ MENTIONS_GIT = re.compile(r"\bgit\b|\bgh\b", re.I)
 # The in-process time limit of `main()`. A hook past its timeout in hooks/hooks.json (30 s)
 # fails open, so the guard stops itself first and blocks what it could not finish reading.
 DEADLINE_SECONDS = 20.0
-GH_GLOBAL_VALUE_FLAGS = {"-R", "--repo", "--hostname"}
 PROTECTED_DIRECTORY = ".ai-toolkit"
 
 
@@ -1154,43 +1158,13 @@ PR_PUBLISH_EFFECT = {
     "merge": "merges a pull request",
     "create": "without `--draft` opens a pull request ready for review (add `--draft`)",
     "new": "without `--draft` opens a pull request ready for review (add `--draft`)",
+    "revert": "without `--draft` opens a pull request ready for review (add `--draft`)",
+    gh_args.UNKNOWN: "names a verb the guard cannot read (a shell expansion), which may publish or merge",
 }
+PR_PUBLISH_VERB = {gh_args.UNKNOWN: "<verb>"}
 # `gh`, then `pr`, then the verb, each searched after the one before it: linear in the text
-UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new)\b"))
-# gh pr create flags that take a value, so the draft scan skips their values.
-CREATE_VALUE_FLAGS = {
-    "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file",
-    "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project",
-    "-r", "--reviewer", "-T", "--template", "-t", "--title", "-R", "--repo",
-    "--hostname", "--attach", "--recover",
-}
-CREATE_SHORT_VALUE = {"a", "B", "b", "F", "H", "l", "m", "p", "r", "T", "t", "R"}
+UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new|revert)\b"))
 DRAFT_FLAG = re.compile(r"(?<![\w-])(?:--draft(?:=(?:true|1|t))?|-[A-Za-z]*d[A-Za-z]*)(?![\w=-])")
-
-
-def is_draft(args: list[str]) -> bool:
-    """Whether a `gh pr create` argument list asks for a draft PR."""
-    draft = False
-    skip = False
-    for arg in args:
-        if skip:
-            skip = False
-            continue
-        if arg == "--":
-            break
-        if arg in CREATE_VALUE_FLAGS:
-            skip = True
-        elif arg == "--draft":
-            draft = True
-        elif arg.startswith("--draft="):
-            draft = arg.split("=", 1)[1].strip().lower() in {"true", "1", "t"}
-        elif arg.startswith("-") and not arg.startswith("--") and len(arg) > 1:
-            for char in arg[1:]:
-                if char == "d":
-                    draft = True
-                if char in CREATE_SHORT_VALUE:
-                    break
-    return draft
 
 
 OVERRIDE_VARIABLES = ("AITK_PR_READY", "SKIP_PRECHECK")
@@ -1270,24 +1244,32 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
         if found.unresolved:
             match = shell_tokens.words_in_order(found.text, *UNRESOLVED_PR_PUBLISH)
             # Unparseable: trust `--draft` on a creation only when the raw text carries it.
-            if match and not (match.group(1) in {"create", "new"} and DRAFT_FLAG.search(found.text)):
+            if match and not (match.group(1) in {"create", "new", "revert"} and DRAFT_FLAG.search(found.text)):
                 raise block(PR_PUBLISH_MESSAGE.format(verb=match.group(1), effect=PR_PUBLISH_EFFECT[match.group(1)]))
             continue
-        if not found.is_gh:
-            continue
-        args = found.argv[1:]
-        words = shell_tokens.positional(args, GH_GLOBAL_VALUE_FLAGS)
-        if words[:2] not in (["pr", "ready"], ["pr", "merge"], ["pr", "create"], ["pr", "new"]):
-            continue
-        if words[1] in {"create", "new"}:
-            # a flag's value is no request for help (`--title -h`): read the flags as gh does
-            if create_flags(args)[0] or is_draft(args):
-                continue
-        elif {"-h", "--help"} & set(args):
-            continue
-        if words[1] == "ready" and "--undo" in args:
-            continue  # converting back to a draft publishes nothing
-        raise block(PR_PUBLISH_MESSAGE.format(verb=words[1], effect=PR_PUBLISH_EFFECT[words[1]]))
+        for verb in gh_verbs(found):
+            if not publishes_nothing(verb, gh_args.walk(found.argv[1:], verb)):
+                raise block(PR_PUBLISH_MESSAGE.format(verb=PR_PUBLISH_VERB.get(verb, verb), effect=PR_PUBLISH_EFFECT[verb]))
+
+
+def publishes_nothing(verb: str, flags: gh_args.Flags) -> bool:
+    """Whether `gh pr VERB` with these flags opens, readies or merges nothing: help, a draft
+    (create, new, revert), or `--undo` (ready, which converts back to a draft)."""
+    if verb in {"create", "new", "revert"}:
+        return flags.on("draft") or flags.asks_help
+    if verb == "ready":
+        return flags.on("undo") or flags.asks_help
+    return verb == "merge" and flags.asks_help
+
+
+def gh_verbs(found: shell_tokens.Command) -> list[str]:
+    """The gated `gh pr` verbs one command can run (see `gh_args.pr_verbs`). A command
+    name that holds an expansion (`"$GH"`, `$g`) is read as gh."""
+    if found.is_gh:
+        return gh_args.pr_verbs(found.argv[1:])
+    if found.argv and gh_args.has_expansion(found.name):
+        return gh_args.pr_verbs(found.argv[1:], expands=True)
+    return []
 
 
 PR_VERIFY_BLOCK = "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. {remedy}"
@@ -1329,45 +1311,6 @@ PR_VERIFY_UNREADABLE = (
 )
 VERIFY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts", "verify.py")
 CREATE_WORD = re.compile(r"\b(create|new)\b")
-
-
-def create_flags(args: list[str]) -> tuple[bool, list[str]]:
-    """`gh pr create`'s arguments as gh reads them: whether they ask for help, and every
-    `--head` given. A value flag takes the next word whatever it looks like (`--title -h`),
-    and short flags bundle (`-dH other`, `-dHother`, `-H=other`). Help is only a bare `-h`
-    or `--help`: gh honours `--help=false` and runs the command, so reading anything wider
-    as help would let a real `gh pr create` through."""
-    asks_help = False
-    heads: list[str] = []
-    index = 0
-    while index < len(args):
-        arg = args[index]
-        index += 1
-        if arg == "--":
-            break
-        if arg in {"-h", "--help"}:
-            asks_help = True
-        elif arg.startswith("--"):
-            name, given, value = arg.partition("=")
-            if name in CREATE_VALUE_FLAGS:
-                if not given:
-                    value = args[index] if index < len(args) else ""
-                    index += 1
-                if name == "--head":
-                    heads.append(value)
-        elif arg.startswith("-") and len(arg) > 1:
-            for position, char in enumerate(arg[1:], start=2):
-                if char in CREATE_SHORT_VALUE:
-                    value = arg[position:]
-                    if value.startswith("="):
-                        value = value[1:]
-                    elif not value:
-                        value = args[index] if index < len(args) else ""
-                        index += 1
-                    if char == "H":
-                        heads.append(value)
-                    break
-    return asks_help, heads
 
 
 def refuse(reason: str, remedy: str, **values: str) -> Blocked:
@@ -1421,21 +1364,18 @@ def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
             if shell_tokens.words_in_order(found.text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
                 raise block(PR_VERIFY_UNREADABLE)
             continue
-        if not found.is_gh:
-            continue
-        args = found.argv[1:]
-        words = shell_tokens.positional(args, GH_GLOBAL_VALUE_FLAGS)
-        if words[:2] not in (["pr", "create"], ["pr", "new"]):
-            continue
-        asks_help, heads = create_flags(args)
-        if asks_help:
-            continue
-        if found.workdir is None:
-            raise block(
-                "the guard cannot follow the directory this `gh pr create` runs in, so it "
-                "cannot check which commit it opens. Run it as a plain command from the repository."
-            )
-        require_verified(found.workdir, heads)
+        for verb in gh_verbs(found):
+            if verb not in {"create", "new", gh_args.UNKNOWN}:
+                continue  # a revert's tree is made on the server
+            flags = gh_args.walk(found.argv[1:], verb)
+            if flags.asks_help and verb != gh_args.UNKNOWN:
+                continue
+            if found.workdir is None:
+                raise block(
+                    "the guard cannot follow the directory this `gh pr create` runs in, so it "
+                    "cannot check which commit it opens. Run it as a plain command from the repository."
+                )
+            require_verified(found.workdir, flags.heads)
 
 
 def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
