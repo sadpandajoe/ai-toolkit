@@ -1206,6 +1206,55 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertIn("ask the user", merge.stderr)
         self.assertNotIn("AITK_PR_READY", merge.stderr)
 
+    def test_gh_api_calls_that_publish_a_pr_follow_the_pr_rules(self) -> None:
+        merge_or_ready = (
+            "gh api -X PUT repos/o/r/pulls/12/merge",
+            "gh api --method=put repos/{{owner}}/{{repo}}/pulls/12/merge",
+            "gh api -iX PUT repos/o/r/pulls/12/merge",
+            "gh api repos/o/r/pulls/$PR/merge -X PUT -f merge_method=squash",
+            "gh api /repos/o/r/pulls/12/merge -X GET -X PUT",
+            "gh api https://api.github.com/repos/o/r/pulls/12/merge --method PUT",
+            "gh api graphql -f query='mutation{{mergePullRequest(input:{{}}){{clientMutationId}}}}'",
+            "gh api /graphql -f query='mutation{{markPullRequestReadyForReview(input:{{}}){{clientMutationId}}}}'",
+            "gh api graphql -f query='mutation{{enablePullRequestAutoMerge(input:{{}}){{clientMutationId}}}}'",
+            "gh api graphql -f query='mutation{{enqueuePullRequest(input:{{}}){{clientMutationId}}}}'",
+            "\"$GH\" api -X PUT repos/o/r/pulls/12/merge",
+            # git handed text that runs one
+            "git rebase -x 'gh api -X PUT repos/o/r/pulls/12/merge' HEAD~1",
+        )
+        # opening a PR this way skips the verify gate, which has no override
+        create = (
+            "gh api repos/o/r/pulls -f title=t -f head=x -f base=main",
+            "gh api 'repos/o/r/pulls?x=1' -f title=t",
+            "gh api -X POST repos/o/r/pulls --input body.json",
+            "gh api graphql -f query='mutation{{createPullRequest(input:{{}}){{clientMutationId}}}}'",
+            "gh api graphql -f query='mutation{{revertPullRequest(input:{{}}){{clientMutationId}}}}'",
+        )
+        # a query the guard cannot read could be any of them
+        unreadable = (
+            "gh api graphql --input query.json",
+            "gh api graphql -F query=@query.graphql",
+            "gh api graphql -f query=\"$Q\"",
+            "gh api graphql -f query=\"$(cat q.graphql)\"",
+        )
+        allowed = (
+            "gh api repos/o/r/pulls",
+            "gh api repos/o/r/pulls/12",
+            "gh api repos/o/r/pulls/12/merge",
+            "gh api repos/o/r/pulls/12/merge --method GET",
+            "gh api repos/o/r/pulls -X GET -f state=open",
+            "gh api repos/o/r/pulls/12/comments -f body=ok",
+            "gh api repos/o/r/issues/12/comments -f body=ok",
+            "gh api graphql -f query='query{{viewer{{login}}}}'",
+            "gh api graphql -f query='query($n:Int!){{viewer{{repositories(first:$n){{totalCount}}}}}}' -F n=1",
+            "gh api graphql -f query='mutation{{addComment(input:{{}}){{clientMutationId}}}}'",
+        )
+        self.assert_cases(merge_or_ready + create + unreadable, self.verified, 2)
+        self.assert_cases(allowed, self.verified, 0)
+        # the user's override lifts merging and readying, never an unchecked PR or an unread query
+        self.assert_cases(merge_or_ready[:-1], self.verified, 0, env={"AITK_PR_READY": "1"})
+        self.assert_cases(create + unreadable, self.verified, 2, env={"AITK_PR_READY": "1"})
+
     def test_a_non_draft_pr_is_sent_back_for_a_draft(self) -> None:
         result = self.run_hook("gh pr create --fill", self.verified)
         self.assertEqual(2, result.returncode, result.stderr)

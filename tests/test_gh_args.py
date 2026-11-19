@@ -265,6 +265,72 @@ class VerbTests(unittest.TestCase):
         self.assertEqual([], verbs(["$FILE"], expands=True))
 
 
+class ApiTests(unittest.TestCase):
+    def effect(self, line: str) -> str | None:
+        return gh_args.api_effect(line.split())
+
+    def test_endpoint_is_normalised(self) -> None:
+        for endpoint in (
+            "/repos/o/r/pulls", "https://api.github.com/repos/o/r/pulls",
+            "https://ghe.example.com/api/v3/repos/o/r/pulls", "repos/o/r/pulls?state=all",
+        ):
+            self.assertEqual(["repos/o/r/pulls"], gh_args.read_api([endpoint]).endpoints, endpoint)
+
+    def test_method_is_the_last_one_or_follows_the_fields(self) -> None:
+        self.assertFalse(gh_args.read_api(["x"]).non_get)
+        self.assertTrue(gh_args.read_api(["x", "-f", "a=b"]).non_get)
+        self.assertTrue(gh_args.read_api(["x", "--input", "f"]).non_get)
+        self.assertFalse(gh_args.read_api(["x", "-f", "a=b", "-X", "get"]).non_get)
+        self.assertTrue(gh_args.read_api(["-X", "GET", "-iX", "put", "x"]).non_get)
+        self.assertTrue(gh_args.read_api(["--method=patch", "x"]).non_get)
+        self.assertTrue(gh_args.read_api(["x", "-X", "$M"]).non_get)
+
+    def test_queries_come_from_both_field_flags(self) -> None:
+        api = gh_args.read_api(["graphql", "-f", "query=a", "--field=query=b", "-F", "n=1"])
+        self.assertEqual(["a", "b"], api.queries)
+        self.assertFalse(api.unreadable_query)
+        for words in (
+            ["-F", "query=@q.graphql"], ["--input", "q.json"], ["-f", "query=$Q"],
+            ["-f", "query=${Q}"], ["-f", "query=$(cat q)"], ["-f", "query=`cat q`"],
+        ):
+            self.assertTrue(gh_args.read_api(["graphql", *words]).unreadable_query, words)
+        self.assertFalse(gh_args.read_api(["graphql", "-f", "query=query($n:Int){a(n:$n)}"]).unreadable_query)
+
+    def test_effects(self) -> None:
+        self.assertEqual("merge", self.effect("repos/o/r/pulls/12/merge -X PUT"))
+        self.assertEqual("merge", self.effect("repos/o/r/pulls/$PR/merge -f merge_method=squash"))
+        self.assertEqual("merge", self.effect("graphql -f query=mutation{mergePullRequest}"))
+        self.assertEqual("create", self.effect("repos/{owner}/{repo}/pulls -f title=t"))
+        self.assertEqual("create", self.effect("graphql -f query=mutation{createPullRequest}"))
+        self.assertEqual("unreadable", self.effect("graphql --input q.json"))
+        self.assertIsNone(self.effect("repos/o/r/pulls"))
+        self.assertIsNone(self.effect("repos/o/r/pulls/12/merge"))
+        self.assertIsNone(self.effect("repos/o/r/pulls/12/comments -f body=x"))
+        self.assertIsNone(self.effect("graphql -f query=query{viewer{login}}"))
+        self.assertIsNone(self.effect("repos/o/r/pulls -f a=b --help"))
+
+    def test_expansions_that_could_name_a_pull_request(self) -> None:
+        self.assertEqual("unreadable", self.effect("$URL -X PUT"))
+        self.assertEqual("unreadable", self.effect("$URL -f a=b"))
+        self.assertIsNone(self.effect("$URL"))
+        self.assertEqual("merge", self.effect("repos/o/r/pulls/12/merge -X $M"))
+        self.assertEqual("merge", self.effect("repos/o/r/pulls/12/merge $OPTS"))
+        self.assertEqual("create", self.effect("repos/o/$R/pulls -f a=b"))
+        self.assertEqual("unreadable", self.effect("graphql -f query=query{a} $OPTS"))
+        self.assertIsNone(self.effect("repos/o/r/issues/$N/comments -f body=x"))
+
+    def test_an_unknown_flag_makes_every_positional_an_endpoint(self) -> None:
+        self.assertEqual("merge", self.effect("--new val repos/o/r/pulls/12/merge"))
+        self.assertIsNone(self.effect("--new repos/o/r/issues/1"))
+
+    def test_command_lookup(self) -> None:
+        self.assertEqual([["x"]], gh_args.api_commands(["api", "x"]))
+        self.assertEqual([["-R", "o/r", "x"]], gh_args.api_commands(["-R", "o/r", "api", "x"]))
+        self.assertEqual([], gh_args.api_commands(["pr", "view", "api"]))
+        self.assertEqual([["-X", "PUT", "x"]], gh_args.api_commands(["api", "-X", "PUT", "x"]))
+        self.assertEqual([["x"]], gh_args.api_commands(["api", "x"], expands=True))
+
+
 def verbs(args: list[str], expands: bool = False) -> list[str]:
     return [verb for verb, _ in gh_args.pr_commands(args, expands)]
 

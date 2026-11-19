@@ -104,7 +104,15 @@ checks nothing is visible in the record. Its known limits:
   "$PR"`). A function wrapper (`g() { gh "$@"; }; g pr merge 12`), an expanded
   name behind an unknown wrapper (`g=gh; setsid $g pr merge 12`), a variable
   that holds more than the name (`c='gh pr'; $c merge 12`), `gh` aliases and
-  extensions, `gh api .../pulls` and connector tools open a PR unseen;
+  extensions and connector tools open a PR unseen;
+- `gh api` PR create, merge and ready are gated: a merge or ready (REST
+  `pulls/<n>/merge`, or a GraphQL `mergePullRequest`, `markPullRequestReadyForReview`,
+  `enablePullRequestAutoMerge`, `enqueuePullRequest`) needs `AITK_PR_READY=1`, and a create
+  (REST `pulls`, `createPullRequest`, `revertPullRequest`) or a GraphQL query the guard
+  cannot read (`--input`, `-F query=@file`, a variable or `$(...)`) is blocked with no
+  override, like an unchecked `gh pr create`. Other API writes (refs, contents, merges into
+  a branch, `gh repo sync --force`) and `curl` are not modelled: for those, GitHub's branch
+  protection is the boundary, not this hook;
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
   model: a subshell's `cd` is restored, and a `cd` that may not have run (after
   `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in

@@ -576,6 +576,12 @@ GATED_BARE = re.compile(r"\bpush\b|\bpr\s+(?:ready|merge|create|new|revert)\b")
 WORD_GH = re.compile(r"\bgh\b", re.I)
 WORD_GIT = re.compile(r"\bgit\b", re.I)
 WORD_PR = re.compile(r"\bpr\b")
+WORD_API = re.compile(r"\bapi\b")
+# what a `gh api` call names to reach a pull request: the REST path or a GraphQL mutation
+API_PULLS = re.compile(
+    r"\bpulls\b|\b(?:mergePullRequest|markPullRequestReadyForReview|enablePullRequestAutoMerge"
+    r"|enqueuePullRequest|createPullRequest|revertPullRequest)\b"
+)
 WORD_PUSH = re.compile(r"\bpush\b")
 GIT_DASHED = re.compile(r"git-(.+)")
 # `git submodule--helper foreach` runs what `git submodule foreach` runs.
@@ -682,7 +688,16 @@ def mentions_gated(text: str) -> bool:
     parse: it over-matches (`make push`, a filename `push`, `gh pr view`) on purpose.
     """
     text = unquoted(text)
-    return words_in_order(text, WORD_GH, WORD_PR) is not None or GATED_BARE.search(text) is not None
+    return (
+        words_in_order(text, WORD_GH, WORD_PR) is not None
+        or GATED_BARE.search(text) is not None
+        or words_in_order(text, WORD_GH, WORD_API, API_PULLS) is not None
+    )
+
+
+def mentions_api_publish(text: str) -> bool:
+    """Whether `text` has `gh`, then `api`, then `pulls` or a pull request mutation."""
+    return words_in_order(unquoted(text), WORD_GH, WORD_API, API_PULLS) is not None
 
 
 # A word that configures an inline git alias. These carry the key in the word and

@@ -162,7 +162,19 @@ variable, substitution, brace or glob (`"$GH" pr ready 12`, `$(command -v gh) pr
 decides it), which is gated; `gh pr revert` is gated like `create`. A positional word with an
 expansion (`--draft $X`), or flags after an unquoted `$(`/`<(`, grant no draft, help or undo
 (accepted over-block: `gh pr ready --undo "$PR"`), and a creation with one fails the verify
-gate. Known limits, each a real `gh pr
+gate.
+
+`gh api` PR create, merge and ready are gated too (`gh_args.api_effect`): a non-GET call
+to `repos/<o>/<r>/pulls/<n>/merge` needs `AITK_PR_READY=1` like `gh pr merge`, as does a
+GraphQL query naming `mergePullRequest`, `markPullRequestReadyForReview`,
+`enablePullRequestAutoMerge` or `enqueuePullRequest`; a non-GET call to
+`repos/<o>/<r>/pulls`, a query naming `createPullRequest` or `revertPullRequest`, and a
+query the guard cannot read (`--input`, `-F query=@file`, a `query=` that is a variable or
+holds `$(`) block with no override, like an unchecked `gh pr create`. An expansion in the
+endpoint or method that could name these blocks the same way. Other API writes (refs,
+contents, merges into a branch, `gh repo sync --force`) and `curl` are not modelled: for
+those, GitHub's branch protection is the boundary, not this hook. Known limits, each a real
+`gh pr
 ready`/`merge` it does not see (pinned in `PR_PUBLISH_LIMITS`): `gh` reached through a
 function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and extensions, an
 expanded name behind an unknown wrapper (`g=gh; setsid $g pr merge 12`: rescanning from every
@@ -1173,6 +1185,21 @@ PR_PUBLISH_UNKNOWN = (
     "explicit request in words (rules/universal.md). Write the command and the verb literally "
     "(`gh pr view 12`, not `gh pr $V 12`)."
 )
+PR_PUBLISH_API = (
+    "`gh api` {what}, and only the user's explicit request in words authorizes that "
+    "(rules/universal.md). Do not bypass this on your own: stop and ask the user, who "
+    "alone can override it."
+)
+PR_API_CREATE = (
+    "`gh api` {what}, which skips the verify gate that `gh pr create` passes and which has no "
+    "override. Open the PR with `gh pr create --draft`, which the guard checks, or write the "
+    "GraphQL query literally in `-f query='...'`."
+)
+API_WHAT = {
+    gh_args.MERGE_API: "merges or readies a pull request",
+    gh_args.CREATE_API: "opens a pull request",
+    gh_args.UNREADABLE_API: "has an endpoint or GraphQL query the guard cannot read, so it could open a pull request",
+}
 PR_PUBLISH_UNTRUSTED = " The guard cannot rely on this command's flags ({why}); spell them out."
 # `gh`, then `pr`, then the verb, each searched after the one before it: linear in the text
 UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new|revert)\b"))
@@ -1256,6 +1283,8 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
         if found.unresolved:
             for verb in unresolved_gated(found.text):
                 raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
+            if shell_tokens.mentions_api_publish(found.text):
+                raise block(PR_PUBLISH_API.format(what="could merge, ready or open a pull request"))
             continue
         for verb, args, cut in gh_verbs(found):
             flags = gh_args.walk(args, verb, cut)
@@ -1264,6 +1293,9 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
             if not publishes_nothing(verb, flags):
                 note = "" if flags.trusted else PR_PUBLISH_UNTRUSTED.format(why=untrusted_reason(flags, cut))
                 raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]) + note)
+        for args in gh_api_calls(found):
+            if gh_args.api_effect(args) == gh_args.MERGE_API:
+                raise block(PR_PUBLISH_API.format(what=API_WHAT[gh_args.MERGE_API]))
 
 
 def unresolved_gated(text: str) -> Iterator[str]:
@@ -1328,6 +1360,20 @@ def gh_verbs(found: shell_tokens.Command) -> list[tuple[str, list[str], bool]]:
     return [(verb, args, cut) for verb, args in commands]
 
 
+def gh_api_calls(found: shell_tokens.Command) -> list[list[str]]:
+    """The arguments after `api` of every `gh api` one command can run; the command name is
+    read as in `gh_verbs`."""
+    if not found.argv:
+        return []
+    if found.is_gh:
+        return gh_args.api_commands(found.argv[1:])
+    if gh_args.has_expansion(found.argv[0]):
+        return gh_args.api_commands(found.argv[1:], expands=True)
+    if found.after_paren:
+        return gh_args.api_commands(found.argv, expands=True)
+    return []
+
+
 PR_VERIFY_BLOCK = "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. {remedy}"
 VERIFY_REMEDY_RUN = (
     "Run the change's own test or acceptance command through `python3 {script} -- <command>`; "
@@ -1382,6 +1428,8 @@ PR_VERIFY_EXPANDED = (
 )
 VERIFY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts", "verify.py")
 CREATE_WORD = re.compile(r"\b(create|new)\b")
+# in text that did not parse: `pulls` not followed by an id (`pulls/12/merge` is a merge), or a creating mutation
+API_CREATE_TEXT = re.compile(r"\bpulls\b(?!/)|\b(?:createPullRequest|revertPullRequest)\b")
 
 
 def refuse(reason: str, remedy: str, **values: str) -> Blocked:
@@ -1434,7 +1482,15 @@ def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
         if found.unresolved:
             if shell_tokens.words_in_order(found.text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
                 raise block(PR_VERIFY_UNREADABLE)
+            if shell_tokens.words_in_order(
+                shell_tokens.unquoted(found.text), shell_tokens.WORD_GH, shell_tokens.WORD_API, API_CREATE_TEXT
+            ):
+                raise block(PR_API_CREATE.format(what="could open a pull request"))
             continue
+        for args in gh_api_calls(found):
+            effect = gh_args.api_effect(args)
+            if effect in {gh_args.CREATE_API, gh_args.UNREADABLE_API}:
+                raise block(PR_API_CREATE.format(what=API_WHAT[effect]))
         for verb, args, cut in gh_verbs(found):
             if verb not in {"create", "new", gh_args.UNKNOWN}:
                 continue  # a revert's tree is made on the server
