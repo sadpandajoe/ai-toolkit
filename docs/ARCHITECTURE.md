@@ -99,8 +99,9 @@ checks nothing is visible in the record. Its known limits:
   `gh alias set`, `gh api .../pulls` and connector tools open a PR unseen;
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
   model: a `cd` in a subshell or an untaken branch counts as taken, and a
-  directory the same command creates, `cd -`, `popd`, `GIT_DIR` and
-  `GIT_WORK_TREE` are not followed;
+  directory the same command creates, `GIT_DIR` and `GIT_WORK_TREE` are not
+  followed; `cd -`, `popd` and a bare `pushd` leave the directory unknown,
+  which blocks the decisions that need it;
 - it checks the local commit, while the PR shows the pushed branch;
 - the could-not-start rule reads only the first word, so a check that goes on to
   run more after a missing first program (`"no-such-tool; exit 127"`), a leading

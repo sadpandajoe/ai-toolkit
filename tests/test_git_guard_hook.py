@@ -65,10 +65,24 @@ STAGED_BLOCK = (
     "git ci -m state",
     'f(){{ git "$@"; }}; f commit -m state',
     "g=git; $g commit -m state",
+    # a directory the guard cannot read is no clean index: the commit blocks
+    'cd "$PWD" && git commit -m state',
+    "cd -P {repo} && git commit -m state",
+    "cd ~/{repo_home} && git commit -m state",
+    # a cd that fails leaves the shell where it was
+    "cd /nonexistent-aitk-dir; git commit -m state",
 )
 
 # Blocked in a repository with nothing staged in its default index.
 CLEAN_BLOCK = (
+    # a force push whose branch the guard cannot read blocks: it may be main
+    "cd /nonexistent-aitk-dir; git push --force",
+    "cd -P . && git push --force",
+    'cd "$PWD" && git push --force',
+    "cd ~/{repo_home} && git push --force",
+    "git -C ~/{repo_home} push --force",
+    # in a directory the guard cannot read, a word that is no git command may be an alias
+    'cd "$PWD" && git fpm',
     "GIT_INDEX_FILE={index} git commit -m state",
     # --no-verify, -n and signing overrides, in every spelling and wrapper
     "git commit --no-verify -m bad",
@@ -756,6 +770,13 @@ class GitGuardHookTests(unittest.TestCase):
             check=True,
         )
         cls.alt_index = base / "alt.index"
+        # a checkout on a feature branch, and one on a detached HEAD
+        cls.feature = cls.make_repo(base / "feature")
+        git(cls.feature, "commit", "-q", "--allow-empty", "-m", "base")
+        git(cls.feature, "switch", "-q", "-c", "feature")
+        cls.detached = cls.make_repo(base / "detached")
+        git(cls.detached, "commit", "-q", "--allow-empty", "-m", "base")
+        git(cls.detached, "switch", "-q", "--detach")
 
         # PROJECT.md staged in the default index of one repository, and every
         # state file staged in its own non-default index.
@@ -805,6 +826,7 @@ class GitGuardHookTests(unittest.TestCase):
         return template.format(
             repo=repo,
             repo_rel=str(repo).lstrip("/"),
+            repo_home=os.path.relpath(repo, Path.home()),
             index=self.alt_index,
             global_config=self.global_config,
         )
@@ -847,6 +869,27 @@ class GitGuardHookTests(unittest.TestCase):
 
     def test_bypasses_and_force_pushes_block(self) -> None:
         self.assert_cases(CLEAN_BLOCK, self.clean, 2)
+
+    def test_a_force_push_is_checked_in_the_directory_it_runs_in(self) -> None:
+        main, feature = self.clean, self.feature
+        home = {"main_home": os.path.relpath(main, Path.home()), "feature_home": os.path.relpath(feature, Path.home())}
+        for template, expected in (
+            ("cd {main} && git push --force", 2),
+            ("pushd {main} && git push --force", 2),
+            ("cd ~/{main_home} && git push --force", 2),
+            ("git push --force", 0),
+            ("cd ~/{feature_home} && git push --force", 0),
+            ("cd -P {feature} && git push --force", 0),
+            # the cd fails, so the push runs here, on feature
+            ("cd /nonexistent-aitk-dir; git push --force", 0),
+        ):
+            command = template.format(main=main, feature=feature, **home)
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.run_hook(command, feature).returncode)
+        # a detached HEAD is a branch the guard read: no branch, so not main
+        for command in ("git push --force origin HEAD", "git push --force"):
+            with self.subTest(command=command, repo="detached"):
+                self.assertEqual(0, self.run_hook(command, self.detached).returncode)
 
     def test_ordinary_commands_are_allowed(self) -> None:
         self.assert_cases(CLEAN_ALLOW, self.clean, 0)
@@ -1176,7 +1219,7 @@ class GitGuardHookTests(unittest.TestCase):
         for args, expected in (
             (["sub"], f"{base}/sub"),
             ([""], base),
-            (["-"], base),
+            (["-"], None),  # the previous directory is not tracked
             (["$OTHER/.."], None),  # not the directory above a folder named `$OTHER`
             (["$DIR"], None),  # a folder with that literal name exists, but the shell expands it
             (["`pwd`"], None),
@@ -1186,6 +1229,10 @@ class GitGuardHookTests(unittest.TestCase):
                 self.assertEqual(expected, shell_tokens.advance_dir(base, args))
         self.assertIsNone(shell_tokens.advance_dir(None, ["sub"]))
         self.assertEqual(os.path.expanduser("~"), shell_tokens.advance_dir(base, ["~"]))
+        self.assertEqual(os.path.expanduser("~"), shell_tokens.advance_dir(base, []))  # a bare `cd`
+        self.assertEqual(f"{base}/sub", shell_tokens.advance_dir(base, ["-P", "sub"]))
+        walked = list(shell_tokens.commands("pushd sub && popd && gh pr view 1", base))
+        self.assertIsNone(walked[-1].workdir)  # the directory stack is not tracked
         # through the walk: the directory stays unknown for the command after the cd
         walked = list(shell_tokens.commands('cd "$OTHER/.." && gh pr view 1', base))
         self.assertIsNone(walked[-1].workdir)

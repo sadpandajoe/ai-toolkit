@@ -46,7 +46,13 @@ fails closed on those when python3 is missing.
 
 Known limits (a tripwire, not a shell sandbox): a git alias defined in a file
 the hook cannot read, `gh api` calls, and programs that run git themselves are
-not seen. Substitution bodies are scanned wherever they are quoted, so a
+not seen. Directory changes follow `shell_tokens`' rules (`cd`, `pushd`, `git -C`,
+`env -C`): `cd -`, `popd`, a bare `pushd` and a target the shell expands leave the
+directory unknown, and so do `--git-dir`/`--work-tree` values the shell expands. Where
+the directory is unknown the guard cannot read the repository, so it blocks what needs
+it: a force push or a delete whose branch it cannot read, a commit whose staged files it
+cannot read, and a subcommand that is not a git command (it may be a repository alias
+for a gated operation). Substitution bodies are scanned wherever they are quoted, so a
 single-quoted `$(...)` that only prints text blocks like a live one.
 
 Override-assignment check: a tripwire, not a sandbox. It is the opt-in token
@@ -183,6 +189,7 @@ one pass over the openers, a position index for the git words).
 from __future__ import annotations
 
 import bisect
+import functools
 import json
 import os
 import re
@@ -266,7 +273,7 @@ def register_config(action: dict, raw_config: str) -> None:
         action["aliases"][key.split(".", 1)[1]] = "commit --no-verify" if value == "<config-env>" else value
 
 
-def git_base(action: dict) -> tuple[list[str], str]:
+def git_base(action: dict) -> tuple[list[str], str | None]:
     git_args = ["git"]
     if action.get("git_dir"):
         git_args.append(f"--git-dir={action['git_dir']}")
@@ -277,6 +284,8 @@ def git_base(action: dict) -> tuple[list[str], str]:
 
 def git_output(action: dict, args: list[str]) -> str | None:
     git_args, workdir = git_base(action)
+    if workdir is None:
+        return None
     env = os.environ.copy()
     env.update(action.get("env", {}))
     try:
@@ -454,7 +463,7 @@ def segment_end_index(tokens: list[str], start: int) -> int:
     return end
 
 
-def new_action(workdir: str, aliases: dict, env: dict) -> dict:
+def new_action(workdir: str | None, aliases: dict, env: dict) -> dict:
     action = {
         "subcommand": None,
         "index": None,
@@ -471,9 +480,18 @@ def new_action(workdir: str, aliases: dict, env: dict) -> dict:
     return action
 
 
+def set_git_path(action: dict, key: str, value: str) -> None:
+    """Record a `--git-dir`/`--work-tree` value; one the shell expands makes the directory unknown."""
+    if shell_tokens.UNKNOWN_CD_TARGET.search(value) or value.startswith("~") or action["workdir"] is None:
+        action[key] = None
+        action["workdir"] = None
+    else:
+        action[key] = resolve_path(action["workdir"], value)
+
+
 def parse_git_actions(
     tokens: list[str],
-    base_workdir: str,
+    base_workdir: str | None,
     depth: int = 0,
     inherited_env: dict | None = None,
     inherited_vars: dict | None = None,
@@ -484,6 +502,7 @@ def parse_git_actions(
     actions: list[dict] = []
     if depth > 8:
         return actions
+    tokens = shell_tokens.join_toplevel(tokens)  # `cd $(git rev-parse --show-toplevel)` is one word
     current_workdir = base_workdir
     exported_env = dict(inherited_env or {})
     env_assignments = dict(exported_env)
@@ -494,7 +513,7 @@ def parse_git_actions(
     count = len(tokens)
     i = 0
 
-    def recurse(sub_tokens: list[str], workdir: str, env: dict) -> list[dict]:
+    def recurse(sub_tokens: list[str], workdir: str | None, env: dict) -> list[dict]:
         return parse_git_actions(
             sub_tokens,
             workdir,
@@ -546,10 +565,12 @@ def parse_git_actions(
             )
             i = segment_end - len(rest)
             continue
-        if command_start and token == "cd":
+        if command_start and token in {"cd", "pushd", "popd"}:
             segment_end = segment_end_index(tokens, i + 1)
-            if i + 1 < segment_end:
-                current_workdir = resolve_path(current_workdir, tokens[i + 1])
+            if token == "popd" or (token == "pushd" and not shell_tokens.has_dir_target(tokens[i + 1 : segment_end])):
+                current_workdir = None  # the directory stack is not tracked
+            else:
+                current_workdir = shell_tokens.advance_dir(current_workdir, tokens[i + 1 : segment_end])
             command_start = False
             i = segment_end
             continue
@@ -652,13 +673,13 @@ def parse_git_actions(
                     continue
                 if env_token in {"-u", "--unset", "-C", "--chdir"}:
                     if env_token in {"-C", "--chdir"} and j + 1 < segment_end:
-                        env_workdir = resolve_path(current_workdir, tokens[j + 1])
+                        env_workdir = shell_tokens.hop_dir(env_workdir, tokens[j + 1])
                     elif j + 1 < segment_end:
                         child_env.pop(tokens[j + 1], None)
                     j += 2
                     continue
                 if env_token.startswith("--chdir="):
-                    env_workdir = resolve_path(current_workdir, env_token.split("=", 1)[1])
+                    env_workdir = shell_tokens.hop_dir(env_workdir, env_token.split("=", 1)[1])
                     j += 1
                     continue
                 if env_token.startswith("--unset="):
@@ -739,30 +760,23 @@ def parse_git_actions(
             if opt == "-C":
                 if j + 1 >= count:
                     break
-                action["workdir"] = resolve_path(action["workdir"], tokens[j + 1])
+                action["workdir"] = shell_tokens.hop_dir(action["workdir"], tokens[j + 1])
                 j += 2
                 continue
-            if opt == "--git-dir":
-                if j + 1 >= count:
+            if opt == "--git-dir" or opt.startswith("--git-dir="):
+                if opt == "--git-dir" and j + 1 >= count:
                     break
-                action["git_dir"] = resolve_path(action["workdir"], tokens[j + 1])
-                j += 2
+                value = tokens[j + 1] if opt == "--git-dir" else opt.split("=", 1)[1]
+                set_git_path(action, "git_dir", value)
+                j += 2 if opt == "--git-dir" else 1
                 continue
-            if opt.startswith("--git-dir="):
-                action["git_dir"] = resolve_path(action["workdir"], opt.split("=", 1)[1])
-                j += 1
-                continue
-            if opt == "--work-tree":
-                if j + 1 >= count:
+            if opt == "--work-tree" or opt.startswith("--work-tree="):
+                if opt == "--work-tree" and j + 1 >= count:
                     break
-                action["work_tree"] = resolve_path(action["workdir"], tokens[j + 1])
+                value = tokens[j + 1] if opt == "--work-tree" else opt.split("=", 1)[1]
+                set_git_path(action, "work_tree", value)
                 action["workdir"] = action["work_tree"]
-                j += 2
-                continue
-            if opt.startswith("--work-tree="):
-                action["work_tree"] = resolve_path(action["workdir"], opt.split("=", 1)[1])
-                action["workdir"] = action["work_tree"]
-                j += 1
+                j += 2 if opt == "--work-tree" else 1
                 continue
             if opt == "-c":
                 if j + 1 >= count:
@@ -827,11 +841,39 @@ def parse_git_actions(
     return actions
 
 
+@functools.lru_cache(maxsize=1)
+def git_command_names() -> frozenset[str] | None:
+    """The names `git help` knows, read outside any repository (so no alias is in it); None if unreadable."""
+    try:
+        result = subprocess.run(
+            ["git", "--list-cmds=builtins,main,others"],
+            cwd="/",
+            text=True,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    names = frozenset(result.stdout.split())
+    return names if result.returncode == 0 and names else None
+
+
 def expand_configured_alias(action: dict) -> list[dict]:
     subcommand = action.get("subcommand")
     if not subcommand:
         return []
     alias_value = action.get("aliases", {}).get(subcommand)
+    if alias_value is None and action.get("workdir") is None:
+        names = git_command_names()
+        if names is None or subcommand not in names:
+            raise block(
+                f"the guard cannot read the repository this command runs in, so it cannot tell "
+                f"whether `git {subcommand}` is an alias for a push or a commit. Run it from "
+                "the repository, or spell out the git command."
+            )
+        return []
     if alias_value is None:
         alias_value = git_output(action, ["config", "--get", f"alias.{subcommand}"])
         if alias_value is not None:
@@ -941,7 +983,13 @@ def check_commit(action: dict, added_before: list[str]) -> None:
         i += 1
 
     staged = git_output(action, ["diff", "--cached", "--name-only"])
-    candidates = (staged.splitlines() if staged is not None else []) + added_before
+    if staged is None:
+        raise block(
+            "the guard cannot read what this commit includes (the repository or its staged "
+            "files could not be read), and local workflow state files must stay out of "
+            "commits. Run `git commit` from the repository."
+        )
+    candidates = staged.splitlines() + added_before
     protected = []
     for path in candidates:
         if is_protected_path(path) and path not in protected:
@@ -957,6 +1005,13 @@ def check_commit(action: dict, added_before: list[str]) -> None:
         )
 
 
+PUSH_BRANCH_UNREADABLE = (
+    "the guard cannot tell which branch this push updates (the repository or its current "
+    "branch could not be read), and force-pushing or deleting main/master is not allowed. "
+    "Run it from the repository with an explicit branch (`git push --force origin <branch>`)."
+)
+
+
 def check_push(action: dict) -> None:
     args = own_args(action.get("args", []))
     for raw_config in action.get("configs", []):
@@ -964,7 +1019,8 @@ def check_push(action: dict) -> None:
         if key.lower() == "core.hookspath":
             raise block("git push with core.hooksPath override bypasses pre-push hooks")
 
-    current_branch = (git_output(action, ["branch", "--show-current"]) or "").strip()
+    branch_output = git_output(action, ["branch", "--show-current"])
+    current_branch = (branch_output or "").strip()
     push_force = False
     dest_main = False
     ref_wide = False
@@ -1031,6 +1087,8 @@ def check_push(action: dict) -> None:
         deleting_ref = refspec.startswith(":")
         dest = refspec.rsplit(":", 1)[-1]
         if dest == "HEAD":
+            if branch_output is None and (push_force or delete_push or deleting_ref):
+                raise block(PUSH_BRANCH_UNREADABLE)
             dest = current_branch
         if re.fullmatch(r"(refs/heads/)?(main|master)", dest or ""):
             dest_main = True
@@ -1043,8 +1101,13 @@ def check_push(action: dict) -> None:
         ).strip()
         if re.fullmatch(r"([^/]+/)?(main|master)", push_target or ""):
             dest_main = True
-    if push_force and (ref_wide or dest_main or (not has_explicit_ref and current_branch in {"main", "master"})):
+    if push_force and (ref_wide or dest_main):
         raise block("force-pushing main/master is not allowed")
+    if push_force and not has_explicit_ref:
+        if branch_output is None:
+            raise block(PUSH_BRANCH_UNREADABLE)
+        if current_branch in {"main", "master"}:
+            raise block("force-pushing main/master is not allowed")
     if delete_push and dest_main:
         raise block("deleting main/master is not allowed")
 

@@ -49,7 +49,9 @@ Known limits (this is a tripwire, not a shell sandbox): command matching is
 static, so a `cd` inside a conditional or a subshell counts as taken, shell
 functions and aliases are not expanded here, and a command nested deeper than
 DEPTH_LIMIT or one that does not tokenize is yielded as `unresolved` for the
-caller to decide. Rescanning a tail and scanning a `$(...)` or backtick body
+caller to decide. `cd -`, `popd` and a bare `pushd` leave the directory unknown
+(None) from there on: the previous directory and the directory stack are not
+tracked. Rescanning a tail and scanning a `$(...)` or backtick body
 cost the characters they read, against MAX_TAIL_CHARS for the whole
 `commands()` call: a segment that would pass it is yielded as one `unreadable`
 command with no known directory, and so is every later segment that would
@@ -184,7 +186,7 @@ INERT_HEADS = {
 }
 NO_RESCAN_HEADS = INERT_HEADS | {"gh", "git"}
 
-DIRECTORY_CHANGE = re.compile(r"(?<![\w-])(?:cd|pushd)(?![\w-])|--chdir|(?<!\w)-C")
+DIRECTORY_CHANGE = re.compile(r"(?<![\w-])(?:cd|pushd|popd)(?![\w-])|--chdir|(?<!\w)-C")
 
 
 def split_lines(text: str) -> str:
@@ -637,6 +639,13 @@ def git_runs_text(segment: list[str], rest: list[str]) -> list[str]:
     return []
 
 
+def hop_dir(directory: str | None, value: str) -> str | None:
+    """One `-C VALUE` hop from `directory`: normpath, unknown (None) for a value the shell expands."""
+    if directory is None or UNKNOWN_PATH.search(value):
+        return None
+    return os.path.normpath(os.path.join(directory, value))
+
+
 def git_globals(args: list[str], workdir: str | None, assignments: dict[str, str] | None = None) -> tuple[str | None, int]:
     """(the directory `git` works in, index of its subcommand) from its arguments after `git`.
 
@@ -656,10 +665,7 @@ def git_globals(args: list[str], workdir: str | None, assignments: dict[str, str
         arg = args[index]
         if arg == "-C" and index + 1 < len(args):
             hops += 1
-            if hops > MAX_DIR_HOPS or UNKNOWN_PATH.search(args[index + 1]):
-                directory = None
-            elif directory is not None:
-                directory = os.path.normpath(os.path.join(directory, args[index + 1]))
+            directory = None if hops > MAX_DIR_HOPS else hop_dir(directory, args[index + 1])
         elif arg in {"--git-dir", "--work-tree"} or arg.startswith(("--git-dir=", "--work-tree=")):
             directory = None
         index += 2 if arg in GIT_VALUE_FLAGS else 1
@@ -688,9 +694,15 @@ def git_toplevel(path: str) -> str | None:
     return top if result.returncode == 0 and top and "\n" not in top else None
 
 
+def has_dir_target(args: list[str]) -> bool:
+    """Whether `cd`/`pushd` arguments name a target (a bare `pushd` swaps the directory stack)."""
+    return any(arg == "-" or not arg.startswith("-") for arg in args)
+
+
 def advance_dir(workdir: str | None, args: list[str]) -> str | None:
     """Follow `cd`/`pushd` so a check reads the repository the command runs in.
 
+    A bare `cd` goes to HOME; `cd -` is unknown (the previous directory is not tracked).
     A target the shell would expand (`$`, a backtick), a glob (`*?[`) or a target with a newline
     or a tab leaves the directory unknown (None); `~` is expanded here the way the shell does.
     The one substitution read instead is the git top level of the current directory
@@ -698,9 +710,11 @@ def advance_dir(workdir: str | None, args: list[str]) -> str | None:
     """
     if workdir is None:
         return None
-    target = next((arg for arg in args if not arg.startswith("-")), None)
-    if target is None or target == "-":
-        return workdir
+    target = next((arg for arg in args if arg == "-" or not arg.startswith("-")), None)  # see has_dir_target
+    if target == "-":
+        return None  # the previous directory is not tracked
+    if target is None:
+        target = "~"  # a bare `cd` goes home
     if target in TOPLEVEL_SUBSTITUTIONS:
         return git_toplevel(workdir)
     if UNKNOWN_CD_TARGET.search(target):
@@ -931,8 +945,10 @@ def commands(
             if include_assignments and effects.assignments:
                 yield Command([], assignments, target)
             continue
-        if head_name(rest[0]) in {"cd", "pushd"}:
+        if head_name(rest[0]) == "cd" or (head_name(rest[0]) == "pushd" and has_dir_target(rest[1:])):
             workdir = advance_dir(workdir, rest[1:])
+        elif head_name(rest[0]) in {"pushd", "popd"}:
+            workdir = None  # the directory stack is not tracked
         yield Command(rest, assignments, target)
 
 
