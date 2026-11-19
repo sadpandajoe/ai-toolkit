@@ -29,7 +29,7 @@ import time
 from typing import Callable
 
 RECORD = Path(".ai-toolkit") / "verify.json"
-KEEP = 20
+KEEP = 200  # runs; a failure ages out only after this many later runs
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 TIMEOUT_SECONDS = 15
 LEVELS = ("strong", "partial")

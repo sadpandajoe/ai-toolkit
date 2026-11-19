@@ -218,6 +218,14 @@ class VerifyGateTests(unittest.TestCase):
         self.verify("true")
         self.assertNotIn(".ai-toolkit", self.git("status", "--porcelain"))
 
+    def test_a_failure_survives_many_later_runs_of_other_commands(self) -> None:
+        self.verify("false")
+        base = verify_record.commit(str(self.repo))
+        for number in range(25):
+            record = verify_record.new_record(base, {}, f"check-{number}", 0, "strong", "", True)
+            verify_record.append(str(self.repo), record)
+        self.assert_blocked("failed (exit 1)")
+
     def test_records_are_capped(self) -> None:
         for _ in range(verify_record.KEEP + 3):
             verify_record.append(str(self.repo), verify_record.new_record("x", {}, "true", 0, "strong", "", True))
@@ -354,8 +362,9 @@ class VerifyGateTests(unittest.TestCase):
 
     def test_check_outputs_stay_outputs_past_the_record_cap(self) -> None:
         self.verify("echo r > report.txt")
+        base = verify_record.commit(str(self.repo))
         for _ in range(verify_record.KEEP):
-            self.verify("true")
+            verify_record.append(str(self.repo), verify_record.new_record(base, {}, "true", 0, "strong", "", True))
         self.write("app.py", "print('two')\n")
         self.commit("app.py")
         self.verify("true")

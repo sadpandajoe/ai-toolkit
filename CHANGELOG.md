@@ -20,6 +20,35 @@
   meaningful can run, the user's agreement goes into a `--partial` record.
   Review stays advisory. The session-start hook warns once when
   `SKIP_PR_GATE` is still set from v0.3, since it lifts nothing.
+- The git guard fails closed where it used to guess. Each of these was
+  allowed before:
+  - from a checkout of main, `cd ~/repo && git push --force`,
+    `cd /nonexistent; git push --force`, `cd -P . && ...` and
+    `git push --force origin $BR`: a push, delete or commit whose
+    repository, branch or staged files the guard cannot read now blocks;
+  - `(cd ../feat); git push --force`, `false && cd ../feat; ...` and
+    `eval 'cd ../feat'; ...`: one directory model (`shell_tokens`) now
+    serves every rule. A subshell, `$(...)` or `<(...)` restores the
+    directory. A `cd` that may not have run leaves it unknown, which
+    blocks only the decisions that need it. Those are a `cd` after `||`,
+    after `&&` once its list ends, in a pipeline, after `&`, in an
+    if/while/for/case body, in an `eval` or a function, or in text with a
+    quoted operator;
+  - `gh pr -t view merge 12`, `gh pr $V 12`, `"$GH" pr ready 12`,
+    `gh pr revert 12`, `gh pr create -d=false`, `gh pr merge 12 --body -h`:
+    gh's verb and flags are now read the way gh 2.103.0 does
+    (`hooks/lib/gh_args.py`), and a flag that version lacks grants no
+    draft, help or undo;
+  - `gh api` calls that merge, ready or open a PR: merging and readying
+    now need `AITK_PR_READY=1`, and opening one this way always blocks;
+  - `$'...'` quoting hid the rest of a command from the tokenizer, and a
+    crash allowed a command when quoting hid the git word.
+
+  `scripts/verify.py` records a check that ran and then exited 126 or 127
+  (`exit 127`, `exec ...`, an expansion or a `PATH=` prefix in the first
+  word). The record keeps the last 200 runs. The known limits, including
+  that GitHub's branch protection is the boundary for other API writes,
+  are in ARCHITECTURE.
 - `rules/universal.md`: fix the behavior, not the test; attachment names and
   private repositories are under the PII rule. The reviewer grades a
   loosened, skipped or deleted test `[major]` unless the test was wrong.

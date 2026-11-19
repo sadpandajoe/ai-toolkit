@@ -92,8 +92,7 @@ enough is a judgment, so review stays in the `review` skill. The record is a
 tripwire against forgetting, not proof: it shows what ran, so a command that
 checks nothing is visible in the record. Its known limits:
 
-- it keeps the last 20 runs, so 20 further runs on an unchanged tree drop a
-  failure;
+- it keeps the last 200 runs, so 200 further runs drop a failure;
 - it is a plain file: deleting it or writing it by hand goes unseen;
 - the guard reads the command's text. `gh` behind a variable or an escape
   (`"$GH" pr ready 12`) and a verb a variable hides (`gh pr $V 12`) are gated,
