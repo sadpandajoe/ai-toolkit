@@ -891,6 +891,76 @@ class GitGuardHookTests(unittest.TestCase):
             with self.subTest(command=command, repo="detached"):
                 self.assertEqual(0, self.run_hook(command, self.detached).returncode)
 
+    def test_the_directory_model_follows_subshells_and_conditional_cds(self) -> None:
+        base = self.clean
+        (base / "other").mkdir(exist_ok=True)
+        here, other = str(base), str(base / "other")
+        for command, expected in (
+            # a subshell, a command substitution and a process substitution restore the directory
+            ("(cd other); gh pr view 1", here),
+            ("(cd other && npm test); gh pr view 1", here),
+            ("echo $(cd other && pwd); gh pr view 1", here),
+            ("cat <(cd other && ls); gh pr view 1", here),
+            ("(cd other && gh pr view 1)", other),
+            # the rest of an && chain runs only if the cd did
+            ("x && cd other && gh pr view 1", other),
+            ("cd other && gh pr view 1", other),
+            # an unconditional cd decides by whether the directory exists
+            ("cd other || exit 1; gh pr view 1", other),
+            # a cd that may not have run: unknown once its list ends
+            ("false && cd other; gh pr view 1", None),
+            ("true || cd other && gh pr view 1", None),
+            ("if true; then cd other; fi; gh pr view 1", None),
+            ("for i in 1; do cd other; done; gh pr view 1", None),
+            ("cd other | cat; gh pr view 1", None),
+            ("cd other & gh pr view 1", None),
+            # a cd the walk cannot see run
+            ("eval 'cd other'; gh pr view 1", None),
+            ("f() { cd other; }; f; gh pr view 1", None),
+            # a prefix that changes nothing about cd
+            ("builtin cd other && gh pr view 1", other),
+            ("command cd other && gh pr view 1", other),
+            # a group runs in this shell
+            ("{ cd other; }; gh pr view 1", other),
+            # a quoted or escaped paren is a bare token: the paren stack is not trusted
+            ("echo ')'; cd other && gh pr view 1", None),
+            ("find . \\( -name x \\) ; cd other && gh pr view 1", None),
+            ("echo ')'; gh pr view 1", here),
+            # an absolute cd makes the directory known again
+            (f"false && cd other; cd {here} && gh pr view 1", here),
+        ):
+            with self.subTest(command=command):
+                walked = [found for found in shell_tokens.commands(command, here) if found.is_gh]
+                self.assertEqual(1, len(walked))
+                self.assertEqual(expected, walked[0].workdir)
+
+    def test_a_force_push_after_a_subshell_or_conditional_cd_is_checked_where_it_runs(self) -> None:
+        main, feature = self.clean, self.feature
+        for template, cwd, expected in (
+            # from main: the push runs in main, or may
+            ("(cd {feature}); git push --force", main, 2),
+            ("echo $(cd {feature}); git push --force", main, 2),
+            ("false && cd {feature}; git push --force", main, 2),
+            ("true || cd {feature} && git push --force", main, 2),
+            ("if true; then cd {feature}; fi; git push --force", main, 2),
+            ("eval 'cd {feature}'; git push --force", main, 2),
+            ("f() {{ cd {feature}; }}; f; git push --force", main, 2),
+            ("cd {feature} | cat; git push --force", main, 2),
+            # from main: the push runs in feature
+            ("(cd {feature} && git push --force)", main, 0),
+            ("cd {feature} || exit 1; git push --force", main, 0),
+            ("x=1 && cd {feature} && git push --force", main, 0),
+            ("builtin cd {feature} && git push --force", main, 0),
+            ("{{ cd {feature}; }}; git push --force", main, 0),
+            # from feature: the push runs in feature (blocked before: the subshell's cd leaked)
+            ("(cd {main} && git status); git push --force", feature, 0),
+            # an ungated command never blocks on an unknown directory
+            ("false && cd {feature}; git status", main, 0),
+        ):
+            command = template.format(main=main, feature=feature)
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.run_hook(command, cwd).returncode)
+
     def test_ordinary_commands_are_allowed(self) -> None:
         self.assert_cases(CLEAN_ALLOW, self.clean, 0)
         self.assert_cases(("echo --no-verify", "echo git commit --no-verify"), self.staged, 0)

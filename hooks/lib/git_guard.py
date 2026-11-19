@@ -25,7 +25,8 @@ Blocked:
   can run, the user's agreement goes into a `--partial` record, or the user
   opens the PR from their own terminal, where this hook does not run. The PR's
   commit is HEAD of the directory the command runs in, as `shell_tokens` models
-  it (a `cd` in a subshell or an untaken branch counts as taken), or its
+  it (`shell_tokens.DirectoryModel`: a subshell's `cd` is restored, one that may not have
+  run leaves the directory unknown), or its
   `--head` branch when that resolves locally; a directory the guard knows it
   cannot follow, and a creation it cannot read, block;
 - a command that assigns or exports any toolkit override itself (a prefix, an
@@ -47,12 +48,16 @@ fails closed on those when python3 is missing.
 Known limits (a tripwire, not a shell sandbox): a git alias defined in a file
 the hook cannot read, `gh api` calls, and programs that run git themselves are
 not seen. Directory changes follow `shell_tokens`' rules (`cd`, `pushd`, `git -C`,
-`env -C`): `cd -`, `popd`, a bare `pushd` and a target the shell expands leave the
-directory unknown, and so do `--git-dir`/`--work-tree` values the shell expands. Where
-the directory is unknown the guard cannot read the repository, so it blocks what needs
-it: a force push or a delete whose branch it cannot read, a commit whose staged files it
-cannot read, and a subcommand that is not a git command (it may be a repository alias
-for a gated operation). Substitution bodies are scanned wherever they are quoted, so a
+`env -C`): `cd -`, `popd`, a bare `pushd`, a target the shell expands, a `cd` that may
+not have run (after `||`, after `&&` once the list ends, in a pipeline, in a list ended
+by `&`, in an if/while/until/for/select/case body), an `eval` or a function that
+changes directory, and every `cd` in text with a quoted paren leave the directory
+unknown until a subshell restores it or an absolute `cd` re-anchors it, and so do
+`--git-dir`/`--work-tree` values the shell expands. Where the directory is unknown
+the guard cannot read the repository, so it blocks what needs it: a force push or a
+delete whose branch it cannot read, a commit whose staged files it cannot read, and a
+subcommand that is not a git command (it may be a repository alias for a gated
+operation). Substitution bodies are scanned wherever they are quoted, so a
 single-quoted `$(...)` that only prints text blocks like a live one.
 
 Override-assignment check: a tripwire, not a sandbox. It is the opt-in token
@@ -317,7 +322,8 @@ def expand_shell_payload(command_text: str, positional: list[str]) -> list[str]:
     nested = shell_tokens_or_empty(command_text)
     if not nested:
         return []
-    expanded: list[str] = []
+    expanded = shell_tokens.Tokens()
+    expanded.quoted_parens = getattr(nested, "quoted_parens", False)
     positional_zero = positional[0] if positional else ""
     positional_args = positional[1:] if positional else []
     for token in nested:
@@ -497,12 +503,18 @@ def parse_git_actions(
     inherited_vars: dict | None = None,
     inherited_functions: dict | None = None,
     inherited_aliases: dict | None = None,
+    parens_untrusted: bool = False,
 ) -> list[dict]:
-    """Every git invocation in `tokens`, in order, with its effective context."""
+    """Every git invocation in `tokens`, in order, with its effective context.
+
+    The directory of each command is `shell_tokens.DirectoryModel`'s; None is unknown.
+    """
     actions: list[dict] = []
     if depth > 8:
         return actions
     tokens = shell_tokens.join_toplevel(tokens)  # `cd $(git rev-parse --show-toplevel)` is one word
+    model = shell_tokens.DirectoryModel(tokens, base_workdir, parens_untrusted)
+    parens_untrusted = model.untrusted
     current_workdir = base_workdir
     exported_env = dict(inherited_env or {})
     env_assignments = dict(exported_env)
@@ -522,10 +534,12 @@ def parse_git_actions(
             dict(shell_vars),
             dict(shell_functions),
             dict(inherited_alias_map),
+            parens_untrusted,
         )
 
     while i < count:
         token = tokens[i]
+        current_workdir = model.at(i)
         if token in SEPARATORS:
             command_start = True
             env_assignments = dict(exported_env)
@@ -565,12 +579,8 @@ def parse_git_actions(
             )
             i = segment_end - len(rest)
             continue
-        if command_start and token in {"cd", "pushd", "popd"}:
+        if command_start and token in {"cd", "pushd", "popd"}:  # the directory model follows it
             segment_end = segment_end_index(tokens, i + 1)
-            if token == "popd" or (token == "pushd" and not shell_tokens.has_dir_target(tokens[i + 1 : segment_end])):
-                current_workdir = None  # the directory stack is not tracked
-            else:
-                current_workdir = shell_tokens.advance_dir(current_workdir, tokens[i + 1 : segment_end])
             command_start = False
             i = segment_end
             continue

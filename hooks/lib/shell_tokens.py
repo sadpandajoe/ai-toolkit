@@ -46,13 +46,19 @@ simple command it can see, in order, with its wrapper-stripped argv:
   of `$(...)` and backtick substitutions are walked as nested commands.
 
 Known limits (this is a tripwire, not a shell sandbox): command matching is
-static, so a `cd` inside a conditional or a subshell counts as taken, shell
-functions and aliases are not expanded here, and a command nested deeper than
-DEPTH_LIMIT or one that does not tokenize is yielded as `unresolved` for the
-caller to decide. `cd -`, `popd` and a bare `pushd` leave the directory unknown
-(None) from there on: the previous directory and the directory stack are not
-tracked. Rescanning a tail and scanning a `$(...)` or backtick body
-cost the characters they read, against MAX_TAIL_CHARS for the whole
+static, so shell functions and aliases are not expanded here, and a command
+nested deeper than DEPTH_LIMIT or one that does not tokenize is yielded as
+`unresolved` for the caller to decide. `DirectoryModel` decides the directory of
+every command (it is what `commands()` and `git_guard.parse_git_actions` both
+read): a subshell, `$(...)` and `<(...)` restore it, and a `cd` the model cannot
+be sure ran leaves it unknown (None) until a subshell restores it or an absolute
+`cd` re-anchors it: after `||`, after `&&` once the list ends, in a pipeline, in
+a list ended by `&`, in an if/while/until/for/select/case body, an `eval` or a
+function that changes directory, and any `cd` in text with a quoted paren. So do
+`cd -`, `popd` and a bare `pushd`: the previous directory and the directory stack
+are not tracked. Callers block the decisions that need the directory. Not
+modelled: a sourced file's `cd`, `CDPATH`, `pushd +N`. Rescanning a tail and
+scanning a `$(...)` or backtick body cost the characters they read, against MAX_TAIL_CHARS for the whole
 `commands()` call: a segment that would pass it is yielded as one `unreadable`
 command with no known directory, and so is every later segment that would
 read more. An unreadable command is also `unresolved`, but its text cannot be
@@ -272,12 +278,47 @@ def split_operators(token: str) -> list[str]:
     return [token]
 
 
+class Tokens(list):
+    """Shell words and operators, plus whether a quoted or escaped paren became a bare one."""
+
+    quoted_parens = False
+
+
+def unquoted_parens(text: str) -> int:
+    """Parentheses outside quotes and not escaped: the ones the lexer reads as operators."""
+    count = 0
+    quote: str | None = None
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and quote != "'":
+            index += 2
+            continue
+        if quote is None and char in "'\"":
+            quote = char
+        elif quote == char:
+            quote = None
+        elif quote is None and char in "()":
+            count += 1
+        index += 1
+    return count
+
+
 def tokenize(text: str) -> list[str]:
-    """Shell words and operators; raises ValueError on unbalanced quotes."""
-    lexer = shlex.shlex(split_lines(text), posix=True, punctuation_chars=True)
+    """Shell words and operators; raises ValueError on unbalanced quotes.
+
+    The result's `quoted_parens` is set when a quoted or escaped paren (`echo ')'`,
+    `\\(`) came out as a bare `(` or `)`: the paren stack of `DirectoryModel` is not
+    trusted then.
+    """
+    cleaned = split_lines(text)
+    lexer = shlex.shlex(cleaned, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""
-    return [part for token in lexer for part in split_operators(token)]
+    tokens = Tokens(part for token in lexer for part in split_operators(token))
+    bare = sum({"(": 1, ")": 1, "()": 2}.get(token, 0) for token in tokens)
+    tokens.quoted_parens = bare != unquoted_parens(cleaned)
+    return tokens
 
 
 def join_toplevel(tokens: list[str]) -> list[str]:
@@ -286,7 +327,8 @@ def join_toplevel(tokens: list[str]) -> list[str]:
     The lexer breaks the unquoted forms at the parentheses (or the backticks' spaces); quoted,
     they are already one word. All three read as the same word, which `advance_dir` resolves.
     """
-    joined: list[str] = []
+    joined = Tokens()
+    joined.quoted_parens = getattr(tokens, "quoted_parens", False)
     index = 0
     while index < len(tokens):
         if tokens[index : index + 6] == ["$", "(", "git", "rev-parse", "--show-toplevel", ")"]:
@@ -308,17 +350,23 @@ def is_assignment(token: str, *, include_append: bool = False) -> bool:
     return bool(sep) and name.isidentifier()
 
 
-def segments(tokens: list[str]) -> Iterator[list[str]]:
+def segment_spans(tokens: list[str]) -> Iterator[tuple[int, list[str]]]:
+    """Each non-empty segment between separators, with the index of its first token."""
     current: list[str] = []
-    for token in tokens:
+    for index, token in enumerate(tokens):
         if token in SEPARATORS:
             if current:
-                yield current
+                yield index - len(current), current
             current = []
         else:
             current.append(token)
     if current:
-        yield current
+        yield len(tokens) - len(current), current
+
+
+def segments(tokens: list[str]) -> Iterator[list[str]]:
+    for _, segment in segment_spans(tokens):
+        yield segment
 
 
 def env_option(arg: str, rest: list[str]) -> tuple[str, str, int] | None:
@@ -707,21 +755,204 @@ def advance_dir(workdir: str | None, args: list[str]) -> str | None:
     or a tab leaves the directory unknown (None); `~` is expanded here the way the shell does.
     The one substitution read instead is the git top level of the current directory
     (`TOPLEVEL_SUBSTITUTIONS`), which is that repository's root, or unknown outside one.
+    From an unknown directory only an absolute target (or `~`) that exists is known again;
+    a relative one stays unknown.
     """
-    if workdir is None:
-        return None
     target = next((arg for arg in args if arg == "-" or not arg.startswith("-")), None)  # see has_dir_target
     if target == "-":
         return None  # the previous directory is not tracked
     if target is None:
         target = "~"  # a bare `cd` goes home
     if target in TOPLEVEL_SUBSTITUTIONS:
-        return git_toplevel(workdir)
+        return None if workdir is None else git_toplevel(workdir)
     if UNKNOWN_CD_TARGET.search(target):
         return None
     path = os.path.expanduser(target)
+    if workdir is None and not os.path.isabs(path):
+        return None
     path = path if os.path.isabs(path) else os.path.join(workdir, path)
     return os.path.normpath(path) if os.path.isdir(path) else workdir
+
+
+SHELL_CD = re.compile(r"(?<![\w-])(?:cd|pushd|popd)(?![\w-])")
+LIST_END = {";", "&"}
+PIPES = {"|", "|&"}
+OPENS_BODY = {"if", "while", "until", "for", "select", "case"}
+CLOSES_BODY = {"fi", "done", "esac"}
+STARTS_LIST = {"then", "do", "else", "elif", "!", "time"}
+
+
+class Scope:
+    """The and-or list being read, and the bodies and groups it sits in."""
+
+    def __init__(self) -> None:
+        self.deferred = False  # an `&&`-left cd ran: unknown once the list meets `||` or ends
+        self.changed = False  # the list changed directory: unknown after a closing `&`
+        self.depth = 0  # open if/while/until/for/select/case bodies
+        self.cases = 0  # open `case`: its parens are pattern syntax
+        self.braces: list[list[bool]] = []  # open `{` groups: [conditional, changed directory]
+
+
+class DirectoryModel:
+    """The directory each command of a token list runs in (None: unknown).
+
+    Every command is seen once, in order, by one set of rules (`commands()` here and
+    `git_guard.parse_git_actions` both read `at(index)`):
+
+    - `(` saves the state and the matching `)` restores it, so a subshell, `$(...)` and
+      `<(...)` never leak a `cd`; inside `case ... esac` parens are pattern syntax;
+    - known: the `cd` that starts an and-or list (`cd X || exit 1`), the rest of an `&&`
+      chain after a `cd`, a `{ ...; }` group, and `builtin cd` / `command cd`;
+    - unknown: a `cd` after `||`; one after `&&` once the list meets `||` or ends; one in a
+      pipeline, in a list ended by `&`, in an if/while/until/for/select/case body or in a
+      group that only runs conditionally; an `eval` whose text changes directory; a function
+      whose body does; and every `cd` when a quoted paren makes the paren stack untrusted;
+    - an absolute (or `~`) target that exists makes the directory known again.
+
+    A sourced file's `cd`, `CDPATH` and `pushd +N` are not modelled.
+    """
+
+    def __init__(self, tokens: list[str], workdir: str | None, untrusted: bool = False) -> None:
+        self.tokens = tokens
+        self.untrusted = untrusted or getattr(tokens, "quoted_parens", False)
+        self.dirs: list[str | None] = [workdir] * (len(tokens) + 1)
+        self.current = workdir
+        self.scan(0, len(tokens))
+        self.dirs[len(tokens)] = self.current
+
+    def at(self, index: int) -> str | None:
+        """The directory of the command that holds token `index`."""
+        return self.dirs[index]
+
+    def scan(self, low: int, high: int) -> None:
+        tokens = self.tokens
+        scope = Scope()
+        saved: list[tuple[str | None, Scope]] = []
+        previous: str | None = None
+        index = low
+        while index < high:
+            token = tokens[index]
+            self.dirs[index] = self.current
+            if token in SEPARATORS:
+                index += 1
+                if token in {"(", ")"}:
+                    previous = ";"
+                    if scope.cases:
+                        continue
+                    if token == "(":
+                        saved.append((self.current, scope))
+                        scope = Scope()
+                    elif saved:
+                        self.current, scope = saved.pop()
+                        previous = ")"
+                    continue
+                if (token == "||" or token in LIST_END) and scope.deferred:
+                    self.current = None
+                if token == "&" and scope.changed:
+                    self.current = None
+                if token == "||" or token in LIST_END:
+                    scope.deferred = False
+                if token in LIST_END:
+                    scope.changed = False
+                previous = token
+                continue
+            end = index
+            while end < high and tokens[end] not in SEPARATORS:
+                end += 1
+            self.dirs[index:end] = [self.current] * (end - index)
+            following = tokens[end] if end < high else None
+            index = self.command(index, end, scope, previous, following, high)
+
+    def command(
+        self, start: int, end: int, scope: Scope, previous: str | None, following: str | None, high: int
+    ) -> int:
+        """Apply one segment; return the index to go on from (past a function body)."""
+        words = self.tokens[start:end]
+        conditional = previous in {"&&", "||"} | PIPES
+        position = 0
+        while position < len(words):
+            word = words[position]
+            if is_assignment(word) or word in STARTS_LIST:
+                position += 1
+            elif word in OPENS_BODY:
+                scope.depth += 1
+                scope.cases += word == "case"
+                if word in {"for", "select", "case"}:
+                    return end
+                position += 1
+            elif word in CLOSES_BODY:
+                scope.depth = max(scope.depth - 1, 0)
+                scope.cases = max(scope.cases - (word == "esac"), 0)
+                return end
+            elif word == "{":
+                scope.braces.append([conditional, False])
+                position += 1
+            elif word == "}":
+                if scope.braces:
+                    group = scope.braces.pop()
+                    if group[1] and following in {"&"} | PIPES:
+                        self.current = None
+                    if scope.braces:
+                        scope.braces[-1][1] |= group[1]
+                return end
+            elif head_name(word) in {"builtin", "command"}:
+                position += 1
+                while position < len(words) and words[position].startswith("-"):
+                    position += 1
+            elif word == "function" or words[position + 1 : position + 3] == ["()", "{"]:
+                return self.define_function(start + position, high, end)
+            else:
+                break
+        if position >= len(words):
+            return end
+        name = head_name(words[position])
+        args = words[position + 1 :]
+        if name == "eval":
+            if SHELL_CD.search(" ".join(args)):
+                self.current = None
+        elif name in {"cd", "pushd", "popd"}:
+            if name == "popd" or (name == "pushd" and not has_dir_target(args)):
+                new = None  # the directory stack is not tracked
+            else:
+                new = advance_dir(self.current, args)
+            scope.changed = True
+            for group in scope.braces:
+                group[1] = True
+            if (
+                self.untrusted
+                or scope.depth
+                or previous == "||"
+                or previous in PIPES
+                or following in PIPES
+                or any(group[0] for group in scope.braces)
+            ):
+                self.current = None
+            else:
+                self.current = new
+                scope.deferred = scope.deferred or previous == "&&"
+        return end
+
+    def define_function(self, head: int, high: int, end: int) -> int:
+        """`f() { ... }` / `function f { ... }`: the body runs on a call, not here."""
+        tokens = self.tokens
+        brace = head + 2
+        if tokens[head] == "function" and tokens[brace : brace + 1] == ["()"]:
+            brace += 1
+        if tokens[brace : brace + 1] != ["{"]:
+            return end
+        depth, close = 0, high
+        for found in range(brace, high):
+            depth += {"{": 1, "}": -1}.get(tokens[found], 0)
+            if depth == 0:
+                close = found
+                break
+        before = self.current
+        self.scan(brace + 1, close)
+        changes = SHELL_CD.search(" ".join(tokens[brace + 1 : close]))
+        self.current = None if changes else before
+        if close < high:
+            self.dirs[close] = self.current
+        return min(close + 1, high)
 
 
 def inner_commands(text: str, walk: Walk) -> Iterator[str | None]:
@@ -839,7 +1070,9 @@ def commands(
     except ValueError:
         yield Command([], inherited, unresolved_dir(text, workdir), True, text)
         return
-    for segment in segments(tokens):
+    model = DirectoryModel(tokens, workdir)
+    for first, segment in segment_spans(tokens):
+        workdir = model.at(first)
         spent = False
         for inner in inner_commands(" ".join(segment), walk):
             if inner is None:
@@ -945,10 +1178,6 @@ def commands(
             if include_assignments and effects.assignments:
                 yield Command([], assignments, target)
             continue
-        if head_name(rest[0]) == "cd" or (head_name(rest[0]) == "pushd" and has_dir_target(rest[1:])):
-            workdir = advance_dir(workdir, rest[1:])
-        elif head_name(rest[0]) in {"pushd", "popd"}:
-            workdir = None  # the directory stack is not tracked
         yield Command(rest, assignments, target)
 
 

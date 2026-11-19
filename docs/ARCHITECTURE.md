@@ -98,10 +98,14 @@ checks nothing is visible in the record. Its known limits:
 - the guard reads the command's text, so `gh` behind a variable or an escape,
   `gh alias set`, `gh api .../pulls` and connector tools open a PR unseen;
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
-  model: a `cd` in a subshell or an untaken branch counts as taken, and a
-  directory the same command creates, `GIT_DIR` and `GIT_WORK_TREE` are not
-  followed; `cd -`, `popd` and a bare `pushd` leave the directory unknown,
-  which blocks the decisions that need it;
+  model: a subshell's `cd` is restored, and a `cd` that may not have run (after
+  `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in
+  an if/while/until/for/select/case body, in an `eval` or a function, or in text
+  with a quoted paren) leaves the directory unknown until an absolute `cd`;
+  `cd -`, `popd` and a bare `pushd` leave it unknown too, which blocks the
+  decisions that need it. A directory the same command creates, `GIT_DIR`,
+  `GIT_WORK_TREE`, a sourced file's `cd`, `CDPATH` and `pushd +N` are not
+  followed;
 - it checks the local commit, while the PR shows the pushed branch;
 - the could-not-start rule reads only the first word, so a check that goes on to
   run more after a missing first program (`"no-such-tool; exit 127"`), a leading
