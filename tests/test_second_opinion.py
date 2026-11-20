@@ -40,7 +40,7 @@ class CommandTests(unittest.TestCase):
     def test_claude_cannot_write_and_runs_only_read_only_git(self) -> None:
         command = second_opinion.build_command("claude", "deep", Path("/repo"), "contract")
         self.assertEqual("plan", command[command.index("--permission-mode") + 1])
-        self.assertEqual("claude-fable-5-1", command[command.index("--model") + 1])
+        self.assertEqual("claude-fable-5-2", command[command.index("--model") + 1])
         self.assertEqual("xhigh", command[command.index("--effort") + 1])
         disallowed = command[command.index("--disallowedTools") + 1 : command.index("--tools")]
         self.assertEqual(["Write", "Edit", "NotebookEdit"], disallowed)
@@ -117,6 +117,24 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = self.run_script(Path(tmp), "--dry-run")
         self.assertEqual(2, result.returncode)
+
+
+class ModelPinTests(unittest.TestCase):
+    """A model release changes the pins in two places; these keep them in step."""
+
+    def test_codex_agents_run_the_standard_codex_review_model_and_effort(self) -> None:
+        import tomllib
+
+        for path in sorted((ROOT / "agents" / "codex").glob("*.toml")):
+            with self.subTest(agent=path.name):
+                agent = tomllib.loads(path.read_text())
+                self.assertEqual(second_opinion.MODELS["codex"]["standard"], agent["model"])
+                self.assertEqual(second_opinion.EFFORT["standard"], agent["model_reasoning_effort"])
+
+    def test_the_claude_reviewer_alias_names_the_standard_claude_model_family(self) -> None:
+        text = (ROOT / "agents" / "claude" / "reviewer.md").read_text()
+        alias = next(line.split(":", 1)[1].strip() for line in text.splitlines() if line.startswith("model:"))
+        self.assertIn(f"-{alias}-", second_opinion.MODELS["claude"]["standard"])
 
 
 if __name__ == "__main__":

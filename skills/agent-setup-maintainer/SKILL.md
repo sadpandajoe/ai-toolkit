@@ -16,7 +16,7 @@ add the missing fact or boundary; never put the procedure back.
 ## Layout
 
 - `rules/universal.md`: the only always-on text, injected by
-  `hooks/session-start.sh`. Boundaries only; keep it under about 300 words.
+  `hooks/session-start.sh`. Boundaries only; keep it near 350 words.
 - `skills/<name>/SKILL.md`: one skill per outcome, triggered by its
   description alone. Frontmatter is exactly `name` and `description`. Start
   from [the template](../../docs/templates/SKILL.md). A script a skill runs
@@ -26,7 +26,8 @@ add the missing fact or boundary; never put the procedure back.
   (review), or a different tool or model set. The Claude body and the Codex
   `developer_instructions` must be identical; a test holds them equal.
 - `hooks/`: deterministic boundaries. `hooks/lib/git_guard.py` is standalone
-  (standard library plus `shell_tokens`); a rule the hook enforces needs no
+  (standard library plus its siblings `shell_tokens`, `gh_args` and
+  `verify_record`); a rule the hook enforces needs no
   prose beyond one line in `rules/universal.md`.
 - `.claude-plugin/` and `.codex-plugin/`: the install. Codex plugins can't
   ship agents, so `install.sh` links `agents/codex/*.toml`.

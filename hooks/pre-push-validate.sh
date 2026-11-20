@@ -66,9 +66,14 @@
 # never suggests it.
 #
 # Which repository: the push is checked in the directory the shared tokenizer
-# says it runs in (`git -C` is followed lexically with os.path.normpath: no
-# symlink resolution, no `~` expansion, at most 16 hops). A push whose
-# repository it cannot tell (--git-dir, --work-tree, GIT_DIR or GIT_WORK_TREE,
+# (`shell_tokens.DirectoryModel`) says it runs in. A subshell, `$(...)` and `<(...)`
+# restore it; a `cd` that may not have run (after `||`, after `&&` once the list ends,
+# in a pipeline, in a list ended by `&`, in an if/while/until/for/select/case body, in an
+# `eval`), every `cd` in text with a quoted operator, and everything after a function
+# definition that is followed by a `cd` leave it unknown until an absolute `cd`. A parser
+# crash on a command that mentions a push blocks too. `git -C` is followed lexically
+# with os.path.normpath (no symlink resolution, no `~` expansion, at most 16 hops).
+# A push whose repository it cannot tell (--git-dir, --work-tree, GIT_DIR or GIT_WORK_TREE,
 # more than 16 `-C` hops, or a directory that does not exist, which is what
 # `git -C ~/x push` and `git -C $DIR push` name when the text is read literally;
 # a `-C` word with a `$`, `~`, backtick, glob character (`*?[`), tab or newline, or a
@@ -76,7 +81,8 @@
 # not a directory of that literal name exists: `-C "$X/.."` is not the folder above one
 # named `$X`, and `-C '/p/[w]ork'` is a pattern; the one `$` read on purpose is
 # `cd "$(git rev-parse --show-toplevel)"` (that exact text, unquoted or in backticks
-# too), which is the git top level of the directory it runs in;
+# too), which is the git top level of the directory it runs in, and a `cd $S` where an
+# earlier segment set `S=` to a literal path (a `-C $S` value is still unknown here);
 # a dashed `git-push` is a push too, and any other `git-*` word is an ordinary
 # executable) blocks with "cannot tell which repository this push
 # runs in; run it directly" instead of validating the caller's repository. So
@@ -199,6 +205,8 @@ try:
         line = parse()
 except shell_tokens.DeadlineExceeded:
     line = "unreadable\t"  # too large or complex to read in time: blocks unless the user skips
+except Exception:  # noqa: BLE001 - a parser crash must not read as "no push": the shell below would allow
+    line = "unreadable\t" if shell_tokens.mentions_push(command) else None
 if line:
     print(line)
 PY
