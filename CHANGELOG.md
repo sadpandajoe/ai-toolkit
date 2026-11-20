@@ -40,7 +40,9 @@
     (`hooks/lib/gh_args.py`), and a flag that version lacks grants no
     draft, help or undo;
   - `gh api` calls that merge, ready or open a PR: merging and readying
-    now need `AITK_PR_READY=1`, and opening one this way always blocks;
+    now need `AITK_PR_READY=1`, and opening one this way, or a call the
+    guard cannot read, always blocks (other API writes and `curl` are not
+    modelled; branch protection is the boundary for those);
   - `$'...'` quoting hid the rest of a command from the tokenizer, and a
     crash allowed a command when quoting hid the git word.
 

@@ -92,7 +92,8 @@ enough is a judgment, so review stays in the `review` skill. The record is a
 tripwire against forgetting, not proof: it shows what ran, so a command that
 checks nothing is visible in the record. Its known limits:
 
-- it keeps the last 200 runs, so 200 further runs drop a failure;
+- it keeps the last 200 runs from the newest 20 commits they started from, so
+  200 further runs, or runs on 20 newer commits, drop a failure;
 - it is a plain file: deleting it or writing it by hand goes unseen;
 - the guard reads the command's text. `gh` behind a variable or an escape
   (`"$GH" pr ready 12`) and a verb a variable hides (`gh pr $V 12`) are gated,
@@ -104,14 +105,20 @@ checks nothing is visible in the record. Its known limits:
   name behind an unknown wrapper (`g=gh; setsid $g pr merge 12`), a variable
   that holds more than the name (`c='gh pr'; $c merge 12`), `gh` aliases and
   extensions and connector tools open a PR unseen;
-- `gh api` PR create, merge and ready are gated: a merge or ready (REST
-  `pulls/<n>/merge`, or a GraphQL `mergePullRequest`, `markPullRequestReadyForReview`,
-  `enablePullRequestAutoMerge`, `enqueuePullRequest`) needs `AITK_PR_READY=1`, and a create
-  (REST `pulls`, `createPullRequest`, `revertPullRequest`) or a GraphQL query the guard
-  cannot read (`--input`, `-F query=@file`, a variable or `$(...)`) is blocked with no
-  override, like an unchecked `gh pr create`. Other API writes (refs, contents, merges into
-  a branch, `gh repo sync --force`) and `curl` are not modelled: for those, GitHub's branch
-  protection is the boundary, not this hook;
+- `gh api` PR create, merge and ready are gated: a PUT to `pulls/<n>/merge` (also
+  `repositories/<id>/...`) or a GraphQL `mergePullRequest`,
+  `markPullRequestReadyForReview`, `enablePullRequestAutoMerge` or
+  `enqueuePullRequest` needs `AITK_PR_READY=1`; a POST to `pulls`, a
+  `createPullRequest` or `revertPullRequest`, and a GraphQL query the guard
+  cannot read (`--input`, `-F query=@file`, a shell expansion or backtick in
+  `query=`) block with no override, like an unchecked `gh pr create`. An
+  expansion in the endpoint or method, or an unquoted `$(`, blocks when it
+  could be one of these. Not seen: `gh api $ARGS` (the whole call in a
+  variable), a whole path segment that is an expansion standing alone for
+  `pulls` or `merge`, and `curl`. Other API writes (refs, contents, merges
+  into a branch, `gh repo sync --force`) are not modelled either: for those,
+  GitHub's branch protection is the boundary, not this hook. A literal query
+  holding a backtick blocks with no override (an accepted over-block);
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
   model: a subshell's `cd` is restored, and a `cd` that may not have run (after
   `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in

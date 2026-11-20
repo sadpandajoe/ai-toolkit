@@ -277,13 +277,17 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(["repos/o/r/pulls"], gh_args.read_api([endpoint]).endpoints, endpoint)
 
     def test_method_is_the_last_one_or_follows_the_fields(self) -> None:
-        self.assertFalse(gh_args.read_api(["x"]).non_get)
-        self.assertTrue(gh_args.read_api(["x", "-f", "a=b"]).non_get)
-        self.assertTrue(gh_args.read_api(["x", "--input", "f"]).non_get)
-        self.assertFalse(gh_args.read_api(["x", "-f", "a=b", "-X", "get"]).non_get)
-        self.assertTrue(gh_args.read_api(["-X", "GET", "-iX", "put", "x"]).non_get)
-        self.assertTrue(gh_args.read_api(["--method=patch", "x"]).non_get)
-        self.assertTrue(gh_args.read_api(["x", "-X", "$M"]).non_get)
+        def methods(*args: str) -> tuple[bool, bool]:
+            api = gh_args.read_api(list(args))
+            return api.may_post, api.may_put
+
+        self.assertEqual((False, False), methods("x"))
+        self.assertEqual((True, False), methods("x", "-f", "a=b"))
+        self.assertEqual((True, False), methods("x", "--input", "f"))
+        self.assertEqual((False, False), methods("x", "-f", "a=b", "-X", "get"))
+        self.assertEqual((False, True), methods("-X", "GET", "-iX", "put", "x"))
+        self.assertEqual((False, False), methods("--method=patch", "x"))
+        self.assertEqual((True, True), methods("x", "-X", "$M"))
 
     def test_queries_come_from_both_field_flags(self) -> None:
         api = gh_args.read_api(["graphql", "-f", "query=a", "--field=query=b", "-F", "n=1"])
@@ -298,7 +302,7 @@ class ApiTests(unittest.TestCase):
 
     def test_effects(self) -> None:
         self.assertEqual("merge", self.effect("repos/o/r/pulls/12/merge -X PUT"))
-        self.assertEqual("merge", self.effect("repos/o/r/pulls/$PR/merge -f merge_method=squash"))
+        self.assertEqual("merge", self.effect("repos/o/r/pulls/$PR/merge -X PUT -f merge_method=squash"))
         self.assertEqual("merge", self.effect("graphql -f query=mutation{mergePullRequest}"))
         self.assertEqual("create", self.effect("repos/{owner}/{repo}/pulls -f title=t"))
         self.assertEqual("create", self.effect("graphql -f query=mutation{createPullRequest}"))
@@ -310,7 +314,7 @@ class ApiTests(unittest.TestCase):
         self.assertIsNone(self.effect("repos/o/r/pulls -f a=b --help"))
 
     def test_expansions_that_could_name_a_pull_request(self) -> None:
-        self.assertEqual("unreadable", self.effect("$URL -X PUT"))
+        self.assertEqual("merge", self.effect("$URL -X PUT"))
         self.assertEqual("unreadable", self.effect("$URL -f a=b"))
         self.assertIsNone(self.effect("$URL"))
         self.assertEqual("merge", self.effect("repos/o/r/pulls/12/merge -X $M"))
@@ -322,6 +326,58 @@ class ApiTests(unittest.TestCase):
     def test_an_unknown_flag_makes_every_positional_an_endpoint(self) -> None:
         self.assertEqual("merge", self.effect("--new val repos/o/r/pulls/12/merge"))
         self.assertIsNone(self.effect("--new repos/o/r/issues/1"))
+
+    def test_only_post_opens_and_only_put_merges(self) -> None:
+        for line in (
+            "repos/o/r/pulls/$PR -X PATCH -f body=x",
+            "-X PATCH repos/{owner}/{repo}/issues/$N",
+            "-X DELETE repos/{owner}/{repo}/issues/comments/$ID",
+            "repos/$GITHUB_REPOSITORY/statuses/$SHA -f state=success",
+            "-X PATCH repos/$GITHUB_REPOSITORY/check-runs/$ID",
+            "-X HEAD repos/o/r/pulls",
+            "-X PUT repos/{owner}/{repo}/contents/docs/$NAME.md",
+            "-X PUT repos/o/r/pulls -f a=b",
+            "-X POST repos/o/r/pulls/12/merge",
+        ):
+            self.assertIsNone(self.effect(line), line)
+        self.assertEqual("create", self.effect("-X POST repos/{owner}/{repo}/pulls"))
+        self.assertEqual("create", self.effect("repos/$GITHUB_REPOSITORY/pulls -f title=t"))
+        self.assertEqual("merge", self.effect("repos/o/r/pulls/12/${X:?}erge -X PUT"))
+        self.assertEqual("merge", self.effect("-X PUT repositories/1/pulls/12/merge"))
+        self.assertEqual("create", self.effect("repositories/1/pulls -f title=t"))
+        self.assertEqual("unreadable", self.effect("-X PUT"))
+        self.assertIsNone(self.effect("-X PATCH"))
+        # a limit: a whole-segment expansion alone for `pulls` or `merge` is not read
+        self.assertIsNone(self.effect("repos/o/r/$X -f title=t"))
+
+    def test_the_matcher_is_fast_on_many_expansions(self) -> None:
+        self.assertIsNone(self.effect("/".join(["$A"] * 40) + "/x -X PATCH"))
+        self.assertIsNone(self.effect("/".join(["$A"] * 40) + " -f a=b"))
+
+    def test_endpoint_fragment_and_ghes_prefixes(self) -> None:
+        self.assertEqual(["repos/o/r/pulls"], gh_args.read_api(["repos/o/r/pulls#x"]).endpoints)
+        self.assertEqual(["graphql"], gh_args.read_api(["https://ghe.example.com/api/graphql"]).endpoints)
+        self.assertEqual("merge", self.effect("https://ghe.example.com/api/graphql -f query=mutation{mergePullRequest}"))
+        self.assertEqual("merge", self.effect("-X PUT repos/o/r/pulls/12/merge#x"))
+
+    def test_only_the_query_field_decides(self) -> None:
+        query = "query($ids:[ID!]!){nodes(ids:$ids){id}}"
+        self.assertIsNone(self.effect(f"graphql -f query={query} -f ids[]=A -F n=$N"))
+        for text in ("mutation{$M(input:{})}", "mutation{merge${E}PullRequest}", "${Q}", "$Q", "a(b:$(x))"):
+            self.assertTrue(gh_args.read_api(["graphql", "-f", "query=" + text]).unreadable_query, text)
+        for text in ("query($n:Int!){a(n:$n)}", "query($a:Int,$b:Int=1){x(a:$a, b: $b)}"):
+            self.assertFalse(gh_args.read_api(["graphql", "-f", "query=" + text]).unreadable_query, text)
+
+    def test_a_cut_command_reads_the_rest_as_unknown(self) -> None:
+        self.assertEqual("merge", gh_args.api_effect(["repos/o/r/pulls/$"], True))
+        self.assertEqual("create", gh_args.api_effect(["repos/$"], True))
+        self.assertEqual(
+            "unreadable", gh_args.api_effect(["graphql", "-F", "id=$", "-f", "query=mutation{mergePullRequest}"], True)
+        )
+        self.assertIsNone(gh_args.api_effect(["repos/o/r/issues/1/comments"], False))
+
+    def test_help_and_command_lookup(self) -> None:
+        self.assertIsNone(self.effect("graphql -h"))
 
     def test_command_lookup(self) -> None:
         self.assertEqual([["x"]], gh_args.api_commands(["api", "x"]))

@@ -557,6 +557,13 @@ PR_PUBLISH_LIMITS = (
     "git m 12",
     # an alias value assigned in the environment of a shell, the key set inside its payload
     "env A='!gh pr merge 12' sh -c 'git --config-env=alias.x=A x'",
+    # `gh api`: the whole call in a variable, `curl`, and other API writes are not modelled;
+    # GitHub's branch protection is the boundary there
+    "gh api $ARGS",
+    "curl -X PUT https://api.github.com/repos/o/r/pulls/12/merge",
+    "gh api -X PUT repos/o/r/git/refs/heads/main -f sha=abc",
+    "gh api -X POST repos/o/r/merges -f base=main -f head=x",
+    "gh repo sync --force",
 )
 
 PR_PUBLISH_ALLOW = (
@@ -1319,6 +1326,62 @@ class GitGuardHookTests(unittest.TestCase):
         # the user's override lifts merging and readying, never an unchecked PR or an unread query
         self.assert_cases(merge_or_ready[:-1], self.verified, 0, env={"AITK_PR_READY": "1"})
         self.assert_cases(create + unreadable, self.verified, 2, env={"AITK_PR_READY": "1"})
+
+    def test_gh_api_reads_the_shell_around_it(self) -> None:
+        merge = (
+            "gh api >/dev/null -X PUT repos/o/r/pulls/12/merge",
+            "gh >/dev/null api -X PUT repos/o/r/pulls/12/merge",
+            "gh api repos/o/r/pulls/$(echo 12)/merge -X PUT",
+            "gh api graphql -F id=$(echo x) -f query='mutation{{mergePullRequest(input:{{}}){{clientMutationId}}}}'",
+            "gh api -X PUT 'repos/o/r/pulls/12/merge#x'",
+            "gh api -X PUT repositories/1/pulls/12/merge",
+            "gh api -X PUT \"repos/o/r/pulls/12/${{X:?}}erge\"",
+            "gh api https://ghe.example.com/api/graphql -f query='mutation{{mergePullRequest(input:{{}}){{clientMutationId}}}}'",
+            "gh >/dev/null pr merge 12",
+            "gh pr >/dev/null merge 12",
+            "gh 2>&1 pr ready 12",
+        )
+        create = (
+            "gh api repos/$(echo o/r)/pulls -f title=t",
+            "gh api repositories/1/pulls -f title=t",
+            "gh api 'repos/o/r/pulls#x' -f title=t",
+            "echo repos/o/r/pulls/12/merge | xargs gh api -X PUT",
+            "gh api graphql -f query=\"mutation{{$M(input:{{}}){{clientMutationId}}}}\"",
+        )
+        allowed = (
+            "gh api repos/o/r/pulls > \"$OUT\"",
+            "gh api graphql -f query='query{{viewer{{login}}}}' >> $LOG",
+            "gh api repos/o/r/pulls 2>\"$ERR\"",
+            "gh api repos/o/r/pulls/$PR -X PATCH -f body=x",
+            "gh api -X PATCH repos/{{owner}}/{{repo}}/issues/$N -f state=closed",
+            "gh api -X DELETE repos/{{owner}}/{{repo}}/issues/comments/$ID",
+            "gh api repos/$GITHUB_REPOSITORY/statuses/$SHA -f state=success",
+            "gh api -X HEAD repos/o/r/pulls",
+            "gh api -X PUT \"repos/{{owner}}/{{repo}}/contents/docs/$NAME.md\" -f message=m",
+            "gh api graphql -f query='query($ids:[ID!]!){{nodes(ids:$ids){{id}}}}' -f 'ids[]=A'",
+            "gh api -h",
+            "VERSION=$(cat VERSION) npm run api graphql --input f",
+            "git rebase -x 'gh api repos/o/r/pulls/1/comments' HEAD~1",
+        )
+        self.assert_cases(merge, self.verified, 2)
+        self.assert_cases(create, self.verified, 2)
+        self.assert_cases(allowed, self.verified, 0)
+        self.assert_cases(("$(command -v gh) pr merge 12",), self.verified, 2)
+        # a literal backtick in a query is unreadable: an accepted over-block, no override
+        backtick = "gh api graphql -f query='mutation{{addComment(input:{{body:\"`x`\"}}){{clientMutationId}}}}'"
+        self.assert_cases((backtick,), self.verified, 2, env={"AITK_PR_READY": "1"})
+        # with the override a merge goes through, a create or an unread query does not
+        self.assert_cases(merge[:2] + merge[4:8], self.verified, 0, env={"AITK_PR_READY": "1"})
+
+    def test_a_text_fallback_for_gh_api_names_gh_api(self) -> None:
+        for command in (
+            "git rebase -x 'gh api repos/o/r/pulls' HEAD~1",
+            "git rebase -x 'gh api graphql --input q.json' HEAD~1",
+            "git rebase -x 'gh api -X PUT repos/o/r/pulls/12/merge' HEAD~1",
+        ):
+            result = self.run_hook(command, self.verified)
+            self.assertEqual(2, result.returncode, command)
+            self.assertIn("gh api", result.stderr, command)
 
     def test_a_non_draft_pr_is_sent_back_for_a_draft(self) -> None:
         result = self.run_hook("gh pr create --fill", self.verified)

@@ -17,6 +17,7 @@ the GraphQL query text decide whether a call merges, readies or opens a pull req
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import functools
 import re
 
 UNKNOWN = "?"
@@ -43,7 +44,7 @@ MERGE = (
 )
 READY = ((None, "undo", False),)
 REVERT = (("b", "body", True), ("F", "body-file", True), ("t", "title", True), ("d", "draft", False))
-API_INHERITED = ((None, "help", False),)  # `gh api --help`: no -R, no -h
+API_INHERITED = (("h", "help", False),)  # no -R; `gh api -h` prints help
 API = (
     (None, "cache", True), ("F", "field", True), ("H", "header", True), (None, "hostname", True),
     (None, "input", True), ("q", "jq", True), ("X", "method", True), ("p", "preview", True),
@@ -186,18 +187,27 @@ def has_expansion(word: str) -> bool:
     return word != "{}" and any(char in word for char in "$`{*?[")  # `{}`: find's placeholder
 
 
-def positional(args: list[str]) -> list[str]:
-    """Non-option arguments, skipping the values of the global value flags."""
-    found: list[str] = []
+def positional_indexes(args: list[str]) -> list[int]:
+    found: list[int] = []
     skip = False
-    for arg in args:
+    for index, arg in enumerate(args):
         if skip:
             skip = False
         elif arg in GLOBAL_VALUE_FLAGS:
             skip = True
         elif not arg.startswith("-"):
-            found.append(arg)
+            found.append(index)
     return found
+
+
+def positional(args: list[str]) -> list[str]:
+    """Non-option arguments, skipping the values of the global value flags."""
+    return [args[index] for index in positional_indexes(args)]
+
+
+def drop_first_positional(args: list[str]) -> list[str]:
+    indexes = positional_indexes(args)
+    return args[: indexes[0]] + args[indexes[0] + 1 :] if indexes else args
 
 
 def next_command(args: list[str], booleans: set[str]) -> tuple[str | None, list[str]]:
@@ -258,18 +268,6 @@ def pr_commands(args: list[str], expands: bool = False) -> list[tuple[str, list[
     return [item for index, item in enumerate(found) if item not in found[:index]]
 
 
-def drop_first_positional(args: list[str]) -> list[str]:
-    skip = False
-    for index, arg in enumerate(args):
-        if skip:
-            skip = False
-        elif arg in GLOBAL_VALUE_FLAGS:
-            skip = True
-        elif not arg.startswith("-"):
-            return args[:index] + args[index + 1 :]
-    return args
-
-
 def api_commands(args: list[str], expands: bool = False) -> list[list[str]]:
     """The arguments after `api` for every `gh api` that `args` can run: from the guard's
     reading (`positional`) and from cobra's `Find`. `expands`: the command name is an
@@ -296,36 +294,66 @@ MERGE_NAMES = (
     "enqueuePullRequest",
 )
 CREATE_NAMES = ("createPullRequest", "revertPullRequest")
-ENDPOINT_PREFIX = re.compile(r"https?://[^/]+/(?:api/v3/)?", re.I)
-ENDPOINT_MERGE = ["repos", "*", "*", "pulls", "*", "merge"]
-ENDPOINT_CREATE = ["repos", "*", "*", "pulls"]
-EXPANSION = re.compile(r"\$\{[^}]*\}|\$\(.*?\)|\$\w+|`[^`]*`|\{[^}]*\}|[*?\[]")
-WHOLE_VARIABLE = re.compile(r"\$\w+|\$\{[^}]*\}")
+# `https://<host>/`, GHES's `/api/v3/` and `/api/` (graphql) after it
+ENDPOINT_PREFIX = re.compile(r"https?://[^/]+/(?:api/(?:v3/)?)?", re.I)
+# only POST opens a PR and only PUT merges one
+CREATE_TARGETS = ("repos/*/*/pulls", "repositories/*/pulls")
+MERGE_TARGETS = ("repos/*/*/pulls/*/merge", "repositories/*/pulls/*/merge")
+SHELL_EXPANSION = re.compile(r"\$\{[^}]*\}|\$\(.*?\)|\$\w+|`[^`]*`")
+# gh's own placeholders: one non-empty path segment each
+TOKEN = re.compile(
+    r"(?P<one>\{(?:owner|repo|branch)\})"
+    r"|(?P<any>\$\{[^}]*\}|\$\(.*?\)|\$\w+|\$|`[^`]*`|\{[^}]*\}|[*?\[])"
+)
 
 
 @dataclass
 class Api:
     endpoints: list[str]  # normalised; several only when an unknown flag hides the endpoint
-    non_get: bool  # the method is, or may be, other than GET
-    tainted: bool  # an expansion or unknown flag may add a flag or field
+    may_post: bool
+    may_put: bool
+    tainted: bool  # an expansion, cut or unknown flag may add a flag or field
     queries: list[str]  # the `query=` values of -f and -F
-    unreadable_query: bool  # --input, a `@file` or a key the guard cannot read
+    unreadable_query: bool  # --input, a `@file`, or a query with a shell expansion in it
 
 
 def normalise_endpoint(endpoint: str) -> str:
-    """The path gh requests: no `https://<host>/` or `/api/v3/` prefix, `/` or `?query`."""
+    """The path gh requests: no `https://<host>/` prefix (nor GHES's `api/v3/`, `api/`),
+    `?query` or `#fragment` (found outside any expansion: `${X:?}` is no query), no `/`."""
     endpoint = ENDPOINT_PREFIX.sub("", endpoint, count=1)
-    return endpoint.partition("?")[0].strip("/")
+    spans = [found.span() for found in SHELL_EXPANSION.finditer(endpoint)]
+    for position, char in enumerate(endpoint):
+        if char in "?#" and not any(start <= position < end for start, end in spans):
+            endpoint = endpoint[:position]
+            break
+    return endpoint.strip("/")
 
 
-def read_api(args: list[str]) -> Api | None:
-    """`gh api`'s arguments (after `api`) as its flag table reads them; None for help."""
-    flags = walk(args, "api")
+def query_unreadable(text: str) -> bool:
+    """A `$` in query text is a GraphQL variable only where GraphQL allows one (after `(`,
+    `:`, `[`, `,` or `=`, spaces aside, and before a name); any other is a shell expansion."""
+    if "`" in text:
+        return True
+    for position, char in enumerate(text):
+        if char == "$":
+            before = text[:position].rstrip()
+            after = text[position + 1 : position + 2]
+            if not (before[-1:] in {"(", ":", "[", ",", "="} and (after.isalpha() or after == "_")):
+                return True
+    return False
+
+
+def read_api(args: list[str], cut: bool = False) -> Api | None:
+    """`gh api`'s arguments (after `api`) as its flag table reads them; None for help.
+    `cut`: an unquoted `$(` ended the words, so what follows is unknown."""
+    flags = walk(args, "api", cut)
     if flags.asks_help:
         return None
     methods = [value for name, value in flags.values if name == "method"]
     fielded = any(name in FIELD_FLAGS for name, _ in flags.values)
-    method_unknown = bool(methods) and has_expansion(methods[-1])
+    # a positional after the endpoint with an expansion may be `-X PUT` split by the shell
+    extra = any(has_expansion(word) for word in flags.positionals[1:])
+    unknown = cut or extra or bool(flags.unknown_flags) or (bool(methods) and has_expansion(methods[-1]))
     method = methods[-1].upper() if methods else ("POST" if fielded else "GET")
     queries: list[str] = []
     unreadable = False
@@ -333,76 +361,101 @@ def read_api(args: list[str]) -> Api | None:
         if name == "input":
             unreadable = True
         elif name in {"field", "raw-field"}:
-            key, equals, text = value.partition("=")
-            if not equals or has_expansion(key):
-                unreadable = unreadable or has_expansion(key)
-            elif key == "query":
+            key, _, text = value.partition("=")
+            if key == "query":  # every other field is a GraphQL variable
                 queries.append(text)
-                if name == "field" and text.startswith("@"):
-                    unreadable = True
-                elif WHOLE_VARIABLE.fullmatch(text) or "$(" in text or "`" in text:
-                    unreadable = True
-    # a positional after the endpoint with an expansion may be `-X PUT` split by the shell
-    extra = any(has_expansion(word) for word in flags.positionals[1:])
+                unreadable = unreadable or (name == "field" and text.startswith("@")) or query_unreadable(text)
     candidates = flags.positionals if flags.unknown_flags else flags.positionals[:1]
     return Api(
         endpoints=[normalise_endpoint(word) for word in candidates],
-        non_get=method_unknown or extra or bool(flags.unknown_flags) or method != "GET",
-        tainted=extra or bool(flags.unknown_flags),
+        may_post=unknown or method == "POST",
+        may_put=unknown or method == "PUT",
+        tainted=extra or cut or bool(flags.unknown_flags),
         queries=queries,
         unreadable_query=unreadable,
     )
 
 
-def could_be(endpoint: str, target: list[str]) -> bool:
-    """Whether `endpoint` (its expansions may be anything, `/` included) can equal `target`,
-    a list of path segments in which `*` is any segment."""
-    segments = endpoint.split("/")
+def split_segments(endpoint: str) -> list[str]:
+    """`endpoint` cut at the `/` that no expansion holds (`${X/y}` is one piece)."""
+    spans = [found.span() for found in TOKEN.finditer(endpoint)]
+    out: list[str] = []
+    start = 0
+    for position, char in enumerate(endpoint):
+        if char == "/" and not any(begin <= position < end for begin, end in spans):
+            out.append(endpoint[start:position])
+            start = position + 1
+    return out + [endpoint[start:]]
 
+
+def segment_regex(segment: str) -> str:
+    """A segment with expansions as a regex: a gh placeholder is one non-empty segment, a
+    shell expansion is non-empty and may span `/`."""
+    parts: list[str] = []
+    position = 0
+    for found in TOKEN.finditer(segment):
+        parts.append(re.escape(segment[position : found.start()].lower()))
+        parts.append("[^/]+" if found.group("one") else ".+")
+        position = found.end()
+    parts.append(re.escape(segment[position:].lower()))
+    return "".join(parts)
+
+
+def could_be(endpoint: str, target: str) -> bool:
+    """Whether some value of `endpoint` is a path of `target`, whose `*` is a non-empty
+    segment. An expansion is non-empty and may span `/`, and the text around it in its
+    segment must still match (`$NAME.md` is never `merge`). In a path of several segments an
+    expansion that is a whole segment does not stand for one literal target segment alone
+    (`repos/$R/statuses/$SHA` is not `repos/o/r/pulls`): a limit, pinned in the tests."""
+    wanted = target.split("/")
+    segments = split_segments(endpoint)
+    many = len(segments) > 1
+
+    def literal_chunk(first: int, end: int) -> bool:
+        return end - first == 1 and wanted[first] != "*"
+
+    @functools.lru_cache(maxsize=None)
     def match(i: int, j: int) -> bool:
         if i == len(segments):
-            return j == len(target)
+            return j == len(wanted)
         segment = segments[i]
-        if has_expansion(segment):
-            regex = "".join(
-                ".*" if part is None else re.escape(part) for part in split_expansions(segment)
+        found = TOKEN.fullmatch(segment)
+        if not found and not TOKEN.search(segment):
+            return j < len(wanted) and wanted[j] in {"*", segment.lower()} and match(i + 1, j + 1)
+        if found:
+            limit = j + 2 if found.group("one") else len(wanted) + 1
+            return any(
+                not (many and literal_chunk(j, end)) and match(i + 1, end)
+                for end in range(j + 1, min(limit, len(wanted) + 1))
             )
-            for end in range(j, len(target) + 1):
-                text = "/".join(target[j:end])
-                if ("*" in target[j:end] or re.fullmatch(regex, text, re.I)) and match(i + 1, end):
-                    return True
-            return False
-        return j < len(target) and target[j] in {"*", segment.lower()} and match(i + 1, j + 1)
+        regex = segment_regex(segment)
+        for end in range(j + 1, len(wanted) + 1):
+            chunk = wanted[j:end]
+            if "*" in chunk:
+                ok = len(chunk) == 1 or any(part for part in re.split(r"\W+", segment))
+            else:
+                ok = re.fullmatch(regex, "/".join(chunk), re.I) is not None
+            if ok and match(i + 1, end):
+                return True
+        return False
 
     return match(0, 0)
 
 
-def split_expansions(word: str) -> list[str | None]:
-    """`word` cut into its literal parts and `None` for each expansion."""
-    parts: list[str | None] = []
-    position = 0
-    for found in EXPANSION.finditer(word):
-        if found.start() > position:
-            parts.append(word[position : found.start()])
-        parts.append(None)
-        position = found.end()
-    if position < len(word):
-        parts.append(word[position:])
-    return parts
-
-
-def api_effect(args: list[str]) -> str | None:
+def api_effect(args: list[str], cut: bool = False) -> str | None:
     """What a `gh api` call does to pull requests: `MERGE_API` (merges or readies),
     `CREATE_API` (opens one), `UNREADABLE_API` (a GraphQL query or endpoint the guard
     cannot read, which could be either) or None."""
-    api = read_api(args)
+    api = read_api(args, cut)
     if api is None:
         return None
+    if not api.endpoints:
+        return UNREADABLE_API if api.may_post or api.may_put else None
     effects: list[str] = []
     for endpoint in api.endpoints:
-        if could_be(endpoint, ["graphql"]):
+        if could_be(endpoint, "graphql"):
             if has_expansion(endpoint):
-                if api.non_get:
+                if api.may_post:
                     effects.append(UNREADABLE_API)
             elif api.tainted or api.unreadable_query:
                 effects.append(UNREADABLE_API)
@@ -412,11 +465,10 @@ def api_effect(args: list[str]) -> str | None:
                     effects.append(CREATE_API)
                 if any(name in text for name in MERGE_NAMES):
                     effects.append(MERGE_API)
-        if api.non_get:
-            if could_be(endpoint, ENDPOINT_CREATE):
-                effects.append(CREATE_API)
-            if could_be(endpoint, ENDPOINT_MERGE):
-                effects.append(MERGE_API)
+        if api.may_post and any(could_be(endpoint, target) for target in CREATE_TARGETS):
+            effects.append(CREATE_API)
+        if api.may_put and any(could_be(endpoint, target) for target in MERGE_TARGETS):
+            effects.append(MERGE_API)
     for effect in (UNREADABLE_API, CREATE_API, MERGE_API):
         if effect in effects:
             return effect

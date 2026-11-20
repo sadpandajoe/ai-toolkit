@@ -582,9 +582,12 @@ WORD_GH = re.compile(r"\bgh\b", re.I)
 WORD_GIT = re.compile(r"\bgit\b", re.I)
 WORD_PR = re.compile(r"\bpr\b")
 WORD_API = re.compile(r"\bapi\b")
-# what a `gh api` call names to reach a pull request: the REST path or a GraphQL mutation
+WORD_GRAPHQL = re.compile(r"\bgraphql\b")
+API_UNREAD = re.compile(r"--input\b|query=@")  # a GraphQL query the text does not hold
+# what a `gh api` call names to reach a pull request: the REST path (`pulls` ending the
+# endpoint, or `pulls/<n>/merge`) or a GraphQL mutation
 API_PULLS = re.compile(
-    r"\bpulls\b|\b(?:mergePullRequest|markPullRequestReadyForReview|enablePullRequestAutoMerge"
+    r"\bpulls(?=$|[\s?#'\"])|\bpulls/[^/\s]+/merge\b|\b(?:mergePullRequest|markPullRequestReadyForReview|enablePullRequestAutoMerge"
     r"|enqueuePullRequest|createPullRequest|revertPullRequest)\b"
 )
 WORD_PUSH = re.compile(r"\bpush\b")
@@ -696,13 +699,23 @@ def mentions_gated(text: str) -> bool:
     return (
         words_in_order(text, WORD_GH, WORD_PR) is not None
         or GATED_BARE.search(text) is not None
-        or words_in_order(text, WORD_GH, WORD_API, API_PULLS) is not None
+        or mentions_api_publish(text)
     )
 
 
 def mentions_api_publish(text: str) -> bool:
-    """Whether `text` has `gh`, then `api`, then `pulls` or a pull request mutation."""
-    return words_in_order(unquoted(text), WORD_GH, WORD_API, API_PULLS) is not None
+    """Whether `text` has `gh`, then `api`, then a pull request path or mutation (`API_PULLS`)
+    or a GraphQL query it does not hold (`API_UNREAD` next to `graphql`)."""
+    return words_in_order(unquoted(text), WORD_GH, WORD_API, API_PULLS) is not None or mentions_api_unread(text)
+
+
+def mentions_api_unread(text: str) -> bool:
+    """Whether `text` has `gh`, `api` and `graphql` with `--input` or `query=@`, either order."""
+    text = unquoted(text)
+    return (
+        words_in_order(text, WORD_GH, WORD_API, WORD_GRAPHQL, API_UNREAD) is not None
+        or words_in_order(text, WORD_GH, WORD_API, API_UNREAD, WORD_GRAPHQL) is not None
+    )
 
 
 # A word that configures an inline git alias. These carry the key in the word and
@@ -1439,7 +1452,23 @@ def commands(
             if include_assignments and effects.assignments:
                 yield Command([], assignments, target)
             continue
-        yield Command(rest, assignments, target, after_paren=first > 0 and tokens[first - 1] == ")")
+        yield Command(rest, assignments, target, after_paren=in_command_position(tokens, first))
+
+
+def in_command_position(tokens: list[str], first: int) -> bool:
+    """Whether the segment at `first` follows `$(...)` that stood alone in command position
+    (`$(command -v gh) pr merge`), not `VERSION=$(cat VERSION) npm run api`."""
+    if first < 1 or tokens[first - 1] != ")":
+        return False
+    depth = 0
+    for index in range(first - 1, -1, -1):
+        depth += (tokens[index] == ")") - (tokens[index] == "(")
+        if depth == 0:
+            return (
+                index >= 1 and tokens[index - 1] == "$"
+                and (index == 1 or tokens[index - 2] in SEPARATORS or tokens[index - 2] in KEYWORDS)
+            )
+    return False
 
 
 def truthy(value: str | None) -> bool:
