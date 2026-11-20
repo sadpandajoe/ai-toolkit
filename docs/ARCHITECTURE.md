@@ -121,7 +121,9 @@ checks nothing is visible in the record. Its known limits:
   everything after a function definition that a `cd` follows;
   `cd -`, `popd` and a bare `pushd` leave it unknown too, which blocks the
   decisions that need it. A directory the same command creates, `GIT_DIR`,
-  `GIT_WORK_TREE`, a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`,
+  `GIT_WORK_TREE`, a variable that is not a literal path set earlier in the same
+  command (`S=/repo; cd $S` is read, `$PWD`, `${S:-x}` and `$S$T` are not),
+  a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`,
   `>/dev/null cd X`, `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"` are not
   followed;
 - it checks the local commit, while the PR shows the pushed branch;

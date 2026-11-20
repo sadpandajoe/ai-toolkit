@@ -86,7 +86,12 @@ or a newline, more hops, `--git-dir`, `--work-tree`, `GIT_DIR` and `GIT_WORK_TRE
 the directory unknown (None). So does a `cd` target with `$`, a backtick, a glob
 character, a tab or a newline, except the one substitution read on purpose:
 `cd "$(git rev-parse --show-toplevel)"` (unquoted, or in backticks) is the git top
-level of the current directory.
+level of the current directory. The other `$` read is a variable an earlier segment
+set to a literal path (`S=/repo; cd $S`, `git -C $S`): `$NAME`, `${NAME}` or either
+followed by `/rest`, and `$HOME` as `~`; `DirectoryModel.variables_at` holds the table,
+under the certainty rules of a `cd`. Any other `$` (an unassigned variable, `$PWD`,
+`${S:-x}`, `$S$T`) stays unknown. `git_globals` does not read the table: the pre-push
+hook's `git -C $S` stays unknown.
 
 `$'...'` words are rewritten into plain quoted words before shlex, which has no ANSI-C
 quoting (`expand_ansi_c`); one that never closes does not tokenize.
@@ -804,8 +809,55 @@ def git_runs_text(segment: list[str], rest: list[str]) -> list[str]:
     return []
 
 
-def hop_dir(directory: str | None, value: str) -> str | None:
+VARIABLE_WORD = re.compile(r"\$(?:(\w+)|\{(\w+)\})(/.*)?", re.S)
+
+
+# What no variable is known to hold: HOME is unknown too, not the real home directory.
+NO_VARIABLES: dict[str, str | None] = {"HOME": None}
+
+
+def expand_vars(word: str, variables: dict[str, str | None] | None) -> str:
+    """`$NAME`, `${NAME}` or either followed by `/rest`, with NAME a known literal path.
+
+    `variables` is what `DirectoryModel` knows at that point; `$HOME` is the home
+    directory, as `~` is. Any other `$` word is returned as it is, which stays unknown.
+    """
+    if "$" not in word or variables is None:
+        return word
+    match = VARIABLE_WORD.fullmatch(word)
+    if not match:
+        return word
+    name = match.group(1) or match.group(2)
+    if name in variables:
+        value = variables[name]  # None: assigned something that is not a literal path
+    elif name == "HOME":
+        value = os.path.expanduser("~")
+        value = None if value.startswith("~") else value
+    else:
+        value = None
+    rest = match.group(3) or ""
+    if value is None or UNKNOWN_CD_TARGET.search(rest):
+        return word
+    return value + rest
+
+
+def literal_value(value: str) -> str | None:
+    """The path a variable assignment stores, or None when the guard cannot tell it.
+
+    `$`, a backtick, a glob character, a tab, a newline and an empty value are not a literal
+    path, and neither is a `~`: bash expands an unquoted one and keeps a quoted one, and the
+    quotes are gone by the time the value is read here (`S='~/x'; cd $S` stays put).
+    """
+    if not value or UNKNOWN_CD_TARGET.search(value) or "~" in value:
+        return None
+    return value
+
+
+def hop_dir(
+    directory: str | None, value: str, variables: dict[str, str | None] | None = None
+) -> str | None:
     """One `-C VALUE` hop from `directory`: normpath, unknown (None) for a value the shell expands."""
+    value = expand_vars(value, variables)
     if directory is None or UNKNOWN_PATH.search(value):
         return None
     return os.path.normpath(os.path.join(directory, value))
@@ -864,7 +916,9 @@ def has_dir_target(args: list[str]) -> bool:
     return any(arg == "-" or not arg.startswith("-") for arg in args)
 
 
-def advance_dir(workdir: str | None, args: list[str]) -> str | None:
+def advance_dir(
+    workdir: str | None, args: list[str], variables: dict[str, str | None] | None = None
+) -> str | None:
     """Follow `cd`/`pushd` so a check reads the repository the command runs in.
 
     A bare `cd` goes to HOME; `cd -` is unknown (the previous directory is not tracked).
@@ -873,13 +927,14 @@ def advance_dir(workdir: str | None, args: list[str]) -> str | None:
     The one substitution read instead is the git top level of the current directory
     (`TOPLEVEL_SUBSTITUTIONS`), which is that repository's root, or unknown outside one.
     From an unknown directory only an absolute target (or `~`) that exists is known again;
-    a relative one stays unknown.
+    a relative one stays unknown. `$NAME` is read from `variables` (`expand_vars`).
     """
     target = next((arg for arg in args if arg == "-" or not arg.startswith("-")), None)  # see has_dir_target
     if target == "-":
         return None  # the previous directory is not tracked
     if target is None:
         target = "~"  # a bare `cd` goes home
+    target = expand_vars(target, variables)
     if target in TOPLEVEL_SUBSTITUTIONS:
         return None if workdir is None else git_toplevel(workdir)
     if UNKNOWN_CD_TARGET.search(target):
@@ -897,6 +952,9 @@ OPENS_BODY = {"if", "while", "until", "for", "select", "case"}
 CLOSES_BODY = {"fi", "done", "esac"}
 STARTS_LIST = {"then", "do", "else", "elif", "!"}
 DIR_COMMANDS = {"cd", "pushd", "popd"}
+ASSIGNING = {"export", "declare", "typeset", "local", "readonly"}
+FORGETTING = {"read", "unset", "mapfile", "readarray", "getopts"}
+CLEARING = {"eval", "source", "."}  # may assign anything
 
 
 class Scope:
@@ -907,7 +965,9 @@ class Scope:
         self.changed = False  # the list changed directory: unknown after a closing `&`
         self.depth = 0  # open if/while/until/for/select/case bodies
         self.cases = 0  # open `case`: its parens are pattern syntax
-        self.braces: list[list[bool]] = []  # open `{` groups: [conditional, changed directory]
+        self.braces: list[list] = []  # open `{` groups: [conditional, changed directory, assigned]
+        self.assigned: set[str] = set()  # variables the list assigned: unknown after a closing `&`
+        self.deferred_vars: set[str] = set()  # `&&`-left assignments: unknown once the list ends
 
 
 class DirectoryModel:
@@ -931,7 +991,14 @@ class DirectoryModel:
     - a function (`f() {`, `function f`, `f ( ) {`, in any layout) runs where it is called,
       which the model does not follow: once the text defines one, and a `cd` appears after
       the definition starts, everything from the definition on is unknown;
-    - an absolute (or `~`) target that exists makes the directory known again.
+    - an absolute (or `~`) target that exists makes the directory known again;
+    - a variable an earlier segment set to a literal path (`S=/repo; cd $S`, `export S=...`)
+      is known to a `cd`/`pushd` target and a `-C` value (`variables_at`), under the same
+      certainty rules as a `cd`: an assignment that may not have run, a later non-literal
+      assignment, `read`, `unset`, `eval` or `source` make it unknown, a subshell scopes it,
+      and a prefix assignment (`S=/x cd $S`) does not count. Everything after a function
+      definition has no known variables. A quoted `'~/x'` value is expanded like an
+      unquoted one.
 
     Not modelled: a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`, `>/dev/null cd X`,
     `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"`.
@@ -941,16 +1008,54 @@ class DirectoryModel:
         self.tokens = tokens
         self.untrusted = untrusted or getattr(tokens, "quoted_operators", False)
         self.dirs: list[str | None] = [workdir] * (len(tokens) + 1)
+        self.variables: dict[str, str | None] = {}
+        self.tables: list[dict[str, str | None]] = [self.variables] * (len(tokens) + 1)
         self.current = workdir
         self.scan()
         self.dirs[len(tokens)] = self.current
         head = self.function_head()
-        if head is not None and any(DIRECTORY_CHANGE.search(word) for word in tokens[head:]):
-            self.dirs[head:] = [None] * (len(self.dirs) - head)
+        if head is not None:
+            self.tables[head:] = [NO_VARIABLES] * (len(self.tables) - head)
+            if any(DIRECTORY_CHANGE.search(word) for word in tokens[head:]):
+                self.dirs[head:] = [None] * (len(self.dirs) - head)
 
     def at(self, index: int) -> str | None:
         """The directory of the command that holds token `index`."""
         return self.dirs[index]
+
+    def variables_at(self, index: int) -> dict[str, str | None]:
+        """The variables known to be a literal path where the command at token `index` runs."""
+        return self.tables[index]
+
+    def forget(self, names: set[str]) -> None:
+        if names & self.variables.keys() or "HOME" in names:
+            kept = {k: v for k, v in self.variables.items() if k not in names}
+            self.variables = {**kept, "HOME": None} if "HOME" in names else kept
+
+    def may_not_run(self, scope: "Scope", previous: str | None, following: str | None) -> bool:
+        return bool(
+            self.untrusted
+            or scope.depth
+            or previous == "||"
+            or previous in PIPES
+            or following in PIPES
+            or any(group[0] for group in scope.braces)
+        )
+
+    def assign(
+        self, name: str, value: str, scope: "Scope", previous: str | None, following: str | None
+    ) -> None:
+        """`NAME=value` as a segment of its own, or an argument of `export`."""
+        scope.assigned.add(name)
+        for group in scope.braces:
+            group[2].add(name)
+        literal = literal_value(value)
+        if literal is None or self.may_not_run(scope, previous, following):
+            self.forget({name})
+            return
+        self.variables = {**self.variables, name: literal}
+        if previous == "&&":
+            scope.deferred_vars.add(name)
 
     def function_head(self) -> int | None:
         """Start of the segment of the first function definition (`f()`, `function f`)."""
@@ -970,7 +1075,7 @@ class DirectoryModel:
         tokens = self.tokens
         high = len(tokens)
         scope = Scope()
-        saved: list[tuple[str | None, Scope]] = []
+        saved: list[tuple[str | None, Scope, dict[str, str | None]]] = []
         previous: str | None = None
         index = 0
         while index < high:
@@ -983,26 +1088,33 @@ class DirectoryModel:
                     if scope.cases or self.untrusted:
                         continue
                     if token == "(":
-                        saved.append((self.current, scope))
+                        saved.append((self.current, scope, self.variables))
                         scope = Scope()
                     elif saved:
-                        self.current, scope = saved.pop()
+                        self.current, scope, self.variables = saved.pop()
                         previous = ")"
                     continue
                 if (token == "||" or token in LIST_END) and scope.deferred:
                     self.current = None
                 if token == "&" and scope.changed:
                     self.current = None
+                if (token == "||" or token in LIST_END) and scope.deferred_vars:
+                    self.forget(scope.deferred_vars)
+                if token == "&":
+                    self.forget(scope.assigned)
                 if token == "||" or token in LIST_END:
                     scope.deferred = False
+                    scope.deferred_vars = set()
                 if token in LIST_END:
                     scope.changed = False
+                    scope.assigned = set()
                 previous = token
                 continue
             end = index
             while end < high and tokens[end] not in SEPARATORS:
                 end += 1
             self.dirs[index:end] = [self.current] * (end - index)
+            self.tables[index:end] = [self.variables] * (end - index)
             self.command(tokens[index:end], scope, previous, tokens[end] if end < high else None)
             index = end
 
@@ -1013,9 +1125,15 @@ class DirectoryModel:
         conditional = previous in {"&&", "||"} | PIPES
         position = 0
         keyword = True  # only keywords and prefixes of keywords so far
+        assignments: list[str] = []
         while position < len(words):
             word = words[position]
             if is_assignment(word):
+                assignments.append(word)
+                position += 1
+                keyword = False
+            elif "+=" in word and word.partition("+=")[0].isidentifier():
+                self.forget({word.partition("+=")[0]})  # an append is not a literal
                 position += 1
                 keyword = False
             elif keyword and word in STARTS_LIST:
@@ -1027,6 +1145,8 @@ class DirectoryModel:
                 scope.depth += 1
                 scope.cases += word == "case"
                 if word in {"for", "select", "case"}:
+                    if word != "case":
+                        self.forget(set(words[position + 1 : position + 2]))
                     return
                 position += 1
             elif position == 0 and word in CLOSES_BODY:
@@ -1034,15 +1154,18 @@ class DirectoryModel:
                 scope.cases = max(scope.cases - (word == "esac"), 0)
                 return
             elif keyword and word == "{":
-                scope.braces.append([conditional, False])
+                scope.braces.append([conditional, False, set()])
                 position += 1
             elif keyword and word == "}":
                 if scope.braces:
                     group = scope.braces.pop()
                     if group[1] and following in {"&"} | PIPES:
                         self.current = None
+                    if following in {"&"} | PIPES:
+                        self.forget(group[2])
                     if scope.braces:
                         scope.braces[-1][1] |= group[1]
+                        scope.braces[-1][2] |= group[2]
                 return
             elif word in {"builtin", "command"}:
                 position += 1
@@ -1054,9 +1177,21 @@ class DirectoryModel:
             else:
                 break
         if position >= len(words):
+            if assignments and position == len(assignments):
+                for word in assignments:
+                    name, _, value = word.partition("=")
+                    self.assign(name, value, scope, previous, following)
             return
         name = words[position]
         args = words[position + 1 :]
+        if name in ASSIGNING:
+            for word in args:
+                if is_assignment(word):
+                    self.assign(*word.partition("=")[::2], scope, previous, following)
+        elif name in FORGETTING or (name == "printf" and "-v" in args):
+            self.forget(set(args))
+        if name in CLEARING:
+            self.variables = NO_VARIABLES
         if name == "eval":
             if DIRECTORY_CHANGE.search(" ".join(args)):
                 self.current = None
@@ -1064,18 +1199,11 @@ class DirectoryModel:
             if name == "popd" or (name == "pushd" and not has_dir_target(args)):
                 new = None  # the directory stack is not tracked
             else:
-                new = advance_dir(self.current, args)
+                new = advance_dir(self.current, args, self.variables)
             scope.changed = True
             for group in scope.braces:
                 group[1] = True
-            if (
-                self.untrusted
-                or scope.depth
-                or previous == "||"
-                or previous in PIPES
-                or following in PIPES
-                or any(group[0] for group in scope.braces)
-            ):
+            if self.may_not_run(scope, previous, following):
                 self.current = None
             else:
                 self.current = new
@@ -1224,7 +1352,7 @@ def commands(
         assignments = {**inherited, **effects.assignments}
         target = workdir
         for value in effects.chdir:
-            target = hop_dir(target, value)
+            target = hop_dir(target, value, model.variables_at(first))
         nested = None
         if effects.split is not None:
             split = effects.split.replace("\\_", " ")

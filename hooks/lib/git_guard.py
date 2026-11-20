@@ -207,7 +207,8 @@ and `git log -c alias.x push` do not; a `g -c alias.x x` wrapper is an accepted 
 `~` for `-C`) leaves the working
 directory unknown (`None`) before any path arithmetic, so the review gate blocks `cd
 "$X" && gh pr create` with "cannot follow" (`cd "$(git rev-parse --show-toplevel)"`, exactly
-that text, is read as the git top level instead), and the global options that take a separate value
+that text, is read as the git top level instead; so is `$NAME` or `${NAME}` when an earlier
+segment set `NAME=` to a literal path, from the model's table, never `shell_vars`), and the global options that take a separate value
 (`--attr-source`, `--super-prefix`, `--namespace`, `-C`, `-c`, `--git-dir`,
 `--work-tree`, `--config-env`) do not hide the subcommand. The patterns that scan
 unresolved text are searched in order, once (`shell_tokens.words_in_order`), so a
@@ -709,13 +710,13 @@ def parse_git_actions(
                     continue
                 if env_token in {"-u", "--unset", "-C", "--chdir"}:
                     if env_token in {"-C", "--chdir"} and j + 1 < segment_end:
-                        env_workdir = shell_tokens.hop_dir(env_workdir, tokens[j + 1])
+                        env_workdir = shell_tokens.hop_dir(env_workdir, tokens[j + 1], model.variables_at(i))
                     elif j + 1 < segment_end:
                         child_env.pop(tokens[j + 1], None)
                     j += 2
                     continue
                 if env_token.startswith("--chdir="):
-                    env_workdir = shell_tokens.hop_dir(env_workdir, env_token.split("=", 1)[1])
+                    env_workdir = shell_tokens.hop_dir(env_workdir, env_token.split("=", 1)[1], model.variables_at(i))
                     j += 1
                     continue
                 if env_token.startswith("--unset="):
@@ -796,7 +797,7 @@ def parse_git_actions(
             if opt == "-C":
                 if j + 1 >= count:
                     break
-                action["workdir"] = shell_tokens.hop_dir(action["workdir"], tokens[j + 1])
+                action["workdir"] = shell_tokens.hop_dir(action["workdir"], tokens[j + 1], model.variables_at(i))
                 j += 2
                 continue
             if opt == "--git-dir" or opt.startswith("--git-dir="):

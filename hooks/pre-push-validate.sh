@@ -81,7 +81,8 @@
 # not a directory of that literal name exists: `-C "$X/.."` is not the folder above one
 # named `$X`, and `-C '/p/[w]ork'` is a pattern; the one `$` read on purpose is
 # `cd "$(git rev-parse --show-toplevel)"` (that exact text, unquoted or in backticks
-# too), which is the git top level of the directory it runs in;
+# too), which is the git top level of the directory it runs in, and a `cd $S` where an
+# earlier segment set `S=` to a literal path (a `-C $S` value is still unknown here);
 # a dashed `git-push` is a push too, and any other `git-*` word is an ordinary
 # executable) blocks with "cannot tell which repository this push
 # runs in; run it directly" instead of validating the caller's repository. So

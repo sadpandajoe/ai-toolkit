@@ -1017,6 +1017,8 @@ class GitGuardHookTests(unittest.TestCase):
             ("echo ')'; cd other && gh pr view 1", None),
             ("find . \\( -name x \\) ; cd other && gh pr view 1", None),
             ("echo ')'; gh pr view 1", here),
+            # a `~` in an assigned value: bash keeps a quoted one, and the quotes are gone here
+            ("S='~/other'; cd $S && gh pr view 1", None),
             # an absolute cd makes the directory known again
             (f"false && cd other; cd {here} && gh pr view 1", here),
             # case bodies are bodies, and their parens are pattern syntax
@@ -1055,6 +1057,30 @@ class GitGuardHookTests(unittest.TestCase):
             ("echo ${x:-(}; cd other; echo ${y:-)}; gh pr view 1", None),
             ("echo ';' cd other ';'; gh pr view 1", None),
             ("find . -exec true {} \\; ; cd other && gh pr view 1", None),
+            # a variable an earlier segment set to a literal path
+            ("S=other; cd $S && gh pr view 1", other),
+            ("S=other; cd ${S} && gh pr view 1", other),
+            ("S=other; cd \"$S/.\" && gh pr view 1", other),
+            ("export S=other; cd $S && gh pr view 1", other),
+            ("T=1 S=other; cd $S && gh pr view 1", other),
+            ("S=other; ( S=sub ); cd $S && gh pr view 1", other),
+            ("S=$X; cd $S && gh pr view 1", None),
+            ("S=other; S=$X; cd $S && gh pr view 1", None),
+            ("S=other; S+=x; cd $S && gh pr view 1", None),
+            ("S=other; read S; cd $S && gh pr view 1", None),
+            ("S=other; unset S; cd $S && gh pr view 1", None),
+            ("S=other; eval 'true'; cd $S && gh pr view 1", None),
+            ("false && S=other; cd $S && gh pr view 1", None),
+            ("true || S=other; cd $S && gh pr view 1", None),
+            ("S=other | cat; cd $S && gh pr view 1", None),
+            ("S=other & cd $S && gh pr view 1", None),
+            ("if x; then S=other; fi; cd $S && gh pr view 1", None),
+            ("(S=other); cd $S && gh pr view 1", None),
+            ("S=other cd $S && gh pr view 1", None),
+            ("S=other; cd ${S:-x} && gh pr view 1", None),
+            ("S=other; T=x; cd $S$T && gh pr view 1", None),
+            ("cd $PWD && gh pr view 1", None),
+            ("cd $UNSET && gh pr view 1", None),
         ):
             with self.subTest(command=command):
                 walked = [found for found in shell_tokens.commands(command, here) if found.is_gh]
@@ -1096,10 +1122,49 @@ class GitGuardHookTests(unittest.TestCase):
             # a function's cd runs at the call
             ("f() {{ cd {main}; }}; cd {feature}; f; git push --force", feature, 2),
             ("f()\n{{\n  cd {feature}\n}}\ngit push --force", main, 2),
+            # a variable set to a literal path names that directory
+            ("S={feature}; cd $S && git push --force", main, 0),
+            ("S={feature}; git -C $S push --force", main, 0),
+            ('S={feature}; cd "$S" && git push --force', main, 0),
+            ("export S={feature}; cd ${{S}} && git push --force", main, 0),
+            ("S={main}; cd $S && git push --force", feature, 2),
+            ("S={main}; git -C $S push --force", feature, 2),
+            ("false && S={feature}; cd $S && git push --force", main, 2),
+            ("false && S={main}; git -C $S push --force", feature, 2),
+            ("S={feature} cd $S && git push --force", main, 2),
+            ("(S={feature}); cd $S && git push --force", main, 2),
+            ("S={feature}; S=$OTHER; cd $S && git push --force", main, 2),
+            ("S={feature}; S=$OTHER; git -C $S push --force", main, 2),
         ):
             command = template.format(main=main, feature=feature)
             with self.subTest(command=command):
                 self.assertEqual(expected, self.run_hook(command, cwd).returncode)
+
+    def test_a_literal_variable_names_the_directory_of_a_commit(self) -> None:
+        for command, expected in (
+            ("S={staged}; cd $S && git commit -m state", 2),
+            ("S={clean}; cd $S && git commit -m x", 0),
+            ("S={staged}; git -C $S commit -m state", 2),
+            ("S={clean}; git -C $S commit -m x", 0),
+            ("S=$X; cd $S && git commit -m x", 2),
+        ):
+            command = command.format(staged=self.staged, clean=self.clean)
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.run_hook(command, self.staged).returncode)
+
+    def test_home_is_the_home_directory_in_a_cd_target(self) -> None:
+        home = self.clean
+        (home / "homesub").mkdir(exist_ok=True)
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            for command, expected in (
+                ("cd $HOME/homesub && gh pr view 1", str(home / "homesub")),
+                ("cd ${HOME}/homesub && gh pr view 1", str(home / "homesub")),
+                ("cd $HOME && gh pr view 1", str(home)),
+                ("HOME=$X; cd $HOME/homesub && gh pr view 1", None),
+            ):
+                with self.subTest(command=command):
+                    walked = [c for c in shell_tokens.commands(command, "/") if c.is_gh]
+                    self.assertEqual([expected], [c.workdir for c in walked])
 
     def test_the_two_readers_walk_a_payload_under_the_same_doubt(self) -> None:
         here = str(self.clean)
@@ -1752,7 +1817,7 @@ class GitGuardHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as bare:
             walked = list(shell_tokens.commands('cd "$(git rev-parse --show-toplevel)" && gh pr create', bare))
             self.assertIsNone(walked[-1].workdir)
-        for other in ('cd "$(git rev-parse --show-cdup)"', 'cd "$(git rev-parse --show-toplevel)/x"', 'cd "$HOME"'):
+        for other in ('cd "$(git rev-parse --show-cdup)"', 'cd "$(git rev-parse --show-toplevel)/x"', 'cd "$HOME$X"'):
             with self.subTest(other=other):
                 walked = list(shell_tokens.commands(f"{other} && gh pr create", top))
                 self.assertIsNone(walked[-1].workdir)
