@@ -30,6 +30,10 @@ from typing import Callable
 
 RECORD = Path(".ai-toolkit") / "verify.json"
 KEEP = 200  # runs; a failure ages out only after this many later runs
+# Commits the kept runs may start from: `verdict` runs one `git diff` per distinct base, so
+# this bounds its cost the way the old cap of 20 runs did. A run on an older base matches
+# only a tree equal to the one it tested, so dropping it is what the cap always did.
+KEEP_BASES = 20
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 TIMEOUT_SECONDS = 15
 LEVELS = ("strong", "partial")
@@ -173,8 +177,9 @@ def _listed(data: dict) -> list[str]:
 
 
 def append(top: str, record: dict) -> Path:
-    """Add `record`, keep the newest KEEP, and forget outputs no longer on disk: a path a
-    later change creates under that name is part of the change, not a check's output."""
+    """Add `record`, keep the newest KEEP runs from the newest KEEP_BASES distinct bases, and
+    forget outputs no longer on disk: a path a later change creates under that name is part
+    of the change, not a check's output."""
     path = Path(top) / RECORD
     path.parent.mkdir(exist_ok=True)
 
@@ -183,10 +188,15 @@ def append(top: str, record: dict) -> Path:
 
     outputs = present([*known_outputs(top), *_listed(record)])
     records = []
-    for kept in (load(top) + [record])[-KEEP:]:
+    bases: set[str] = set()
+    for kept in reversed((load(top) + [record])[-KEEP:]):
+        if kept["base"] not in bases and len(bases) >= KEEP_BASES:
+            continue
+        bases.add(kept["base"])
         if "outputs" in kept:
             kept = {**kept, "outputs": present(_listed(kept))}
         records.append(kept)
+    records.reverse()
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps({"records": records, "outputs": outputs}, indent=1) + "\n")
     os.replace(temporary, path)

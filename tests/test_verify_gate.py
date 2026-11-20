@@ -226,6 +226,14 @@ class VerifyGateTests(unittest.TestCase):
             verify_record.append(str(self.repo), record)
         self.assert_blocked("failed (exit 1)")
 
+    def test_records_come_from_a_bounded_number_of_bases(self) -> None:
+        # the gate runs one git diff per distinct base, so the bases are capped too
+        for number in range(verify_record.KEEP_BASES + 5):
+            verify_record.append(str(self.repo), verify_record.new_record(f"base{number}", {}, "true", 0, "strong", "", True))
+        bases = [record["base"] for record in verify_record.load(str(self.repo))]
+        self.assertEqual(verify_record.KEEP_BASES, len(set(bases)))
+        self.assertEqual(f"base{verify_record.KEEP_BASES + 4}", bases[-1])
+
     def test_records_are_capped(self) -> None:
         for _ in range(verify_record.KEEP + 3):
             verify_record.append(str(self.repo), verify_record.new_record("x", {}, "true", 0, "strong", "", True))
