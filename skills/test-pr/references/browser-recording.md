@@ -69,11 +69,10 @@ in the test browser, never in init scripts that ship.
 
 ## Playwright MCP
 
-Playwright MCP is for interactive exploration. Recent releases can record
-(`browser_start_video` / `browser_stop_video`, with `--caps=devtools`; check
-the installed tool list). With `--init-script` (cursor dot), `--storage-state`
-(a host-and-role file) and `--output-dir` it is an alternative; `record.mjs`
-stays the primary recorder.
+Playwright MCP is for interactive exploration. Releases that record
+(`browser_start_video` / `browser_stop_video`, with `--caps=devtools`), given
+`--init-script` (cursor dot), `--storage-state` (a host-and-role file) and
+`--output-dir`, are an alternative; `record.mjs` stays the primary recorder.
 
 ## Transcode
 

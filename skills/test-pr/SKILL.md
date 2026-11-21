@@ -5,14 +5,12 @@ description: Test a PR, a test-plan doc, a feature area, or a Shortcut story in 
 
 # Test PR
 
-Verify user-visible behavior in a running app and report what happened, with
-evidence. This skill validates; it does not change product code or file bugs.
+It validates; it does not change product code or file bugs.
 
 ## Inputs
 
 - A PR (`123`, `owner/repo#123`, a URL): `gh pr view <ref> --json
-  number,title,body,baseRefName,headRefName,files` and `gh pr diff <ref>`;
-  translate the author's "how to test" notes into scenarios.
+  number,title,body,baseRefName,headRefName,files` and `gh pr diff <ref>`.
 - A test-plan doc, a feature area, or a Shortcut story (`sc-12345`, fetched
   with the `shortcut` skill).
 - Check out the PR branch only when asked (`gh pr checkout <n>`); then the
@@ -22,10 +20,9 @@ evidence. This skill validates; it does not change product code or file bugs.
 
 The app must already be running; this skill does not start dev servers. Use
 the URL you were given, otherwise probe `localhost` on 3000, 4000, 5000, 8000,
-8080, 8088, 9000 and 9001 and the host ports in `docker ps`. One hit: use it
-and say so. Several: ask which. None: ask the user to start the app (for
-Superset, the `superset-local` skill starts the stack and prints the frontend
-URL).
+8080, 8088, 9000 and 9001 and the host ports in `docker ps`; ask which when
+several answer, and ask the user to start the app when none does
+(`superset-local` starts Superset and prints the frontend URL).
 
 Classify the host and pick credentials with
 [references/preset-environments.md](references/preset-environments.md).
@@ -58,9 +55,8 @@ the source id, the scenarios, and the full text of
 change, ask for **before** (the base branch, or the environment without the
 change) and **after** (the PR) on the same scenarios; those are the PR's
 before/after evidence. Before needs the app running the base: capture it
-before the change is applied, or ask the user to switch the stack. Scenarios
-run sequentially in one recording; a failure is captured and the run moves on,
-with no retry until after the report. Codex's `workspace-write` sandbox can
+before the change is applied, or ask the user to switch the stack. A failure
+is captured and the run moves on, with no retry until after the report. Codex's `workspace-write` sandbox can
 refuse the browser's network and the writes under `~/.qa-runner/` and
 `~/qa-recordings/`; when the agent reports that, run the scenarios in this
 session and keep only results and paths in the report.

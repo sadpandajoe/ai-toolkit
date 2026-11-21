@@ -1,9 +1,8 @@
 # QA Report Format
 
-The body rules for a QA report posted anywhere other people read it: a
-Shortcut comment, a GitHub PR or issue comment, Slack, email. Destination
-mechanics live elsewhere (Shortcut: the `shortcut` skill; GitHub:
-`gh pr comment <pr> --body-file <path>`). A results table is for the terminal
+The body of a QA report anyone else reads: a Shortcut, PR or issue comment,
+Slack, email. Posting goes through the `shortcut` skill or
+`gh pr comment <pr> --body-file <path>`. A results table is for the terminal
 only; never paste it as an external comment.
 
 ## Tone
