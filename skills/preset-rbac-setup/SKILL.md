@@ -9,9 +9,7 @@ description: Seed the canonical seven RBAC test users (workspace roles plus data
 node <toolkit-root>/scripts/preset/setup-rbac.mjs --host <workspace-host-or-url> [--apply] [--replace-existing] [--headless]
 ```
 
-The script does the work: login, token discovery, team and workspace lookup,
-the plan, the writes, the `SYNCING` → `APPLIED` polling and the result table.
-Do not write a replacement script.
+The script does the whole job; do not write a replacement.
 
 - **Dry-run by default.** Without `--apply` it prints the plan (user, current
   role, proposed role, DAR action, permission name, deletion candidates) and
