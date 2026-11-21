@@ -108,5 +108,4 @@ Never bury the ask; state the current mitigation or that it waits on the ask.
 
 ## Working Rules
 
-Use real names and numbers, say what data is missing, and produce one output
-for one audience. The calling report may adapt headings or omit empty sections.
+Use real names and numbers, and say what data is missing.

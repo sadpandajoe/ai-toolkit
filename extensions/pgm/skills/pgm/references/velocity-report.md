@@ -18,6 +18,4 @@ report, flag data-quality problems:
 - per-person PR counts implausible for the team size;
 - many unlinked stories or PRs (Shortcut ↔ GitHub linkage gaps).
 
-Follow-ups worth offering: trends from `metrics.json`, a comparison with the
-previous month's `metrics.json` when it exists, a leadership summary, or one
-team broken out. Live state belongs to the status report.
+Live state belongs to the status report.
