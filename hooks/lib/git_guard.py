@@ -55,7 +55,7 @@ every `cd` in text with a quoted or escaped operator character (so an unescaped
 `find -exec ... \\;` too) and everything after a function definition followed by a
 `cd` leave the directory unknown until a subshell restores it or an absolute `cd`
 re-anchors it (not after a function). Not modelled: a sourced file's `cd`, `CDPATH`,
-`pushd +N`, `cd ~-`, `>/dev/null cd X`, `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"`, and so do
+`pushd +N`, `cd ~-`, `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"`, and so do
 `--git-dir`/`--work-tree` values the shell expands. Where the directory is unknown
 the guard cannot read the repository, so it blocks what needs it: a force push or a
 delete whose branch it cannot read, a commit whose staged files it cannot read, and a
@@ -501,9 +501,15 @@ def segment_end_index(tokens: list[str], start: int) -> int:
     return end
 
 
-def new_action(workdir: str | None, aliases: dict, env: dict, untrusted: bool = False) -> dict:
+SAME = object()  # `shell_workdir`: the shell is where this token list starts
+
+
+def new_action(
+    workdir: str | None, aliases: dict, env: dict, untrusted: bool = False, shell_dir: str | None = None
+) -> dict:
     action = {
         "untrusted": untrusted,
+        "shell_dir": shell_dir,  # where the shell expands `$(...)` words, whatever `-C` says
         "subcommand": None,
         "index": None,
         "args": [],
@@ -537,6 +543,7 @@ def parse_git_actions(
     inherited_functions: dict | None = None,
     inherited_aliases: dict | None = None,
     parens_untrusted: bool = False,
+    shell_workdir: object = SAME,
 ) -> list[dict]:
     """Every git invocation in `tokens`, in order, with its effective context.
 
@@ -558,7 +565,10 @@ def parse_git_actions(
     count = len(tokens)
     i = 0
 
-    def recurse(sub_tokens: list[str], workdir: str | None, env: dict) -> list[dict]:
+    def shell_dir() -> str | None:
+        return current_workdir if shell_workdir is SAME else shell_workdir  # type: ignore[return-value]
+
+    def recurse(sub_tokens: list[str], workdir: str | None, env: dict, shell: object = SAME) -> list[dict]:
         return parse_git_actions(
             sub_tokens,
             workdir,
@@ -568,6 +578,7 @@ def parse_git_actions(
             dict(shell_functions),
             dict(inherited_alias_map),
             parens_untrusted,
+            shell_workdir if shell is SAME else shell,
         )
 
     while i < count:
@@ -734,7 +745,7 @@ def parse_git_actions(
                     continue
                 break
             if j < segment_end:
-                actions.extend(recurse(tokens[j:segment_end], env_workdir, child_env))
+                actions.extend(recurse(tokens[j:segment_end], env_workdir, child_env, shell_dir()))
             command_start = False
             i = segment_end
             continue
@@ -748,7 +759,7 @@ def parse_git_actions(
             # `git-*` word is an ordinary executable. The action is built here, from its own
             # segment: splicing the tokens, or keeping the rest of the line per action, would
             # cost the whole remaining text every time.
-            action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted)
+            action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted, shell_dir())
             action["subcommand"] = dashed[1]
             action["index"] = i
             action["args"] = tokens[i + 1 : segment_end_index(tokens, i + 1)]
@@ -768,7 +779,7 @@ def parse_git_actions(
             if subcommand is None and args:
                 subcommand = args[0]
                 args = args[1:]
-            action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted)
+            action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted, shell_dir())
             action["subcommand"] = subcommand
             action["index"] = i
             action["args"] = args
@@ -794,7 +805,7 @@ def parse_git_actions(
             i += 1
             continue
 
-        action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted)
+        action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted, shell_dir())
         j = i + 1
         while j < count:
             opt = tokens[j]
@@ -866,6 +877,7 @@ def parse_git_actions(
                         dict(shell_functions),
                         dict(action.get("aliases", {})),
                         parens_untrusted,
+                        action["shell_dir"],
                     )
                     for nested_action in nested_actions:
                         nested_action["configs"] = action["configs"] + nested_action.get("configs", [])
@@ -942,6 +954,7 @@ def expand_configured_alias(action: dict) -> list[dict]:
         action.get("env", {}),
         inherited_aliases=action.get("aliases", {}),
         parens_untrusted=action.get("untrusted", False),
+        shell_workdir=action.get("shell_dir"),
     )
     for nested_action in nested:
         nested_action["configs"] = action.get("configs", []) + nested_action.get("configs", [])
@@ -1058,6 +1071,7 @@ PUSH_BRANCH_UNREADABLE = (
 
 
 EXPANSION = re.compile(r"[$`]")
+MAIN_REF = re.compile(r"(?:refs/)?(?:heads/)?(?:main|master)")
 
 
 def check_push(action: dict) -> None:
@@ -1075,6 +1089,25 @@ def check_push(action: dict) -> None:
     has_explicit_ref = False
     operands: list[str] = []
     delete_push = False
+    remote_names: list[set[str] | None] = []
+
+    def is_remote(name: str) -> bool:
+        if not remote_names:
+            output = git_output(action, ["remote"])
+            remote_names.append(None if output is None else set(output.split()))
+        names = remote_names[0]
+        return names is None or name in names  # unreadable: git reads a lone operand as the remote
+
+    # `$(git branch --show-current)` is expanded by the shell where it stands, which is the
+    # push's repository only when nothing (`-C`, `env -C`, `--git-dir`, `--work-tree`) moves it
+    runs_here = (
+        action["workdir"] is not None
+        and action["workdir"] == action.get("shell_dir")
+        and not action.get("git_dir")
+        and not action.get("work_tree")
+        and "GIT_DIR" not in action.get("env", {})
+        and "GIT_WORK_TREE" not in action.get("env", {})
+    )
 
     i = 0
     while i < len(args):
@@ -1090,7 +1123,7 @@ def check_push(action: dict) -> None:
         ):
             push_force = True
             lease_ref = arg.split("=", 1)[1].split(":", 1)[0]
-            if re.fullmatch(r"(refs/heads/)?(main|master)", lease_ref):
+            if MAIN_REF.fullmatch(lease_ref):
                 dest_main = True
                 has_explicit_ref = True
         if (
@@ -1105,7 +1138,7 @@ def check_push(action: dict) -> None:
         elif arg.startswith("--force="):
             push_force = True
             lease_ref = arg.split("=", 1)[1].split(":", 1)[0]
-            if re.fullmatch(r"(refs/heads/)?(main|master)", lease_ref):
+            if MAIN_REF.fullmatch(lease_ref):
                 dest_main = True
                 has_explicit_ref = True
         elif arg in {"--all", "--mirror"}:
@@ -1128,13 +1161,13 @@ def check_push(action: dict) -> None:
             ref_wide = True
         if len(operands) >= 2 and index == 0:
             continue
-        if len(operands) == 1 and operand in {"origin", "upstream"}:
-            continue
+        if len(operands) == 1 and (operand in {"origin", "upstream"} or is_remote(operand)):
+            continue  # a lone remote name is a remote, not a refspec
 
         has_explicit_ref = True
         deleting_ref = refspec.startswith(":")
         dest = refspec.rsplit(":", 1)[-1]
-        if dest == "HEAD" or dest in shell_tokens.CURRENT_BRANCH_SUBSTITUTIONS:
+        if dest in {"HEAD", "@"} or (runs_here and dest in shell_tokens.CURRENT_BRANCH_SUBSTITUTIONS):
             if branch_output is None and (push_force or delete_push or deleting_ref):
                 raise block(PUSH_BRANCH_UNREADABLE)
             dest = current_branch
@@ -1144,7 +1177,7 @@ def check_push(action: dict) -> None:
                 f"`{dest}` is expanded by the shell), and force-pushing or deleting main/master "
                 "is not allowed. Name the branch (`git push --force origin <branch>`)."
             )
-        if re.fullmatch(r"(refs/heads/)?(main|master)", dest or ""):
+        if MAIN_REF.fullmatch(dest or ""):
             dest_main = True
             if deleting_ref:
                 delete_push = True
@@ -1215,6 +1248,12 @@ API_WHAT = {
     gh_args.UNREADABLE_API: "has an endpoint or GraphQL query the guard cannot read, so it could open a pull request",
 }
 PR_PUBLISH_UNTRUSTED = " The guard cannot rely on this command's flags ({why}); spell them out."
+PR_QUOTED_OPERATOR = (
+    "`gh pr {verb}` shares its command with a quoted or escaped `<`, `>`, `;`, `|`, `&` or "
+    "parenthesis standing alone as a word (`'>'`, `\\;`), which the guard cannot tell from an "
+    "operator, so it cannot read which words are this command's flags. Run `gh pr {verb}` as a "
+    "command of its own, without such a word."
+)
 # `gh`, then `pr`, then the verb, each searched after the one before it: linear in the text
 UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new|revert)\b"))
 DRAFT_FLAG = re.compile(r"(?<![\w-])(?:--draft(?:=(?:true|1|t))?|-[A-Za-z]*d[A-Za-z]*)(?![\w=-])")
@@ -1304,6 +1343,10 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
             flags = gh_args.walk(args, verb, cut)
             if verb == gh_args.UNKNOWN:
                 raise block(PR_PUBLISH_UNKNOWN)
+            if found.untrusted:  # a quoted operator hides which words are flags: no draft, help or undo
+                if verb in {"ready", "merge"}:
+                    raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
+                raise block(PR_QUOTED_OPERATOR.format(verb=verb))
             if not publishes_nothing(verb, flags):
                 note = "" if flags.trusted else PR_PUBLISH_UNTRUSTED.format(why=untrusted_reason(flags, cut))
                 raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]) + note)
@@ -1312,11 +1355,33 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
                 raise block(PR_PUBLISH_API.format(what=API_WHAT[gh_args.MERGE_API]))
 
 
+def quoted_split(text: str) -> list[str]:
+    """`text` cut at the `;`, `&`, `|` and newlines that no quote holds (`-t "a;b"` is one
+    word). Nested `sh -c` text is one quoted word, so it stays whole: this reading only adds
+    to the plain split, which still reads what that one separates."""
+    pieces: list[str] = []
+    quote = None
+    start = index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and quote != "'":
+            index += 1
+        elif quote is None and char in "'\"":
+            quote = char
+        elif char == quote:
+            quote = None
+        elif quote is None and char in ";&|\n":
+            pieces.append(text[start:index])
+            start = index + 1
+        index += 1
+    return pieces + [text[start:]]
+
+
 def unresolved_gated(text: str) -> Iterator[str]:
     """The gated verb of every `gh pr VERB` in text that did not parse. `ready` and `merge`
     always count; a creation or revert counts unless a draft flag sits in the same separated
     command. Each search starts where the last match ended, so the scan is linear."""
-    for command in COMMAND_SEPARATOR.split(text):
+    for command in COMMAND_SEPARATOR.split(text) + quoted_split(text):
         position = 0
         drafted = None  # DRAFT_FLAG is searched at most once per command
         while True:
@@ -1352,7 +1417,14 @@ def publishes_nothing(verb: str, flags: gh_args.Flags) -> bool:
     return verb == "merge" and flags.asks_help
 
 
-CUT_TOKENS = {"$", "<", ">"}  # what an unquoted `$(`, `<(` or `>(` leaves at the end of a command
+def gh_argvs(found: shell_tokens.Command) -> list[list[str]]:
+    """The argv to read: with its redirections dropped (`gh >/dev/null pr merge 12`), and, when
+    a quoted operator came out bare (`--title '>'` reads as a redirection), as it stands too:
+    the guard cannot tell which words a redirection removed."""
+    argvs = [shell_tokens.drop_redirections(found.argv)]
+    if found.untrusted:
+        argvs.append(list(found.argv))
+    return [argv for argv in argvs if argv]
 
 
 def gh_verbs(found: shell_tokens.Command) -> list[tuple[str, list[str], bool]]:
@@ -1362,19 +1434,20 @@ def gh_verbs(found: shell_tokens.Command) -> list[tuple[str, list[str], bool]]:
     (`$(command -v gh) pr merge`), is read as gh."""
     if not found.argv:
         return []
-    cut = found.argv[-1] in CUT_TOKENS
-    argv = shell_tokens.drop_redirections(found.argv)  # `gh >/dev/null pr merge 12`
-    if not argv:
-        return []
-    if os.path.basename(argv[0]).lower() == "gh":
-        commands = gh_args.pr_commands(argv[1:])
-    elif gh_args.has_expansion(argv[0]):
-        commands = gh_args.pr_commands(argv[1:], expands=True)
-    elif found.after_paren:
-        commands = gh_args.pr_commands(argv, expands=True)
-    else:
-        return []
-    return [(verb, args, cut) for verb, args in commands]
+    # an unquoted `$(` (also glued to a flag: `--title=$(...)`), `<(` or `>(` ends the words
+    cut = found.argv[-1].endswith("$") or found.argv[-1] in {"<", ">"}
+    verbs: list[tuple[str, list[str], bool]] = []
+    for argv in gh_argvs(found):
+        if os.path.basename(argv[0]).lower() == "gh":
+            commands = gh_args.pr_commands(argv[1:])
+        elif gh_args.has_expansion(argv[0]):
+            commands = gh_args.pr_commands(argv[1:], expands=True)
+        elif found.after_paren:
+            commands = gh_args.pr_commands(argv, expands=True)
+        else:
+            continue
+        verbs.extend((verb, args, cut) for verb, args in commands)
+    return verbs
 
 
 def api_note(text: str) -> str:
@@ -1393,18 +1466,18 @@ def gh_api_calls(found: shell_tokens.Command) -> list[tuple[list[str], bool]]:
     if not found.argv:
         return []
     cut = found.argv[-1].endswith("$")  # an unquoted `$(`; a `<(` or `>(` hides no endpoint or method
-    argv = shell_tokens.drop_redirections(found.argv)
-    if not argv:
-        return []
-    if os.path.basename(argv[0]).lower() == "gh":
-        calls = gh_args.api_commands(argv[1:])
-    elif gh_args.has_expansion(argv[0]):
-        calls = gh_args.api_commands(argv[1:], expands=True)
-    elif found.after_paren:
-        calls = gh_args.api_commands(argv, expands=True)
-    else:
-        return []
-    return [(args, cut) for args in calls]
+    out: list[tuple[list[str], bool]] = []
+    for argv in gh_argvs(found):
+        if os.path.basename(argv[0]).lower() == "gh":
+            calls = gh_args.api_commands(argv[1:])
+        elif gh_args.has_expansion(argv[0]):
+            calls = gh_args.api_commands(argv[1:], expands=True)
+        elif found.after_paren:
+            calls = gh_args.api_commands(argv, expands=True)
+        else:
+            continue
+        out.extend((args, cut) for args in calls)
+    return out
 
 
 PR_VERIFY_BLOCK = "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. {remedy}"
@@ -1531,6 +1604,8 @@ def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
             if verb == gh_args.UNKNOWN:
                 raise block(PR_VERIFY_UNKNOWN)
             flags = gh_args.walk(args, verb, cut)
+            if found.untrusted:
+                raise block(PR_QUOTED_OPERATOR.format(verb=verb))
             if flags.asks_help:
                 continue
             if flags.unknown_flags:

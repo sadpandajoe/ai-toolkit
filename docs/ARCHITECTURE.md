@@ -118,7 +118,12 @@ checks nothing is visible in the record. Its known limits:
   `pulls` or `merge`, and `curl`. Other API writes (refs, contents, merges
   into a branch, `gh repo sync --force`) are not modelled either: for those,
   GitHub's branch protection is the boundary, not this hook. A literal query
-  holding a backtick blocks with no override (an accepted over-block);
+  holding a backtick blocks with no override (an accepted over-block), and so
+  does one with a `$5` inside a string literal (a variable definition,
+  `$n: String`, is read); a quoted or escaped operator character standing alone
+  as a word (`'>'`, `\;`) reads like the operator, so a gated `gh pr` verb in
+  the same command gets no draft, help or undo and `gh pr create` must run as a
+  command of its own;
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
   model: a subshell's `cd` is restored, and a `cd` that may not have run (after
   `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in
@@ -131,7 +136,7 @@ checks nothing is visible in the record. Its known limits:
   `GIT_WORK_TREE`, a variable that is not a literal path set earlier in the same
   command (`S=/repo; cd $S` is read, `$PWD`, `${S:-x}` and `$S$T` are not),
   a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`,
-  `>/dev/null cd X`, `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"` are not
+  `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"` are not
   followed;
 - it checks the local commit, while the PR shows the pushed branch;
 - the could-not-start rule reads only the first word, so a check that goes on to

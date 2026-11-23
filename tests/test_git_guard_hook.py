@@ -28,6 +28,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hooks" / "lib"))
 import git_guard  # noqa: E402
+import gh_args  # noqa: E402
 import shell_tokens  # noqa: E402
 sys.path.pop(0)
 
@@ -872,6 +873,7 @@ class GitGuardHookTests(unittest.TestCase):
         cls.feature = cls.make_repo(base / "feature")
         git(cls.feature, "commit", "-q", "--allow-empty", "-m", "base")
         git(cls.feature, "switch", "-q", "-c", "feature")
+        git(cls.clean, "remote", "add", "fork", str(base / "no-such-fork"))
         cls.detached = cls.make_repo(base / "detached")
         git(cls.detached, "commit", "-q", "--allow-empty", "-m", "base")
         git(cls.detached, "switch", "-q", "--detach")
@@ -1088,6 +1090,23 @@ class GitGuardHookTests(unittest.TestCase):
             ("S=other; T=x; cd $S$T && gh pr view 1", None),
             ("cd $PWD && gh pr view 1", None),
             ("cd $UNSET && gh pr view 1", None),
+            # an assignment after a keyword, in a group, with a redirection, cut or an element
+            ("S=other; if x; then S=sub; fi; cd $S && gh pr view 1", None),
+            ("S=other; if x; then :; else S=sub; fi; cd $S && gh pr view 1", None),
+            ("S=other; for d in x; do S=sub; done; cd $S && gh pr view 1", None),
+            ("S=other; { S=sub; }; cd $S && gh pr view 1", None),
+            ("S=other; S=sub >/dev/null; cd $S && gh pr view 1", None),
+            ("S=other; S=`echo sub`; cd $S && gh pr view 1", None),
+            ("S=other; S[0]=sub; cd $S && gh pr view 1", None),
+            ("S=other; S=sub cd $S && gh pr view 1", other),
+            ("S='other x'; cd $S && gh pr view 1", None),
+            # a `;` inside a body does not end the list that a backgrounded compound closes
+            ("cd other && { :; :; } & gh pr view 1", None),
+            ("cd other && for i in 1; do :; done & gh pr view 1", None),
+            ("cd other && if x; then :; fi & gh pr view 1", None),
+            ("cd other && while x; do :; done & gh pr view 1", None),
+            # a nested `case` is a keyword, not a pattern
+            ("case x in a) case y in b) :;; esac; cd other;; esac; gh pr view 1", None),
         ):
             with self.subTest(command=command):
                 walked = [found for found in shell_tokens.commands(command, here) if found.is_gh]
@@ -1142,6 +1161,34 @@ class GitGuardHookTests(unittest.TestCase):
             ("(S={feature}); cd $S && git push --force", main, 2),
             ("S={feature}; S=$OTHER; cd $S && git push --force", main, 2),
             ("S={feature}; S=$OTHER; git -C $S push --force", main, 2),
+            # an assignment the table must not miss
+            ("DIR={feature}; if [ -d {main} ]; then DIR={main}; fi; cd $DIR && git push --force", feature, 2),
+            ("DIR={feature}; if [ -d {main} ]; then DIR={main}; fi; git -C $DIR push --force", feature, 2),
+            ("DIR={feature}; if [ -d {main} ]; then DIR={main}; fi; env -C $DIR git push --force", feature, 2),
+            ("D={feature}; for d in x; do D={main}; done; cd $D && git push --force", feature, 2),
+            ("S={feature}; {{ S={main}; }}; cd $S && git push --force", feature, 2),
+            ("S={feature}; S={main} >/dev/null; cd $S && git push --force", feature, 2),
+            ("S={feature}; S=`echo {main}`; cd $S && git push --force", feature, 2),
+            ("S={feature}; S[0]={main}; cd $S && git push --force", feature, 2),
+            ("S='{feature} x'; cd $S && git push --force", main, 2),
+            # a list closed by `&` after a compound keeps the cd it held
+            ("cd {feature} && {{ :; :; }} & git push --force", main, 2),
+            ("cd {feature} && for i in 1; do :; done & git push --force", main, 2),
+            ("cd {feature} && if true; then :; fi & git push --force", main, 2),
+            ("cd {feature} && while false; do :; done & git push --force", main, 2),
+            # the shell expands the current branch where it stands, not in the push's directory
+            ("git -C {feature} push --force origin $(git branch --show-current)", main, 2),
+            ('git -C {feature} push --force origin "$(git branch --show-current)"', main, 2),
+            ("git -C {feature} push --force origin `git branch --show-current`", main, 2),
+            ("env -C {feature} git push --force origin $(git branch --show-current)", main, 2),
+            ("git -C {main} push --force origin $(git branch --show-current)", feature, 2),
+            # `@` is HEAD, a lone remote is a remote and `heads/main` is main
+            ("git push --force origin @", main, 2),
+            ("git push --force origin @", feature, 0),
+            ("git push --force fork", main, 2),
+            ("cd $NOWHERE && git push --force fork", feature, 2),
+            ("git push --force origin HEAD:heads/main", feature, 2),
+            ("git push --force origin heads/main", feature, 2),
         ):
             command = template.format(main=main, feature=feature)
             with self.subTest(command=command):
@@ -1154,6 +1201,7 @@ class GitGuardHookTests(unittest.TestCase):
             ("S={staged}; git -C $S commit -m state", 2),
             ("S={clean}; git -C $S commit -m x", 0),
             ("S=$X; cd $S && git commit -m x", 2),
+            ("S={clean}; if true; then S={staged}; fi; cd $S && git commit -m x", 2),
         ):
             command = command.format(staged=self.staged, clean=self.clean)
             with self.subTest(command=command):
@@ -1172,6 +1220,62 @@ class GitGuardHookTests(unittest.TestCase):
                 with self.subTest(command=command):
                     walked = [c for c in shell_tokens.commands(command, "/") if c.is_gh]
                     self.assertEqual([expected], [c.workdir for c in walked])
+
+    def test_a_quoted_redirection_operator_hides_no_flag(self) -> None:
+        for command in (
+            "gh pr create --draft --fill --title '>' --draft=false",
+            "gh pr create --draft --fill --body '<' --draft=false",
+            "gh pr create --draft --fill --title \\> --draft=false",
+            "gh pr create --draft --fill --title '>>' --draft=false",
+            "gh pr create --draft --fill --title=$(echo t) --draft=false",
+            "gh api --jq '>' -X PUT repos/o/r/pulls/12/merge",
+            "gh pr merge 12 --help --help=false",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(2, self.run_hook(command, self.verified).returncode)
+        # the verify gate loses no `--head`, and has no override
+        for command in (
+            "gh pr create --draft --fill --title '>' --head other",
+            "gh pr create --draft --fill --body=$(cat b.md) --head other",
+        ):
+            with self.subTest(command=command):
+                result = self.run_hook(command, self.verified, env={"AITK_PR_READY": "1"})
+                self.assertEqual(2, result.returncode, result.stderr)
+        # a draft create next to one is told to run on its own, override or not
+        for env in ({}, {"AITK_PR_READY": "1"}):
+            with self.subTest(env=env):
+                result = self.run_hook("echo '>' && gh pr create --draft --fill", self.verified, env=env)
+                self.assertEqual(2, result.returncode)
+                self.assertIn("as a command of its own", result.stderr)
+        # one quoted word with an operator in it changes nothing
+        for command in ("gh pr create --draft --fill --title 'a > b'", "gh pr merge 12 --help"):
+            with self.subTest(command=command):
+                self.assertEqual(0, self.run_hook(command, self.verified).returncode)
+
+    def test_a_quoted_separator_in_unparsed_nested_text_does_not_split_gh_pr(self) -> None:
+        command = 'gh pr -t "a;b" merge 12'
+        for _ in range(5):
+            command = "sh -c " + shlex.quote(command)
+        self.assertEqual(2, self.run_hook(command, self.verified).returncode)
+
+    def test_graphql_variable_definitions_and_endpoint_spellings(self) -> None:
+        for query in (
+            "query($o: String! $n: String!){x}",
+            "query($o: String!\n$n: String!){x}",
+        ):
+            with self.subTest(query=query):
+                self.assertFalse(gh_args.read_api(["graphql", "-f", "query=" + query]).unreadable_query)
+        self.assertTrue(gh_args.read_api(["graphql", "-f", "query={x(a: \"$5\")}"]).unreadable_query)
+        for endpoint in ("repos/o/r/pulls/12/./merge", "repos/o//r/pulls/12/merge", "repos/o/r/pulls/12/%6Derge"):
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(gh_args.MERGE_API, gh_args.api_effect(["-X", "PUT", endpoint]))
+        self.assertEqual(
+            gh_args.MERGE_API,
+            gh_args.api_effect(["-X", "POST", "-H", "X-HTTP-Method-Override: PUT", "repos/o/r/pulls/12/merge"]),
+        )
+        self.assertIsNone(gh_args.api_effect(["repos/o/r/pulls/12"]))
+        self.assertTrue(gh_args.walk(["12", "--help"], "merge").asks_help)
+        self.assertFalse(gh_args.walk(["12", "--help", "--help=false"], "merge").asks_help)
 
     def test_the_two_readers_walk_a_payload_under_the_same_doubt(self) -> None:
         here = str(self.clean)

@@ -62,7 +62,7 @@ the definition starts, everything from the definition on is unknown. So do `cd -
 `popd` and a bare `pushd`: the previous directory and the directory stack are not
 tracked. Only the exact words `cd`, `pushd` and `popd` move the shell (`CD` and
 `/usr/bin/cd` do not). Callers block the decisions that need the directory. Not
-modelled: a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`, `>/dev/null cd X`,
+modelled: a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`,
 `C=cd; $C X`, `trap 'cd X' DEBUG`, `eval "$X"`. Rescanning a tail and
 scanning a `$(...)` or backtick body cost the characters they read, against MAX_TAIL_CHARS for the whole
 `commands()` call: a segment that would pass it is yielded as one `unreadable`
@@ -300,7 +300,7 @@ class Tokens(list):
     quoted_operators = False
 
 
-OPERATOR_CHARS = frozenset(";&|()")
+OPERATOR_CHARS = frozenset(";&|()<>")
 
 
 def unquoted_operators(text: str) -> int:
@@ -857,11 +857,11 @@ def expand_vars(word: str, variables: dict[str, str | None] | None) -> str:
 def literal_value(value: str) -> str | None:
     """The path a variable assignment stores, or None when the guard cannot tell it.
 
-    `$`, a backtick, a glob character, a tab, a newline and an empty value are not a literal
-    path, and neither is a `~`: bash expands an unquoted one and keeps a quoted one, and the
+    `$`, a backtick, a glob character, whitespace (the shell splits the word: `cd $S` fails)
+    and an empty value are not a literal path, and neither is a `~`: bash expands an unquoted one and keeps a quoted one, and the
     quotes are gone by the time the value is read here (`S='~/x'; cd $S` stays put).
     """
-    if not value or UNKNOWN_CD_TARGET.search(value) or "~" in value:
+    if not value or UNKNOWN_CD_TARGET.search(value) or "~" in value or any(c.isspace() for c in value):
         return None
     return value
 
@@ -965,6 +965,7 @@ OPENS_BODY = {"if", "while", "until", "for", "select", "case"}
 CLOSES_BODY = {"fi", "done", "esac"}
 STARTS_LIST = {"then", "do", "else", "elif", "!"}
 DIR_COMMANDS = {"cd", "pushd", "popd"}
+ELEMENT_ASSIGNMENT = re.compile(r"(\w+)\[[^\]]*\]\+?=")
 ASSIGNING = {"export", "declare", "typeset", "local", "readonly"}
 FORGETTING = {"read", "unset", "mapfile", "readarray", "getopts"}
 CLEARING = {"eval", "source", "."}  # may assign anything
@@ -1013,7 +1014,7 @@ class DirectoryModel:
       definition has no known variables. A quoted `'~/x'` value is expanded like an
       unquoted one.
 
-    Not modelled: a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`, `>/dev/null cd X`,
+    Not modelled: a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`,
     `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"`.
     """
 
@@ -1118,8 +1119,8 @@ class DirectoryModel:
                 if token == "||" or token in LIST_END:
                     scope.deferred = False
                     scope.deferred_vars = set()
-                if token in LIST_END:
-                    scope.changed = False
+                if token in LIST_END and not (scope.braces or scope.depth):
+                    scope.changed = False  # a `;` inside a body does not end the list around it
                     scope.assigned = set()
                 previous = token
                 continue
@@ -1133,9 +1134,14 @@ class DirectoryModel:
 
     def command(self, words: list[str], scope: Scope, previous: str | None, following: str | None) -> None:
         """Apply one segment."""
-        if scope.cases and (following == ")" or (following == "|" and words[0] in CLOSES_BODY)):
+        if scope.cases and words[0] != "case" and (
+            following == ")" or (following == "|" and words[0] in CLOSES_BODY)
+        ):
             return  # a case pattern, whatever it spells
         conditional = previous in {"&&", "||"} | PIPES
+        plain = drop_redirections(words)
+        redirected = len(plain) != len(words)
+        words = plain
         position = 0
         keyword = True  # only keywords and prefixes of keywords so far
         assignments: list[str] = []
@@ -1190,12 +1196,23 @@ class DirectoryModel:
             else:
                 break
         if position >= len(words):
-            if assignments and position == len(assignments):
-                for word in assignments:
-                    name, _, value = word.partition("=")
+            # only assignments: one that starts a bare segment is recorded, one after a
+            # keyword (`then S=x`, `{ S=x`) or with a redirection is not certain
+            certain = position == len(assignments) and not redirected
+            for word in assignments:
+                name, _, value = word.partition("=")
+                if certain:
                     self.assign(name, value, scope, previous, following)
+                else:
+                    self.forget({name})
             return
+        for word in assignments:  # a prefix assignment is the command's own, unless it is cut
+            if "`" in word:
+                self.forget({word.partition("=")[0]})
         name = words[position]
+        element = ELEMENT_ASSIGNMENT.match(name)
+        if element:
+            self.forget({element.group(1)})  # `S[0]=x`
         args = words[position + 1 :]
         if name in ASSIGNING:
             for word in args:
@@ -1291,6 +1308,7 @@ class Command:
     unresolved: bool = False
     text: str = ""
     unreadable: bool = False
+    untrusted: bool = False  # a quoted operator came out bare: a redirection cannot be told from a word
     after_paren: bool = False  # follows a `)`: `$(command -v gh) pr merge` leaves `pr merge` here
 
     @property
@@ -1452,7 +1470,9 @@ def commands(
             if include_assignments and effects.assignments:
                 yield Command([], assignments, target)
             continue
-        yield Command(rest, assignments, target, after_paren=in_command_position(tokens, first))
+        yield Command(
+            rest, assignments, target, untrusted=_untrusted, after_paren=in_command_position(tokens, first)
+        )
 
 
 def in_command_position(tokens: list[str], first: int) -> bool:

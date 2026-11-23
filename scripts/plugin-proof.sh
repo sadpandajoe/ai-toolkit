@@ -29,7 +29,7 @@
 
 set -u
 provider=${1:-}
-case $provider in claude | codex) shift ;; *) sed -n '3,27p' "$0"; exit 2 ;; esac
+case $provider in claude | codex) shift ;; *) sed -n '3,28p' "$0"; exit 2 ;; esac
 scratch=""
 if [ "${1:-}" = --home ]; then scratch=${2:?--home needs a directory}; fi
 [ -n "$scratch" ] || scratch=$(mktemp -d "${TMPDIR:-/tmp}/aitk-proof.XXXXXX")

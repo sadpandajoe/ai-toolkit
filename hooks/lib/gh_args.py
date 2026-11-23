@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import functools
 import re
+import urllib.parse
 
 UNKNOWN = "?"
 GATED = {"ready", "merge", "create", "new", "revert"}
@@ -177,7 +178,7 @@ def record(out: Flags, name: str, takes: bool, value: str, bare_help: bool) -> N
         if name == "head":
             out.heads.append(value)
     elif name == "help":
-        out.help = out.help or bare_help
+        out.help = bare_help  # the last value wins: `--help=false` after `--help` clears it
     else:
         out.bools[name] = parse_bool(value)
 
@@ -326,6 +327,9 @@ def normalise_endpoint(endpoint: str) -> str:
         if char in "?#" and not any(start <= position < end for start, end in spans):
             endpoint = endpoint[:position]
             break
+    endpoint = urllib.parse.unquote(endpoint)  # `%6Derge` is `merge`
+    endpoint = re.sub(r"/{2,}", "/", endpoint)
+    endpoint = re.sub(r"/\.(?=/|$)", "", endpoint)  # `pulls/12/./merge`
     return endpoint.strip("/")
 
 
@@ -338,8 +342,14 @@ def query_unreadable(text: str) -> bool:
         if char == "$":
             before = text[:position].rstrip()
             after = text[position + 1 : position + 2]
-            if not (before[-1:] in {"(", ":", "[", ",", "="} and (after.isalpha() or after == "_")):
+            if not (after.isalpha() or after == "_"):
                 return True
+            if before[-1:] in {"(", ":", "[", ",", "="}:
+                continue
+            name = re.match(r"\w+", text[position + 1 :])
+            if text[position + 1 + len(name.group(0)) :].lstrip().startswith(":"):
+                continue  # `$n: String`: a variable definition needs no comma before it
+            return True
     return False
 
 
@@ -353,7 +363,11 @@ def read_api(args: list[str], cut: bool = False) -> Api | None:
     fielded = any(name in FIELD_FLAGS for name, _ in flags.values)
     # a positional after the endpoint with an expansion may be `-X PUT` split by the shell
     extra = any(has_expansion(word) for word in flags.positionals[1:])
-    unknown = cut or extra or bool(flags.unknown_flags) or (bool(methods) and has_expansion(methods[-1]))
+    overridden = any(
+        name == "header" and value.replace(" ", "").lower().startswith("x-http-method-override:")
+        for name, value in flags.values
+    )  # the server may run another method than -X says
+    unknown = cut or extra or overridden or bool(flags.unknown_flags) or (bool(methods) and has_expansion(methods[-1]))
     method = methods[-1].upper() if methods else ("POST" if fielded else "GET")
     queries: list[str] = []
     unreadable = False
