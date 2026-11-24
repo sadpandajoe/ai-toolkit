@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import shlex
 from pathlib import Path
 import shutil
@@ -1001,6 +1002,16 @@ class GitGuardHookTests(unittest.TestCase):
             ("(cd other && npm test); gh pr view 1", here),
             ("echo $(cd other && pwd); gh pr view 1", here),
             ("cat <(cd other && ls); gh pr view 1", here),
+            # words after a substitution are that command's arguments, not a cd of their own
+            ("echo $(true) cd other; gh pr view 1", here),
+            ("echo $(true) cd other && gh pr view 1", here),
+            ("$(echo echo) cd other; gh pr view 1", here),
+            ("diff <(true) cd other; gh pr view 1", here),
+            ("echo $(true) $(true) cd other; gh pr view 1", here),
+            ("echo $((1+2)) cd other; gh pr view 1", here),
+            # after assignments only, the words start the command
+            ("X=$(true) cd other && gh pr view 1", other),
+            ("X=$(true) Y=$(true) cd other && gh pr view 1", other),
             ("(cd other && gh pr view 1)", other),
             # the rest of an && chain runs only if the cd did
             ("x && cd other && gh pr view 1", other),
@@ -1173,6 +1184,10 @@ class GitGuardHookTests(unittest.TestCase):
             ("S='{feature} x'; cd $S && git push --force", main, 2),
             # a list closed by `&` after a compound keeps the cd it held
             ("cd {feature} && {{ :; :; }} & git push --force", main, 2),
+            # an argument that spells cd, after a substitution, moves nothing
+            ("echo $(true) cd {feature}; git push --force", main, 2),
+            ("echo $(true) cd {feature} && git push --force", main, 2),
+            ("X=$(true) cd {feature} && git push --force", main, 0),
             ("cd {feature} && for i in 1; do :; done & git push --force", main, 2),
             ("cd {feature} && if true; then :; fi & git push --force", main, 2),
             ("cd {feature} && while false; do :; done & git push --force", main, 2),
@@ -2243,6 +2258,195 @@ class GitGuardHookTests(unittest.TestCase):
                 env=base_env(),
             )
         self.assertEqual([], json.loads(result.stdout))
+
+    # ---- round 2: the classes the second Fable review found ----
+
+    def hook_codes(self, cases: tuple, **kwargs) -> None:
+        for template, repo, expected in cases:
+            command = template.format(main=self.clean, feature=self.feature)
+            with self.subTest(command=command, repo=repo.name):
+                result = self.run_hook(command, repo, **kwargs)
+                self.assertEqual(expected, result.returncode, result.stderr)
+
+    def test_unparsed_nested_text_blocks_wherever_origin_main_does(self) -> None:
+        main_verbs = shell_tokens.words_in_order
+        frozen_pattern = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new)\b"))
+
+        def main_blocks(text: str) -> bool:
+            # origin/main's rule for text that did not parse, frozen
+            match = main_verbs(text, *frozen_pattern)
+            return bool(match and not (match.group(1) in {"create", "new"} and git_guard.DRAFT_FLAG.search(text)))
+
+        holders = ("$((1|2))", "${X-a;b}", '"$(echo "a;b")"', "$'a\\';b'", "'a;b'", '"a|b"', "# it's\n")
+        verbs = ("merge 12", "ready 12", "create --fill", "create --draft --fill", "new --fill")
+        checked = 0
+        for holder in holders:
+            for verb in verbs:
+                for levels in (1, 2, 3, 5):
+                    inner = f"gh pr -t {holder} {verb}" if not holder.startswith("#") else f"{holder}gh pr {verb}"
+                    text = inner
+                    for _ in range(levels):
+                        text = "sh -c " + shlex.quote(text)
+                    if not main_blocks(text):
+                        continue
+                    checked += 1
+                    with self.subTest(text=text[:80]):
+                        with self.assertRaises(git_guard.Blocked):
+                            git_guard.check_pr_publish(text, str(self.clean), {})
+        self.assertGreater(checked, 50)
+        for levels in (1, 4):
+            text = "gh pr -t $((1|2)) merge 12"
+            for _ in range(levels):
+                text = "sh -c " + shlex.quote(text)
+            self.assertEqual(2, self.run_hook(text, self.verified).returncode)
+
+    def test_a_quoted_operator_makes_the_gh_reading_textual(self) -> None:
+        self.hook_codes(
+            (
+                ("gh >/dev/null pr -t '>' merge 12 --squash", self.clean, 2),
+                ("gh pr >/dev/null -t '<' ready 12", self.clean, 2),
+                ("gh >/dev/null pr -t '>' create --fill --head other", self.feature, 2),
+                ("gh pr -t ';' merge 12", self.clean, 2),
+                ("gh pr -t '|' ready 12", self.clean, 2),
+                ("gh pr -R '(' merge 12", self.clean, 2),
+                ("gh pr -t \; merge 12", self.clean, 2),
+                ("gh api --jq '>' -X >/dev/null PUT repos/o/r/pulls/12/merge", self.clean, 2),
+                ("gh api --jq '>' -X >/dev/null POST repos/o/r/pulls", self.clean, 2),
+                ("sh -c 'gh pr -t \"$(echo \"a;b\")\" merge 12'", self.clean, 2),
+                # ordinary commands with a real redirection or a quoted word that holds an operator
+                ("gh pr create --draft --fill >/dev/null", self.verified, 0),
+                ("gh pr create --draft --fill --title 'a > b' 2>&1", self.verified, 0),
+                ("gh pr create --draft --fill --body \"$(cat <<'EOF'\na; b | c\nEOF\n)\"", self.verified, 0),
+            )
+        )
+        # the override lifts merge and ready, not the quoted-operator create
+        self.assertEqual(0, self.run_hook("gh pr -t ';' merge 12", self.clean, env={"AITK_PR_READY": "1"}).returncode)
+        result = self.run_hook("gh >/dev/null pr -t '>' create --fill", self.verified, env={"AITK_PR_READY": "1"})
+        self.assertEqual(2, result.returncode)
+        self.assertIn("as a command of its own", result.stderr)
+        result = self.run_hook("gh >/dev/null pr -t '>' create --fill", self.verified)
+        self.assertIn("as a command of its own", result.stderr)
+
+    def test_a_real_redirection_behind_a_wrapper_is_no_quoted_operator(self) -> None:
+        for command in (
+            "setsid gh pr create --draft --fill >/dev/null",
+            "uv run gh pr ready 12 --undo 2>&1",
+            "op run -- gh pr create --draft --fill 2>/dev/null",
+            "flock /tmp/x gh pr create --draft --fill </dev/null",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(0, self.run_hook(command, self.verified).returncode)
+        self.assertEqual(2, self.run_hook("setsid gh pr merge 12 >/dev/null", self.verified).returncode)
+        self.assertEqual(2, self.run_hook("setsid gh pr -t '>' merge 12", self.verified).returncode)
+
+    def test_a_substitution_is_one_word_of_its_command(self) -> None:
+        self.hook_codes(
+            (
+                ("gh -R $(echo o/r) pr merge 12", self.clean, 2),
+                ("gh pr -t $(echo x) merge 12", self.clean, 2),
+                ("gh pr -R `echo o/r` ready 12", self.clean, 2),
+                ("gh pr -R <(echo o/r) merge 12", self.clean, 2),
+                ("gh -R $(echo o/r) pr create --fill", self.verified, 2),
+                ("gh pr $(echo merge) 12", self.clean, 2),
+                ("gh $(echo pr) merge 12", self.clean, 2),
+                ("gh pr create --draft --fill --title=$(echo t) --draft=false", self.verified, 2),
+                ("gh -R $(echo o/r) pr view 12", self.clean, 0),
+                # no `$` at the end of a word is a substitution
+                ('gh pr create --draft --fill --title "Fix regex ^foo$"', self.verified, 0),
+                ("gh pr create --draft --fill --body 'ends with $'", self.verified, 0),
+                ("gh pr create --draft --fill --title $(echo t)", self.verified, 0),
+            )
+        )
+        words = [c.argv for c in shell_tokens.commands("gh -R $(echo o/r) pr merge 12", str(self.clean)) if c.is_gh]
+        self.assertEqual([["gh", "-R", "${}", "pr", "merge", "12"]], words)
+        inner = [c.argv for c in shell_tokens.commands("gh -R $(echo o/r) pr merge 12", str(self.clean)) if c.name == "echo"]
+        self.assertEqual([["echo", "o/r"]], inner)
+        cut = [c for c in shell_tokens.commands("gh pr create --title $(echo", str(self.clean)) if c.is_gh]
+        self.assertTrue(cut and cut[0].cut)
+
+    def test_git_reads_its_own_words_without_redirections_or_substitutions(self) -> None:
+        self.hook_codes(
+            (
+                ("git push --force 2>&1", self.clean, 2),
+                ("git push -f >/dev/null", self.clean, 2),
+                ("git push --force 2>&1 | tail -5", self.clean, 2),
+                ("git push --force fork 2>&1", self.clean, 2),
+                ("git push --force https://github.com/o/r.git", self.clean, 2),
+                ("git push -f ../other-clone", self.clean, 2),
+                (">/dev/null git push --force origin main", self.feature, 2),
+                ("2>&1 git push --force origin main", self.feature, 2),
+                ("git >/dev/null push --force origin main", self.feature, 2),
+                ("git -C $(echo .) push --force origin main", self.feature, 2),
+                ("git -c x=$(echo y) push --force origin main", self.feature, 2),
+                ("git push --force 2>&1", self.feature, 0),
+                ("git push --force origin feature >/dev/null", self.clean, 0),
+                ("git push origin main 2>&1", self.clean, 0),
+            )
+        )
+
+    def test_push_options_are_read_as_parse_options_does(self) -> None:
+        main, feature = self.clean, self.feature
+        for command, repo, expected in (
+            ("git push --force -o ci.skip origin", main, 2),
+            ("git push --force -oci.skip origin", main, 2),
+            ("git push --force --push-option=ci.skip origin", main, 2),
+            ("git push --force --push-option ci.skip origin", main, 2),
+            ("git push --force --repo origin", main, 2),
+            ("git push --force --receive-pack x origin", main, 2),
+            ("git push --force --recurse-submodules no origin", main, 2),
+            ("git push --force --recurse-submodules=no origin", main, 2),
+            ("git push --force origin 'refs/heads/*:refs/heads/*'", feature, 2),
+            ("git push origin '+refs/heads/*:refs/heads/*'", feature, 2),
+            ("git push --delete origin 'refs/heads/*'", feature, 2),
+            ("git push --force-w origin main", feature, 2),
+            ("git push --force-wi=main origin main", feature, 2),
+            ("git push --mirr", feature, 2),
+            ("git push --mirror origin", feature, 2),
+            ("git push --del origin main", feature, 2),
+            ("git push --no-verif origin feature", feature, 2),
+            # a value flag's word is its value, not a refspec or the repository
+            ("git push -o main origin feature", main, 0),
+            ("git push --force -o main origin feature", main, 0),
+            ("git push --force --push-option main origin feature", main, 0),
+            # a glob push that is no force, delete or `+` stays allowed
+            ("git push origin 'refs/heads/*:refs/heads/*'", feature, 0),
+            # an ambiguous prefix is an error in git: nothing is pushed, nothing to block
+            ("git push --forc origin feature", feature, 0),
+            ("git push --force --no-force origin main", main, 2),
+        ):
+            with self.subTest(command=command, repo=repo.name):
+                self.assertEqual(expected, self.run_hook(command, repo).returncode)
+        for name, expected in (
+            ("force", ("force", False)), ("force-w", ("force-with-lease", False)),
+            ("mirr", ("mirror", False)), ("del", ("delete", False)), ("forc", None), ("for", None),
+            ("no-force", ("force", True)), ("no-veri", ("verify", True)),
+        ):
+            with self.subTest(option=name):
+                self.assertEqual(expected, git_guard.resolve_push_option(name))
+
+    def test_a_shell_payload_does_not_know_the_outer_shells_directory(self) -> None:
+        for shell in ("sh -c", "bash -c", "eval"):
+            self.hook_codes(
+                (
+                    (shell + ' "cd {feature} && git push --force origin $(git branch --show-current)"', self.clean, 2),
+                    (shell + ' "git -C {feature} push --force origin $(git branch --show-current)"', self.clean, 2),
+                    (shell + ' "cd {feature} && git push --force origin feature"', self.clean, 0),
+                )
+            )
+        self.hook_codes(
+            (
+                ("git push --force origin $(git branch --show-current)", self.feature, 0),
+                ("git push --force origin $(git branch --show-current)", self.clean, 2),
+            )
+        )
+
+    def test_a_redirection_ahead_of_cd_does_not_hide_the_directory_change(self) -> None:
+        self.hook_codes(
+            (
+                (">/dev/null cd {feature} && git push --force", self.clean, 0),
+                (">/dev/null cd {main} && git push --force", self.feature, 2),
+            )
+        )
 
 
 

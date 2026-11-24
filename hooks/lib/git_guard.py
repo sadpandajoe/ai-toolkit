@@ -45,7 +45,24 @@ A command that mentions git or gh and cannot be parsed blocks; an internal
 error blocks a command that mentions git, gh or an override, and the wrapper
 fails closed on those when python3 is missing.
 
-Known limits (a tripwire, not a shell sandbox): a git alias defined in a file
+Text that did not parse, or nests too deep, is searched for `gh`, then `pr`, then
+`ready`/`merge`/`create`/`new`/`revert` in order over the whole text (origin/main's rule, a draft
+flag anywhere exempting only a create, new or revert) AND piece by piece, and blocks on either. A
+quoted or escaped operator standing alone as a word (`'>'`, `\\;`, `${X-a;b}`) makes the guard
+read the whole command that way too (`untrusted_text_verbs`, `gh_api_text_creates`): ready and
+merge are lifted by the override, create, new and revert never get a draft credit.
+
+Git's own words: redirections are dropped and a `$(...)` is one word before the globals, the
+subcommand and the arguments are read, and a redirection ahead of the head does not hide it
+(`>/dev/null git push`). Push options are read as git 2.39's parse-options does (`PUSH_OPTIONS`):
+value flags take the next word, a unique prefix of a long option is that option, an ambiguous
+one pushes nothing, the first operand is the repository, whatever it spells, and a refspec
+destination with a `*` counts as main. `--mirror` blocks. A `sh -c`, `bash -c` or `eval`
+payload does not know the outer shell's directory, so `$(git branch --show-current)` inside one
+is never resolved.
+
+Known limits (a tripwire, not a shell sandbox): a word that expands to a push option
+(`git push origin main $F`, `git push $F origin main`), a git alias defined in a file
 the hook cannot read, `gh api` calls, and programs that run git themselves are
 not seen. Directory changes follow `shell_tokens`' rules (`cd`, `pushd`, `git -C`,
 `env -C`): `cd -`, `popd`, a bare `pushd`, a target the shell expands, a `cd` that may
@@ -160,9 +177,10 @@ gh adds is unknown and grants no draft, help or undo). A command name or verb th
 variable, substitution, brace or glob (`"$GH" pr ready 12`, `$(command -v gh) pr merge 12`,
 `{gh,} pr merge 12`, `gh pr $V 12`) is read as gh or as an unknown verb (cobra's reading
 decides it), which is gated; `gh pr revert` is gated like `create`. A positional word with an
-expansion (`--draft $X`), or flags after an unquoted `$(`/`<(`, grant no draft, help or undo
-(accepted over-block: `gh pr ready --undo "$PR"`), and a creation with one fails the verify
-gate.
+expansion (`--draft $X`, `--draft $(...)`), or words after an unclosed `$(` or a backtick span,
+grant no draft, help or undo (accepted over-block: `gh pr ready --undo "$PR"`), and a creation
+with one fails the verify gate. A `$(...)` inside a command is one word of it, so the words
+after it are read (`gh -R $(echo o/r) pr merge 12`); one where the verb stands is unknown.
 
 `gh api` PR create, merge and ready are gated too (`gh_args.api_effect`, redirections
 dropped first): a PUT to `repos/<o>/<r>/pulls/<n>/merge` or `repositories/<id>/pulls/<n>/merge`
@@ -170,10 +188,10 @@ needs `AITK_PR_READY=1` like `gh pr merge`, as does a GraphQL query naming `merg
 `markPullRequestReadyForReview`, `enablePullRequestAutoMerge` or `enqueuePullRequest`. A POST
 to `.../pulls`, a query naming `createPullRequest` or `revertPullRequest`, and a query the
 guard cannot read (`--input`, `-F query=@file`, a `query=` with a shell expansion or backtick;
-`$name` after `(`, `:`, `[`, `,` or `=` is a GraphQL variable) block with no override, like an
+a `$name` is a GraphQL variable only when an operation's definition list declares it) block with no override, like an
 unchecked `gh pr create`; so does a non-GET call with no endpoint. PATCH, DELETE, HEAD and the
-rest do neither. An expansion in the endpoint, a method that is an expansion, an unknown flag
-or an unquoted `$(` cutting the command may be either, and blocks when it could be
+rest do neither. An expansion in the endpoint, a method that is an expansion, an unknown flag,
+a `-H` value with an expansion (it may be a method override) or an unclosed `$(` may be either, and blocks when it could be
 (`gh api "$URL" -X PUT`). Other API writes (refs, contents, merges into a branch, `gh repo
 sync --force`) and `curl` are not modelled: for those, GitHub's branch protection is the
 boundary, not this hook. Not seen, pinned in `PR_PUBLISH_LIMITS`: `gh api $ARGS` (the whole
@@ -501,6 +519,12 @@ def segment_end_index(tokens: list[str], start: int) -> int:
     return end
 
 
+def git_words(tokens: list[str], start: int, untrusted: bool) -> tuple[list[str], list[int], int, bool]:
+    """The words of the git command at `start`: its substitutions are one word each and its
+    redirections are gone, so globals, subcommand and arguments are read from git's own words."""
+    return shell_tokens.command_words(tokens, start, merge=not untrusted)
+
+
 SAME = object()  # `shell_workdir`: the shell is where this token list starts
 
 
@@ -595,6 +619,20 @@ def parse_git_actions(
             env_assignments[key] = value
             i += 1
             continue
+        if command_start and token in shell_tokens.REDIRECTIONS:
+            # `>/dev/null git push ...`: a redirection ahead of the command is not the command
+            # (when a quoted operator may be this word, keep a git head that follows)
+            keep = parens_untrusted and i + 1 < count and is_git_executable(tokens[i + 1])
+            i += 1 if keep else 2
+            continue
+        if (
+            command_start
+            and i + 1 < count
+            and tokens[i + 1] in shell_tokens.REDIRECTIONS
+            and shell_tokens.REDIRECTION_FD.fullmatch(token)
+        ):
+            i += 1  # `2>&1 git push`: the fd; the operator follows
+            continue
         if command_start and token == "export":
             segment_end = segment_end_index(tokens, i + 1)
             for export_token in tokens[i + 1 : segment_end]:
@@ -673,6 +711,7 @@ def parse_git_actions(
                                 expand_shell_payload(tokens[command_index], positional),
                                 current_workdir,
                                 dict(exported_env),
+                                None,  # the outer shell may have expanded a `$(...)` in the payload
                             )
                         )
                     break
@@ -684,7 +723,7 @@ def parse_git_actions(
             segment_end = segment_end_index(tokens, i + 1)
             eval_parts = tokens[i + 1 : segment_end]
             payload = eval_parts[0] if len(eval_parts) == 1 else " ".join(shlex.quote(part) for part in eval_parts)
-            actions.extend(recurse(shell_tokens_or_empty(payload), current_workdir, dict(exported_env)))
+            actions.extend(recurse(shell_tokens_or_empty(payload), current_workdir, dict(exported_env), None))
             command_start = False
             i = segment_end
             continue
@@ -762,7 +801,7 @@ def parse_git_actions(
             action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted, shell_dir())
             action["subcommand"] = dashed[1]
             action["index"] = i
-            action["args"] = tokens[i + 1 : segment_end_index(tokens, i + 1)]
+            action["args"] = git_words(tokens, i, parens_untrusted)[0][1:]
             actions.append(action)
             command_start = False
             i += 1
@@ -775,7 +814,7 @@ def parse_git_actions(
 
         if command_start and dynamic_git:
             subcommand = dynamic_git.group(1)
-            args = tokens[i + 1 : segment_end_index(tokens, i + 1)]
+            args = git_words(tokens, i, parens_untrusted)[0][1:]
             if subcommand is None and args:
                 subcommand = args[0]
                 args = args[1:]
@@ -806,42 +845,42 @@ def parse_git_actions(
             continue
 
         action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted, shell_dir())
-        j = i + 1
-        while j < count:
-            opt = tokens[j]
-            if opt in SEPARATORS:
-                break
+        words, positions, _end, _cut = git_words(tokens, i, parens_untrusted)
+        count_words = len(words)
+        j = 1
+        while j < count_words:
+            opt = words[j]
             if opt == "-C":
-                if j + 1 >= count:
+                if j + 1 >= count_words:
                     break
-                action["workdir"] = shell_tokens.hop_dir(action["workdir"], tokens[j + 1], model.variables_at(i))
+                action["workdir"] = shell_tokens.hop_dir(action["workdir"], words[j + 1], model.variables_at(i))
                 j += 2
                 continue
             if opt == "--git-dir" or opt.startswith("--git-dir="):
-                if opt == "--git-dir" and j + 1 >= count:
+                if opt == "--git-dir" and j + 1 >= count_words:
                     break
-                value = tokens[j + 1] if opt == "--git-dir" else opt.split("=", 1)[1]
+                value = words[j + 1] if opt == "--git-dir" else opt.split("=", 1)[1]
                 set_git_path(action, "git_dir", value)
                 j += 2 if opt == "--git-dir" else 1
                 continue
             if opt == "--work-tree" or opt.startswith("--work-tree="):
-                if opt == "--work-tree" and j + 1 >= count:
+                if opt == "--work-tree" and j + 1 >= count_words:
                     break
-                value = tokens[j + 1] if opt == "--work-tree" else opt.split("=", 1)[1]
+                value = words[j + 1] if opt == "--work-tree" else opt.split("=", 1)[1]
                 set_git_path(action, "work_tree", value)
                 action["workdir"] = action["work_tree"]
                 j += 2 if opt == "--work-tree" else 1
                 continue
             if opt == "-c":
-                if j + 1 >= count:
+                if j + 1 >= count_words:
                     break
-                register_config(action, tokens[j + 1])
+                register_config(action, words[j + 1])
                 j += 2
                 continue
             if opt == "--config-env":
-                if j + 1 >= count:
+                if j + 1 >= count_words:
                     break
-                key, env_name = config_pair(tokens[j + 1])
+                key, env_name = config_pair(words[j + 1])
                 register_config(action, f"{key}={env_assignments.get(env_name, '<config-env>')}")
                 j += 2
                 continue
@@ -869,7 +908,7 @@ def parse_git_actions(
                     if alias_tokens and not shell_alias and not is_git_executable(alias_tokens[0]):
                         alias_tokens = ["git"] + alias_tokens
                     nested_actions = parse_git_actions(
-                        alias_tokens + tokens[j + 1 : segment_end_index(tokens, j + 1)],
+                        alias_tokens + words[j + 1 :],
                         action["workdir"],
                         depth + 1,
                         dict(exported_env),
@@ -886,8 +925,8 @@ def parse_git_actions(
                 break
 
             action["subcommand"] = opt
-            action["index"] = j
-            action["args"] = tokens[j + 1 : segment_end_index(tokens, j + 1)]
+            action["index"] = positions[j]
+            action["args"] = words[j + 1 :]
             actions.append(action)
             break
 
@@ -1074,6 +1113,92 @@ EXPANSION = re.compile(r"[$`]")
 MAIN_REF = re.compile(r"(?:refs/)?(?:heads/)?(?:main|master)")
 
 
+# `git push -h` of git 2.39: each long option and how it takes its value ("flag": none,
+# "value": the next word or `=`, "optional": only through `=`). A newer git may add options.
+PUSH_OPTIONS = {
+    "verbose": "flag", "quiet": "flag", "repo": "value", "all": "flag", "mirror": "flag",
+    "delete": "flag", "tags": "flag", "dry-run": "flag", "porcelain": "flag", "force": "flag",
+    "force-with-lease": "optional", "force-if-includes": "flag", "recurse-submodules": "value",
+    "thin": "flag", "receive-pack": "value", "exec": "value", "set-upstream": "flag",
+    "progress": "flag", "prune": "flag", "verify": "flag", "follow-tags": "flag",
+    "signed": "optional", "atomic": "flag", "push-option": "value", "ipv4": "flag", "ipv6": "flag",
+}
+PUSH_SHORT = {
+    "v": "verbose", "q": "quiet", "d": "delete", "n": "dry-run", "f": "force", "u": "set-upstream",
+    "o": "push-option", "4": "ipv4", "6": "ipv6",
+}
+
+
+def resolve_push_option(name: str) -> tuple[str, bool] | None:
+    """(option, negated) for a long option as git's parse-options reads it: an exact name (or
+    `no-` and a name), else the one option the text is a prefix of. An ambiguous or unknown
+    text is None: git exits with an error there and pushes nothing."""
+    if name in PUSH_OPTIONS:
+        return name, False
+    if name.startswith("no-") and name[3:] in PUSH_OPTIONS:
+        return name[3:], True
+    found = {(option, False) for option in PUSH_OPTIONS if option.startswith(name)}
+    if name.startswith("no-"):
+        found |= {(option, True) for option in PUSH_OPTIONS if option.startswith(name[3:])}
+    elif "no-".startswith(name):
+        found |= {(option, True) for option in PUSH_OPTIONS}
+    return found.pop() if len(found) == 1 else None
+
+
+def read_push_options(args: list[str]):
+    """(force, delete, ref-wide, lease names main, operands) of `git push`'s words, or None
+    for `--no-verify`. Options read as parse-options does (see PUSH_OPTIONS); an option may
+    follow an operand; the first operand is the repository, the rest are refspecs."""
+    force = delete = wide = lease_main = False
+    operands: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        i += 1
+        if arg == "--":
+            operands.extend(args[i:])
+            break
+        if long_option_prefix(arg, "--no-verify", "--no-veri"):
+            return None
+        if arg.startswith("--"):
+            name, equals, value = arg[2:].partition("=")
+            found = resolve_push_option(name)
+            if found is None:
+                continue
+            option, negated = found
+            if negated:
+                if option == "verify":
+                    return None
+                continue  # a negation takes no value and never loosens what was read
+            kind = PUSH_OPTIONS[option]
+            if kind == "value" and not equals:
+                i += 1
+            if option in {"force", "force-with-lease"}:
+                force = True
+                if equals and MAIN_REF.fullmatch(value.split(":", 1)[0]):
+                    lease_main = True
+            elif option == "delete":
+                delete = True
+            elif option == "all":
+                wide = True
+            elif option == "mirror":
+                wide = force = True  # mirroring forces every ref, main included
+        elif len(arg) > 1 and arg[0] == "-":
+            for position, char in enumerate(arg[1:], 1):
+                if char == "o":  # the rest of the word, or the next word, is its value
+                    if position == len(arg) - 1:
+                        i += 1
+                    break
+                option = PUSH_SHORT.get(char)
+                if char == "f" or option == "force":
+                    force = True
+                elif option == "delete":
+                    delete = True
+        else:
+            operands.append(arg)
+    return force, delete, wide, lease_main, operands
+
+
 def check_push(action: dict) -> None:
     args = own_args(action.get("args", []))
     for raw_config in action.get("configs", []):
@@ -1087,16 +1212,13 @@ def check_push(action: dict) -> None:
     dest_main = False
     ref_wide = False
     has_explicit_ref = False
-    operands: list[str] = []
     delete_push = False
-    remote_names: list[set[str] | None] = []
-
-    def is_remote(name: str) -> bool:
-        if not remote_names:
-            output = git_output(action, ["remote"])
-            remote_names.append(None if output is None else set(output.split()))
-        names = remote_names[0]
-        return names is None or name in names  # unreadable: git reads a lone operand as the remote
+    operands = read_push_options(args)
+    if operands is None:
+        raise block("git push --no-verify bypasses pre-push hooks")
+    push_force, delete_push, ref_wide, lease_main, operands = operands
+    if lease_main:
+        dest_main = has_explicit_ref = True
 
     # `$(git branch --show-current)` is expanded by the shell where it stands, which is the
     # push's repository only when nothing (`-C`, `env -C`, `--git-dir`, `--work-tree`) moves it
@@ -1109,61 +1231,14 @@ def check_push(action: dict) -> None:
         and "GIT_WORK_TREE" not in action.get("env", {})
     )
 
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "--":
-            operands.extend(args[i + 1 :])
-            break
-        if long_option_prefix(arg, "--no-verify", "--no-veri"):
-            raise block("git push --no-verify bypasses pre-push hooks")
-        if "=" in arg and (
-            long_option_prefix(arg, "--force-with-lease", "--force-w")
-            or long_option_prefix(arg, "--force-with-includes", "--force-w")
-        ):
-            push_force = True
-            lease_ref = arg.split("=", 1)[1].split(":", 1)[0]
-            if MAIN_REF.fullmatch(lease_ref):
-                dest_main = True
-                has_explicit_ref = True
-        if (
-            arg in {"--force", "--force-with-lease", "-f"}
-            or long_option_prefix(arg, "--force", "--forc")
-            or long_option_prefix(arg, "--force-with-lease", "--force-w")
-            or long_option_prefix(arg, "--force-with-includes", "--force-w")
-        ):
-            push_force = True
-        elif arg in {"--delete", "-d"} or long_option_prefix(arg, "--delete", "--del"):
-            delete_push = True
-        elif arg.startswith("--force="):
-            push_force = True
-            lease_ref = arg.split("=", 1)[1].split(":", 1)[0]
-            if MAIN_REF.fullmatch(lease_ref):
-                dest_main = True
-                has_explicit_ref = True
-        elif arg in {"--all", "--mirror"}:
-            ref_wide = True
-        elif arg.startswith("-") and not arg.startswith("--"):
-            if "f" in arg[1:]:
-                push_force = True
-        elif arg.startswith("--"):
-            pass
-        else:
-            operands.append(arg)
-        i += 1
-
-    for index, operand in enumerate(operands):
+    # the first operand is the repository, whatever it spells; the refspecs follow it
+    for operand in operands[1:]:
         force_refspec = operand.startswith("+")
         refspec = operand[1:] if force_refspec else operand
         if force_refspec:
             push_force = True
         if refspec == ":":
             ref_wide = True
-        if len(operands) >= 2 and index == 0:
-            continue
-        if len(operands) == 1 and (operand in {"origin", "upstream"} or is_remote(operand)):
-            continue  # a lone remote name is a remote, not a refspec
-
         has_explicit_ref = True
         deleting_ref = refspec.startswith(":")
         dest = refspec.rsplit(":", 1)[-1]
@@ -1177,7 +1252,7 @@ def check_push(action: dict) -> None:
                 f"`{dest}` is expanded by the shell), and force-pushing or deleting main/master "
                 "is not allowed. Name the branch (`git push --force origin <branch>`)."
             )
-        if MAIN_REF.fullmatch(dest or ""):
+        if MAIN_REF.fullmatch(dest or "") or "*" in dest:  # a glob may be main
             dest_main = True
             if deleting_ref:
                 delete_push = True
@@ -1327,7 +1402,18 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
     user's AITK_PR_READY=1, read only from the session environment."""
     if shell_tokens.truthy(environ.get("AITK_PR_READY")):
         return
-    for found in shell_tokens.commands(command, cwd):
+    text_read = False
+    found_all = list(shell_tokens.commands(command, cwd))
+    for found in found_all:
+        if found.untrusted and not found.unresolved and not text_read:
+            text_read = True
+            text = untrusted_text(found_all)
+            for verb in untrusted_text_verbs(text):
+                if verb in {"ready", "merge"}:
+                    raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
+                raise block(PR_QUOTED_OPERATOR.format(verb=verb))
+            if shell_tokens.mentions_api_publish(text):
+                raise block(PR_PUBLISH_API.format(what="could merge, ready or open a pull request"))
         if found.unreadable:
             # the work budget is spent, or git is handed text that mentions a gated
             # operation: the text cannot show what runs, so a contiguous `gh` in it
@@ -1343,10 +1429,6 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
             flags = gh_args.walk(args, verb, cut)
             if verb == gh_args.UNKNOWN:
                 raise block(PR_PUBLISH_UNKNOWN)
-            if found.untrusted:  # a quoted operator hides which words are flags: no draft, help or undo
-                if verb in {"ready", "merge"}:
-                    raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
-                raise block(PR_QUOTED_OPERATOR.format(verb=verb))
             if not publishes_nothing(verb, flags):
                 note = "" if flags.trusted else PR_PUBLISH_UNTRUSTED.format(why=untrusted_reason(flags, cut))
                 raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]) + note)
@@ -1381,6 +1463,11 @@ def unresolved_gated(text: str) -> Iterator[str]:
     """The gated verb of every `gh pr VERB` in text that did not parse. `ready` and `merge`
     always count; a creation or revert counts unless a draft flag sits in the same separated
     command. Each search starts where the last match ended, so the scan is linear."""
+    # origin/main's rule over the whole text, whatever holds a separator (`$((1|2))`, `${X-a;b}`,
+    # a quote inside `$(...)`): the union with the piece-wise readings below blocks wherever main does
+    whole = shell_tokens.words_in_order(text, *UNRESOLVED_PR_PUBLISH)
+    if whole and (whole.group(1) in {"ready", "merge"} or DRAFT_FLAG.search(text) is None):
+        yield whole.group(1)
     for command in COMMAND_SEPARATOR.split(text) + quoted_split(text):
         position = 0
         drafted = None  # DRAFT_FLAG is searched at most once per command
@@ -1417,37 +1504,49 @@ def publishes_nothing(verb: str, flags: gh_args.Flags) -> bool:
     return verb == "merge" and flags.asks_help
 
 
-def gh_argvs(found: shell_tokens.Command) -> list[list[str]]:
-    """The argv to read: with its redirections dropped (`gh >/dev/null pr merge 12`), and, when
-    a quoted operator came out bare (`--title '>'` reads as a redirection), as it stands too:
-    the guard cannot tell which words a redirection removed."""
-    argvs = [shell_tokens.drop_redirections(found.argv)]
-    if found.untrusted:
-        argvs.append(list(found.argv))
-    return [argv for argv in argvs if argv]
-
-
 def gh_verbs(found: shell_tokens.Command) -> list[tuple[str, list[str], bool]]:
     """The gated `gh pr` verbs one command can run, with the arguments to read for each and
-    whether the command is cut by a substitution (see `gh_args.pr_commands`). A command name
-    that holds an expansion (`"$GH"`, `${g/x/h}`, `{gh,}`), or a command that follows a `)`
-    (`$(command -v gh) pr merge`), is read as gh."""
-    if not found.argv:
+    whether the command is cut (an unclosed `$(`, a backtick span: see `gh_args.pr_commands`).
+    Its redirections are dropped. A command name that holds an expansion (`"$GH"`,
+    `${g/x/h}`, `{gh,}`, a substitution) is read as gh. A command with a quoted operator
+    about (`found.untrusted`) is read as text instead: `untrusted_text_verbs`."""
+    argv = shell_tokens.drop_redirections(found.argv)
+    if not argv or found.untrusted:
         return []
-    # an unquoted `$(` (also glued to a flag: `--title=$(...)`), `<(` or `>(` ends the words
-    cut = found.argv[-1].endswith("$") or found.argv[-1] in {"<", ">"}
-    verbs: list[tuple[str, list[str], bool]] = []
-    for argv in gh_argvs(found):
-        if os.path.basename(argv[0]).lower() == "gh":
-            commands = gh_args.pr_commands(argv[1:])
-        elif gh_args.has_expansion(argv[0]):
-            commands = gh_args.pr_commands(argv[1:], expands=True)
-        elif found.after_paren:
-            commands = gh_args.pr_commands(argv, expands=True)
-        else:
-            continue
-        verbs.extend((verb, args, cut) for verb, args in commands)
-    return verbs
+    if os.path.basename(argv[0]).lower() == "gh":
+        commands = gh_args.pr_commands(argv[1:])
+    elif gh_args.has_expansion(argv[0]):
+        commands = gh_args.pr_commands(argv[1:], expands=True)
+    else:
+        return []
+    return [(verb, args, found.cut) for verb, args in commands]
+
+
+UNTRUSTED_VERB = re.compile(r"\b(ready|merge|create|new|revert)\b")
+
+
+def untrusted_text(found_all: list[shell_tokens.Command]) -> str:
+    """The words of every command a quoted operator may have cut, as one text. A command that
+    only prints its words (`INERT_HEADS`: `echo '()' gh pr ready 12`) runs none of them."""
+    parts = []
+    for found in found_all:
+        if found.untrusted and found.argv and not found.unresolved:
+            argv = shell_tokens.drop_redirections(found.argv) or found.argv
+            if shell_tokens.head_name(argv[0]) not in shell_tokens.INERT_HEADS:
+                parts.append(" ".join(found.argv))
+    return " ".join(parts)
+
+
+def untrusted_text_verbs(command: str) -> Iterator[str]:
+    """The gated verb of a `gh ... pr ... VERB` in the text of `untrusted_text`, quoting removed or
+    not. Used when a quoted or escaped operator standing alone as a word came out as a bare
+    one: it cuts a command in two (`gh pr -t ';' merge 12`) or hides a flag behind a redirection
+    (`gh >/dev/null pr -t '>' merge 12`), so no argv is trusted."""
+    for form in (command, shell_tokens.unquoted(command)):
+        match = shell_tokens.words_in_order(form, shell_tokens.WORD_GH, shell_tokens.WORD_PR, UNTRUSTED_VERB)
+        if match:
+            yield match.group(1)
+            return
 
 
 def api_note(text: str) -> str:
@@ -1461,23 +1560,18 @@ def api_note(text: str) -> str:
 
 
 def gh_api_calls(found: shell_tokens.Command) -> list[tuple[list[str], bool]]:
-    """The arguments after `api` of every `gh api` one command can run, each with whether an
-    unquoted `$(` or `<(` cut the command; the name is read as in `gh_verbs`."""
-    if not found.argv:
+    """The arguments after `api` of every `gh api` one command can run, each with whether the
+    command is cut; the name is read as in `gh_verbs`, and a quoted operator makes it text."""
+    argv = shell_tokens.drop_redirections(found.argv)
+    if not argv or found.untrusted:
         return []
-    cut = found.argv[-1].endswith("$")  # an unquoted `$(`; a `<(` or `>(` hides no endpoint or method
-    out: list[tuple[list[str], bool]] = []
-    for argv in gh_argvs(found):
-        if os.path.basename(argv[0]).lower() == "gh":
-            calls = gh_args.api_commands(argv[1:])
-        elif gh_args.has_expansion(argv[0]):
-            calls = gh_args.api_commands(argv[1:], expands=True)
-        elif found.after_paren:
-            calls = gh_args.api_commands(argv, expands=True)
-        else:
-            continue
-        out.extend((args, cut) for args in calls)
-    return out
+    if os.path.basename(argv[0]).lower() == "gh":
+        calls = gh_args.api_commands(argv[1:])
+    elif gh_args.has_expansion(argv[0]):
+        calls = gh_args.api_commands(argv[1:], expands=True)
+    else:
+        return []
+    return [(args, found.cut) for args in calls]
 
 
 PR_VERIFY_BLOCK = "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. {remedy}"
@@ -1538,6 +1632,15 @@ CREATE_WORD = re.compile(r"\b(create|new)\b")
 API_CREATE_TEXT = re.compile(r"\bpulls(?=$|[\s?#'\"])|\b(?:createPullRequest|revertPullRequest)\b")
 
 
+def gh_api_text_creates(text: str) -> bool:
+    """Whether text the guard cannot read as commands has a `gh api` that could open a pull request."""
+    text = shell_tokens.unquoted(text)
+    return (
+        shell_tokens.words_in_order(text, shell_tokens.WORD_GH, shell_tokens.WORD_API, API_CREATE_TEXT) is not None
+        or shell_tokens.mentions_api_unread(text)
+    )
+
+
 def refuse(reason: str, remedy: str, **values: str) -> Blocked:
     return block(PR_VERIFY_BLOCK.format(reason=reason, remedy=remedy.format(script=VERIFY_SCRIPT, **values)))
 
@@ -1582,16 +1685,23 @@ def uncommitted(top: str, target: str) -> list[str]:
 def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
     """`gh pr create` needs a passing `scripts/verify.py` record on the tree it opens.
     No override lifts it (`environ` is unused, kept for the checks' shared signature)."""
-    for found in shell_tokens.commands(command, cwd):
+    text_read = False
+    found_all = list(shell_tokens.commands(command, cwd))
+    for found in found_all:
+        if found.untrusted and not found.unresolved and not text_read:
+            text_read = True  # a quoted operator: the commands are read as text (`untrusted_text_verbs`)
+            text = untrusted_text(found_all)
+            for verb in untrusted_text_verbs(text):
+                if verb in {"create", "new"}:
+                    raise block(PR_QUOTED_OPERATOR.format(verb=verb))
+            if gh_api_text_creates(text):
+                raise block(PR_API_CREATE[gh_args.UNREADABLE_API].format(what="could open a pull request"))
         if found.unreadable:
             raise block(PR_VERIFY_UNREADABLE + api_note(found.text))
         if found.unresolved:
             if shell_tokens.words_in_order(found.text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
                 raise block(PR_VERIFY_UNREADABLE)
-            text = shell_tokens.unquoted(found.text)
-            if shell_tokens.words_in_order(
-                text, shell_tokens.WORD_GH, shell_tokens.WORD_API, API_CREATE_TEXT
-            ) or shell_tokens.mentions_api_unread(text):
+            if gh_api_text_creates(found.text):
                 raise block(PR_API_CREATE[gh_args.UNREADABLE_API].format(what="could open a pull request"))
             continue
         for args, cut in gh_api_calls(found):
@@ -1604,8 +1714,6 @@ def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
             if verb == gh_args.UNKNOWN:
                 raise block(PR_VERIFY_UNKNOWN)
             flags = gh_args.walk(args, verb, cut)
-            if found.untrusted:
-                raise block(PR_QUOTED_OPERATOR.format(verb=verb))
             if flags.asks_help:
                 continue
             if flags.unknown_flags:

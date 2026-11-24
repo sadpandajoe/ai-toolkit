@@ -386,6 +386,38 @@ class ApiTests(unittest.TestCase):
         self.assertEqual([["-X", "PUT", "x"]], gh_args.api_commands(["api", "-X", "PUT", "x"]))
         self.assertEqual([["x"]], gh_args.api_commands(["api", "x"], expands=True))
 
+    def test_graphql_variables_must_be_declared(self) -> None:
+        def unreadable(query: str) -> bool:
+            return gh_args.read_api(["graphql", "-f", "query=" + query]).unreadable_query
+
+        for query in (
+            "query($o: String! $n: String!){ r(owner: $o, name: $n) { id } }",
+            "query($o: String!\n$n: String!){ r(owner: $o, name: $n) { id } }",
+            "query Q($o: String!, $n: String!) { r(owner: $o, name: $n) { id } }",
+            "mutation M($i: ID!) { x(id: $i) }",
+        ):
+            with self.subTest(query=query):
+                self.assertFalse(unreadable(query))
+        for query in (
+            "mutation { $M: __typename }",
+            "mutation { a: $M }",
+            "query { f(a: $a) }",
+            "query($a: Int) { f(a: $b) }",
+            "query($M: Int) { $M: x }",
+            "{x(a: \"$5\")}",
+            "{ query($M: Int) { a } a: $M }",
+            "# query($M: Int)\nmutation { a: $M }",
+            "mutation { a(s: \"query($M: Int)\") b: $M }",
+        ):
+            with self.subTest(query=query):
+                self.assertTrue(unreadable(query))
+
+    def test_a_header_that_expands_may_override_the_method(self) -> None:
+        self.assertEqual(
+            gh_args.MERGE_API, gh_args.api_effect(["-X", "POST", "-H", "$H", "repos/o/r/pulls/12/merge"])
+        )
+        self.assertIsNone(gh_args.api_effect(["-H", "Accept: x", "repos/o/r/pulls/12"]))
+
 
 def verbs(args: list[str], expands: bool = False) -> list[str]:
     return [verb for verb, _ in gh_args.pr_commands(args, expands)]

@@ -101,7 +101,11 @@ checks nothing is visible in the record. Its known limits:
   (`hooks/lib/gh_args.py`; a flag a newer gh adds grants no draft or help),
   and `gh pr revert` is gated like `create`. A positional word with an expansion
   grants no draft, help or undo (accepted over-block: `gh pr ready --undo
-  "$PR"`). A function wrapper (`g() { gh "$@"; }; g pr merge 12`), an expanded
+  "$PR"`). A `$(...)` is one word of the command it sits in, so `gh -R $(echo o/r)
+  pr merge 12` is read and a substitution where the verb stands is unknown. Text
+  the guard cannot parse is searched for `gh`, `pr`, then `ready`, `merge`,
+  `create`, `new` or `revert` in order over the whole text as well as piece by
+  piece. A function wrapper (`g() { gh "$@"; }; g pr merge 12`), an expanded
   name behind an unknown wrapper (`g=gh; setsid $g pr merge 12`), a variable
   that holds more than the name (`c='gh pr'; $c merge 12`), `gh` aliases and
   extensions and connector tools open a PR unseen;
@@ -111,19 +115,29 @@ checks nothing is visible in the record. Its known limits:
   `enqueuePullRequest` needs `AITK_PR_READY=1`; a POST to `pulls`, a
   `createPullRequest` or `revertPullRequest`, and a GraphQL query the guard
   cannot read (`--input`, `-F query=@file`, a shell expansion or backtick in
-  `query=`) block with no override, like an unchecked `gh pr create`. An
-  expansion in the endpoint or method, or an unquoted `$(`, blocks when it
-  could be one of these. Not seen: `gh api $ARGS` (the whole call in a
+  `query=`; a `$name` counts as a GraphQL variable only when an operation's
+  definition list declares it) block with no override, like an unchecked `gh pr create`. An
+  expansion in the endpoint, the method or a `-H` value, or an unclosed `$(`,
+  blocks when it could be one of these. Not seen: `gh api $ARGS` (the whole call in a
   variable), a whole path segment that is an expansion standing alone for
   `pulls` or `merge`, and `curl`. Other API writes (refs, contents, merges
   into a branch, `gh repo sync --force`) are not modelled either: for those,
   GitHub's branch protection is the boundary, not this hook. A literal query
   holding a backtick blocks with no override (an accepted over-block), and so
-  does one with a `$5` inside a string literal (a variable definition,
-  `$n: String`, is read); a quoted or escaped operator character standing alone
-  as a word (`'>'`, `\;`) reads like the operator, so a gated `gh pr` verb in
-  the same command gets no draft, help or undo and `gh pr create` must run as a
-  command of its own;
+  does one with a `$5` inside a string literal;
+- a quoted or escaped operator character standing alone as a word (`'>'`, `\;`,
+  a `;` inside a `${...}`, or inside the quotes of a `$(...)` within double
+  quotes) reads like the operator and cuts the command. The guard then reads the
+  whole command as text: a `gh ... pr ... ready|merge|create|new|revert` or a
+  `gh api` pull request mention blocks, a create, new or revert gets no draft
+  credit, and `gh pr create` must run as a command of its own;
+- git's words are read without redirections and with each `$(...)` as one word,
+  push options as git 2.39's parse-options does, and the words after a `$(...)`
+  continue its command for the directory too (`echo $(x) cd D` moves nothing,
+  `X=$(x) cd D` does). Not seen: a word that expands to a push option
+  (`git push origin main $F`);
+- the model misses element and nameref assignments: `S[0]=x A=M` as one
+  segment, `declare -n R=S; R=M`, `S[a[0]]=M` and `declare 'S[0]=M'`;
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static
   model: a subshell's `cd` is restored, and a `cd` that may not have run (after
   `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in

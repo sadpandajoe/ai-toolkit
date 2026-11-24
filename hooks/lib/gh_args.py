@@ -333,23 +333,94 @@ def normalise_endpoint(endpoint: str) -> str:
     return endpoint.strip("/")
 
 
+GRAPHQL_OPERATION = re.compile(r"\b(?:query|mutation|subscription)\b\s*(?:[A-Za-z_]\w*\s*)?\(")
+
+
+def graphql_scan(text: str) -> tuple[set[str], list[tuple[int, int]]]:
+    """The variable names declared in the operations' definition lists, and the spans (start,
+    end) of those lists. A list is `query|mutation|subscription [Name] ( ... )` at the top level
+    of the document; strings and `#` comments hold no definition."""
+    skipped: list[tuple[int, int]] = []  # strings and comments
+    position = 0
+    while position < len(text):
+        char = text[position]
+        if char == "#":
+            end = text.find("\n", position)
+            end = len(text) if end < 0 else end
+            skipped.append((position, end))
+            position = end
+        elif char == '"':
+            if text.startswith('"""', position):
+                end = text.find('"""', position + 3)
+                end = len(text) if end < 0 else end + 3
+            else:
+                end = position + 1
+                while end < len(text) and text[end] not in '"\n':
+                    end += 2 if text[end] == "\\" else 1
+                end += 1
+            skipped.append((position, min(end, len(text))))
+            position = end
+        else:
+            position += 1
+
+    mask = bytearray(len(text) + 1)
+    for start, end in skipped:
+        mask[start:end] = b"\x01" * (end - start)
+
+    def inside_skipped(at: int) -> bool:
+        return bool(mask[at])
+
+    names: set[str] = set()
+    lists: list[tuple[int, int]] = []
+    depth = 0
+    position = 0
+    while position < len(text):
+        if inside_skipped(position):
+            position += 1
+            continue
+        char = text[position]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth = max(depth - 1, 0)
+        elif depth == 0 and char in "qms":
+            found = GRAPHQL_OPERATION.match(text, position)
+            if found and (position == 0 or not (text[position - 1].isalnum() or text[position - 1] == "_")):
+                start = found.end()
+                level, end = 1, start
+                while end < len(text) and level:
+                    if not inside_skipped(end):
+                        level += (text[end] == "(") - (text[end] == ")")
+                    end += 1
+                lists.append((start, end))
+                for name in re.finditer(r"\$(\w+)\s*:", text[start:end]):
+                    if not inside_skipped(start + name.start()):
+                        names.add(name.group(1))
+                position = end
+                continue
+        position += 1
+    return names, lists
+
+
 def query_unreadable(text: str) -> bool:
-    """A `$` in query text is a GraphQL variable only where GraphQL allows one (after `(`,
-    `:`, `[`, `,` or `=`, spaces aside, and before a name); any other is a shell expansion."""
+    """A `$` in query text is a GraphQL variable only when it is declared in an operation's
+    definition list (`query Name($a: T, $b: T)`) and then used; any other `$` (an undeclared
+    name, `$5`, `$M:` in a selection) is a shell expansion the guard cannot read."""
     if "`" in text:
         return True
-    for position, char in enumerate(text):
-        if char == "$":
-            before = text[:position].rstrip()
-            after = text[position + 1 : position + 2]
-            if not (after.isalpha() or after == "_"):
-                return True
-            if before[-1:] in {"(", ":", "[", ",", "="}:
-                continue
-            name = re.match(r"\w+", text[position + 1 :])
-            if text[position + 1 + len(name.group(0)) :].lstrip().startswith(":"):
-                continue  # `$n: String`: a variable definition needs no comma before it
+    if "$" not in text:
+        return False
+    names, lists = graphql_scan(text)
+    for found in re.finditer(r"\$", text):
+        at = found.start()
+        name = re.match(r"\w+", text[at + 1 :])
+        if name is None or name.group(0)[0].isdigit() or name.group(0) not in names:
             return True
+        after = at + 1 + len(name.group(0))
+        while after < len(text) and text[after].isspace():
+            after += 1
+        if text[after : after + 1] == ":" and not any(start <= at < end for start, end in lists):
+            return True  # `$name:` defines a variable only inside the list
     return False
 
 
@@ -364,9 +435,10 @@ def read_api(args: list[str], cut: bool = False) -> Api | None:
     # a positional after the endpoint with an expansion may be `-X PUT` split by the shell
     extra = any(has_expansion(word) for word in flags.positionals[1:])
     overridden = any(
-        name == "header" and value.replace(" ", "").lower().startswith("x-http-method-override:")
+        name == "header"
+        and (value.replace(" ", "").lower().startswith("x-http-method-override:") or has_expansion(value))
         for name, value in flags.values
-    )  # the server may run another method than -X says
+    )  # the server may run another method than -X says; a header that expands may say so
     unknown = cut or extra or overridden or bool(flags.unknown_flags) or (bool(methods) and has_expansion(methods[-1]))
     method = methods[-1].upper() if methods else ("POST" if fielded else "GET")
     queries: list[str] = []
