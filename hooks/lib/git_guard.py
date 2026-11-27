@@ -1645,10 +1645,29 @@ def untrusted_pieces(source: str) -> Iterator[str]:
     whitespace (an argument: `grep -l 'gh pr merge'`; a command a payload hands to a shell is
     walked on its own), and without one that only prints its words (`INERT_HEADS`: `echo '()' gh pr
     ready 12` runs none of them)."""
+    yield from pieces_read(source, shell_tokens.Walk(), 0)
+
+
+def pieces_read(source: str, walk: shell_tokens.Walk, depth: int) -> Iterator[str]:
+    """`untrusted_pieces` of `source`. A command that only prints its words still runs its
+    substitutions (`echo $(gh pr -t ';' merge 12)`), so their bodies are read as pieces of their
+    own; past the budget or the depth limit the whole piece is read."""
     for piece in quoted_split(source):
         light = without_spaced_quotes(piece)
         if piece_head(light) not in shell_tokens.INERT_HEADS:
             yield light
+            continue
+        held = piece.replace("<(", "$(").replace(">(", "$(")
+        if "$(" not in held and "`" not in held:
+            continue
+        if depth >= shell_tokens.DEPTH_LIMIT:
+            yield light
+            continue
+        for body in shell_tokens.inner_commands(held, walk):
+            if body is None:
+                yield light
+                return
+            yield from pieces_read(body, walk, depth + 1)
 
 
 def untrusted_text_verbs(piece: str) -> Iterator[str]:
@@ -1842,6 +1861,84 @@ def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
             require_verified(found.workdir, flags.heads)
 
 
+UNSEEN_SCRIPT = (
+    "a shell in this command runs text the guard cannot read as commands (its stdin from a "
+    "here-document, a here-string or a pipe, a process substitution, or a substitution in its "
+    "`-c` or `eval` text), and that text has {what}. Run {what} as a plain command, so the guard "
+    "can check it."
+)
+FORCE_OR_DELETE = {"force", "force-with-lease", "force-if-includes", "delete", "mirror"}
+GIT_COMMIT_WORD = re.compile(r"\bcommit\b")
+UNSEEN_FED = re.compile(r"<|\|")
+
+
+def push_marker(word: str) -> bool:
+    """Whether a word after `push` in text the guard cannot read forces or deletes: a short
+    cluster with `f` or `d`, a `+` or `:` refspec, or a long option git reads as one of
+    `FORCE_OR_DELETE` (a unique prefix too: `--de`, `--mi`); an ambiguous prefix of one counts."""
+    if re.fullmatch(r"-[A-Za-z0-9]*[fd][A-Za-z0-9]*", word) or word[:1] in "+:" and len(word) > 1:
+        return True
+    if not word.startswith("--") or len(word) < 3:
+        return False
+    name = word[2:].split("=", 1)[0]
+    resolved = resolve_push_option(name)
+    if resolved is not None:
+        return resolved[0] in FORCE_OR_DELETE and not resolved[1]
+    return any(option.startswith(name) for option in FORCE_OR_DELETE)
+
+
+def unseen_git(text: str) -> str | None:
+    """`git push` with a force or delete marker, or `git commit`, in one line or separated command
+    of text the guard cannot read: the branch, the directory and the staged files are unknown."""
+    for piece in COMMAND_SEPARATOR.split(shell_tokens.unquoted(text.replace("\\\n", " "))):
+        push = shell_tokens.words_in_order(piece, shell_tokens.WORD_GIT, shell_tokens.WORD_PUSH)
+        if push and any(push_marker(word) for word in piece[push.end() :].split()):
+            return "`git push` with a force or delete flag"
+        if shell_tokens.words_in_order(piece, shell_tokens.WORD_GIT, GIT_COMMIT_WORD):
+            return "`git commit`"
+    return None
+
+
+def unseen_texts(command: str, cwd: str) -> list[str]:
+    """The text of what a shell here runs unseen (`shell_tokens.unseen_script`): the whole command
+    when a shell reads its stdin, the bodies of its substitutions when one holds the script."""
+    if not shell_tokens.UNSEEN_HEADS.search(command) and not (
+        ("$" in command or "`" in command) and UNSEEN_FED.search(command)
+    ):
+        return []
+    kinds = {found.unseen for found in shell_tokens.commands(command, cwd) if found.unseen}
+    if shell_tokens.UNSEEN_TEXT in kinds:
+        return [command]
+    if not kinds:
+        return []
+    bodies: list[str] = []
+    for body in shell_tokens.inner_commands(command.replace("<(", "$(").replace(">(", "$("), shell_tokens.Walk()):
+        if body is None:
+            return [command]  # past the budget: all of it
+        bodies.append(body)
+    return bodies
+
+
+def check_unseen_script(command: str, cwd: str, environ: dict[str, str]) -> None:
+    """What a shell runs that the guard never reads as commands (`unseen_texts`, here-document
+    bodies included) is read by the rules for text that did not parse: a gated `gh` (the user's
+    AITK_PR_READY=1 lifts only ready, merge and a non-draft open), a `gh pr create` or a `gh api`
+    PR creation, a forced or deleting `git push`, a `git commit`."""
+    for text in unseen_texts(command, cwd):
+        if not shell_tokens.truthy(environ.get("AITK_PR_READY")):
+            for verb in unresolved_gated(text):
+                raise block(UNSEEN_SCRIPT.format(what=f"`gh pr {verb}`"))
+            if shell_tokens.mentions_api_publish(text):
+                raise block(UNSEEN_SCRIPT.format(what="a `gh api` pull request call"))
+        if shell_tokens.words_in_order(text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
+            raise block(UNSEEN_SCRIPT.format(what="`gh pr create`"))
+        if gh_api_text_creates(text):
+            raise block(UNSEEN_SCRIPT.format(what="a `gh api` pull request creation"))
+        what = unseen_git(text)
+        if what:
+            raise block(UNSEEN_SCRIPT.format(what=what))
+
+
 def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
     """Raise Blocked when `command`, run in `cwd`, breaks a guarded rule."""
     if not command or not cwd:
@@ -1864,6 +1961,7 @@ def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
 
     check_pr_publish(command, cwd, environ)
     check_pr_verified(command, cwd, environ)
+    check_unseen_script(command, cwd, environ)
 
     actions: list[dict] = []
     for action in parse_git_actions(tokens, cwd):

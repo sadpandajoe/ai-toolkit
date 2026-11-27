@@ -1239,6 +1239,110 @@ def is_shell_command_flag(arg: str) -> bool:
     return arg.startswith("-") and not arg.startswith("--") and "c" in arg[1:]
 
 
+STDIN_SCRIPT = re.compile(r"-|/dev/stdin|/dev/fd/\d+|/proc/self/fd/\d+")
+SHELL_VALUE_OPTIONS = {"--rcfile", "--init-file"}
+UNSEEN_HEADS = re.compile(r"\b(?:bash|sh|zsh|dash|ksh|source|eval)\b|(?:^|[\s;&|(])\.(?=\s)")
+UNSEEN_TEXT, UNSEEN_BODIES = "text", "bodies"  # what of the command text a check reads: all, or its substitutions
+
+
+def holds_substitution(word: str) -> bool:
+    return "$(" in word or "`" in word or SUBSTITUTION_WORD in word
+
+
+def stdin_fed(segment: list[str], piped: bool) -> bool:
+    """Whether a command's stdin carries text the guard does not read as commands: a
+    here-document, a here-string or a process substitution on fd 0 (`<<`, `<<<`, `< <(...)`, no
+    other descriptor before it), or a pipe into it. A file (`< x.sh`, `</dev/null`) is a script
+    file, a limit of its own."""
+    if piped:
+        return True
+    for index, word in enumerate(segment):
+        fd = segment[index - 1] if index else None
+        if isinstance(fd, FdWord) and fd != "0":
+            continue
+        if word in {"<<", "<<<"}:
+            return True
+        if word == "<" and index + 1 < len(segment) and SUBSTITUTION_WORD in segment[index + 1]:
+            return True
+    return False
+
+
+def unseen_script(argv: list[str], fed: bool) -> str:
+    """What a shell, `source` or `eval` with these words runs that the guard never reads as
+    commands: `UNSEEN_TEXT` when it reads a fed stdin (no `-c` and no script, `-s`, `-`,
+    `/dev/stdin`: a here-document, a here-string, a pipe) or an fd (`/dev/fd/3`), so the whole
+    command text is the script; `UNSEEN_BODIES` when the script is a process substitution
+    (`bash <(...)`, `. <(...)`) or a `-c` or `eval` text holds a substitution (`bash -c "$(cat
+    <<'EOF' ...)"`), so the substitutions' text is; "" otherwise. A command name that is an
+    expansion (`$SHELL`) reading a fed stdin counts as a shell. A script file (`bash x.sh`) and
+    a payload in a variable (`bash -c "$X"`) are limits of their own."""
+    if not argv:
+        return ""
+    head = head_name(argv[0])
+    if head in SHELLS:
+        index = 1
+        while index < len(argv):
+            word = argv[index]
+            if word == "--":
+                index += 1
+                break
+            short = word[:1] in "-+" and not word.startswith("--") and len(word) > 1
+            if word in SHELL_VALUE_OPTIONS or (short and word[-1] in "oO"):
+                index += 2  # `-o pipefail`, `-euo pipefail`, `-O extglob`
+            elif short and word[0] == "-" and "c" in word[1:]:
+                return UNSEEN_BODIES if index + 1 < len(argv) and holds_substitution(argv[index + 1]) else ""
+            elif short and word[0] == "-" and "s" in word[1:]:
+                return UNSEEN_TEXT if fed else ""  # `-s`: the commands come from stdin
+            elif word[:1] in "-+" and len(word) > 1:
+                index += 1
+            else:
+                break
+        script = argv[index] if index < len(argv) else None
+        if script is None:
+            return UNSEEN_TEXT if fed else ""
+        if STDIN_SCRIPT.fullmatch(script):
+            return UNSEEN_TEXT
+        return UNSEEN_BODIES if SUBSTITUTION_WORD in script else ""
+    if head in {"source", "."}:
+        operands = [word for word in argv[1:] if word != "--"]
+        if not operands:
+            return ""
+        if STDIN_SCRIPT.fullmatch(operands[0]):
+            return UNSEEN_TEXT
+        return UNSEEN_BODIES if SUBSTITUTION_WORD in operands[0] else ""
+    if head == "eval":
+        return UNSEEN_BODIES if any(holds_substitution(word) for word in argv[1:]) else ""
+    if fed and ("$" in argv[0] or "`" in argv[0]):
+        return UNSEEN_TEXT  # `$SHELL <<< ...`, `B=bash; $B <<< ...`, `$(which bash) -s <<EOF`
+    return ""
+    head = head_name(argv[0])
+    if head in SHELLS:
+        index = 1
+        while index < len(argv):
+            word = argv[index]
+            if word == "--":
+                index += 1
+                break
+            if word in SHELL_VALUE_OPTIONS:
+                index += 2
+            elif is_shell_command_flag(word):
+                return index + 1 < len(argv) and holds_substitution(argv[index + 1])
+            elif word[:1] == "-" and not word.startswith("--") and "s" in word[1:]:
+                return True  # `-s`: the commands come from stdin
+            elif word[:1] in "-+" and len(word) > 1:
+                index += 1
+            else:
+                break
+        script = argv[index] if index < len(argv) else None
+        return script is None or script in STDIN_SCRIPTS or SUBSTITUTION_WORD in script
+    if head in {"source", "."}:
+        operands = [word for word in argv[1:] if word != "--"]
+        return bool(operands) and (operands[0] in STDIN_SCRIPTS or SUBSTITUTION_WORD in operands[0])
+    if head == "eval":
+        return any(holds_substitution(word) for word in argv[1:])
+    return False
+
+
 @functools.lru_cache(maxsize=32)
 def git_toplevel(path: str) -> str | None:
     """`git -C path rev-parse --show-toplevel`, or None when it fails (not a repository, no git)."""
@@ -1758,6 +1862,7 @@ class Command:
     untrusted: bool = False  # a quoted operator came out bare: a redirection cannot be told from a word
     cut: bool = False  # an unquoted `$(`, an unclosed one or a backtick span: a flag may hide in or after it
     source: str = ""  # with `untrusted`: the text its tokens were read from (comments and here-document bodies gone)
+    unseen: str = ""  # a shell here runs a script the guard never sees, and what to read of it: `unseen_script`
 
     @property
     def name(self) -> str:
@@ -1836,6 +1941,17 @@ def commands(
             # the shell runs what a substitution in command position prints: its text is read
             # as text that did not parse, on top of its own commands (an `echo` in it runs nothing)
             yield Command([], {}, unresolved_dir(printed, workdir), True, printed)
+        if not include_assignments and rest:
+            fed = stdin_fed(segment, first > 0 and tokens[first - 1] in PIPES)
+            plain_rest = drop_redirections(rest)
+            unseen = unseen_script(plain_rest, fed)
+            if not unseen and fed:
+                # behind a wrapper the rescan reads on its own (`docker exec -i app bash`), a
+                # shell still reads this stdin
+                later = [i for i, word in enumerate(plain_rest[1:], 1) if head_name(word) in SHELLS]
+                unseen = next((kind for i in later[:8] if (kind := unseen_script(plain_rest[i:], True))), "")
+            if unseen:
+                yield Command([], {}, workdir, text=" ".join(segment), unseen=unseen)
         assignments = {**inherited, **effects.assignments}
         target = workdir
         for value in effects.chdir:

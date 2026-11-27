@@ -101,7 +101,9 @@ checks nothing is visible in the record. Its known limits:
   (`hooks/lib/gh_args.py`; a flag a newer gh adds grants no draft or help),
   and `gh pr revert` is gated like `create`. A positional word with an expansion
   grants no draft, help or undo (accepted over-block: `gh pr ready --undo
-  "$PR"`). A `$(...)` is one word of the command it sits in, so `gh -R $(echo o/r)
+  "$PR"`). Not seen: an unquoted expansion in a flag's value that splits
+  into a flag (`-b $V` holding `x --draft=false`); the guard cannot tell
+  `$V` from `"$V"`. A `$(...)` is one word of the command it sits in, so `gh -R $(echo o/r)
   pr merge 12` is read and a substitution where the verb stands is unknown. What
   a substitution where the command word stands prints is run as the command, so
   its text is read like text the guard cannot parse (`$(echo gh pr merge 12)`
@@ -140,13 +142,33 @@ checks nothing is visible in the record. Its known limits:
   credit, also as they stand, since a redirection may be a quoted word
   (`G=gh; $G pr -t '>' merge 12`). The text is read
   in each piece cut where the shell really separates commands, without
-  the quoted words that hold whitespace and without an `echo`-like command, a
+  the quoted words that hold whitespace and without the words of an
+  `echo`-like command (its substitutions are read: `echo $(gh pr -t ';' merge 12)`), a
   `gh ... pr ... ready|merge|create|new|revert` or a `gh api` pull request
   mention blocks, and `gh pr create` must run as a command of its own. A
   separator in the inner double quotes of a `$(...)` within double quotes
   triggers it (`"$(echo "a;b")"`), one in single quotes does not. Over-block
   that remains: a verb word as an argument in the same piece as `gh pr`
   (`gh pr list --search merge | cut -d '|' -f1`);
+- a shell that runs a script the guard never reads as commands has that
+  script read like text that did not parse:
+  - when its stdin carries text and it has no script, or `-s`, `-` or
+    `/dev/stdin` (a here-document, a here-string, a process substitution or a
+    pipe on fd 0; a file there is a script file),
+    or the script is a `/dev/fd/N`, the whole command text is read,
+    here-document bodies included. A command name that is an expansion with
+    such a stdin (`$SHELL <<< ...`) counts as a shell;
+  - when the script is a process substitution (`bash <(...)`, `. <(...)`) or
+    a `-c` or `eval` text holds a substitution, the substitutions' text is
+    read.
+  A gated `gh`, a `gh pr create`, a `gh api` pull request call, a `git push`
+  with a force or delete flag, or a `git commit` in that text blocks, even
+  one aimed at a feature branch (an accepted over-block). `curl ... | bash`
+  with none of those stays allowed, and a shell's name as an argument
+  (`docker exec -it app bash`) reads no script. Not read: a script file
+  (`bash x.sh`, also one the same command writes first), a payload in a
+  variable (`bash -c "$X"`, `eval "$X"`), and words from stdin (`... | xargs
+  gh`);
 - a digit word or `{name}` glued to `<` or `>` after a word boundary is a file
   descriptor (`2>&1`, `{fd}>x`) and is no word; a digit apart from the operator
   (`-o 5 >x`) is an argument, and `gh` reads the command both ways;

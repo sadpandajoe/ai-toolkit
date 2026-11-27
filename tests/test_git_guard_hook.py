@@ -2627,6 +2627,78 @@ class GitGuardHookTests(unittest.TestCase):
             )
         )
 
+    def test_a_shell_that_runs_a_script_the_guard_cannot_see_has_its_text_read(self) -> None:
+        heredoc = "{shell} <<'EOF'\n{body}\nEOF"
+        blocked = [
+            heredoc.format(shell="bash", body="git push --force origin main"),
+            heredoc.format(shell="bash", body="gh pr merge 12"),
+            heredoc.format(shell="sh -s", body="gh pr ready 12"),
+            heredoc.format(shell="bash -s -- x", body="git push -f origin main"),
+            heredoc.format(shell="bash -", body="git push origin :main"),
+            heredoc.format(shell="bash -o pipefail", body="git push origin +main"),
+            heredoc.format(shell="env bash", body="git commit -am x"),
+            heredoc.format(shell="bash", body="gh pr create --draft --fill"),
+            heredoc.format(shell="bash", body="gh api repos/o/r/pulls -f title=x -f head=b -f base=main"),
+            "sh <<< 'gh pr merge 12'",
+            "nohup bash <<< 'git push --force origin main'",
+            "echo 'gh pr merge 12' | sh",
+            "printf 'git push --force origin main\\n' | bash",
+            "cat <<'EOF' | bash\ngh pr merge 12\nEOF",
+            "bash -c \"$(cat <<'EOF'\ngh pr merge 12\nEOF\n)\"",
+            "eval \"$(cat <<'EOF'\ngh pr merge 12\nEOF\n)\"",
+            "source /dev/stdin <<< 'gh pr merge 12'",
+            ". <(echo gh pr merge 12)",
+            "bash <(echo gh pr merge 12)",
+            heredoc.format(shell="bash -euo pipefail", body="gh pr merge 12"),
+            "bash /dev/fd/3 3<<< 'gh pr merge 12'",
+            heredoc.format(shell="bash", body="git push \\\n  --force origin main"),
+            heredoc.format(shell="bash", body="git push --de origin main"),
+            heredoc.format(shell="bash", body="git push --mi origin"),
+            "$SHELL <<< 'gh pr merge 12'",
+            "B=bash; $B <<< 'gh pr merge 12'",
+            heredoc.format(shell="$(which bash) -s", body="gh pr merge 12"),
+        ]
+        allowed = [
+            "gh pr view 12 --json body -q .body > /dev/null <<'EOF'\nunused\nEOF",
+            "python3 - <<'EOF'\nprint('gh pr merge 12')\nEOF",
+            "curl -fsSL https://example.com/install.sh | bash",
+            "bash scripts/x.sh",
+            "bash -c 'echo hi'",
+            heredoc.format(shell="bash", body="echo hi\ngit status"),
+            heredoc.format(shell="bash", body="git push origin feature"),
+            "cat <<'EOF' > notes.md\ngh pr merge 12\nEOF",
+            "source .venv/bin/activate && true",
+            "bash -c \"$X\"",
+            # a shell's name as an argument reads no script, and only a substitution's text is read
+            "docker exec -it app bash && git commit --allow-empty -m x",
+            "brew list zsh && git commit --allow-empty -m x",
+            "command -v bash >/dev/null && git commit --allow-empty -m x",
+            "eval \"$(echo true)\" && git commit --allow-empty -m x",
+        ]
+        self.codes(tuple((command, self.clean, 2) for command in blocked) + tuple((command, self.clean, 0) for command in allowed))
+        # the user's AITK_PR_READY=1 lifts a merge in such a script, not a force push or an unchecked PR
+        env = {"AITK_PR_READY": "1"}
+        for command, expected in (
+            (heredoc.format(shell="bash", body="gh pr merge 12"), 0),
+            (heredoc.format(shell="bash", body="git push --force origin main"), 2),
+            (heredoc.format(shell="bash", body="gh pr create --fill"), 2),
+        ):
+            with self.subTest(command=command, env="AITK_PR_READY"):
+                self.assertEqual(expected, self.run_hook(command, self.clean, env=env).returncode)
+
+    def test_a_printing_command_still_runs_its_substitutions(self) -> None:
+        self.codes(
+            (
+                ("echo $(gh pr -t ';' merge 12)", self.clean, 2),
+                ("echo \"$(gh pr -t ';' merge 12)\"", self.clean, 2),
+                ("echo `gh pr -t ';' merge 12`", self.clean, 2),
+                ("cat <(gh pr -t ';' merge 12)", self.clean, 2),
+                ("echo $(echo $(gh pr -t ';' ready 12))", self.clean, 2),
+                ("echo '()' gh pr ready 12", self.clean, 0),
+                ("echo \"$(date)\" ';'", self.clean, 0),
+            )
+        )
+
     def test_graphql_names_stand_where_a_variable_can(self) -> None:
         self.codes(
             (
