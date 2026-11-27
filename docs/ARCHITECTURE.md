@@ -208,7 +208,7 @@ checks nothing is visible in the record. Its known limits:
   that expands to a push option (`git push origin main $F`);
 - the model misses element and nameref assignments: `S[0]=x A=M` as one
   segment, `declare -n R=S; R=M`, `S[a[0]]=M` and `declare 'S[0]=M'`;
-- the directory a `gh pr create` runs in comes from `shell_tokens`' static
+- the directory a `gh pr create` runs in comes from `shell_dirs`' static
   model: a subshell's `cd` is restored, and a `cd` that may not have run (after
   `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in
   an if/while/until/for/select/case body, in an `eval`, or in text with a quoted

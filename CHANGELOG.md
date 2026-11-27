@@ -27,7 +27,7 @@
     `git push --force origin $BR`: a push, delete or commit whose
     repository, branch or staged files the guard cannot read now blocks;
   - `(cd ../feat); git push --force`, `false && cd ../feat; ...` and
-    `eval 'cd ../feat'; ...`: one directory model (`shell_tokens`) now
+    `eval 'cd ../feat'; ...`: one directory model (`shell_dirs`) now
     serves every rule. A subshell, `$(...)` or `<(...)` restores the
     directory. A `cd` that may not have run leaves it unknown, which
     blocks only the decisions that need it. Those are a `cd` after `||`,
