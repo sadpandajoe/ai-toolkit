@@ -420,6 +420,9 @@ class ApiTests(unittest.TestCase):
             "mutation($M: ID!) { $M(input: {pullRequestId: $M}) { clientMutationId } }",
             "mutation($M: ID!) { x { $M } }",
             "query($M: Int) { f(a: 1) $M }",
+            # a variable stands only in a value, inside parentheses: alias and selection places are a field
+            "mutation($M: ID!) { x: $M(input: {pullRequestId: $M}) { clientMutationId } }",
+            "mutation($M: ID!) { a: __typename, $M(input: {pullRequestId: $M}) { clientMutationId } }",
         ):
             with self.subTest(query=query):
                 self.assertTrue(unreadable(query))
@@ -427,6 +430,7 @@ class ApiTests(unittest.TestCase):
             "mutation($M: ID!) { f(input: {pullRequestId: $M}) { clientMutationId } }",
             "query($a: [Int], $b: Int = 1) { f(a: [$b], c: $a) }",
             "query Q($o: String!,$n: String!) { r(owner: $o, name: $n) { id } }",
+            "query($n: Int) { viewer @include(if: $n) { login } }",
         ):
             with self.subTest(query=query):
                 self.assertFalse(unreadable(query))

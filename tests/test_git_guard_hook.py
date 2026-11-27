@@ -2493,6 +2493,19 @@ class GitGuardHookTests(unittest.TestCase):
                 # assignments only before the substitution: the `cd` is the command, as before
                 ("X=$(true) cd {feature} && git push --force", self.clean, 0),
                 ("X=$(true) cd {main} && git push --force", self.feature, 2),
+                # a prefix word's options do not end the prefix
+                ("command -p $(true) cd {main} && git push --force", self.feature, 2),
+                ("builtin -- $(true) cd {main}; git push --force", self.feature, 2),
+                ("time -p $(true) cd {main} && git push --force", self.feature, 2),
+                ("command $X -p cd {main} && git push --force", self.feature, 2),
+                # a word may come out as nothing, or as `cd`, whatever its spelling
+                ("${{X:-${{Y}}}} cd {main} && git push --force", self.feature, 2),
+                ("${{X:-$(true)}} cd {main} && git push --force", self.feature, 2),
+                ("{{,}} cd {main} && git push --force", self.feature, 2),
+                ("${{X}}cd {main} && git push --force", self.feature, 2),
+                ("$X'cd' {main} && git push --force", self.feature, 2),
+                ("`true`cd {main} && git push --force", self.feature, 2),
+                ("{{c,}}d {main} && git push --force", self.feature, 2),
             )
         )
         found = list(shell_tokens.commands("$(true) cd /tmp && gh pr create --draft --fill", "/"))
@@ -2536,6 +2549,31 @@ class GitGuardHookTests(unittest.TestCase):
                 ("$(echo gh pr merge 12 --subject) --help", self.clean, 2),
                 ("`echo gh pr merge 12 --subject` --help", self.clean, 2),
                 ("$(printf 'gh pr ready 12')", self.clean, 2),
+                # with the words after it, past a word that may print nothing, and decoded
+                ("`echo gh pr` merge 12", self.clean, 2),
+                ("$(echo gh pr) merge 12", self.clean, 2),
+                ("$(echo gh api -X PUT) repos/o/r/pulls/12/merge", self.clean, 2),
+                ("eval \"$(echo gh pr) merge 12\"", self.clean, 2),
+                ("$X $(echo gh pr merge 12)", self.clean, 2),
+                ("$(true) $(echo gh pr merge 12)", self.clean, 2),
+                ("$(echo -e '\\x67h pr merge 12')", self.clean, 2),
+                ("$(printf '\\147h pr merge 12')", self.clean, 2),
+                # what an `echo` of literal words prints is read as the command it makes
+                ("$(echo gh) pr merge 12 --help", self.clean, 0),
+                ("$(which gh) pr view 12", self.clean, 0),
+                # git's name behind an expansion
+                ("$GIT push --force origin main", self.clean, 2),
+                ("${{GIT:-git}} push --force origin main", self.clean, 2),
+                ("$(which git) push --force origin main", self.clean, 2),
+                ("\"$(command -v git)\" push --force origin main", self.clean, 2),
+                ("${{X}}git push --force origin main", self.clean, 2),
+                ("git $X push --force origin main", self.clean, 2),
+                ("$GIT status", self.clean, 0),
+                # an assignment's backtick span, and nesting past the limit, fail closed
+                ("a=`b c` git push --force origin main", self.feature, 2),
+                ("a=`b c` git commit --no-verify -m x", self.clean, 2),
+                ("`true x` " * 9 + "git push --force origin main", self.feature, 2),
+                ("a=`date` git status", self.clean, 0),
                 ("$(command -v gh) pr view 12", self.clean, 0),
                 ("echo `echo gh pr merge 12`", self.clean, 0),
                 # ordinary commands stay allowed
@@ -2649,6 +2687,20 @@ class GitGuardHookTests(unittest.TestCase):
             "source /dev/stdin <<< 'gh pr merge 12'",
             ". <(echo gh pr merge 12)",
             "bash <(echo gh pr merge 12)",
+            # a stdin that reaches a shell in a group, a subshell, a body, a payload or an fd
+            "{ bash; } <<< 'gh pr merge 12'",
+            "(bash) <<< 'gh pr merge 12'",
+            "if true; then bash; fi <<< 'gh pr merge 12'",
+            "echo 'gh pr merge 12' | (cd /tmp && bash)",
+            "echo 'gh pr merge 12' | tee >(bash)",
+            "bash 3<<< 'gh pr merge 12' <&3",
+            heredoc.format(shell="bash -c 'exec sh'", body="git push --force origin main"),
+            "bash --rcfile <(echo gh pr merge 12) -i",
+            "b\\ash <<< 'gh pr merge 12'",
+            "ash <<< 'gh pr merge 12'",
+            heredoc.format(shell="bash", body="git com\\\nmit --no-verify -m x"),
+            heredoc.format(shell="bash", body="git push origin $'+main'"),
+            "echo 'git push --force origin main' | docker exec -i app bash",
             heredoc.format(shell="bash -euo pipefail", body="gh pr merge 12"),
             "bash /dev/fd/3 3<<< 'gh pr merge 12'",
             heredoc.format(shell="bash", body="git push \\\n  --force origin main"),
@@ -2674,6 +2726,8 @@ class GitGuardHookTests(unittest.TestCase):
             "brew list zsh && git commit --allow-empty -m x",
             "command -v bash >/dev/null && git commit --allow-empty -m x",
             "eval \"$(echo true)\" && git commit --allow-empty -m x",
+            "ps aux | grep sh; git commit --allow-empty -m x",
+            "git log -1 2>&1 | grep -v bash; git commit --allow-empty -m x",
         ]
         self.codes(tuple((command, self.clean, 2) for command in blocked) + tuple((command, self.clean, 0) for command in allowed))
         # the user's AITK_PR_READY=1 lifts a merge in such a script, not a force push or an unchecked PR
@@ -2698,6 +2752,27 @@ class GitGuardHookTests(unittest.TestCase):
                 ("echo \"$(date)\" ';'", self.clean, 0),
             )
         )
+
+    def test_git_reads_its_words_as_written_beside_a_quoted_operator(self) -> None:
+        self.codes(
+            (
+                ("git push -o '>' --force origin main", self.feature, 2),
+                ("git push -o \\> --force origin main", self.feature, 2),
+                ("git push --repo '>' --force origin main", self.feature, 2),
+                ("git commit -m '>' --no-verify", self.clean, 2),
+                # a quoted separator cut git's words: each real piece is read with it as a word
+                ("git commit -m ';' --no-verify", self.clean, 2),
+                ("git push -o '|' --force origin main", self.feature, 2),
+                ("git push -o '(' --force origin main", self.feature, 2),
+                ("git commit --allow-empty -m 'fix; thing'", self.clean, 0),
+                ("git commit --allow-empty -m 'a (wip) b'", self.clean, 0),
+                ("git push --force origin feature; echo '|'", self.feature, 0),
+            )
+        )
+        nest = "git push --force origin main"
+        for _ in range(10):
+            nest = "sh -c " + shlex.quote(nest)
+        self.codes(((nest, self.feature, 2),))
 
     def test_graphql_names_stand_where_a_variable_can(self) -> None:
         self.codes(

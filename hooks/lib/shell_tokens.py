@@ -807,23 +807,86 @@ def command_spans(tokens: list[str], merge: bool = True) -> Iterator[tuple[int, 
                 yield frame[0], words, cut
 
 
-def printed_head_text(tokens: list[str], first: int, segment: list[str], rest: list[str]) -> str | None:
-    """The text of the substitution that stands where the command word of `rest` does: the shell
-    runs what it prints as the command (`$(echo gh pr merge 12)`, `` `echo gh pr merge 12` ``).
-    None when the command word is no substitution. `rest` is `segment` past its prefixes, and
-    `first` the index in `tokens` where `segment` starts."""
-    if not rest:
+def printed_heads(tokens: list[str], first: int, segment: list[str], rest: list[str]) -> list[tuple[str | None, list[str]]]:
+    """What the shell may run when a substitution stands where the command word of `rest` does:
+    (the substitution's text, the words after it): `` `echo gh pr` merge 12`` runs `gh pr merge
+    12`. One pair per substitution that may be the command word: past a word that may
+    expand to nothing (`$X $(echo gh pr merge 12)`, `$(true) $(echo ...)`) the next one may be.
+    `rest` is `segment` past its prefixes, and `first` the index in `tokens` where `segment`
+    starts."""
+    texts: list[tuple[str | None, list[str]]] = []
+    before = sum(word.count(SUBSTITUTION_WORD) for word in segment[: len(segment) - len(rest)])
+    index = 0
+    while index < len(rest):
+        head = rest[index]
+        if len(texts) >= PRINTED_HEAD_LIMIT:
+            # past the limit, the rest is one text, read like text that did not parse
+            texts.append((None, rest[index:]))
+            break
+        if head.startswith("`"):
+            closing = index if head.count("`") >= 2 and head.endswith("`") else next(
+                (k for k in range(index + 1, len(rest)) if rest[k].count("`") % 2), len(rest) - 1
+            )
+            span = " ".join(rest[index : closing + 1])
+            match = BACKTICK.match(span)
+            body = match.group(1) if match else span[1:]
+            texts.append((body, rest[closing + 1 :]))
+            index = closing + 1
+            continue
+        glued = head[: -len(SUBSTITUTION_WORD)] if head.endswith(SUBSTITUTION_WORD) else None
+        if glued is not None and (not glued or may_vanish(glued)):
+            body = substitution_body(tokens, first, before + head.count(SUBSTITUTION_WORD))
+            texts.append((body, rest[index + 1 :]))
+            before += head.count(SUBSTITUTION_WORD)
+            index += 1
+            continue
+        if not may_vanish(head):
+            break
+        before += head.count(SUBSTITUTION_WORD)
+        index += 1
+    return texts
+
+
+PRINTED_HEAD_LIMIT = 8  # substitutions in a row read as the command word, each with the words after it
+LOOKUP_BODY = re.compile(r"\s*(?:command\s+-[vV]|which|type\s+-[pP])\s+([\w./+-]+)\s*")
+CERTAIN_OPTIONS = re.compile(r"-[neE]+")
+
+
+def printed_words(body: str) -> str | None:
+    """The words a substitution body surely prints: an `echo` of literal words, with nothing that
+    could change or redirect its output (no expansion, escape, glob, redirection or other
+    command), else None."""
+    if any(char in body for char in ";&|<>()`$\\*?[\n#"):
         return None
-    head = rest[0]
-    if head.startswith("`"):
-        joined = " ".join(rest)
-        match = BACKTICK.match(joined)
-        return match.group(1) if match else joined[1:]
-    if not head.endswith(SUBSTITUTION_WORD) or not (
-        head == SUBSTITUTION_WORD or may_vanish(head[: -len(SUBSTITUTION_WORD)])
-    ):
+    try:
+        words = shlex.split(body)
+    except ValueError:
         return None
-    wanted = 1 + sum(word.count(SUBSTITUTION_WORD) for word in segment[: len(segment) - len(rest)])
+    if words in (["true"], [":"], ["false"]):
+        return ""  # prints nothing: the words after it are the command
+    if not words or words[0] != "echo":
+        return None
+    args = words[1:]
+    while args and CERTAIN_OPTIONS.fullmatch(args[0]):
+        args = args[1:]
+    return " ".join(args)
+
+
+ESCAPING_PRINT = re.compile(r"\s*(?:printf\b|echo\s+-[a-zA-Z]*e)")
+
+
+def decoded_escapes(text: str) -> str:
+    """`text` with the backslash escapes `printf` and `echo -e` decode (`\\x67`, `\\147`, `\\u0067`)."""
+    text = re.sub(r"\\0?([0-7]{1,3})", lambda match: chr(int(match.group(1), 8)), text)
+    try:
+        return text.encode("latin-1", "backslashreplace").decode("unicode_escape")
+    except UnicodeDecodeError:
+        return text
+
+
+def substitution_body(tokens: list[str], first: int, wanted: int) -> str | None:
+    """The text of the `wanted`-th top-level `$(...)` (counted from 1) of the command whose first
+    token is `first`, or None when there is none."""
     depth = seen = 0
     start = None
     for index in range(first, len(tokens)):
@@ -845,9 +908,12 @@ def printed_head_text(tokens: list[str], first: int, segment: list[str], rest: l
     return " ".join(tokens[start:]) if start is not None else None
 
 
-def command_words(tokens: list[str], start: int, merge: bool = True) -> tuple[list[str], list[int], int, bool]:
+def command_words(
+    tokens: list[str], start: int, merge: bool = True, keep_redirections: bool = False
+) -> tuple[list[str], list[int], int, bool]:
     """(words, token index of each word, end index, cut) of the command that starts at `start`,
-    its substitutions merged into one word each (`command_spans`) and its redirections dropped."""
+    its substitutions merged into one word each (`command_spans`) and its redirections dropped
+    (kept with `keep_redirections`: with a quoted operator about, one may be a quoted word)."""
     words: list[str] = []
     positions: list[int] = []
     index = start
@@ -867,6 +933,8 @@ def command_words(tokens: list[str], start: int, merge: bool = True) -> tuple[li
         words.append(token)
         positions.append(index)
         index += 1
+    if keep_redirections:
+        return words, positions, index, cut
     kept = kept_indexes(words)
     return [words[k] for k in kept], [positions[k] for k in kept], index, cut
 
@@ -1241,6 +1309,12 @@ def is_shell_command_flag(arg: str) -> bool:
 
 STDIN_SCRIPT = re.compile(r"-|/dev/stdin|/dev/fd/\d+|/proc/self/fd/\d+")
 SHELL_VALUE_OPTIONS = {"--rcfile", "--init-file"}
+SHELL_NAME = re.compile(r"[a-z]*sh[\d.]*")  # bash, ash, fish, mksh, bash5, ssh (a remote shell reads it too)
+EXEC_WRAPPERS = {
+    "docker", "podman", "kubectl", "ssh", "xargs", "timeout", "nice", "nohup", "setsid", "stdbuf",
+    "chroot", "flock", "watch", "unbuffer", "script", "su", "doas", "sudo", "env", "exec", "command",
+    "time", "busybox", "toolbox", "distrobox", "lxc", "nsenter", "systemd-run",
+}
 UNSEEN_HEADS = re.compile(r"\b(?:bash|sh|zsh|dash|ksh|source|eval)\b|(?:^|[\s;&|(])\.(?=\s)")
 UNSEEN_TEXT, UNSEEN_BODIES = "text", "bodies"  # what of the command text a check reads: all, or its substitutions
 
@@ -1260,26 +1334,27 @@ def stdin_fed(segment: list[str], piped: bool) -> bool:
         fd = segment[index - 1] if index else None
         if isinstance(fd, FdWord) and fd != "0":
             continue
-        if word in {"<<", "<<<"}:
+        if word in {"<<", "<<<", "<&"}:
             return True
         if word == "<" and index + 1 < len(segment) and SUBSTITUTION_WORD in segment[index + 1]:
             return True
     return False
 
 
-def unseen_script(argv: list[str], fed: bool) -> str:
+def unseen_script(argv: list[str], fed: bool, own: bool | None = None) -> str:
     """What a shell, `source` or `eval` with these words runs that the guard never reads as
     commands: `UNSEEN_TEXT` when it reads a fed stdin (no `-c` and no script, `-s`, `-`,
     `/dev/stdin`: a here-document, a here-string, a pipe) or an fd (`/dev/fd/3`), so the whole
     command text is the script; `UNSEEN_BODIES` when the script is a process substitution
     (`bash <(...)`, `. <(...)`) or a `-c` or `eval` text holds a substitution (`bash -c "$(cat
     <<'EOF' ...)"`), so the substitutions' text is; "" otherwise. A command name that is an
-    expansion (`$SHELL`) reading a fed stdin counts as a shell. A script file (`bash x.sh`) and
-    a payload in a variable (`bash -c "$X"`) are limits of their own."""
+    expansion (`$SHELL`) reading its own segment's fed stdin (`own`) counts as a shell; a literal
+    shell may get one from anywhere in the command (`fed`). A script file (`bash x.sh`) and a
+    payload in a variable (`bash -c "$X"`) are limits of their own."""
     if not argv:
         return ""
     head = head_name(argv[0])
-    if head in SHELLS:
+    if head in SHELLS or SHELL_NAME.fullmatch(head):
         index = 1
         while index < len(argv):
             word = argv[index]
@@ -1288,6 +1363,8 @@ def unseen_script(argv: list[str], fed: bool) -> str:
                 break
             short = word[:1] in "-+" and not word.startswith("--") and len(word) > 1
             if word in SHELL_VALUE_OPTIONS or (short and word[-1] in "oO"):
+                if word in SHELL_VALUE_OPTIONS and index + 1 < len(argv) and holds_substitution(argv[index + 1]):
+                    return UNSEEN_BODIES  # `--rcfile <(echo ...)`: a startup file the guard cannot read
                 index += 2  # `-o pipefail`, `-euo pipefail`, `-O extglob`
             elif short and word[0] == "-" and "c" in word[1:]:
                 return UNSEEN_BODIES if index + 1 < len(argv) and holds_substitution(argv[index + 1]) else ""
@@ -1312,35 +1389,9 @@ def unseen_script(argv: list[str], fed: bool) -> str:
         return UNSEEN_BODIES if SUBSTITUTION_WORD in operands[0] else ""
     if head == "eval":
         return UNSEEN_BODIES if any(holds_substitution(word) for word in argv[1:]) else ""
-    if fed and ("$" in argv[0] or "`" in argv[0]):
+    if (fed if own is None else own) and ("$" in argv[0] or "`" in argv[0]):
         return UNSEEN_TEXT  # `$SHELL <<< ...`, `B=bash; $B <<< ...`, `$(which bash) -s <<EOF`
     return ""
-    head = head_name(argv[0])
-    if head in SHELLS:
-        index = 1
-        while index < len(argv):
-            word = argv[index]
-            if word == "--":
-                index += 1
-                break
-            if word in SHELL_VALUE_OPTIONS:
-                index += 2
-            elif is_shell_command_flag(word):
-                return index + 1 < len(argv) and holds_substitution(argv[index + 1])
-            elif word[:1] == "-" and not word.startswith("--") and "s" in word[1:]:
-                return True  # `-s`: the commands come from stdin
-            elif word[:1] in "-+" and len(word) > 1:
-                index += 1
-            else:
-                break
-        script = argv[index] if index < len(argv) else None
-        return script is None or script in STDIN_SCRIPTS or SUBSTITUTION_WORD in script
-    if head in {"source", "."}:
-        operands = [word for word in argv[1:] if word != "--"]
-        return bool(operands) and (operands[0] in STDIN_SCRIPTS or SUBSTITUTION_WORD in operands[0])
-    if head == "eval":
-        return any(holds_substitution(word) for word in argv[1:])
-    return False
 
 
 @functools.lru_cache(maxsize=32)
@@ -1408,15 +1459,97 @@ FORGETTING = {"read", "unset", "mapfile", "readarray", "getopts"}
 CLEARING = {"eval", "source", "."}  # may assign anything
 
 
-VANISHING = re.compile(r"(?:\$[A-Za-z_]\w*|\$\{[^}]*\}|\$[@*#?$!0-9-]|`[^`]*`)+")
+EXPANSION_CHARS = re.compile(r"[$`]|\{[^{}]*,")
+COMMAND_SUFFIXES = ("cd", "pushd", "popd", "git", "gh")
+RESIDUE_LIMIT = 32
+
+
+def residues(word: str) -> set[str]:
+    """The literal words `word` may come out as when its expansions are empty or take their
+    default: `${X}cd` may be `cd`, `${GIT:-git}` `git` or nothing, `{c,}d` `cd` or `d`, `$X`
+    nothing. A command substitution or a backtick span counts as empty; a `$NAME` that ends in a
+    command name may be an expansion glued to it (`$X'cd'`, which the lexer reads as `$Xcd`).
+    Past `RESIDUE_LIMIT` alternatives, or with an unbalanced brace, nothing is among them too."""
+    partials = {""}
+    index = 0
+
+    def extend(options: set[str]) -> None:
+        nonlocal partials
+        partials = {head + option for head in partials for option in options}
+        if len(partials) > RESIDUE_LIMIT:
+            partials = set(list(partials)[:RESIDUE_LIMIT]) | {""}
+
+    while index < len(word):
+        char = word[index]
+        if char == "$" and word[index + 1 : index + 2] in {"{", "("}:
+            opener, closer = word[index + 1], "}" if word[index + 1] == "{" else ")"
+            depth, end = 1, index + 2
+            while end < len(word) and depth:
+                depth += (word[end] == opener) - (word[end] == closer)
+                end += 1
+            if depth:
+                return partials | {""}  # unbalanced: the rest may be anything, nothing included
+            inner = word[index + 2 : end - 1]
+            options = {""}
+            if opener == "{":
+                default = re.match(r"[A-Za-z_]\w*:?[-=+](.*)", inner, re.S)
+                if default:
+                    options |= residues(default.group(1))
+            extend(options)
+            index = end
+        elif char == "$":
+            name = re.match(r"[A-Za-z_]\w*|[@*#?$!0-9-]", word[index + 1 :])
+            length = len(name.group(0)) if name else 0
+            options = {""}
+            if name:
+                options |= {suffix for suffix in COMMAND_SUFFIXES if name.group(0).endswith(suffix) and len(name.group(0)) > len(suffix)}
+            extend(options)
+            index += 1 + length
+        elif char == "`":
+            end = word.find("`", index + 1)
+            if end < 0:
+                return partials | {""}
+            extend({""})
+            index = end + 1
+        elif char == "{":
+            depth, end, commas = 1, index + 1, []
+            while end < len(word) and depth:
+                if word[end] == "{":
+                    depth += 1
+                elif word[end] == "}":
+                    depth -= 1
+                elif word[end] == "," and depth == 1:
+                    commas.append(end)
+                end += 1
+            if depth or not commas:
+                extend({char})
+                index += 1
+                continue
+            bounds = [index] + commas + [end - 1]
+            options = set()
+            for left, right in zip(bounds, bounds[1:]):
+                options |= residues(word[left + 1 : right])
+            extend(options)
+            index = end
+        else:
+            extend({char})
+            index += 1
+    return partials
 
 
 def may_vanish(word: str) -> bool:
-    """Whether a word may expand to nothing and leave the next word the command name: it is made
-    only of parameter expansions and backtick substitutions (`$X`, `${X:-}`, `$@`, `` `true` ``,
-    the `${}` a `$(...)` is merged into). Quotes are gone by here, so a quoted `"$X"`, which
-    stays an empty word, reads the same: a doubt that can only block more."""
-    return bool(VANISHING.fullmatch(word))
+    """Whether a word may expand to nothing and leave the next word the command name: it holds an
+    expansion and nothing is among its `residues` (`$X`, `${X:-${Y}}`, `{,}`, `` `true` ``, the
+    `${}` a `$(...)` is merged into). Quotes are gone by here, so a quoted `"$X"`, which stays an
+    empty word, reads the same: a doubt that can only block more."""
+    return bool(EXPANSION_CHARS.search(word)) and "" in residues(word)
+
+
+def may_be(word: str, names: set[str] | frozenset[str]) -> set[str]:
+    """The names in `names` a word holding an expansion may come out as (`${X}cd` may be `cd`)."""
+    if not EXPANSION_CHARS.search(word):
+        return set()
+    return residues(word) & set(names)
 
 
 AFTER_COMMAND, AFTER_ARGUMENT, AFTER_EITHER = "command", "argument", "either"
@@ -1434,10 +1567,13 @@ def after_substitution(words: list[str], continuation: str | None) -> str:
         return AFTER_ARGUMENT
     operand = False  # the word is the target of a redirection
     vanished = False  # a word before may have expanded to nothing (`$X $(true) cd D`)
+    prefixed = False  # a prefix word came before: its options do not end the prefix (`command -p`)
     for position, word in enumerate(words):
         last = position == len(words) - 1
         if operand:
             operand = False
+        elif prefixed and not last and word[:1] in "-+" and len(word) > 1:
+            pass  # `command -p $(true) cd D`, `builtin -- ...`, `time -p ...`
         elif last and word in {"<", ">"}:
             return AFTER_ARGUMENT  # `<(x)` is a word of its own: the command word
         elif word in REDIRECTIONS:
@@ -1450,6 +1586,7 @@ def after_substitution(words: list[str], continuation: str | None) -> str:
             return AFTER_EITHER  # the substitution stands where the command word does
         elif word in PREFIX_WORDS or is_assignment(word) or may_vanish(word):
             vanished = vanished or may_vanish(word)  # past one, a word may be the command: doubt
+            prefixed = prefixed or word in PREFIX_WORDS or vanished
         else:
             return AFTER_ARGUMENT
     return AFTER_EITHER if continuation == AFTER_EITHER or vanished else AFTER_COMMAND
@@ -1713,6 +1850,9 @@ class DirectoryModel:
             elif keyword and word == "{":
                 scope.braces.append([conditional, False, set()])
                 position += 1
+            elif keyword and word == "}" and not scope.braces:
+                position += 1  # the rest of an expansion the lexer cut (`${X:-$(true)} cd D`): no group closes
+                keyword = False
             elif keyword and word == "}":
                 if scope.braces:
                     group = scope.braces.pop()
@@ -1752,7 +1892,12 @@ class DirectoryModel:
             # `` `true` cd D``, `$X cd D`: a word that expands to nothing leaves the rest the
             # command; a run of them is skipped at once (`$X $Y cd D`), not one reading each
             after = position
-            while after < len(words) and ("`" in words[after] or may_vanish(words[after])):
+            while after < len(words) and (
+                "`" in words[after]
+                or may_vanish(words[after])
+                or (after > position and words[after][:1] in "-+" and len(words[after]) > 1)
+            ):
+                # (an option word after an empty one: `command $X -p cd D` is `command -p cd D`)
                 word = words[after]
                 closes = after == position and word.endswith("`") and not word.startswith("`")
                 if word.count("`") % 2 and not closes:  # the span runs on to the word that closes it
@@ -1761,6 +1906,9 @@ class DirectoryModel:
             rest = words[after:]
             if rest:
                 self.either_reading(rest, scope, previous, following)
+        for alias in sorted(may_be(name, DIR_COMMANDS)):
+            # `${X}cd D`, `{c,}d D`: the word may come out as a directory command
+            self.either_reading([alias] + words[position + 1 :], scope, previous, following)
         element = ELEMENT_ASSIGNMENT.match(name)
         if element:
             self.forget({element.group(1)})  # `S[0]=x`
@@ -1884,6 +2032,7 @@ def commands(
     _walk: Walk | None = None,
     _rescanned: bool = False,
     _untrusted: bool = False,
+    _fed: bool = False,
 ) -> Iterator[Command]:
     """Yield every command in `text`, in order, nested ones included.
 
@@ -1913,6 +2062,7 @@ def commands(
         return
     model = DirectoryModel(tokens, workdir, _untrusted)
     _untrusted = model.untrusted  # a nested payload walks under the same doubt
+    fed_any = _fed or stdin_fed(tokens, False) or any(token in PIPES for token in tokens)
     again = -1  # `command_spans` yields a command twice when a backtick may fold its words
     for first, segment, cut in command_spans(tokens, merge=not _untrusted):
         workdir = model.at(first)
@@ -1926,7 +2076,7 @@ def commands(
             else:
                 yield from commands(
                     inner, workdir, depth + 1, include_assignments=include_assignments, _walk=walk,
-                    _untrusted=_untrusted,
+                    _untrusted=_untrusted, _fed=fed_any,
                 )
         again = first
         rest, effects = strip_prefixes(segment, scan=include_assignments)
@@ -1936,18 +2086,38 @@ def commands(
             # operation. No directory is known and the text is not trusted.
             yield Command([], {}, None, True, " ".join(segment), True)
             continue
-        printed = None if include_assignments or _untrusted else printed_head_text(tokens, first, segment, rest)
-        if printed is not None:
-            # the shell runs what a substitution in command position prints: its text is read
-            # as text that did not parse, on top of its own commands (an `echo` in it runs nothing)
-            yield Command([], {}, unresolved_dir(printed, workdir), True, printed)
+        for body, tail in () if include_assignments or _untrusted else printed_heads(tokens, first, segment, rest):
+            # the shell runs what a substitution in command position prints, with the words after
+            # it. A lookup (`$(command -v gh)`) prints the name the argv reading already reads; an
+            # `echo` of literal words prints them, walked as a command; any other text is read as
+            # text that did not parse. Each text is charged to the work budget like a nested walk
+            if not walk.charge(len(body or "") + sum(len(word) + 1 for word in tail) + 1):
+                yield Command([], {}, None, True, " ".join(segment)[:2000], True)
+                break
+            if body is not None and LOOKUP_BODY.fullmatch(body):
+                continue
+            certain = printed_words(body) if body is not None else None
+            text = " ".join(([body] if body is not None else []) + tail)
+            if body is not None and ESCAPING_PRINT.match(body):
+                text += "\n" + " ".join([decoded_escapes(body)] + tail)  # `$(printf '\\x67h pr merge 12')`
+            if certain is not None and depth < DEPTH_LIMIT:
+                yield from commands(
+                    # redirections change nothing of the command the text makes: they are left out
+                    " ".join([certain] + [shlex.quote(word) for word in drop_redirections(tail)]), workdir, depth + 1,
+                    _walk=walk, _untrusted=_untrusted, _fed=fed_any,
+                )
+            else:
+                yield Command([], {}, unresolved_dir(text, workdir), True, text)
         if not include_assignments and rest:
-            fed = stdin_fed(segment, first > 0 and tokens[first - 1] in PIPES)
+            # a stdin anywhere in the command may reach a shell in a group, a subshell, a body or a
+            # payload (`{ bash; } <<< ...`, `... | (cd x && bash)`, `bash -c 'exec sh' <<EOF`)
+            own = stdin_fed(segment, first > 0 and tokens[first - 1] in PIPES)
+            fed = fed_any or own
             plain_rest = drop_redirections(rest)
-            unseen = unseen_script(plain_rest, fed)
-            if not unseen and fed:
-                # behind a wrapper the rescan reads on its own (`docker exec -i app bash`), a
-                # shell still reads this stdin
+            unseen = unseen_script(plain_rest, fed, own)
+            if not unseen and fed and plain_rest and head_name(plain_rest[0]) in EXEC_WRAPPERS:
+                # behind a wrapper that runs its words (`docker exec -i app bash`), a shell still
+                # reads this stdin; a shell's name as `grep`'s argument is no shell
                 later = [i for i, word in enumerate(plain_rest[1:], 1) if head_name(word) in SHELLS]
                 unseen = next((kind for i in later[:8] if (kind := unseen_script(plain_rest[i:], True))), "")
             if unseen:
@@ -1978,7 +2148,7 @@ def commands(
             else:
                 yield from commands(
                     nested, target, depth + 1, assignments, include_assignments=include_assignments,
-                    _walk=walk, _untrusted=_untrusted,
+                    _walk=walk, _untrusted=_untrusted, _fed=fed_any,
                 )
             continue
         positions: list[int] = []
@@ -2041,6 +2211,9 @@ def commands(
                             _walk=walk,
                             _rescanned=payload.rescan and not include_assignments,
                             _untrusted=_untrusted,
+                            # a rescanned tail is a shell on this stdin only behind a wrapper that
+                            # runs its words (`docker exec -i app bash`), not `grep sh`
+                            _fed=fed_any and (not payload.rescan or bool(plain) and head_name(plain[0]) in EXEC_WRAPPERS),
                         )
         if not rest:
             if include_assignments and effects.assignments:

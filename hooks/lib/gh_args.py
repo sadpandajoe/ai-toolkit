@@ -336,10 +336,8 @@ def normalise_endpoint(endpoint: str) -> str:
 GRAPHQL_OPERATION = re.compile(r"\b(?:query|mutation|subscription)\b\s*(?:[A-Za-z_]\w*\s*)?\(")
 
 
-def graphql_scan(text: str) -> tuple[set[str], list[tuple[int, int]]]:
-    """The variable names declared in the operations' definition lists, and the spans (start,
-    end) of those lists. A list is `query|mutation|subscription [Name] ( ... )` at the top level
-    of the document; strings and `#` comments hold no definition."""
+def graphql_mask(text: str) -> bytearray:
+    """1 at each character of `text` inside a GraphQL string or `#` comment, else 0."""
     skipped: list[tuple[int, int]] = []  # strings and comments
     position = 0
     while position < len(text):
@@ -366,6 +364,14 @@ def graphql_scan(text: str) -> tuple[set[str], list[tuple[int, int]]]:
     mask = bytearray(len(text) + 1)
     for start, end in skipped:
         mask[start:end] = b"\x01" * (end - start)
+    return mask
+
+
+def graphql_scan(text: str) -> tuple[set[str], list[tuple[int, int]]]:
+    """The variable names declared in the operations' definition lists, and the spans (start,
+    end) of those lists. A list is `query|mutation|subscription [Name] ( ... )` at the top level
+    of the document; strings and `#` comments hold no definition."""
+    mask = graphql_mask(text)
 
     def inside_skipped(at: int) -> bool:
         return bool(mask[at])
@@ -405,16 +411,30 @@ def graphql_scan(text: str) -> tuple[set[str], list[tuple[int, int]]]:
 def query_unreadable(text: str) -> bool:
     """A `$` in query text is a GraphQL variable only when BOTH readings agree: the name is
     declared in an operation's definition list (`query Name($a: T, $b: T)`), and the `$` stands
-    where GraphQL allows a variable (after `(`, `:`, `[`, `,` or `=`, spaces aside, or as a
-    definition in the list). Any other `$` (an undeclared name, `$5`, `$M(` in a selection, `$M:`
-    outside the list) is a shell expansion the guard cannot read."""
+    where GraphQL allows a variable (inside parentheses, after `(`, `:`, `[`, `,` or `=`, spaces
+    aside, or as a definition in the list). Any other `$` (an undeclared name, `$5`, `$M(` or `x:
+    $M` in a selection, `$M:` outside the list) is a shell expansion the guard cannot read."""
     if "`" in text:
         return True
     if "$" not in text:
         return False
     names, lists = graphql_scan(text)
+    mask = graphql_mask(text)
+    parens = 0
+    bare: set[int] = set()  # `$`s outside strings and outside every parenthesis
+    for at, char in enumerate(text):
+        if mask[at]:
+            continue
+        if char == "(":
+            parens += 1
+        elif char == ")":
+            parens = max(parens - 1, 0)
+        elif char == "$" and parens == 0:
+            bare.add(at)
     for found in re.finditer(r"\$", text):
         at = found.start()
+        if at in bare:
+            return True  # a variable stands only in a value, inside `(...)`: `x: $M(input: ...)`
         name = re.match(r"\w+", text[at + 1 :])
         if name is None or name.group(0)[0].isdigit() or name.group(0) not in names:
             return True
