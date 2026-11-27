@@ -665,6 +665,8 @@ PR_PUBLISH_ALLOW = (
 
 # Blocked whatever they run: the command sets, appends to or exports an override.
 OVERRIDE_ASSIGNMENT_BLOCK = (
+    # a number apart from its operator is the option's value, not a descriptor
+    "env -u 1 >/dev/null AITK_PR_READY=1 ./ship.sh",
     # an ANSI-C-quoted name is decoded before the lexer reads it
     "export $'\\x41ITK_PR_READY=1'; ./ship.sh",
     # operator runs the lexer used to fuse into one token are split, so the subshell or
@@ -758,9 +760,8 @@ OVERRIDE_ASSIGNMENT_BLOCK = (
 # session environment. The test below pins this list so a
 # fix moves the case into OVERRIDE_ASSIGNMENT_BLOCK and the docstring stays true.
 OVERRIDE_SCAN_LIMITS = (
-    # a redirection operator erased together with a quoted or numeric option value
+    # a redirection operator erased together with a quoted option value
     "env -u '>' AITK_PR_READY=1 ./ship.sh",
-    "env -u 1 >/dev/null AITK_PR_READY=1 ./ship.sh",
     # shell-specific grammar: zsh anonymous functions and precommand modifiers, a
     # function named after a wrapper, a `-c --` payload, a nameref set by a plain value
     "() {{ AITK_PR_READY=1 ./ship.sh; }}",
@@ -1005,7 +1006,10 @@ class GitGuardHookTests(unittest.TestCase):
             # words after a substitution are that command's arguments, not a cd of their own
             ("echo $(true) cd other; gh pr view 1", here),
             ("echo $(true) cd other && gh pr view 1", here),
-            ("$(echo echo) cd other; gh pr view 1", here),
+            # a substitution where the command word stands may print nothing (`$(echo x >&2)`),
+            # whatever its body looks like: the directory is unknown
+            ("$(echo echo) cd other; gh pr view 1", None),
+            ("$(echo x >/dev/null) cd other; gh pr view 1", None),
             ("diff <(true) cd other; gh pr view 1", here),
             ("echo $(true) $(true) cd other; gh pr view 1", here),
             ("echo $((1+2)) cd other; gh pr view 1", here),
@@ -1880,6 +1884,23 @@ class GitGuardHookTests(unittest.TestCase):
             self.assertEqual(expected, git_guard.has_unsafe_git_substitution(text), repr(text))
         self.assertGreater(found, 200)  # the sample has both outcomes
 
+    def test_long_runs_of_words_that_may_expand_to_nothing_stay_fast_and_block(self) -> None:
+        # one reading per empty word nested past Python's recursion limit, and every `$(` read
+        # the command's words again from its first
+        cwd = str(self.feature)
+        for text in (
+            "$X " * 3000 + f"cd {self.clean}; git push --force",
+            "$X command " * 1500 + f"cd {self.clean}; git push --force",
+            "`true` " * 3000 + f"cd {self.clean}; git push --force",
+            "$(true) " * 2000 + f"cd {self.clean}; git push --force",
+            "$X " * 5000 + "git push --force origin main",
+        ):
+            with self.subTest(text=text[:20]):
+                started = time.monotonic()
+                with self.assertRaises(git_guard.Blocked):
+                    git_guard.evaluate(text, cwd, {})
+                self.assertLess(time.monotonic() - started, 5.0)
+
     def test_substitution_text_is_charged_against_the_work_budget(self) -> None:
         # Every `$(` rescanned to the end of the text and every body walked again: this input
         # ran for ~70s before the scan was charged (and then the hook timeout let it through).
@@ -2309,7 +2330,7 @@ class GitGuardHookTests(unittest.TestCase):
                 ("gh pr -t ';' merge 12", self.clean, 2),
                 ("gh pr -t '|' ready 12", self.clean, 2),
                 ("gh pr -R '(' merge 12", self.clean, 2),
-                ("gh pr -t \; merge 12", self.clean, 2),
+                ("gh pr -t \\; merge 12", self.clean, 2),
                 ("gh api --jq '>' -X >/dev/null PUT repos/o/r/pulls/12/merge", self.clean, 2),
                 ("gh api --jq '>' -X >/dev/null POST repos/o/r/pulls", self.clean, 2),
                 ("sh -c 'gh pr -t \"$(echo \"a;b\")\" merge 12'", self.clean, 2),
@@ -2354,7 +2375,8 @@ class GitGuardHookTests(unittest.TestCase):
                 # no `$` at the end of a word is a substitution
                 ('gh pr create --draft --fill --title "Fix regex ^foo$"', self.verified, 0),
                 ("gh pr create --draft --fill --body 'ends with $'", self.verified, 0),
-                ("gh pr create --draft --fill --title $(echo t)", self.verified, 0),
+                # an unquoted substitution among the words grants no draft: it may print flags
+                ("gh pr create --draft --fill --title $(echo t)", self.verified, 2),
             )
         )
         words = [c.argv for c in shell_tokens.commands("gh -R $(echo o/r) pr merge 12", str(self.clean)) if c.is_gh]
@@ -2448,6 +2470,230 @@ class GitGuardHookTests(unittest.TestCase):
             )
         )
 
+    def codes(self, cases: tuple) -> None:
+        """(command, repo, expected exit code) with no placeholders to fill."""
+        for command, repo, expected in cases:
+            with self.subTest(command=command, repo=repo.name):
+                result = self.run_hook(command, repo)
+                self.assertEqual(expected, result.returncode, result.stderr)
+
+    def test_a_substitution_that_expands_to_nothing_leaves_the_cd_a_command(self) -> None:
+        self.hook_codes(
+            (
+                ("$(true) cd {main} && git push --force", self.feature, 2),
+                ("X=1 $(true) cd {main} && git push --force", self.feature, 2),
+                (">$(echo /dev/null) cd {main} && git push --force", self.feature, 2),
+                ("`true` cd {main} && git push --force", self.feature, 2),
+                ("if true; then X=$(true) cd {main}; fi; git push --force", self.feature, 2),
+                ("command $(true) cd {main} && git push --force", self.feature, 2),
+                ("$(true) $(true) cd {main} && git push --force", self.feature, 2),
+                # `echo` is the command whatever the substitution prints: the cd is its argument
+                ("echo $(true) cd {main}; git push --force", self.feature, 0),
+                ("echo $(true) cd {feature}; git push --force", self.clean, 2),
+                # assignments only before the substitution: the `cd` is the command, as before
+                ("X=$(true) cd {feature} && git push --force", self.clean, 0),
+                ("X=$(true) cd {main} && git push --force", self.feature, 2),
+            )
+        )
+        found = list(shell_tokens.commands("$(true) cd /tmp && gh pr create --draft --fill", "/"))
+        self.assertIsNone(found[-1].workdir)
+        found = list(shell_tokens.commands("echo $(true) cd /tmp; git status", "/"))
+        self.assertEqual("/", found[-1].workdir)
+        found = list(shell_tokens.commands("`true` cd /tmp; git status", "/"))
+        self.assertIsNone(found[-1].workdir)
+        found = list(shell_tokens.commands("X=$(true) cd /tmp && git status", "/"))
+        self.assertEqual("/tmp", found[-1].workdir)
+
+    def test_a_word_that_may_expand_to_nothing_leaves_the_next_word_the_command(self) -> None:
+        self.hook_codes(
+            (
+                # an empty `$X` is no word: the `cd` or `git` after it is the command
+                ("$X cd {main} && git push --force", self.feature, 2),
+                ("${{X:-}} cd {main}; git push --force", self.feature, 2),
+                ("$@ cd {main}; git push --force", self.feature, 2),
+                ("$X $(true) cd {main}; git push --force", self.feature, 2),
+                ("$X$(true) cd {main}; git push --force", self.feature, 2),
+                # a descriptor ahead of the substitution is part of a redirection, not the command
+                ("2>/dev/null $(true) cd {main}; git push --force", self.feature, 2),
+                ("{{fd}}>/dev/null $(true) cd {main}; git push --force", self.feature, 2),
+                ("2>/dev/null $X cd {main}; git push --force", self.feature, 2),
+                ("$X git push --force origin main", self.clean, 2),
+                ("env $X git push --force origin main", self.clean, 2),
+                ("sudo $X git push --force origin main", self.clean, 2),
+                ("$X $Y git push --force origin main", self.clean, 2),
+                ("`true` git push --force origin main", self.clean, 2),
+                ("`echo x` git push --force origin main", self.clean, 2),
+                ("`true; true` git push --force origin main", self.clean, 2),
+                ("`true; true` cd {main}; git push --force", self.feature, 2),
+                ("`true; f; true` x", self.clean, 0),
+                ("f() {{ git push --force origin main; }}; `true; f; true` x", self.clean, 2),
+                ("$X Y=1 $(true) cd {main}; git push --force", self.feature, 2),
+                ("$(echo x >&2) cd {main} && git push --force", self.feature, 2),
+                ("$(echo ' ') cd {main} && git push --force", self.feature, 2),
+                # what a substitution in command position prints runs as the command
+                ("`echo gh pr merge 12`", self.clean, 2),
+                ("$(echo gh pr merge 12)", self.clean, 2),
+                ("$(echo gh pr merge 12 --subject) --help", self.clean, 2),
+                ("`echo gh pr merge 12 --subject` --help", self.clean, 2),
+                ("$(printf 'gh pr ready 12')", self.clean, 2),
+                ("$(command -v gh) pr view 12", self.clean, 0),
+                ("echo `echo gh pr merge 12`", self.clean, 0),
+                # ordinary commands stay allowed
+                ("$X git status", self.clean, 0),
+                ("$X git push origin feature", self.clean, 0),
+                ("$EDITOR notes.txt", self.clean, 0),
+            )
+        )
+        found = list(shell_tokens.commands("$X cd /tmp; git status", "/"))
+        self.assertIsNone(found[-1].workdir)
+
+    def test_a_word_glued_to_a_substitution_gets_no_draft_help_or_undo_credit(self) -> None:
+        body = "gh pr create --draft --fill --body \"$(cat <<'EOF'\nline; with | operators\nEOF\n)\""
+        self.codes(
+            (
+                ("gh pr merge 12 -b $(echo x)--help", self.clean, 2),
+                ("gh pr create --fill -t $(echo x)--draft", self.verified, 2),
+                ("gh pr ready 12 -R $(echo o/r)--undo", self.clean, 2),
+                ("gh api -X PUT repos/o/r/pulls/12/merge -f x=$(echo y)--help", self.clean, 2),
+                # a heredoc body is one double-quoted word, not an unquoted substitution
+                (body, self.verified, 0),
+                ("gh pr merge 12 --help", self.clean, 0),
+                ("gh pr create --draft --fill", self.verified, 0),
+            )
+        )
+
+    def test_only_an_unquoted_backtick_opens_a_span(self) -> None:
+        self.codes(
+            (
+                ("A='`' gh pr merge 12", self.clean, 2),
+                ("gh -R 'a`b' pr merge 12", self.clean, 2),
+                ("gh pr -t 'a`b' merge 12", self.clean, 2),
+                ("A='`' gh pr create --fill", self.verified, 2),
+                ("gh pr merge 12 -b `echo x` --help", self.clean, 2),
+                ("gh pr create --title 'Handle a stray ` in titles' --draft --fill", self.verified, 0),
+                ("gh pr create --draft --fill --title \"a ` b\"", self.verified, 0),
+            )
+        )
+        self.assertFalse(shell_tokens.tokenize("gh pr create -t 'a ` b' --draft").backticks)
+        self.assertTrue(shell_tokens.tokenize("gh pr create -t `echo b` --draft").backticks)
+
+    def test_a_number_is_a_descriptor_only_when_glued_to_its_operator(self) -> None:
+        self.hook_codes(
+            (
+                ("git push -o 5 >/dev/null --force origin main", self.feature, 2),
+                ("gh pr create --draft --fill -t 5 >/dev/null --draft=false", self.verified, 2),
+                ("git push 2>/dev/null --force origin main", self.feature, 2),
+                ("git push 5>/dev/null --force origin main", self.feature, 2),
+                ("git push 2>/dev/null origin feature", self.feature, 0),
+                ("git push --force origin feature 2>&1", self.feature, 0),
+                ("git push >&2 --force origin feature", self.feature, 0),
+                ("git push &>/dev/null --force origin feature", self.feature, 0),
+                ("git push 5>/dev/null --force origin feature", self.feature, 0),
+                ("git push {{fd}}>/dev/null --force origin feature", self.feature, 0),
+                ("git push -o 5 >/dev/null origin feature", self.feature, 0),
+                ("gh pr create --draft --fill 2>&1", self.verified, 0),
+            )
+        )
+        self.assertEqual(["git", "push", "-o", "5"], shell_tokens.tokenize("git push -o 5 >/dev/null")[:4])
+        self.assertEqual(["git", "push", "-o", "5", "--force"], shell_tokens.drop_redirections(
+            shell_tokens.tokenize("git push -o 5 >/dev/null --force")
+        ))
+        for text in ("a 2>&1 b", "a {fd}>x b", "a 5>x b", "a >&2 b", "a &>x b", "a 2>/dev/null b"):
+            with self.subTest(text=text):
+                self.assertEqual(["a", "b"], shell_tokens.drop_redirections(shell_tokens.tokenize(text)))
+        self.assertEqual(["a", "2", "b"], shell_tokens.drop_redirections(shell_tokens.tokenize("a 2 >x b")))
+        self.assertEqual(["a2", ">", "x"], shell_tokens.tokenize("a2>x"))
+        self.assertEqual(["a", "5", "<", "(", "b", ")"], shell_tokens.tokenize("a 5<(b)"))
+
+    def test_the_argv_reading_stays_when_a_quoted_operator_adds_the_text_reading(self) -> None:
+        self.codes(
+            (
+                ("gh pr $V 12; find . -name x -exec ls {} \\;", self.clean, 2),
+                ("$G pr merge 12; find . -name x -exec ls {} \\;", self.clean, 2),
+                ("$G pr create --fill; find . -name x -exec ls {} \\;", self.verified, 2),
+                ("gh pr m$X 12; echo '|'", self.clean, 2),
+                ("gh api \"$URL\" -X PUT | cut -d '|' -f1", self.clean, 2),
+                ("gh api graphql -f query=\"$Q\" | tr ';' ' '", self.clean, 2),
+                ("gh api 5 >/dev/null -X PUT \"$URL\" | cat", self.clean, 2),
+                ("gh pr -t ';' merge 12", self.clean, 2),
+                ("gh pr -t 'a;b' merge 12", self.clean, 2),
+                ("gh pr -t \\; merge 12", self.clean, 2),
+                ("gh pr create --draft --fill; find . -name x -exec ls {} \\;", self.verified, 2),
+                # a quoted `'>'` may be the word the argv reading dropped as a redirection
+                ("G=gh; $G pr -t '>' merge 12", self.clean, 2),
+                ("G=gh; $G pr -t '>' ready 12", self.clean, 2),
+                ("G=gh; $G pr -t '>' create --fill", self.verified, 2),
+                ("G=gh; $G api --jq '>' repos/o/r/pulls -f title=x -f head=b -f base=main", self.verified, 2),
+            )
+        )
+
+    def test_graphql_names_stand_where_a_variable_can(self) -> None:
+        self.codes(
+            (
+                (
+                    "gh api graphql -f query=\"mutation(\\$M: ID!) { $M(input: {pullRequestId: \\$M}) "
+                    "{ clientMutationId } }\" -f M=PR_x",
+                    self.clean,
+                    2,
+                ),
+                (
+                    "gh api graphql -f query='mutation($M: ID!) { '\"$M\"'(input: {pullRequestId: $M}) "
+                    "{ clientMutationId } }' -f M=PR_x",
+                    self.clean,
+                    2,
+                ),
+            )
+        )
+
+    def test_ordinary_commands_with_quotes_and_separators_are_not_blocked(self) -> None:
+        self.codes(
+            (
+                (
+                    "gh pr create --draft --fill --body \"$(git log --format='- %s' origin/main..HEAD | head -5)\"",
+                    self.verified,
+                    0,
+                ),
+                (
+                    "gh pr edit 12 --body \"$(gh pr view 12 --json body -q '.body' | sed 's/old/new/')\"",
+                    self.verified,
+                    0,
+                ),
+                ("gh pr comment 12 --body \"$(echo 'ready to merge; thanks')\"", self.verified, 0),
+                ("find . -name '*.md' -exec grep -l 'gh pr merge' {} \\;", self.verified, 0),
+                ("gh pr list | cut -d '|' -f1; git merge --no-edit origin/main", self.verified, 0),
+                ("echo '()' gh pr ready 12", self.verified, 0),
+            )
+        )
+
+    def test_a_separator_inside_inner_double_quotes_is_the_only_doubt_in_a_substitution(self) -> None:
+        doubtful = shell_tokens.quoted_substitution_separator
+        for text in ('"$(echo "a;b")"', '"$(echo "a" "b|c")"', 'x "$(echo "a&b")" y'):
+            with self.subTest(text=text):
+                self.assertTrue(doubtful(text))
+        for text in (
+            "\"$(echo 'a;b')\"",
+            "\"$(a | b)\"",
+            "\"$(git log --format='- %s' o..H | head -5)\"",
+            "'$(echo \"a;b\")'",
+            "$(echo \"a;b\")",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(doubtful(text))
+        started = time.monotonic()
+        self.assertFalse(doubtful('git status "' + "$(" * 5000 + '"'))
+        self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_quoted_split_cuts_where_the_shell_does(self) -> None:
+        split = git_guard.quoted_split
+        self.assertEqual(["gh pr $(a; b) merge 12"], split("gh pr $(a; b) merge 12"))
+        self.assertEqual(["gh pr `a; b` merge 12"], split("gh pr `a; b` merge 12"))
+        self.assertEqual(["gh pr -t 'a;b' merge 12"], split("gh pr -t 'a;b' merge 12"))
+        self.assertEqual(['gh pr -t "a;b" merge 12'], split('gh pr -t "a;b" merge 12'))
+        self.assertEqual(["gh pr -t \\; merge 12"], split("gh pr -t \\; merge 12"))
+        self.assertEqual(['gh pr -t "$(echo "a;b")" merge 12'], split('gh pr -t "$(echo "a;b")" merge 12'))
+        self.assertEqual(["a", " b"], split("a; b"))
+        self.assertEqual(["a >&2 b"], split("a >&2 b"))
+        self.assertEqual(["a &>x b"], split("a &>x b"))
 
 
 if __name__ == "__main__":

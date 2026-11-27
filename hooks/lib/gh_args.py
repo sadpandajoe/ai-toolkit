@@ -403,9 +403,11 @@ def graphql_scan(text: str) -> tuple[set[str], list[tuple[int, int]]]:
 
 
 def query_unreadable(text: str) -> bool:
-    """A `$` in query text is a GraphQL variable only when it is declared in an operation's
-    definition list (`query Name($a: T, $b: T)`) and then used; any other `$` (an undeclared
-    name, `$5`, `$M:` in a selection) is a shell expansion the guard cannot read."""
+    """A `$` in query text is a GraphQL variable only when BOTH readings agree: the name is
+    declared in an operation's definition list (`query Name($a: T, $b: T)`), and the `$` stands
+    where GraphQL allows a variable (after `(`, `:`, `[`, `,` or `=`, spaces aside, or as a
+    definition in the list). Any other `$` (an undeclared name, `$5`, `$M(` in a selection, `$M:`
+    outside the list) is a shell expansion the guard cannot read."""
     if "`" in text:
         return True
     if "$" not in text:
@@ -419,8 +421,12 @@ def query_unreadable(text: str) -> bool:
         after = at + 1 + len(name.group(0))
         while after < len(text) and text[after].isspace():
             after += 1
-        if text[after : after + 1] == ":" and not any(start <= at < end for start, end in lists):
+        defines = text[after : after + 1] == ":"
+        inside = any(start <= at < end for start, end in lists)
+        if defines and not inside:
             return True  # `$name:` defines a variable only inside the list
+        if not (defines or text[:at].rstrip()[-1:] in {"(", ":", "[", ",", "="}):
+            return True  # a variable stands after one of those, or as a definition
     return False
 
 

@@ -108,7 +108,7 @@ Known limits of the scan, each a real override it does not see:
 - heredoc bodies, which the tokenizer skips, so a body piped to a shell is not
   read (the same property keeps prose in a heredoc commit message allowed);
 - a name quoted with a locale string (`AITK_PR_$"READY"`);
-- a redirection operator erased with a quoted or numeric option value
+- a redirection operator erased with a quoted option value
   (`env -u '>' NAME=1 ...`);
 - shell-specific grammar: a zsh anonymous function (`() { ...; }`), a function
   named after a wrapper (`env() { ...; }`), `nocorrect`/`repeat N`/`coproc`
@@ -177,9 +177,12 @@ gh adds is unknown and grants no draft, help or undo). A command name or verb th
 variable, substitution, brace or glob (`"$GH" pr ready 12`, `$(command -v gh) pr merge 12`,
 `{gh,} pr merge 12`, `gh pr $V 12`) is read as gh or as an unknown verb (cobra's reading
 decides it), which is gated; `gh pr revert` is gated like `create`. A positional word with an
-expansion (`--draft $X`, `--draft $(...)`), or words after an unclosed `$(` or a backtick span,
-grant no draft, help or undo (accepted over-block: `gh pr ready --undo "$PR"`), and a creation
-with one fails the verify gate. A `$(...)` inside a command is one word of it, so the words
+expansion (`--draft $X`), or an unquoted `$(...)`, `<(...)` or backtick span anywhere among the
+words (`-t $(x)--draft`), or a quoted or escaped operator about, grant no draft, help or undo
+(accepted over-block: `gh pr ready --undo "$PR"`, `gh pr create --draft -t $(git log -1 --format=%s)`),
+and a creation with one fails the verify gate. A backtick opens a span only outside quotes; a
+command with one is read folded and as it is. The argv reading always runs; a quoted or escaped
+operator adds a text reading of each piece cut where the shell really separates commands (`quoted_split`). A `$(...)` inside a command is one word of it, so the words
 after it are read (`gh -R $(echo o/r) pr merge 12`); one where the verb stands is unknown.
 
 `gh api` PR create, merge and ready are gated too (`gh_args.api_effect`, redirections
@@ -840,6 +843,20 @@ def parse_git_actions(
             continue
 
         if not (command_start and (is_git_executable(token) or variable_git)):
+            if command_start and shell_tokens.may_vanish(token) and i + 1 < count and tokens[i + 1] not in SEPARATORS:
+                # `$X git push`, `` `true` git push``: a word that expands to nothing leaves the
+                # next one the command. Read so, which only adds: as a command of its own the
+                # word runs no git the guard could read
+                i += 1
+                continue
+            if command_start and token.startswith("`") and token.count("`") % 2:
+                # `` `echo x` git push``: the span is walked as it was, and the words after it
+                # are read as a command of their own as well
+                closing = next((j for j in range(i + 1, count) if tokens[j].count("`") % 2), None)
+                if closing is not None and tokens[closing].endswith("`") and closing + 1 < count:
+                    tail_end = segment_end_index(tokens, closing + 1)
+                    if tail_end > closing + 1:
+                        actions.extend(recurse(tokens[closing + 1 : tail_end], current_workdir, dict(env_assignments)))
             command_start = False
             i += 1
             continue
@@ -1402,18 +1419,20 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
     user's AITK_PR_READY=1, read only from the session environment."""
     if shell_tokens.truthy(environ.get("AITK_PR_READY")):
         return
-    text_read = False
+    read_sources: set[str] = set()
     found_all = list(shell_tokens.commands(command, cwd))
     for found in found_all:
-        if found.untrusted and not found.unresolved and not text_read:
-            text_read = True
-            text = untrusted_text(found_all)
-            for verb in untrusted_text_verbs(text):
-                if verb in {"ready", "merge"}:
-                    raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
-                raise block(PR_QUOTED_OPERATOR.format(verb=verb))
-            if shell_tokens.mentions_api_publish(text):
-                raise block(PR_PUBLISH_API.format(what="could merge, ready or open a pull request"))
+        if found.untrusted and not found.unresolved and found.source not in read_sources:
+            # a quoted operator: the words may be cut wrong, so the text is read too (the
+            # argv reading below still runs, whatever this finds)
+            read_sources.add(found.source)
+            for piece in untrusted_pieces(found.source):
+                for verb in untrusted_text_verbs(piece):
+                    if verb in {"ready", "merge"}:
+                        raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
+                    raise block(PR_QUOTED_OPERATOR.format(verb=verb))
+                if shell_tokens.mentions_api_publish(piece):
+                    raise block(PR_PUBLISH_API.format(what="could merge, ready or open a pull request"))
         if found.unreadable:
             # the work budget is spent, or git is handed text that mentions a gated
             # operation: the text cannot show what runs, so a contiguous `gh` in it
@@ -1430,29 +1449,64 @@ def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
             if verb == gh_args.UNKNOWN:
                 raise block(PR_PUBLISH_UNKNOWN)
             if not publishes_nothing(verb, flags):
-                note = "" if flags.trusted else PR_PUBLISH_UNTRUSTED.format(why=untrusted_reason(flags, cut))
+                note = "" if flags.trusted else PR_PUBLISH_UNTRUSTED.format(
+                    why=untrusted_reason(flags, cut, found.untrusted)
+                )
                 raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]) + note)
         for args, cut in gh_api_calls(found):
             if gh_args.api_effect(args, cut) == gh_args.MERGE_API:
                 raise block(PR_PUBLISH_API.format(what=API_WHAT[gh_args.MERGE_API]))
 
 
+def redirection_char(text: str, index: int) -> bool:
+    """Whether the `&` or `|` at `index` belongs to a redirection (`>&2`, `<&-`, `&>x`, `>|x`)."""
+    before = text[index - 1 : index] if index else ""
+    if text[index] == "&":
+        return before in {">", "<"} or text[index + 1 : index + 2] == ">"
+    return text[index] == "|" and before == ">"
+
+
 def quoted_split(text: str) -> list[str]:
-    """`text` cut at the `;`, `&`, `|` and newlines that no quote holds (`-t "a;b"` is one
-    word). Nested `sh -c` text is one quoted word, so it stays whole: this reading only adds
-    to the plain split, which still reads what that one separates."""
+    """`text` cut at the `;`, `&`, `|` and newlines the shell reads as separators: not one a
+    quote holds (`-t "a;b"` is one word), not an escaped one (`\\;`), and not one inside a
+    `$(...)`, a `${...}` or a backtick pair (`gh pr $(a; b) merge 12` is one command), and not an `&` or `|`
+    of a redirection (`>&2`, `&>x`, `>|x`). Nested `sh -c` text is
+    one quoted word, so it stays whole: this reading only adds to the plain split."""
     pieces: list[str] = []
-    quote = None
+    stack: list[str] = []  # open `'`, `"`, backtick, `(` (of a `$(`) and `{` (of a `${`)
     start = index = 0
     while index < len(text):
         char = text[index]
-        if char == "\\" and quote != "'":
+        top = stack[-1] if stack else ""
+        if char == "\\" and top != "'":
+            index += 2
+            continue
+        if top == "'":
+            if char == "'":
+                stack.pop()
+        elif char == "`" and top == "`":
+            stack.pop()
+        elif top == '"' and char == '"':
+            stack.pop()
+        elif char == "`":
+            stack.append("`")
+        elif top != '"' and char in "'\"":
+            stack.append(char)
+        elif text.startswith("$(", index):
+            stack.append("(")
             index += 1
-        elif quote is None and char in "'\"":
-            quote = char
-        elif char == quote:
-            quote = None
-        elif quote is None and char in ";&|\n":
+        elif text.startswith("${", index):
+            stack.append("{")
+            index += 1
+        elif top == "(" and char == "(":
+            stack.append("(")
+        elif top == "(" and char == ")":
+            stack.pop()
+        elif top == "{" and char == "{":
+            stack.append("{")
+        elif top == "{" and char == "}":
+            stack.pop()
+        elif not stack and char in ";&|\n" and not redirection_char(text, index):
             pieces.append(text[start:index])
             start = index + 1
         index += 1
@@ -1486,11 +1540,13 @@ def unresolved_gated(text: str) -> Iterator[str]:
                 yield match.group(1)
 
 
-def untrusted_reason(flags: gh_args.Flags, cut: bool) -> str:
+def untrusted_reason(flags: gh_args.Flags, cut: bool, untrusted: bool = False) -> str:
     if flags.unknown_flags:
         return f"it has the flag `{flags.unknown_flags[0]}`, which gh 2.103.0 does not have"
+    if untrusted:
+        return "a quoted or escaped operator in the command may cut or hide its words"
     if cut:
-        return "an unquoted `$(` or `<(` ends the words the guard can read"
+        return "an unquoted `$(`, `<(` or backtick span may hide or glue a flag"
     return "a word with a variable, brace or glob may become a flag"
 
 
@@ -1504,45 +1560,103 @@ def publishes_nothing(verb: str, flags: gh_args.Flags) -> bool:
     return verb == "merge" and flags.asks_help
 
 
+def argv_readings(found: shell_tokens.Command) -> list[list[str]]:
+    """A command's words without its redirections, read two ways: a digit word apart from its
+    operator (`gh api 5 >/dev/null ...`) is an argument to the shell and to gh, and an earlier
+    guard dropped it as a descriptor. With a quoted operator about (`found.untrusted`) a
+    redirection may be a quoted word (`$G pr -t '>' merge 12`), so the words as they stand are
+    read too. A wrong guess can only block more, so every reading counts."""
+    readings = []
+    for guess in (False, True):
+        argv = shell_tokens.drop_redirections(found.argv, guess)
+        if argv and argv not in readings:
+            readings.append(argv)
+    if found.untrusted and found.argv and found.argv not in readings:
+        readings.append(list(found.argv))
+    return readings
+
+
 def gh_verbs(found: shell_tokens.Command) -> list[tuple[str, list[str], bool]]:
     """The gated `gh pr` verbs one command can run, with the arguments to read for each and
-    whether the command is cut (an unclosed `$(`, a backtick span: see `gh_args.pr_commands`).
-    Its redirections are dropped. A command name that holds an expansion (`"$GH"`,
-    `${g/x/h}`, `{gh,}`, a substitution) is read as gh. A command with a quoted operator
-    about (`found.untrusted`) is read as text instead: `untrusted_text_verbs`."""
-    argv = shell_tokens.drop_redirections(found.argv)
-    if not argv or found.untrusted:
-        return []
-    if os.path.basename(argv[0]).lower() == "gh":
-        commands = gh_args.pr_commands(argv[1:])
-    elif gh_args.has_expansion(argv[0]):
-        commands = gh_args.pr_commands(argv[1:], expands=True)
-    else:
-        return []
-    return [(verb, args, found.cut) for verb, args in commands]
+    whether the command is cut (an unquoted substitution, an unclosed `$(`, a backtick span, or a
+    quoted operator about, which may cut the words in two: no draft, help or undo credit; see
+    `gh_args.pr_commands`). Its redirections are dropped. A command name that holds an expansion
+    (`"$GH"`, `${g/x/h}`, `{gh,}`, a substitution) is read as gh. A command with a quoted operator
+    about (`found.untrusted`) is also read as text, which adds to this: `untrusted_pieces`."""
+    found_verbs: list[tuple[str, list[str], bool]] = []
+    for argv in argv_readings(found):
+        if os.path.basename(argv[0]).lower() == "gh":
+            commands = gh_args.pr_commands(argv[1:])
+        elif gh_args.has_expansion(argv[0]):
+            commands = gh_args.pr_commands(argv[1:], expands=True)
+        else:
+            continue
+        found_verbs.extend((verb, args, found.cut or found.untrusted) for verb, args in commands)
+    return found_verbs
 
 
 UNTRUSTED_VERB = re.compile(r"\b(ready|merge|create|new|revert)\b")
+NOT_A_HEAD = re.compile(r"[<>]|\d+[<>]|\(|\)")
 
 
-def untrusted_text(found_all: list[shell_tokens.Command]) -> str:
-    """The words of every command a quoted operator may have cut, as one text. A command that
-    only prints its words (`INERT_HEADS`: `echo '()' gh pr ready 12`) runs none of them."""
-    parts = []
-    for found in found_all:
-        if found.untrusted and found.argv and not found.unresolved:
-            argv = shell_tokens.drop_redirections(found.argv) or found.argv
-            if shell_tokens.head_name(argv[0]) not in shell_tokens.INERT_HEADS:
-                parts.append(" ".join(found.argv))
-    return " ".join(parts)
+def without_spaced_quotes(text: str) -> str:
+    """`text` with each quoted string that holds whitespace replaced by `Q`: it can only be one
+    argument (`'gh pr merge'` in `grep -l 'gh pr merge'`). A quoted word without whitespace
+    (`';'`, `'a;b'`) stays: it may be a flag value or a verb."""
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            out.append(text[index : index + 2])
+            index += 2
+            continue
+        if char in "'\"":
+            end = index + 1
+            while end < len(text) and text[end] != char:
+                end += 2 if char == '"' and text[end] == "\\" else 1
+            quoted = text[index : end + 1]
+            out.append("Q" if any(c.isspace() for c in quoted) else quoted)
+            index = end + 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
 
 
-def untrusted_text_verbs(command: str) -> Iterator[str]:
-    """The gated verb of a `gh ... pr ... VERB` in the text of `untrusted_text`, quoting removed or
-    not. Used when a quoted or escaped operator standing alone as a word came out as a bare
-    one: it cuts a command in two (`gh pr -t ';' merge 12`) or hides a flag behind a redirection
-    (`gh >/dev/null pr -t '>' merge 12`), so no argv is trusted."""
-    for form in (command, shell_tokens.unquoted(command)):
+def piece_head(piece: str) -> str:
+    """The command a separated piece of text runs: its first word that is no keyword,
+    assignment, wrapper or redirection."""
+    for word in piece.split():
+        if (
+            word in shell_tokens.KEYWORDS
+            or word in shell_tokens.SIMPLE_WRAPPERS
+            or shell_tokens.is_assignment(word)
+            or NOT_A_HEAD.match(word)
+        ):
+            continue
+        return shell_tokens.head_name(shell_tokens.unquoted(word))
+    return ""
+
+
+def untrusted_pieces(source: str) -> Iterator[str]:
+    """The pieces of text a quoted or escaped operator left in doubt: `source` cut where the
+    shell really separates commands (`quoted_split`), each without the quoted words that hold
+    whitespace (an argument: `grep -l 'gh pr merge'`; a command a payload hands to a shell is
+    walked on its own), and without one that only prints its words (`INERT_HEADS`: `echo '()' gh pr
+    ready 12` runs none of them)."""
+    for piece in quoted_split(source):
+        light = without_spaced_quotes(piece)
+        if piece_head(light) not in shell_tokens.INERT_HEADS:
+            yield light
+
+
+def untrusted_text_verbs(piece: str) -> Iterator[str]:
+    """The gated verb of a `gh ... pr ... VERB` in a piece of text, quoting removed or not. Used
+    when a quoted or escaped operator standing alone as a word came out as a bare one: it cuts a
+    command in two (`gh pr -t ';' merge 12`) or hides a flag behind a redirection
+    (`gh >/dev/null pr -t '>' merge 12`), so no argv is trusted by itself."""
+    for form in (piece, shell_tokens.unquoted(piece)):
         match = shell_tokens.words_in_order(form, shell_tokens.WORD_GH, shell_tokens.WORD_PR, UNTRUSTED_VERB)
         if match:
             yield match.group(1)
@@ -1561,17 +1675,17 @@ def api_note(text: str) -> str:
 
 def gh_api_calls(found: shell_tokens.Command) -> list[tuple[list[str], bool]]:
     """The arguments after `api` of every `gh api` one command can run, each with whether the
-    command is cut; the name is read as in `gh_verbs`, and a quoted operator makes it text."""
-    argv = shell_tokens.drop_redirections(found.argv)
-    if not argv or found.untrusted:
-        return []
-    if os.path.basename(argv[0]).lower() == "gh":
-        calls = gh_args.api_commands(argv[1:])
-    elif gh_args.has_expansion(argv[0]):
-        calls = gh_args.api_commands(argv[1:], expands=True)
-    else:
-        return []
-    return [(args, found.cut) for args in calls]
+    command is cut (see `gh_verbs`); the name is read as in `gh_verbs`."""
+    found_calls: list[tuple[list[str], bool]] = []
+    for argv in argv_readings(found):
+        if os.path.basename(argv[0]).lower() == "gh":
+            calls = gh_args.api_commands(argv[1:])
+        elif gh_args.has_expansion(argv[0]):
+            calls = gh_args.api_commands(argv[1:], expands=True)
+        else:
+            continue
+        found_calls.extend((args, found.cut or found.untrusted) for args in calls)
+    return found_calls
 
 
 PR_VERIFY_BLOCK = "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. {remedy}"
@@ -1685,17 +1799,17 @@ def uncommitted(top: str, target: str) -> list[str]:
 def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
     """`gh pr create` needs a passing `scripts/verify.py` record on the tree it opens.
     No override lifts it (`environ` is unused, kept for the checks' shared signature)."""
-    text_read = False
+    read_sources: set[str] = set()
     found_all = list(shell_tokens.commands(command, cwd))
     for found in found_all:
-        if found.untrusted and not found.unresolved and not text_read:
-            text_read = True  # a quoted operator: the commands are read as text (`untrusted_text_verbs`)
-            text = untrusted_text(found_all)
-            for verb in untrusted_text_verbs(text):
-                if verb in {"create", "new"}:
-                    raise block(PR_QUOTED_OPERATOR.format(verb=verb))
-            if gh_api_text_creates(text):
-                raise block(PR_API_CREATE[gh_args.UNREADABLE_API].format(what="could open a pull request"))
+        if found.untrusted and not found.unresolved and found.source not in read_sources:
+            read_sources.add(found.source)  # a quoted operator: the text is read too (`untrusted_pieces`)
+            for piece in untrusted_pieces(found.source):
+                for verb in untrusted_text_verbs(piece):
+                    if verb in {"create", "new"}:
+                        raise block(PR_QUOTED_OPERATOR.format(verb=verb))
+                if gh_api_text_creates(piece):
+                    raise block(PR_API_CREATE[gh_args.UNREADABLE_API].format(what="could open a pull request"))
         if found.unreadable:
             raise block(PR_VERIFY_UNREADABLE + api_note(found.text))
         if found.unresolved:

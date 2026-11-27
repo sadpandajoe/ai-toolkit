@@ -96,10 +96,14 @@ hook's `git -C $S` stays unknown.
 A substitution is one word of the command it sits in: `commands()` reads `$(...)`, `<(...)`
 and `>(...)` (`command_spans`) as the word `SUBSTITUTION_WORD` (glued to the text before its `$`)
 and goes on with the words after its `)` in the same command, while the commands inside it are
-yielded on their own. `Command.cut` marks an unclosed `$(` or a backtick span that swallowed
-words. With a quoted operator about (`Tokens.quoted_operators`, also a `;`, `&` or `|` inside quotes
-of their own within a double-quoted `$(...)`) the paren stack and the merge are not trusted and
-callers read the text.
+yielded on their own. `Command.cut` marks a command with an unquoted substitution among its words, an
+unclosed `$(`, or a backtick span (read folded and as it is: `readings`). With a quoted operator about
+(`Tokens.quoted_operators`, also a `;`, `&` or `|` inside double quotes of their own within a
+double-quoted `$(...)`) the paren stack and the merge are not trusted and callers read the text as well.
+
+A file descriptor (`2` of `2>&1`, `{fd}` of `{fd}>x`) is a word glued to its operator after a word
+boundary; the lexer marks it (`FdWord`) and `drop_redirections` drops only those. A number apart from its
+operator (`-o 5 >x`) is an argument.
 
 `$'...'` words are rewritten into plain quoted words before shlex, which has no ANSI-C
 quoting (`expand_ansi_c`); one that never closes does not tokenize.
@@ -219,6 +223,42 @@ NO_RESCAN_HEADS = INERT_HEADS | {"gh", "git"}
 DIRECTORY_CHANGE = re.compile(r"(?<![\w-])(?:cd|pushd|popd)(?![\w-])|--chdir|(?<!\w)-C")
 
 
+FD_BOUNDARY = frozenset([" ", "\t", "\n", " ; ", ";", "&", "|", "(", ")"])
+DIGITS = "0123456789"
+FD_MARK = "\x01"  # in front of a file descriptor the lexer reads: `FdWord`
+
+
+class FdWord(str):
+    """A file descriptor of a redirection (`2` of `2>&1`, `{fd}` of `{fd}>x`): a word glued to
+    its operator after a word boundary. The same text apart from its operator (`-o 5 >x`) is an
+    argument and a plain str."""
+
+
+def mark_fd(out: list[str]) -> str:
+    """Mark the file descriptor that ends `out` (`2` of `2>x`, `{fd}` of `{fd}>x`) with
+    `FD_MARK` and return the character before it, or "" when there is none.
+
+    Bash reads it as a descriptor only when it is a whole word glued to the operator: after a
+    word boundary (not `a2>x`, not `5 >x`, where `5` is an argument)."""
+    end = len(out)
+    start = end
+    while start and len(out[start - 1]) == 1 and out[start - 1] in DIGITS:
+        start -= 1
+    if start == end and out and out[-1] == "}":
+        name = end - 1
+        while name and len(out[name - 1]) == 1 and (out[name - 1].isalnum() or out[name - 1] == "_"):
+            name -= 1
+        if name and name < end - 1 and out[name - 1] == "{" and out[name] not in DIGITS:
+            start = name - 1
+    if start == end:
+        return ""
+    before = out[start - 1] if start else "\n"
+    if before not in FD_BOUNDARY or (before == "&" and start > 1 and out[start - 2] in {"<", ">"}):
+        return ""  # `>&2>x`: the `2` is the target of `>&`
+    out.insert(start, FD_MARK)
+    return before
+
+
 def split_lines(text: str) -> str:
     """Normalize a command for tokenizing.
 
@@ -244,6 +284,9 @@ def split_lines(text: str) -> str:
             while index < len(text) and text[index] != "\n":
                 index += 1
             continue
+        if char in "<>" and quote is None and text[index + 1 : index + 2] != "(":
+            dropped = mark_fd(out)  # `2>x`, `{fd}>x`: a descriptor, no word
+            previous = ("\n" if len(dropped) > 1 else dropped) or previous
         if char == "<" and (quote is None or (quote == '"' and substitutions)):
             match = None
             if not text.startswith("<<<", index) and previous in WORD_START:
@@ -306,6 +349,8 @@ class Tokens(list):
     """Shell words and operators, plus whether a quoted operator came out as a bare one."""
 
     quoted_operators = False
+    cleaned = ""  # the text the lexer read: comments, here-document bodies and descriptors gone
+    backticks = True  # whether the text has a backtick no quote holds (a span `join_backtick_words` may fold)
 
 
 OPERATOR_CHARS = frozenset(";&|()<>")
@@ -342,11 +387,10 @@ def unquoted_operators(text: str) -> int:
     return count
 
 
-def quoted_substitution_separator(text: str) -> bool:
-    """Whether a `$(...)` inside double quotes holds quotes of its own around a `;`, `&` or `|`
-    (`"$(echo "a;b")"`). The shell reads the inner quotes on their own; the lexer closes the
-    outer string at the first one, so the separator comes out bare and cuts the command in two:
-    the words around the substitution are not read right."""
+def unquoted_backticks(text: str) -> int:
+    """Backticks outside quotes and not escaped: the only ones that open a command-substitution
+    span the words of a command can be folded over (`'a`b'` and `\\`` open none)."""
+    count = 0
     quote: str | None = None
     index = 0
     while index < len(text):
@@ -358,14 +402,47 @@ def quoted_substitution_separator(text: str) -> bool:
             quote = char
         elif quote == char:
             quote = None
-        elif quote == '"' and text.startswith("$(", index):
-            depth, end = 1, index + 2
-            while end < len(text) and depth:
-                depth += (text[end] == "(") - (text[end] == ")")
-                end += 1
-            body = text[index:end]
-            if ('"' in body or "'" in body) and any(c in body for c in ";&|"):
+        elif quote is None and char == "`":
+            count += 1
+        index += 1
+    return count
+
+
+def quoted_substitution_separator(text: str) -> bool:
+    """Whether a `$(...)` inside double quotes holds a `;`, `&` or `|` inside double quotes of
+    its own (`"$(echo "a;b")"`). The shell reads the inner quotes on their own; the lexer closes
+    the outer string at the first one, so the separator comes out bare and cuts the command in
+    two: the words around the substitution are not read right. A separator in single quotes
+    (`"$(echo 'a;b')"`) or outside quotes (`"$(a | b)"`) stays in the outer string: no doubt.
+    One pass over the text, whatever the number of `$(`."""
+    quote: str | None = None  # the outer quote
+    inner: str | None = None  # the quote of its own inside a `$(...)`
+    depth = 0  # open parentheses of the `$(...)` the outer double quote holds
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and (inner != "'" if depth else quote != "'"):
+            index += 2
+            continue
+        if depth:
+            if inner is None:
+                if char in "'\"":
+                    inner = char
+                elif char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+            elif char == inner:
+                inner = None
+            elif inner == '"' and char in ";&|":
                 return True
+        elif quote is None and char in "'\"":
+            quote = char
+        elif quote == char:
+            quote = None
+        elif quote == '"' and text.startswith("$(", index):
+            depth, inner = 1, None
+            index += 1
         index += 1
     return False
 
@@ -445,11 +522,16 @@ def tokenize(text: str) -> list[str]:
     (`echo ')'`, `\\(`, `\\;`) or one inside `${...}` came out as a bare operator token: the
     paren stack of `DirectoryModel` is not trusted then.
     """
-    cleaned = split_lines(expand_ansi_c(text))
+    cleaned = split_lines(expand_ansi_c(text.replace(FD_MARK, "?")))
     lexer = shlex.shlex(cleaned, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""
-    tokens = Tokens(part for token in lexer for part in split_operators(token))
+    tokens = Tokens(
+        FdWord(part[1:]) if part.startswith(FD_MARK) else part
+        for token in lexer
+        for part in split_operators(token)
+    )
+    cleaned = cleaned.replace(FD_MARK, "")
     bare = sum(
         char in OPERATOR_CHARS
         for token in tokens
@@ -457,6 +539,8 @@ def tokenize(text: str) -> list[str]:
         for char in token
     )
     tokens.quoted_operators = bare != unquoted_operators(cleaned) or quoted_substitution_separator(cleaned)
+    tokens.backticks = unquoted_backticks(cleaned) > 0
+    tokens.cleaned = cleaned
     return tokens
 
 
@@ -478,6 +562,8 @@ def join_toplevel(tokens: list[str]) -> list[str]:
     """
     joined = Tokens()
     joined.quoted_operators = getattr(tokens, "quoted_operators", False)
+    joined.backticks = getattr(tokens, "backticks", True)
+    joined.cleaned = getattr(tokens, "cleaned", "")
     index = 0
     while index < len(tokens):
         for words, replacement in READ_SUBSTITUTIONS:
@@ -558,15 +644,23 @@ def skip_options(wrapper: str, rest: list[str], effects: Effects, *, scan: bool 
     return rest
 
 
-def kept_indexes(segment: list[str]) -> list[int]:
-    """Indexes of a segment's words that are no redirection (operator, target or fd)."""
+def kept_indexes(segment: list[str], fd_guess: bool = False) -> list[int]:
+    """Indexes of a segment's words that are no redirection (operator, target or descriptor). A
+    descriptor is the `FdWord` the lexer found glued to its operator: a digit word apart from it
+    (`-o 5 >x`) is an argument. `fd_guess` is the other reading, which a caller adds to this one
+    where a wrong guess can only block more: a digit or `{name}` word right before an operator
+    is dropped as a descriptor too."""
     kept: list[int] = []
     index = 0
     while index < len(segment):
         token = segment[index]
         if token in REDIRECTIONS:
             index += 2
-        elif index + 1 < len(segment) and segment[index + 1] in REDIRECTIONS and REDIRECTION_FD.fullmatch(token):
+        elif (
+            index + 1 < len(segment)
+            and segment[index + 1] in REDIRECTIONS
+            and (isinstance(token, FdWord) or (fd_guess and REDIRECTION_FD.fullmatch(token)))
+        ):
             index += 1
         else:
             kept.append(index)
@@ -574,9 +668,9 @@ def kept_indexes(segment: list[str]) -> list[int]:
     return kept
 
 
-def drop_redirections(segment: list[str]) -> list[str]:
-    """A segment's words without its redirections (operator, target and fd)."""
-    return [segment[index] for index in kept_indexes(segment)]
+def drop_redirections(segment: list[str], fd_guess: bool = False) -> list[str]:
+    """A segment's words without its redirections (operator, target and descriptor)."""
+    return [segment[index] for index in kept_indexes(segment, fd_guess)]
 
 
 # What one `$(...)`, `<(...)` or `>(...)` stands for among the words of the command it sits in.
@@ -598,19 +692,15 @@ def substitution_word(last: str) -> str:
     return last[:-1] + SUBSTITUTION_WORD if last.endswith("$") else SUBSTITUTION_WORD
 
 
-def join_backtick_words(words: list[str]) -> tuple[list[str], bool]:
+def join_backtick_words(words: list[str]) -> list[str]:
     """Words of one command with each backtick span (an odd count opens, the next odd closes)
-    rejoined into one word; the flag says a span swallowed words, which may hide a flag
-    (a quoted backtick looks the same here), so the caller treats the command as cut."""
-    if not any("`" in word for word in words):
-        return words, False
+    rejoined into one word. A quoted backtick looks the same here, so `readings` reads the
+    command folded and as it is, and grants neither a flag."""
     out: list[str] = []
     span: str | None = None
-    joined = False
     for word in words:
         if span is not None:
             span += " " + word
-            joined = joined or word.startswith("-")  # only a swallowed flag matters
             if word.count("`") % 2:
                 out.append(span)
                 span = None
@@ -620,7 +710,52 @@ def join_backtick_words(words: list[str]) -> tuple[list[str], bool]:
             out.append(word)
     if span is not None:
         out.append(span)
-    return out, joined
+    return out
+
+
+def command_word_from(words: list[str], start: int, end: int, pending: bool) -> tuple[int, bool, bool]:
+    """Whether `words[start:end]` hold a command word (one that is no assignment, redirection or
+    its target), resumable where the last call stopped, so a command with many substitutions is
+    read once: (where it stopped, whether the next word is a redirection's target, found)."""
+    for index in range(start, end):
+        word = words[index]
+        if pending:
+            pending = False
+        elif word in REDIRECTIONS:
+            pending = True
+        elif isinstance(word, FdWord) and index + 1 < len(words) and words[index + 1] in REDIRECTIONS:
+            pass
+        elif not is_assignment(word):
+            return index + 1, False, True
+    return end, pending, False
+
+
+def fold_head_span(words: list[str]) -> list[str]:
+    """`words` with the backtick span that opens at the command word (`` `which gh` pr ...``) joined."""
+    plain = [index for index in kept_indexes(words) if not is_assignment(words[index])]
+    if not plain or words[plain[0]].count("`") % 2 == 0:
+        return words
+    head = plain[0]
+    for end in range(head + 1, len(words)):
+        if words[end].count("`") % 2:
+            return words[:head] + [" ".join(words[head : end + 1])] + words[end + 1 :]
+    return words
+
+
+def readings(words: list[str], cut: bool, backticks: bool) -> list[tuple[list[str], bool]]:
+    """(words, cut) of every way the shell may read one command's words.
+
+    One, unless an unquoted backtick is about (`backticks`) and folding the spans changes the
+    words: then the words as they are and the folded ones, each cut (no draft, help or undo
+    credit), so a command blocks when either reading does. The one span that is the command
+    word itself (`` `which gh` pr create --draft``) is no doubt: it is the name, as `$(...)` is."""
+    if backticks and any("`" in word for word in words):
+        folded = join_backtick_words(words)
+        if folded != words:
+            if folded == fold_head_span(words):
+                return [(folded, cut)]
+            return [(words, True), (folded, True)]
+    return [(words, cut)]
 
 
 def command_spans(tokens: list[str], merge: bool = True) -> Iterator[tuple[int, list[str], bool]]:
@@ -628,16 +763,19 @@ def command_spans(tokens: list[str], merge: bool = True) -> Iterator[tuple[int, 
 
     With `merge`, a `$(...)`, `<(...)` or `>(...)` is ONE word of the command it sits in
     (`SUBSTITUTION_WORD`, glued to what precedes its `$`), the words after its `)` continue
-    that command, and the commands inside it are yielded on their own. `cut`: the command ran
-    into a substitution that never closes, or a backtick span swallowed words. Without `merge`
-    (the paren stack is not trusted) every parenthesis is a separator.
+    that command, and the commands inside it are yielded on their own. `cut`: the command holds
+    an unquoted substitution (a flag glued to its `)` is lost: `-t $(x)--draft`), runs into one
+    that never closes, or has a backtick span (`readings`: yielded folded and as it is). Without
+    `merge` (the paren stack is not trusted) every parenthesis is a separator.
     """
     if not merge:
         for first, words in segment_spans(tokens):
             yield first, words, False
         return
-    frames: list[list] = [[None, [], False]]
+    # per frame: first token, words, cut, and where `command_word_from` stopped (index, pending)
+    frames: list[list] = [[None, [], False, 0, False]]
     groups: list[bool] = []
+    backticks = getattr(tokens, "backticks", True)
     for index, token in enumerate(tokens):
         frame = frames[-1]
         if token not in SEPARATORS:
@@ -646,24 +784,65 @@ def command_spans(tokens: list[str], merge: bool = True) -> Iterator[tuple[int, 
             frame[1].append(token)
             continue
         if token == "(" and frame[1] and opens_substitution(tokens, index):
+            if not frame[2]:
+                frame[3], frame[4], found = command_word_from(frame[1], frame[3], len(frame[1]) - 1, frame[4])
+                frame[2] = found  # a substitution among the arguments: no credit for a flag after it
             frame[1][-1] = substitution_word(frame[1][-1])
             groups.append(True)
-            frames.append([None, [], False])
+            frames.append([None, [], False, 0, False])
             continue
         if frame[1]:
-            words, joined = join_backtick_words(frame[1])
-            yield frame[0], words, frame[2] or joined
+            for words, cut in readings(frame[1], frame[2], backticks):
+                yield frame[0], words, cut
         if token == "(":
             groups.append(False)
         was_substitution = token == ")" and bool(groups) and groups.pop()
         if was_substitution and len(frames) > 1:
             frames.pop()
         else:
-            frames[-1] = [None, [], False]
+            frames[-1] = [None, [], False, 0, False]
     for depth, frame in enumerate(reversed(frames)):
         if frame[1]:
-            words, joined = join_backtick_words(frame[1])
-            yield frame[0], words, frame[2] or joined or depth > 0
+            for words, cut in readings(frame[1], frame[2] or depth > 0, backticks):
+                yield frame[0], words, cut
+
+
+def printed_head_text(tokens: list[str], first: int, segment: list[str], rest: list[str]) -> str | None:
+    """The text of the substitution that stands where the command word of `rest` does: the shell
+    runs what it prints as the command (`$(echo gh pr merge 12)`, `` `echo gh pr merge 12` ``).
+    None when the command word is no substitution. `rest` is `segment` past its prefixes, and
+    `first` the index in `tokens` where `segment` starts."""
+    if not rest:
+        return None
+    head = rest[0]
+    if head.startswith("`"):
+        joined = " ".join(rest)
+        match = BACKTICK.match(joined)
+        return match.group(1) if match else joined[1:]
+    if not head.endswith(SUBSTITUTION_WORD) or not (
+        head == SUBSTITUTION_WORD or may_vanish(head[: -len(SUBSTITUTION_WORD)])
+    ):
+        return None
+    wanted = 1 + sum(word.count(SUBSTITUTION_WORD) for word in segment[: len(segment) - len(rest)])
+    depth = seen = 0
+    start = None
+    for index in range(first, len(tokens)):
+        token = tokens[index]
+        if token == "(":
+            if depth == 0 and opens_substitution(tokens, index):
+                seen += 1
+                if seen == wanted:
+                    start = index + 1
+            depth += 1
+        elif token == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+            if depth == 0 and start is not None:
+                return " ".join(tokens[start:index])
+        elif depth == 0 and token in SEPARATORS:
+            return None
+    return " ".join(tokens[start:]) if start is not None else None
 
 
 def command_words(tokens: list[str], start: int, merge: bool = True) -> tuple[list[str], list[int], int, bool]:
@@ -1125,6 +1304,53 @@ FORGETTING = {"read", "unset", "mapfile", "readarray", "getopts"}
 CLEARING = {"eval", "source", "."}  # may assign anything
 
 
+VANISHING = re.compile(r"(?:\$[A-Za-z_]\w*|\$\{[^}]*\}|\$[@*#?$!0-9-]|`[^`]*`)+")
+
+
+def may_vanish(word: str) -> bool:
+    """Whether a word may expand to nothing and leave the next word the command name: it is made
+    only of parameter expansions and backtick substitutions (`$X`, `${X:-}`, `$@`, `` `true` ``,
+    the `${}` a `$(...)` is merged into). Quotes are gone by here, so a quoted `"$X"`, which
+    stays an empty word, reads the same: a doubt that can only block more."""
+    return bool(VANISHING.fullmatch(word))
+
+
+AFTER_COMMAND, AFTER_ARGUMENT, AFTER_EITHER = "command", "argument", "either"
+EITHER_DEPTH_LIMIT = 8  # readings of one segment opened inside one another (`either_reading`)
+PREFIX_WORDS = KEYWORDS | SIMPLE_WRAPPERS | {"builtin", "time", "for", "select", "case"}
+
+
+def after_substitution(words: list[str], continuation: str | None) -> str:
+    """What the words after the `)` of a `$(...)`, `<(...)` or `>(...)` that ends the segment
+    `words` would be: the command (`X=$(x) cd D`: only assignments, keywords and redirections
+    come first), the arguments of a command that is there whatever the substitution prints
+    (`echo $(x) cd D`), or either (`$(true) cd D`, `command $(true) cd D`: the substitution may
+    print nothing, so the words may be the command)."""
+    if continuation == AFTER_ARGUMENT:
+        return AFTER_ARGUMENT
+    operand = False  # the word is the target of a redirection
+    vanished = False  # a word before may have expanded to nothing (`$X $(true) cd D`)
+    for position, word in enumerate(words):
+        last = position == len(words) - 1
+        if operand:
+            operand = False
+        elif last and word in {"<", ">"}:
+            return AFTER_ARGUMENT  # `<(x)` is a word of its own: the command word
+        elif word in REDIRECTIONS:
+            operand = True
+        elif not last and words[position + 1] in REDIRECTIONS and (
+            isinstance(word, FdWord) or REDIRECTION_FD.fullmatch(word)
+        ):
+            pass  # `2>x $(true) cd D`: the descriptor of a redirection (a wrong guess only adds doubt)
+        elif last and word.endswith("$") and (not word[:-1] or may_vanish(word[:-1])):
+            return AFTER_EITHER  # the substitution stands where the command word does
+        elif word in PREFIX_WORDS or is_assignment(word) or may_vanish(word):
+            vanished = vanished or may_vanish(word)  # past one, a word may be the command: doubt
+        else:
+            return AFTER_ARGUMENT
+    return AFTER_EITHER if continuation == AFTER_EITHER or vanished else AFTER_COMMAND
+
+
 class Scope:
     """The and-or list being read, and the bodies and groups it sits in."""
 
@@ -1176,8 +1402,10 @@ class DirectoryModel:
     declaration (`declare 'S[0]=M'`).
 
     The words after a `$(...)`, `<(...)` or `>(...)` continue the command it sits in, as
-    `commands()` reads them: they are arguments (`echo $(x) cd D` moves nothing), unless every
-    word before the substitution only assigns (`X=$(x) cd D` is a `cd`).
+    `commands()` reads them: they are arguments (`echo $(x) cd D` moves nothing), or a command
+    when every word before the substitution only assigns (`X=$(x) cd D` is a `cd`). A substitution
+    that expands to nothing makes them a command all the same (`$(true) cd D`), and so does a
+    backtick word in command position: where the two readings disagree the directory is unknown.
     """
 
     def __init__(self, tokens: list[str], workdir: str | None, untrusted: bool = False) -> None:
@@ -1187,6 +1415,7 @@ class DirectoryModel:
         self.variables: dict[str, str | None] = {}
         self.tables: list[dict[str, str | None]] = [self.variables] * (len(tokens) + 1)
         self.current = workdir
+        self.either_depth = 0  # `either_reading`s open inside one another
         self.scan()
         self.dirs[len(tokens)] = self.current
         head = self.function_head()
@@ -1252,11 +1481,10 @@ class DirectoryModel:
         high = len(tokens)
         scope = Scope()
         saved: list[tuple[str | None, Scope, dict[str, str | None]]] = []
-        # per open `(`: None for a subshell, else whether the words after its `)` are
-        # arguments of the command the substitution sits in (`echo $(x) cd D` moves nothing)
-        substitutions: list[bool | None] = []
-        arguments = False  # the last segment's words run past its command word
-        continuation: bool | None = None  # set by a substitution's `)` for the next segment
+        # per open `(`: None for a subshell, else what the words after its `)` are (`AFTER_*`)
+        substitutions: list[tuple[str, int] | None] = []
+        kind = AFTER_COMMAND  # what the words after a substitution in the last segment would be
+        continuation: str | None = None  # set by a substitution's `)` for the next segment
         previous: str | None = None
         index = 0
         while index < high:
@@ -1270,13 +1498,16 @@ class DirectoryModel:
                     if scope.cases or self.untrusted:
                         continue
                     if token == "(":
-                        substitutions.append(arguments if opens_substitution(tokens, index - 1) else None)
+                        substitutions.append((kind, index) if opens_substitution(tokens, index - 1) else None)
                         saved.append((self.current, scope, self.variables))
                         scope = Scope()
                     elif saved:
                         self.current, scope, self.variables = saved.pop()
                         previous = ")"
-                        continuation = substitutions.pop() if substitutions else None
+                        continuation = None
+                        opened = substitutions.pop() if substitutions else None
+                        if opened:
+                            continuation = opened[0]  # `$(echo x >&2) cd D` prints nothing: no body is trusted
                     continue
                 continuation = None
                 if (token == "||" or token in LIST_END) and scope.deferred:
@@ -1301,12 +1532,39 @@ class DirectoryModel:
             self.dirs[index:end] = [self.current] * (end - index)
             self.tables[index:end] = [self.variables] * (end - index)
             words = tokens[index:end]
-            # words that only assign (`X=$(...) cd D`) leave the next word the command word
-            arguments = bool(continuation) or not all(is_assignment(word) for word in words)
-            if not continuation:
-                self.command(words, scope, previous, tokens[end] if end < high else None)
+            kind = after_substitution(words, continuation)
+            following = tokens[end] if end < high else None
+            if continuation == AFTER_ARGUMENT:
+                pass  # `echo $(x) cd D`: arguments of a command that is there whatever `$(x)` prints
+            elif continuation == AFTER_EITHER:
+                # `$(true) cd D`: arguments when the substitution prints a word, a command when it
+                # prints nothing: both readings count
+                self.either_reading(words, scope, previous, following)
+            else:
+                self.command(words, scope, previous, following)
             continuation = None
             index = end
+
+    def either_reading(self, words: list[str], scope: Scope, previous: str | None, following: str | None) -> None:
+        """Apply `words` as a command although they may also be arguments: a word before them
+        expanded to nothing (`$(true) cd D`, `` `true` cd D``) or did not. The shell is where
+        the command reading leaves it or where it was, so a directory or a variable the two
+        readings do not agree on is unknown."""
+        directory, variables = self.current, self.variables
+        if self.either_depth >= EITHER_DEPTH_LIMIT:
+            # `$X command $X command ... cd D`: past the limit nothing is followed
+            self.current, self.variables = None, NO_VARIABLES
+            return
+        self.either_depth += 1
+        try:
+            self.command(words, scope, previous, following)
+        finally:
+            self.either_depth -= 1
+        if self.current != directory:
+            self.current = None
+        self.forget(
+            {name for name in variables.keys() | self.variables.keys() if variables.get(name, ()) != self.variables.get(name, ())}
+        )
 
     def command(self, words: list[str], scope: Scope, previous: str | None, following: str | None) -> None:
         """Apply one segment."""
@@ -1386,6 +1644,19 @@ class DirectoryModel:
             if "`" in word:
                 self.forget({word.partition("=")[0]})
         name = words[position]
+        if "`" in name or may_vanish(name):
+            # `` `true` cd D``, `$X cd D`: a word that expands to nothing leaves the rest the
+            # command; a run of them is skipped at once (`$X $Y cd D`), not one reading each
+            after = position
+            while after < len(words) and ("`" in words[after] or may_vanish(words[after])):
+                word = words[after]
+                closes = after == position and word.endswith("`") and not word.startswith("`")
+                if word.count("`") % 2 and not closes:  # the span runs on to the word that closes it
+                    after = next((i for i in range(after + 1, len(words)) if words[i].count("`") % 2), len(words))
+                after += 1  # (`` true` cd D`` closes a span an earlier segment opened)
+            rest = words[after:]
+            if rest:
+                self.either_reading(rest, scope, previous, following)
         element = ELEMENT_ASSIGNMENT.match(name)
         if element:
             self.forget({element.group(1)})  # `S[0]=x`
@@ -1485,7 +1756,8 @@ class Command:
     text: str = ""
     unreadable: bool = False
     untrusted: bool = False  # a quoted operator came out bare: a redirection cannot be told from a word
-    cut: bool = False  # an unclosed `$(` or a backtick span swallowed words: a flag may hide in them
+    cut: bool = False  # an unquoted `$(`, an unclosed one or a backtick span: a flag may hide in or after it
+    source: str = ""  # with `untrusted`: the text its tokens were read from (comments and here-document bodies gone)
 
     @property
     def name(self) -> str:
@@ -1536,10 +1808,12 @@ def commands(
         return
     model = DirectoryModel(tokens, workdir, _untrusted)
     _untrusted = model.untrusted  # a nested payload walks under the same doubt
+    again = -1  # `command_spans` yields a command twice when a backtick may fold its words
     for first, segment, cut in command_spans(tokens, merge=not _untrusted):
         workdir = model.at(first)
         spent = False
-        for inner in inner_commands(" ".join(segment), walk):
+        # the bodies of the second reading are the first one's: read and charged once
+        for inner in () if first == again else inner_commands(" ".join(segment), walk):
             if inner is None:
                 spent = True
             elif depth >= DEPTH_LIMIT:
@@ -1549,6 +1823,7 @@ def commands(
                     inner, workdir, depth + 1, include_assignments=include_assignments, _walk=walk,
                     _untrusted=_untrusted,
                 )
+        again = first
         rest, effects = strip_prefixes(segment, scan=include_assignments)
         if spent or (not include_assignments and mentions_gated(" ".join(git_runs_text(segment, rest)))):
             # Block on sight: the work budget is spent, or git is handed text (an inline
@@ -1556,6 +1831,11 @@ def commands(
             # operation. No directory is known and the text is not trusted.
             yield Command([], {}, None, True, " ".join(segment), True)
             continue
+        printed = None if include_assignments or _untrusted else printed_head_text(tokens, first, segment, rest)
+        if printed is not None:
+            # the shell runs what a substitution in command position prints: its text is read
+            # as text that did not parse, on top of its own commands (an `echo` in it runs nothing)
+            yield Command([], {}, unresolved_dir(printed, workdir), True, printed)
         assignments = {**inherited, **effects.assignments}
         target = workdir
         for value in effects.chdir:
@@ -1650,7 +1930,9 @@ def commands(
             if include_assignments and effects.assignments:
                 yield Command([], assignments, target)
             continue
-        yield Command(rest, assignments, target, untrusted=_untrusted, cut=cut)
+        yield Command(
+            rest, assignments, target, untrusted=_untrusted, cut=cut, source=tokens.cleaned if _untrusted else ""
+        )
 
 
 def truthy(value: str | None) -> bool:

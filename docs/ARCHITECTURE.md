@@ -102,7 +102,15 @@ checks nothing is visible in the record. Its known limits:
   and `gh pr revert` is gated like `create`. A positional word with an expansion
   grants no draft, help or undo (accepted over-block: `gh pr ready --undo
   "$PR"`). A `$(...)` is one word of the command it sits in, so `gh -R $(echo o/r)
-  pr merge 12` is read and a substitution where the verb stands is unknown. Text
+  pr merge 12` is read and a substitution where the verb stands is unknown. What
+  a substitution where the command word stands prints is run as the command, so
+  its text is read like text the guard cannot parse (`$(echo gh pr merge 12)`
+  blocks, `$(command -v gh) pr view 12` does not); a
+  command with an unquoted substitution or a backtick span among its words
+  grants no draft, help or undo (`-t $(x)--draft`; accepted over-block:
+  `gh pr create --draft -t $(git log -1 --format=%s)`). A backtick opens a span
+  only outside quotes (`'a`b'` opens none); a command with one is read folded
+  and as it is. Text
   the guard cannot parse is searched for `gh`, `pr`, then `ready`, `merge`,
   `create`, `new` or `revert` in order over the whole text as well as piece by
   piece. A function wrapper (`g() { gh "$@"; }; g pr merge 12`), an expanded
@@ -116,7 +124,7 @@ checks nothing is visible in the record. Its known limits:
   `createPullRequest` or `revertPullRequest`, and a GraphQL query the guard
   cannot read (`--input`, `-F query=@file`, a shell expansion or backtick in
   `query=`; a `$name` counts as a GraphQL variable only when an operation's
-  definition list declares it) block with no override, like an unchecked `gh pr create`. An
+  definition list declares it and it stands where GraphQL allows a variable) block with no override, like an unchecked `gh pr create`. An
   expansion in the endpoint, the method or a `-H` value, or an unclosed `$(`,
   blocks when it could be one of these. Not seen: `gh api $ARGS` (the whole call in a
   variable), a whole path segment that is an expansion standing alone for
@@ -127,15 +135,29 @@ checks nothing is visible in the record. Its known limits:
   does one with a `$5` inside a string literal;
 - a quoted or escaped operator character standing alone as a word (`'>'`, `\;`,
   a `;` inside a `${...}`, or inside the quotes of a `$(...)` within double
-  quotes) reads like the operator and cuts the command. The guard then reads the
-  whole command as text: a `gh ... pr ... ready|merge|create|new|revert` or a
-  `gh api` pull request mention blocks, a create, new or revert gets no draft
-  credit, and `gh pr create` must run as a command of its own;
+  quotes) reads like the operator and cuts the command. The guard then reads
+  the text as well as the words, which stay read with no draft, help or undo
+  credit, also as they stand, since a redirection may be a quoted word
+  (`G=gh; $G pr -t '>' merge 12`). The text is read
+  in each piece cut where the shell really separates commands, without
+  the quoted words that hold whitespace and without an `echo`-like command, a
+  `gh ... pr ... ready|merge|create|new|revert` or a `gh api` pull request
+  mention blocks, and `gh pr create` must run as a command of its own. A
+  separator in the inner double quotes of a `$(...)` within double quotes
+  triggers it (`"$(echo "a;b")"`), one in single quotes does not. Over-block
+  that remains: a verb word as an argument in the same piece as `gh pr`
+  (`gh pr list --search merge | cut -d '|' -f1`);
+- a digit word or `{name}` glued to `<` or `>` after a word boundary is a file
+  descriptor (`2>&1`, `{fd}>x`) and is no word; a digit apart from the operator
+  (`-o 5 >x`) is an argument, and `gh` reads the command both ways;
 - git's words are read without redirections and with each `$(...)` as one word,
   push options as git 2.39's parse-options does, and the words after a `$(...)`
-  continue its command for the directory too (`echo $(x) cd D` moves nothing,
-  `X=$(x) cd D` does). Not seen: a word that expands to a push option
-  (`git push origin main $F`);
+  continue its command for the directory too (`X=$(x) cd D` is a `cd`, `echo
+  $(x) cd D` moves nothing). A word that may expand to nothing (a `$(...)`
+  whatever its body, `$X`, a backtick word) leaves the next word the command as well: the
+  directory after `$X cd D` is unknown and `$X git push` is read as git; a
+  quoted `"$X"` reads the same (an accepted over-block). Not seen: a word that
+  expands to a push option (`git push origin main $F`);
 - the model misses element and nameref assignments: `S[0]=x A=M` as one
   segment, `declare -n R=S; R=M`, `S[a[0]]=M` and `declare 'S[0]=M'`;
 - the directory a `gh pr create` runs in comes from `shell_tokens`' static

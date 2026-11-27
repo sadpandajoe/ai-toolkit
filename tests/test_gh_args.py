@@ -412,6 +412,25 @@ class ApiTests(unittest.TestCase):
             with self.subTest(query=query):
                 self.assertTrue(unreadable(query))
 
+    def test_a_declared_name_must_also_stand_where_a_variable_can(self) -> None:
+        def unreadable(query: str) -> bool:
+            return gh_args.read_api(["graphql", "-f", "query=" + query]).unreadable_query
+
+        for query in (
+            "mutation($M: ID!) { $M(input: {pullRequestId: $M}) { clientMutationId } }",
+            "mutation($M: ID!) { x { $M } }",
+            "query($M: Int) { f(a: 1) $M }",
+        ):
+            with self.subTest(query=query):
+                self.assertTrue(unreadable(query))
+        for query in (
+            "mutation($M: ID!) { f(input: {pullRequestId: $M}) { clientMutationId } }",
+            "query($a: [Int], $b: Int = 1) { f(a: [$b], c: $a) }",
+            "query Q($o: String!,$n: String!) { r(owner: $o, name: $n) { id } }",
+        ):
+            with self.subTest(query=query):
+                self.assertFalse(unreadable(query))
+
     def test_a_header_that_expands_may_override_the_method(self) -> None:
         self.assertEqual(
             gh_args.MERGE_API, gh_args.api_effect(["-X", "POST", "-H", "$H", "repos/o/r/pulls/12/merge"])
