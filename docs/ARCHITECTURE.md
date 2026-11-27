@@ -202,8 +202,11 @@ checks nothing is visible in the record. Its known limits:
   `${GIT:-git} push`). So the directory after `$X cd D` is unknown, `$X git
   push` and `git $X push` are read as git, and a quoted `"$X"` reads the same
   (an accepted over-block). A command name that is an expansion the guard
-  cannot resolve (`$GIT push`, `$(which git) push`) blocks when its words
-  push with a force or delete flag or commit. git nested more than 8 levels
+  cannot resolve (`$GIT push`, `$(which git) push`) blocks when its words,
+  read as git's own, push with a force or delete flag or commit. Behind a
+  command the guard does not know (`setsid`, `caffeinate`, `flock x`), a
+  later `git` word is read as the command too; a printing one (`echo git
+  push`) runs none. git nested more than 8 levels
   deep (`sh -c`, `eval`, functions, backtick spans) blocks. Not seen: a word
   that expands to a push option (`git push origin main $F`);
 - the model misses element and nameref assignments: `S[0]=x A=M` as one

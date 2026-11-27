@@ -252,11 +252,12 @@ import re
 import sys
 
 import gh_args
+import guard_base
 import shell_tokens
 import verify_record
 from guard_base import Blocked, block, is_git_executable
 from git_rules import check_commit, check_push, is_protected_path, paths_added
-from gh_text import COMMAND_SEPARATOR, unresolved_gated, unseen_git, untrusted_pieces, untrusted_text_verbs
+from gh_text import COMMAND_SEPARATOR, push_marker, unresolved_gated, unseen_git, untrusted_pieces, untrusted_text_verbs
 from git_walk import GIT_GLOBAL_VALUE, expand_configured_alias, has_unsafe_git_substitution, parse_git_actions
 
 # Re-exported: the tests read these names through this module.
@@ -734,7 +735,14 @@ def check_expanded_git(command: str, cwd: str) -> None:
             else:
                 break
         if index < len(words) and words[index] in {"push", "commit"}:
-            what = unseen_git(" ".join(["git"] + words[index:]))
+            # git's own words, as the shell hands them over (a quoted `;` in a value is no cut),
+            # and the text reading as well
+            if words[index] == "commit":
+                what = "`git commit`"
+            elif any(push_marker(word) for word in words[index + 1 :]):
+                what = "`git push` with a force or delete flag"
+            else:
+                what = unseen_git(" ".join(["git"] + words[index:]))
             if what:
                 raise block(
                     f"this command's name is an expansion the guard cannot resolve, and its words "
@@ -765,12 +773,14 @@ def check_unseen_script(command: str, cwd: str, environ: dict[str, str]) -> None
 def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
     """Raise Blocked when `command`, run in `cwd`, breaks a guarded rule."""
     _WALKED.clear()
-    _WALKING[0] = True
+    guard_base.GIT_OUTPUTS.clear()
+    _WALKING[0] = guard_base.CACHING[0] = True
     try:
         evaluate_walked(command, cwd, environ)
     finally:
-        _WALKING[0] = False
+        _WALKING[0] = guard_base.CACHING[0] = False
         _WALKED.clear()
+        guard_base.GIT_OUTPUTS.clear()
 
 
 def evaluate_walked(command: str, cwd: str, environ: dict[str, str]) -> None:

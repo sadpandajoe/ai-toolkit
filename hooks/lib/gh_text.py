@@ -214,7 +214,11 @@ def unseen_git(text: str) -> str | None:
         joined = shell_tokens.expand_ansi_c(joined)  # `$'+main'`
     except ValueError:
         pass
-    for piece in COMMAND_SEPARATOR.split(shell_tokens.unquoted(joined)):
+    # cut where the shell separates commands, quotes honoured (`-o 'a;b' --force` is one command),
+    # and, as before, at every separator once the quotes are gone: either reading may block
+    pieces = [shell_tokens.unquoted(piece) for piece in quoted_split(joined)]
+    pieces += COMMAND_SEPARATOR.split(shell_tokens.unquoted(joined))
+    for piece in pieces:
         push = shell_tokens.words_in_order(piece, shell_tokens.WORD_GIT, shell_tokens.WORD_PUSH)
         if push and any(push_marker(word) for word in piece[push.end() :].split()):
             return "`git push` with a force or delete flag"

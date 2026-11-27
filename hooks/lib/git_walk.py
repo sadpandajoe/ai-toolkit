@@ -19,6 +19,7 @@ from gh_text import quoted_split
 SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "while", "until", "for", "select", "case", "!", "{"}
 # Wrappers that run the rest of the line as a command, after their own options.
 RUNNING_WRAPPERS = {"timeout", "nohup", "xargs", "nice", "ionice", "stdbuf", "exec"}
+LATER_GIT_LIMIT = 8  # later `git` words of one command read as the command it may run
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 
 
@@ -340,6 +341,17 @@ def parse_git_actions(
             shell_workdir if shell is SAME else shell,
         )
 
+    def later_git(start: int) -> list[dict]:
+        """The git actions of every later `git` word of the command at token `start` (at most
+        `LATER_GIT_LIMIT`), each read as the command from there to the end of the command."""
+        end = segment_end_index(tokens, start + 1)
+        found: list[dict] = []
+        starts = [j for j in range(start + 1, end) if is_git_executable(tokens[j])][:LATER_GIT_LIMIT]
+        for j in starts:
+            if j + 1 < end:
+                found.extend(recurse(tokens[j:end], current_workdir, dict(env_assignments)))
+        return found
+
     def span_tail(start: int) -> list[dict]:
         """The git actions of the words after the backtick span that opens at token `start`."""
         closing = next((j for j in range(start + 1, count) if tokens[j].count("`") % 2), None)
@@ -601,6 +613,11 @@ def parse_git_actions(
                 # `` `echo x` git push``: the span is walked as it was, and the words after it
                 # are read as a command of their own as well
                 actions.extend(span_tail(i))
+            if command_start and shell_tokens.head_name(token) not in shell_tokens.INERT_HEADS:
+                # `setsid git push`, `caffeinate git push`, `flock /tmp/x git push`: behind a
+                # command the guard does not know, a later `git` word may be the command it runs.
+                # Each is read as one too; a printing command (`echo git push`) runs none
+                actions.extend(later_git(i))
             command_start = False
             i += 1
             continue

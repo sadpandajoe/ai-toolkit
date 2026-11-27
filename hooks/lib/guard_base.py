@@ -42,15 +42,29 @@ def git_base(action: dict) -> tuple[list[str], str | None]:
     return git_args, action["workdir"]
 
 
+GIT_OUTPUTS: dict[tuple, str | None] = {}  # one command's git queries, while `CACHING` is on
+CACHING = [False]
+
+
 def git_output(action: dict, args: list[str]) -> str | None:
     git_args, workdir = git_base(action)
     if workdir is None:
         return None
+    key = (tuple(git_args + args), workdir, tuple(sorted(action.get("env", {}).items())))
+    if CACHING[0] and key in GIT_OUTPUTS:
+        return GIT_OUTPUTS[key]  # the same query in one command reads the same repository
+    output = run_git(git_args + args, workdir, action.get("env", {}))
+    if CACHING[0]:
+        GIT_OUTPUTS[key] = output
+    return output
+
+
+def run_git(argv: list[str], workdir: str, extra_env: dict) -> str | None:
     env = os.environ.copy()
-    env.update(action.get("env", {}))
+    env.update(extra_env)
     try:
         result = subprocess.run(
-            git_args + args,
+            argv,
             cwd=workdir,
             env=env,
             text=True,

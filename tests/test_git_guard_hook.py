@@ -1884,6 +1884,14 @@ class GitGuardHookTests(unittest.TestCase):
             self.assertEqual(expected, git_guard.has_unsafe_git_substitution(text), repr(text))
         self.assertGreater(found, 200)  # the sample has both outcomes
 
+    def test_many_git_commands_in_one_command_stay_fast(self) -> None:
+        # each push asked git the same questions again: about 25 ms each, past the deadline at 3,000
+        for text in ("git push origin feature; " * 3000, "x git push origin feature; " * 3000):
+            with self.subTest(text=text[:20]):
+                started = time.monotonic()
+                git_guard.evaluate(text, str(self.feature), {})
+                self.assertLess(time.monotonic() - started, 10.0)
+
     def test_long_runs_of_words_that_may_expand_to_nothing_stay_fast_and_block(self) -> None:
         # one reading per empty word nested past Python's recursion limit, and every `$(` read
         # the command's words again from its first
@@ -2569,6 +2577,18 @@ class GitGuardHookTests(unittest.TestCase):
                 ("${{X}}git push --force origin main", self.clean, 2),
                 ("git $X push --force origin main", self.clean, 2),
                 ("$GIT status", self.clean, 0),
+                # git's own words: a quoted separator in a value cuts nothing
+                ("$GIT push -o 'a;b' --force origin main", self.clean, 2),
+                ("$(which git) push -o 'a;b' --force origin main", self.clean, 2),
+                ("$GIT push -o 'a&b' --delete origin main", self.clean, 2),
+                ("$GIT push origin feature -o 'a;b'", self.clean, 0),
+                # behind a command the guard does not know, a later `git` may be what it runs
+                ("setsid git push --force origin main", self.clean, 2),
+                ("caffeinate git push --force origin main", self.clean, 2),
+                ("flock /tmp/x git push --force origin main", self.clean, 2),
+                ("caffeinate -i git commit --no-verify -m x", self.clean, 2),
+                ("echo git push --force origin main", self.clean, 0),
+                ("brew list git && git status", self.clean, 0),
                 # an assignment's backtick span, and nesting past the limit, fail closed
                 ("a=`b c` git push --force origin main", self.feature, 2),
                 ("a=`b c` git commit --no-verify -m x", self.clean, 2),
@@ -2700,6 +2720,7 @@ class GitGuardHookTests(unittest.TestCase):
             "ash <<< 'gh pr merge 12'",
             heredoc.format(shell="bash", body="git com\\\nmit --no-verify -m x"),
             heredoc.format(shell="bash", body="git push origin $'+main'"),
+            heredoc.format(shell="bash", body="git push -o 'a;b' --force origin main"),
             "echo 'git push --force origin main' | docker exec -i app bash",
             heredoc.format(shell="bash -euo pipefail", body="gh pr merge 12"),
             "bash /dev/fd/3 3<<< 'gh pr merge 12'",
