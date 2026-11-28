@@ -15,9 +15,11 @@ from typing import Iterator
 import shell_tokens
 from guard_base import SEPARATORS, block, config_pair, git_output, is_git_executable
 from gh_text import quoted_split
+import shell_dirs
+import shell_lex
 import shell_payloads
 import shell_values
-from git_rules import ENV_CLEARED, SUBCOMMAND_UNREADABLE, UNSET, VALUES_UNREADABLE, unread_config_source
+from git_rules import BRACES_UNREADABLE, ENV_CLEARED, GIT_UNREADABLE_MAYBE, SUBCOMMAND_UNREADABLE, UNSET, VALUES_UNREADABLE, unread_config_source
 
 
 SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "while", "until", "for", "select", "case", "!", "{"}
@@ -25,6 +27,7 @@ SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "while", "until", "for", "
 RUNNING_WRAPPERS = {"timeout", "nohup", "xargs", "nice", "ionice", "stdbuf", "exec"}
 LATER_GIT_LIMIT = 16  # later words of one command read as the command it may run
 VALUE_READING_LIMIT = 32  # readings one command's assigned values may make (`shell_values`)
+MAYBE_GIT_LIMIT = 16  # expansions in one text read as git (`parse_git_actions`' maybe-git reading)
 GIT_GLOBAL_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"}
 STARTS_COMMANDS = {"env", "sudo", "doas", "eval", "command", "builtin", "nohup", "timeout", "nice", "xargs", "exec"}
 GIT_COMMANDS = shell_tokens.GIT_ENTRY_POINTS | {"stage", "send-pack"}
@@ -69,6 +72,14 @@ def may_run_git(tokens: list[str], j: int, end: int) -> bool:
         return k < end and (tokens[k] in GIT_COMMANDS or defines_alias or expanded)
     if name.startswith("git-") and name[4:] in GIT_COMMANDS:
         return True
+    if "$" in word or "`" in word:
+        # `setsid $GIT push`, `svn --username "$U" commit`: an expansion a git command name follows
+        # may be git (read by git's own rules: `parse_git_actions`' maybe-git reading)
+        k = j + 1
+        while k < end and tokens[k].startswith("-"):
+            k += 2 if tokens[k] in GIT_GLOBAL_VALUE else 1
+        names = git_command_names() or GIT_COMMANDS
+        return k < end and tokens[k] in names
     rest = tokens[j + 1 : end]
     if name in shell_tokens.SHELLS or shell_tokens.SHELL_NAME.fullmatch(name):
         return any(shell_tokens.is_shell_command_flag(t) for t in rest) and any(shell_tokens.WORD_GIT.search(t) for t in rest)
@@ -430,6 +441,7 @@ def parse_git_actions(
     _pieces: bool = False,
     _aliases_open: tuple[str, ...] = (),
     inherited_values: dict | None = None,
+    _braced: bool = False,
 ) -> list[dict]:
     """Every git invocation in `tokens`, in order, with its effective context.
 
@@ -458,7 +470,14 @@ def parse_git_actions(
     wrapped = False  # the command word was reached through a wrapper (`exec`, `sudo`, `nohup`, ...)
     count = len(tokens)
     i = 0
+    # the end of the segment each token is in, found once (the readings below ask for it often)
+    ends = [count] * (count + 1)
+    for back in range(count - 1, -1, -1):
+        ends[back] = back if tokens[back] in SEPARATORS else ends[back + 1]
     flagged = [False]  # a segment's later `-c` strings were read (once per segment)
+
+    def seg_end(start: int) -> int:
+        return ends[start] if start < count else count
 
     def shell_dir() -> str | None:
         return current_workdir if shell_workdir is SAME else shell_workdir  # type: ignore[return-value]
@@ -490,6 +509,82 @@ def parse_git_actions(
         for j in starts:
             found.extend(recurse(tokens[j:end], current_workdir, dict(env_assignments)))
         return found
+
+    maybe_starts = [0]
+
+    def maybe_git(start: int) -> list[dict]:
+        """The command at token `start`, whose command word is an expansion the guard cannot
+        resolve (`$GIT`, a variable set to what it cannot read), read as git (`maybe_git_words`)."""
+        if maybe_starts[0] >= MAYBE_GIT_LIMIT:
+            return maybe_git_words([], tokens[start])  # past the cap: counted, nothing read
+        return maybe_git_words(list(tokens[start + 1 : seg_end(start + 1)]), tokens[start])
+
+    def substitution_head(start: int) -> list[dict]:
+        """`$(which git) push ...`: the lexer splits a `$(...)` in command position into its own
+        tokens, so the words after its `)` are read as git's (`maybe_git_words`)."""
+        depth_count, close = 0, None
+        for index in range(start + 1, count):
+            if tokens[index] == "(":
+                depth_count += 1
+            elif tokens[index] == ")":
+                depth_count -= 1
+                if depth_count == 0:
+                    close = index
+                    break
+        if close is None or close + 1 >= count or tokens[close + 1] in SEPARATORS:
+            return []
+        end = segment_end_index(tokens, close + 1)
+        return maybe_git_words(list(tokens[close + 1 : end]), "$(" + " ".join(tokens[start + 2 : close]) + ")")
+
+    def maybe_git_words(words: list[str], head: str) -> list[dict]:
+        """`words`, the words after a command word the guard cannot resolve (`head`), read as
+        git's: its actions are git's own, in command order and with this command's environment, so
+        they block only what a literal `git` would. A reading whose subcommand is no git command,
+        that runs in a known directory outside any repository (git fails there), or whose
+        subcommand it cannot read is dropped. Past `MAYBE_GIT_LIMIT` of them, one unreadable action."""
+        maybe_starts[0] += 1
+        if maybe_starts[0] > MAYBE_GIT_LIMIT:
+            return [unreadable_action(GIT_UNREADABLE_MAYBE)] if maybe_starts[0] == MAYBE_GIT_LIMIT + 1 else []
+        if not words:
+            return []
+        found = parse_git_actions(
+            ["git"] + words, current_workdir, depth + 1, dict(env_assignments), dict(shell_vars),
+            dict(shell_functions), dict(inherited_alias_map), parens_untrusted, shell_dir(), inherited_values=values,
+        )
+        names = git_command_names()
+        kept = []
+        for action in found:
+            if action.get("unreadable") or (names is not None and action.get("subcommand") not in names):
+                continue
+            workdir = action.get("workdir")
+            located = action.get("git_dir") or "GIT_DIR" in action.get("env", {})
+            if workdir is not None and not located and shell_dirs.git_toplevel(workdir) is None:
+                continue
+            kept.append({**action, "maybe_git": action.get("maybe_git") or head})
+        return kept
+
+    def braced_segment(start: int) -> list[dict]:
+        """The git actions of the segment at token `start` with its brace words expanded in bash's
+        order (`git {push,origin} --force main`, `{git,push} --force origin main`), read as a
+        command of its own as well; past the expansion limit, one unreadable action when git is
+        in it."""
+        if not getattr(tokens, "braces", True):
+            return []  # every brace is quoted (`-f query='{ a, b }'`): bash expands none
+        end = segment_end_index(tokens, start)
+        segment = tokens[start:end]
+        if not any(shell_lex.has_brace(word) for word in segment):
+            return []
+        expanded = shell_lex.expand_words(segment)
+        if expanded is None:
+            if shell_tokens.WORD_GIT.search(" ".join(segment)):
+                return [unreadable_action(BRACES_UNREADABLE)]
+            return []
+        if expanded == segment:
+            return []
+        return parse_git_actions(
+            expanded, current_workdir, depth + 1, dict(env_assignments), dict(shell_vars), dict(shell_functions),
+            dict(inherited_alias_map), parens_untrusted, shell_dir(), inherited_values=values, _braced=True,
+        )
 
     def unreadable_action(why: str) -> dict:
         return {**new_action(None, {}, {}, True), "subcommand": "push", "unreadable": True, "unreadable_why": why}
@@ -523,8 +618,7 @@ def parse_git_actions(
         if flagged[0]:
             return []  # this segment's strings were read from its first word
         flagged[0] = True
-        end = segment_end_index(tokens, start + 1)
-        texts = shell_payloads.flag_payloads(shell_tokens.drop_redirections(tokens[start + 1 : end]))
+        texts = shell_payloads.flag_payloads(shell_tokens.drop_redirections(tokens[start + 1 : seg_end(start + 1)]))
         if texts is None:  # past the cap, with git or gh in the rest: one unreadable action, which blocks
             return [{**new_action(None, {}, {}, True), "subcommand": "push", "unreadable": True}]
         found: list[dict] = []
@@ -540,11 +634,18 @@ def parse_git_actions(
         tail_end = segment_end_index(tokens, closing + 1)
         if tail_end <= closing + 1:
             return []
-        return recurse(tokens[closing + 1 : tail_end], current_workdir, dict(env_assignments))
+        tail = list(tokens[closing + 1 : tail_end])
+        found = recurse(tail, current_workdir, dict(env_assignments))
+        if tokens[start].startswith("`"):
+            # `` `which git` push ...``: the span stands where the command word does, so it may be git
+            found += maybe_git_words(tail, " ".join(tokens[start : closing + 1]))
+        return found
 
     while i < count:
         token = tokens[i]
         current_workdir = model.at(i)
+        if not _braced and token not in SEPARATORS and (i == 0 or tokens[i - 1] in SEPARATORS):
+            actions.extend(braced_segment(i))
         if token in SEPARATORS:
             command_start = True
             wrapped = False
@@ -792,7 +893,7 @@ def parse_git_actions(
                 # one word, the one `shell_vars` holds, is read by the readings below
                 read = [value for value in sorted(head_value.candidates) if value != held or WHITESPACE.search(value)]
                 if read:
-                    rest = [shlex.quote(word) for word in tokens[i + 1 : segment_end_index(tokens, i + 1)]]
+                    rest = [shlex.quote(word) for word in tokens[i + 1 : seg_end(i + 1)]]
                 for candidate in read:
                     actions.extend(recurse(shell_tokens_or_empty(" ".join([candidate] + rest)), current_workdir, dict(env_assignments)))
             if head_value.unknown:
@@ -870,6 +971,15 @@ def parse_git_actions(
             continue
 
         if not (command_start and (is_git_executable(token) or variable_git)):
+            if command_start and token == "$" and i + 1 < count and tokens[i + 1] == "(":
+                actions.extend(substitution_head(i))  # `$(which git) send-pack ...`: it may be git
+            elif (
+                command_start
+                and ("$" in token or "`" in token)
+                and not (token.startswith("`") and token.count("`") % 2)  # a span `span_tail` reads past
+                and not (head_value is not None and head_value.candidates and not head_value.unknown)
+            ):
+                actions.extend(maybe_git(i))  # `$GIT push`, `"$(command -v git)" push`: it may be git
             if command_start and shell_tokens.may_vanish(token) and i + 1 < count and tokens[i + 1] not in SEPARATORS:
                 # `$X git push`, `` `true` git push``: a word that expands to nothing leaves the
                 # next one the command. Read so, which only adds: as a command of its own the
@@ -987,8 +1097,10 @@ def parse_git_actions(
                 action["index"] = positions[j]
                 action["args"] = words[j + 1 :]
                 actions.extend(subcommand_value_readings(opt, words[j + 1 :], action))
+                guessed = ("$" in opt or "`" in opt) and shell_var_name(opt) not in shell_vars
                 for subcommand in subcommand_readings(opt, shell_vars):
-                    actions.append({**action, "subcommand": subcommand})
+                    # (`guessed`: an expansion read as push or commit, so either check runs)
+                    actions.append({**action, "subcommand": subcommand, "guessed": guessed})
                 break
 
         command_start = False
@@ -1071,12 +1183,14 @@ def expand_configured_alias(action: dict) -> list[dict]:
         return []
 
     alias_tokens = shell_tokens_or_empty(alias_value)
+    action["_alias"] = "git"  # (read by `git_guard.check_actions`: the alias's own name has no effects)
     if not alias_tokens:
         return []
     shell_alias = False
     if alias_tokens[0].startswith("!"):
         alias_tokens[0] = alias_tokens[0][1:]
         shell_alias = True
+        action["_alias"] = "shell"  # a shell runs it: anything may change
     if alias_tokens and not shell_alias and not is_git_executable(alias_tokens[0]):
         alias_tokens = ["git"] + alias_tokens
 

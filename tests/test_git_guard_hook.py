@@ -29,6 +29,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hooks" / "lib"))
 import git_guard  # noqa: E402
+import git_effects  # noqa: E402
+import guard_base  # noqa: E402
 import gh_args  # noqa: E402
 import shell_tokens  # noqa: E402
 sys.path.pop(0)
@@ -662,6 +664,9 @@ PR_PUBLISH_ALLOW = (
 
 # Blocked whatever they run: the command sets, appends to or exports an override.
 OVERRIDE_ASSIGNMENT_BLOCK = (
+    # brace expansion builds the name (the segment is read expanded too)
+    "env {{AITK_PR_READY,X}}=1 ./ship.sh",
+    "export {{AITK_PR_READY,X}}=1; ./ship.sh",
     # a number apart from its operator is the option's value, not a descriptor
     "env -u 1 >/dev/null AITK_PR_READY=1 ./ship.sh",
     # an ANSI-C-quoted name is decoded before the lexer reads it
@@ -767,9 +772,6 @@ OVERRIDE_SCAN_LIMITS = (
     "repeat 1 AITK_PR_READY=1 ./ship.sh",
     "coproc AITK_PR_READY=1 ./ship.sh",
     "declare -n r; r=AITK_PR_READY; declare -x r=1; ./ship.sh",
-    # brace expansion builds the name
-    "env {{AITK_PR_READY,X}}=1 ./ship.sh",
-    "export {{AITK_PR_READY,X}}=1; ./ship.sh",
     # arithmetic and parameter-expansion setters (these export under `set -a`)
     "set -a; (( AITK_PR_READY = 1 )); ./ship.sh",
     "set -a; let SKIP_PRECHECK++; git push",
@@ -3077,6 +3079,292 @@ class GitGuardHookTests(unittest.TestCase):
         five = "; ".join(f"A{n}=a{n}; A{n}=b{n}" for n in range(5)) + "; git push origin " + " ".join(f"$A{n}" for n in range(5))
         git_guard.evaluate(five, str(self.feature), {})
         self.assertLess(time.monotonic() - started, 15)
+
+    def test_brace_words_are_expanded_in_bash_order_in_both_walkers(self) -> None:
+        self.hook_codes(
+            (
+                ("git push origin {{main,--force}}", self.feature, 2),
+                ("git push {{--force,origin}} main", self.feature, 2),
+                ("git {{push,origin}} --force main", self.feature, 2),
+                ("setsid git {{push,origin}} --force main", self.feature, 2),
+                ("git commit {{-n,-m}} x", self.feature, 2),
+                ("git {{commit,--no-verify}} -m x", self.feature, 2),
+                ("{{git,push}} --force origin main", self.feature, 2),
+                ("setsid {{git,push}} --force origin main", self.feature, 2),
+                ("{{gh,pr}} merge 12", self.feature, 2),
+                ("git push origin ma{{i..i}}n --force", self.feature, 2),
+                ("git push origin {{feature,other}}", self.feature, 0),
+                ("git add src/{{a,b}}.py && git commit -m x", self.feature, 0),
+                ("git log --format='{{%h,%s}}'", self.feature, 0),
+                ('git commit -m "{{fix,feat}}: x"', self.feature, 0),
+                ("echo {{a,b}}", self.feature, 0),
+                ("mkdir -p src/{{a,b}} && git add src && git commit -m x", self.feature, 0),
+                ("git add file{{1..100}}.txt && git commit -m x", self.feature, 0),
+                ("for i in {{1..2000}}; do echo $i; done", self.feature, 0),
+                # a quoted brace is never expanded (a read-only GraphQL query has one with a comma)
+                (
+                    "gh api graphql -f query='query($o: String!, $n: String!) "
+                    "{{ repository(owner: $o, name: $n) {{ id }} }}' -f o=a -f n=b",
+                    self.feature,
+                    0,
+                ),
+                ('git push origin "{{main,--force}}"', self.feature, 0),
+            )
+        )
+
+    def test_brace_verdicts_do_not_depend_on_the_hash_seed(self) -> None:
+        others = ",".join(f"b{n}" for n in range(60))
+        commands = (
+            f"git push -f origin {{{others},main}}",
+            f"git add -f {{{others},PROJECT.md}} && git commit -m x",
+        )
+        code = (
+            "import json, sys; sys.path.insert(0, sys.argv[1]); import git_guard\n"
+            "out = []\n"
+            "for command in json.loads(sys.argv[3]):\n"
+            "    try:\n"
+            "        git_guard.evaluate(command, sys.argv[2], {})\n"
+            "        out.append(0)\n"
+            "    except git_guard.Blocked:\n"
+            "        out.append(2)\n"
+            "print(json.dumps(out))\n"
+        )
+        for seed in range(6):
+            with self.subTest(seed=seed):
+                result = subprocess.run(
+                    [sys.executable, "-c", code, str(ROOT / "hooks" / "lib"), str(self.clean), json.dumps(commands)],
+                    env={**base_env(), "PYTHONHASHSEED": str(seed)}, capture_output=True, text=True, check=True,
+                )
+                self.assertEqual([2, 2], json.loads(result.stdout), result.stderr)
+
+    def test_brace_expansion_stays_fast_and_fails_closed_past_its_limit(self) -> None:
+        started = time.monotonic()
+        word = "x" + "{a,b}" * 12  # 4,096 words, past the limit
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate(f"git push -f origin {word}", str(self.feature), {})
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate(f"setsid {word} gh pr merge 12", str(self.feature), {})
+        git_guard.evaluate(f"echo {word}", str(self.feature), {})
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_an_expansion_that_may_be_git_is_read_by_gits_own_rules(self) -> None:
+        outside = Path(self.temporary.name)  # a directory in no repository
+        self.hook_codes(
+            (
+                # behind a wrapper's option, an unknown head, or a word that cannot vanish
+                ("exec -a echo $GIT push --force origin main", self.feature, 2),
+                ("sudo --prompt echo $GIT push --force origin main", self.feature, 2),
+                ("x $A $B/y $GIT push --force origin main", self.feature, 2),
+                ("setsid $GIT push --force origin main", self.feature, 2),
+                # the rules a literal git gets: send-pack, prune, an inline alias, a subcommand variable
+                ("$(which git) send-pack --force origin main", self.feature, 2),
+                ("$(which git) push --prune origin 'refs/heads/*:refs/heads/*'", self.feature, 2),
+                ("export V='commit --no-verify'; $(which git) --config-env=alias.x=V x -m msg", self.feature, 2),
+                ("$(which git) $P --force origin main", self.feature, 2),
+                ("$(which git) commit --no-verify -m x", self.feature, 2),
+                ("`which git` commit --no-verify -m x", self.feature, 2),
+                ('"$(command -v git)" commit -n -m x', self.feature, 2),
+                # in command order, with the command's own staging and environment
+                ("git add -f PROJECT.md && $GIT commit -m x", self.clean, 2),
+                ("$GIT add -f PROJECT.md && $GIT commit -m x", self.clean, 2),
+                ("HOME=/tmp/h $GIT commit -m x", self.feature, 2),
+                # the text a shell reads unseen, read as commands too
+                ("bash <<< 'git send-pack --force origin main'", self.feature, 2),
+                ("echo 'git send-pack --force origin main' | sh", self.feature, 2),
+                # a commit a literal git commit would make passes
+                ("$GIT commit -m x", self.feature, 0),
+                ("$GIT commit -a -m x", self.feature, 0),
+                ('svn --username "$U" commit -m x', self.feature, 0),
+                ('hg -R "$R" commit -m x', self.feature, 0),
+                ('make -C "$DIR" commit', self.feature, 0),
+                ('svn --username "$U" commit -m x', outside, 0),
+                ('make -C "$DIR" commit', outside, 0),
+                # no git command name after it: nothing is read
+                ("$EDITOR file", self.feature, 0),
+                ('"$VENV/bin/python" -m pytest -n auto', self.feature, 0),
+                ("$(npm bin)/eslint .", self.feature, 0),
+                ("`which gh` pr create --draft --fill", self.verified, 0),
+                # a guessed reading with words git would not take is probably not git: no option
+                # rule and no effects (`$X` here is the environment's, `log` perhaps)
+                ("git $X --oneline -5", self.feature, 0),
+                ("`true` $(command -v gh) --repo=o/r pr edit 12 --fill", self.feature, 0),
+                ("P=commit; git $P --newfangled -m x", self.feature, 2),
+                ("$NPM add lodash && git commit -m x", self.feature, 0),
+                ("bash <<'EOF'\nnpm test\nEOF", self.feature, 0),
+                ("setsid " + " ".join(f"$V{n}" for n in range(40)), self.feature, 0),
+            )
+        )
+
+    def test_the_maybe_git_reading_stays_fast(self) -> None:
+        started = time.monotonic()
+        git_guard.evaluate("setsid " + " ".join(f"$V{n}" for n in range(500)), str(self.feature), {})
+        git_guard.evaluate("bash <<'EOF'\n" + "echo line\n" * 1000 + "EOF", str(self.feature), {})
+        # past 16 expansions that a git command name follows, the command blocks
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate("setsid " + " ".join(f"$G{n} status" for n in range(17)), str(self.feature), {})
+        self.assertLess(time.monotonic() - started, 15)
+
+    def test_what_git_changes_on_the_way_is_read_from_a_table_of_what_is_neutral(self) -> None:
+        self.hook_codes(
+            (
+                # the branch changed by other commands
+                ("git branch -M main && git push -f origin HEAD", self.feature, 2),
+                ("git branch --mov main && git push -f origin HEAD", self.feature, 2),
+                ("git symbolic-ref HEAD refs/heads/main && git push --force", self.feature, 2),
+                ("git rebase origin/main main && git push -f origin HEAD", self.feature, 2),
+                ("git branch zzz-new && git checkout zzz-new && git push -f origin HEAD", self.feature, 2),
+                ("git branch -u origin/main && git push --force", self.feature, 2),
+                # staging the words do not show
+                ("printf 'PROJECT.md\\n' | git add -f --pathspec-from-file=- && git commit -m x", self.feature, 2),
+                ("echo PROJECT.md | git update-index --add --stdin && git commit -m x", self.feature, 2),
+                ("git mv README.md PROJECT.md && git commit -m x", self.feature, 2),
+                ("git fetch origin other:other && git checkout other PROJECT.md && git commit -m x", self.feature, 2),
+                # commits that are not `git commit`
+                ("git add -A && git rebase --continue", self.clean, 2),
+                ("git add -f PROJECT.md && git merge --continue", self.clean, 2),
+                ("git add -f PROJECT.md && git commit-tree $(git write-tree) -p HEAD -m x", self.clean, 2),
+                # configuration written or given inline
+                ("git config core.hooksPath /dev/null && git commit -m x", self.feature, 2),
+                ("git config core.hooksPath /dev/null", self.feature, 2),
+                ("git config --unset core.hooksPath", self.feature, 2),
+                ("git config commit.gpgsign false", self.feature, 2),
+                ("git -c core.hooksPath=/dev/null merge feature", self.feature, 2),
+                ("git pull --no-verify", self.feature, 2),
+                ("git am -n x.patch", self.feature, 2),
+                ("git config remote.my.fork.push +refs/heads/main:refs/heads/main && git push my.fork", self.feature, 2),
+                ("git config branch.feature.merge refs/heads/main && git -c push.default=upstream push -f", self.feature, 2),
+                # where a push with no refspec goes, set by the command
+                ("git -c push.default=matching push --force origin", self.feature, 2),
+                ("git -c remote.origin.push=HEAD:main push -f", self.feature, 2),
+                ("git -c push.default=upstream -c branch.feature.merge=refs/heads/main push --force", self.feature, 2),
+                ("git --config-env=remote.origin.push=V push origin", self.feature, 2),
+                ('git -c "remote.origin.push=$SPEC" push origin', self.feature, 2),
+                # hook skips by environment
+                ("HUSKY=0 git commit -m x", self.feature, 2),
+                ("SKIP=lint git commit -m x", self.feature, 2),
+                # ordinary flows
+                ("git fetch && git rebase origin/main && git push --force-with-lease", self.feature, 0),
+                ("git rebase -i --autosquash origin/main", self.feature, 0),
+                ("git commit --fixup HEAD~1", self.feature, 0),
+                ("git push -u origin HEAD", self.feature, 0),
+                ("git checkout -b feat && git add -A && git commit -m x", self.feature, 0),
+                ("git status && git commit -m x", self.feature, 0),
+                ("git diff --cached && git commit -m x", self.feature, 0),
+                ("git reset HEAD~1 && git add -A && git commit -m x", self.feature, 0),
+                ("git reset --soft HEAD~1 && git commit -m x", self.feature, 0),
+                ("git checkout origin/main -- README.md && git commit -m x", self.feature, 0),
+                ("git checkout main -- . && git push -f origin HEAD", self.feature, 0),
+                ("git stash && git pull --rebase && git stash pop", self.feature, 0),
+                ("git reset HEAD README.md && git commit -m x", self.feature, 0),
+                ("git rm --cached README.md && git commit -m x", self.feature, 0),
+                ("git mv a.txt b.txt && git commit -m x", self.feature, 0),
+                ("git submodule add https://example.com/x.git lib && git commit -m x", self.feature, 0),
+                ("git lfs track '*.bin' && git add .gitattributes && git commit -m x", self.feature, 0),
+                ("git init && git add . && git commit -m x", self.feature, 0),
+                ("git add a.py && git commit -m a && git add b.py && git commit -m b", self.feature, 0),
+                ("git commit -m a && git commit --amend --no-edit", self.feature, 0),
+                ("git apply fix.patch && git add -A && git commit -m x", self.feature, 0),
+                ("git submodule update --remote && git add lib && git commit -m bump", self.feature, 0),
+                ("git stash drop && git commit -m x", self.feature, 0),
+                ("git merge-base --is-ancestor origin/main HEAD && git push origin feature", self.feature, 0),
+                ("git check-ignore -q PROJECT.md && git commit -m x", self.feature, 0),
+                ("git reflog -5 && git push --force-with-lease", self.feature, 0),
+                ("git switch -c feat --track origin/main && git push -u origin feat", self.feature, 0),
+                ("git branch --set-upstream-to=origin/feat && git push", self.feature, 0),
+                ("git remote rename origin upstream && git push upstream feature", self.feature, 0),
+                ("$KUBECTL apply -f x.yaml && git add -A && git commit -m deploy", self.feature, 0),
+                ("git hash-object -w f && git commit -m x", self.feature, 0),
+                ('git commit -am "fix: thing"', self.feature, 0),
+                ("git -c push.default=current push --force origin feature", self.feature, 0),
+                ("git config --get push.default", self.feature, 0),
+            )
+        )
+
+    def test_a_commit_that_stages_by_itself_is_read(self) -> None:
+        repo = self.make_repo(Path(tempfile.mkdtemp(dir=self.temporary.name)) / "tracked")
+        (repo / "PROJECT.md").write_text("one\n")
+        git(repo, "add", "PROJECT.md")
+        git(repo, "commit", "-q", "-m", "tracked by mistake")
+        (repo / "PROJECT.md").write_text("two\n")
+        hook = repo / ".git" / "hooks" / "post-index-change"
+        marker = repo.parent / "index-changed"
+        hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        hook.chmod(0o755)
+        self.hook_codes(
+            (
+                ("git commit -a -m x", repo, 2),
+                ("git commit --al -m x", repo, 2),
+                ("git commit -m x .", repo, 2),
+                ("git commit -m x PROJECT.md", repo, 2),
+                ("git commit -m x README.md", repo, 0),
+            )
+        )
+        self.assertFalse(marker.exists(), "a guard query wrote the index (post-index-change ran)")
+
+    def test_the_paths_git_stages_are_read_the_way_git_reads_them(self) -> None:
+        base = Path(tempfile.mkdtemp(dir=self.temporary.name))
+        trees = self.make_repo(base / "trees")
+        (trees / "README.md").write_text("a\n")
+        git(trees, "add", "README.md")
+        git(trees, "commit", "-q", "-m", "base")
+        git(trees, "switch", "-q", "-c", "other")
+        (trees / "PROJECT.md").write_text("state\n")
+        git(trees, "add", "-f", "PROJECT.md")
+        git(trees, "commit", "-q", "-m", "state on another branch")
+        git(trees, "switch", "-q", "main")
+        (trees / "list.txt").write_text("PROJECT.md\n")
+        # a path git prints quoted (`core.quotePath`), one outside a `diff.relative` directory,
+        # and one whose newline splits the dry run's line
+        quoted = self.make_repo(base / "quoted")
+        (quoted / ".ai-toolkit").mkdir()
+        (quoted / ".ai-toolkit" / "café.md").write_text("x\n")
+        git(quoted, "add", "-f", ".ai-toolkit/café.md")
+        relative = self.make_repo(base / "relative")
+        (relative / "sub").mkdir()
+        (relative / "PROJECT.md").write_text("x\n")
+        git(relative, "add", "-f", "PROJECT.md")
+        git(relative, "config", "diff.relative", "true")
+        newline = self.make_repo(base / "newline")
+        (newline / ".ai-toolkit").mkdir()
+        (newline / ".ai-toolkit" / "a\nb").write_text("x\n")
+        self.hook_codes(
+            (
+                # globs and pathspec magic, which `git ls-tree` reads literally
+                ("git checkout other -- '*.md' && git commit -m x", trees, 2),
+                ("git checkout other -- ':(icase)project.md' && git commit -m x", trees, 2),
+                ("git restore --staged --source=other 'PROJ*' && git commit -m x", trees, 2),
+                ("git reset other -- '*.md' && git commit -m x", trees, 2),
+                # paths from a file
+                ("git checkout --pathspec-from-file=list.txt other && git commit -m x", trees, 2),
+                ("git reset --pathspec-from-file=list.txt other && git commit -m x", trees, 2),
+                # option values taken for operands
+                ("git submodule add -b main https://example.com/x.git PROJECT.md && git commit -m x", trees, 2),
+                ("git symbolic-ref -m why HEAD refs/heads/main && git push --force", self.feature, 2),
+                # a trailing `--` switches the branch
+                ("git checkout main -- && git push --force", self.feature, 2),
+                ("git commit -m x", quoted, 2),
+                ("git commit -m x", relative / "sub", 2),
+                ("git add -f .ai-toolkit/ && git commit -m x", newline, 2),
+                # what they leave neutral
+                ("git checkout other -- README.md && git commit -m x", trees, 0),
+                ("git checkout other -- && git commit -m x", trees, 0),
+                ("git reset --pathspec-from-file=list.txt && git commit -m x", trees, 0),
+                ("git submodule add -b main https://example.com/x.git vendor/x && git commit -m x", trees, 0),
+                ("git checkout main -- README.md && git push --force", self.feature, 0),
+            )
+        )
+
+    def test_the_guards_queries_never_take_the_commands_inline_config(self) -> None:
+        argv, _workdir = guard_base.git_base({"workdir": "/x", "configs": ["core.fsmonitor=touch m", "alias.x=y"]})
+        self.assertNotIn("-c", argv)
+
+    def test_effect_readers_stay_fast(self) -> None:
+        started = time.monotonic()
+        chain = " && ".join(["git status"] * 200) + " && git push --force-with-lease"
+        git_guard.evaluate(chain, str(self.feature), {})
+        for command in ("checkout", "reset", "rebase", "branch", "commit"):
+            git_effects.read_options(command, ["-q"] * 1000 + ["--no-such-option"] * 1000)
+        self.assertLess(time.monotonic() - started, 20)
 
     def test_git_answers_are_kept_for_one_command_only(self) -> None:
         import guard_base

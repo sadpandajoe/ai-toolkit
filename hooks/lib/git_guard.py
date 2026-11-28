@@ -261,9 +261,10 @@ import shell_tokens
 import shell_values
 import verify_record
 from guard_base import Blocked, block, is_git_executable
-from git_rules import check_commit, check_push, check_speculative, is_protected_path, long_option_prefix, own_args, paths_added, update_index_paths
+import git_effects
+from git_rules import PUSH_DEST_KEY, check_commit, check_committed_index, check_push, check_speculative, config_value_false, short_commit_option_has_no_verify, is_protected_path, long_option_prefix, own_args, paths_added, update_index_paths
 from gh_text import COMMAND_SEPARATOR, push_marker, unresolved_gated, unseen_git, untrusted_pieces, untrusted_text_verbs
-from git_walk import GIT_GLOBAL_VALUE, expand_configured_alias, has_unsafe_git_substitution, parse_git_actions
+from git_walk import GIT_GLOBAL_VALUE, expand_configured_alias, git_command_names, has_unsafe_git_substitution, parse_git_actions
 
 # Re-exported: the tests read these names through this module.
 from git_rules import STATE_FILES, resolve_push_option  # noqa: F401
@@ -719,8 +720,9 @@ def unseen_texts(command: str, cwd: str) -> list[str]:
 
 def check_expanded_git(command: str, cwd: str) -> None:
     """A command name that is an expansion the guard cannot resolve (`$GIT push`, `$(which git)
-    push`, `"$(command -v git)" push`) may be git: its words, read as git's, block when they push
-    with a force or delete flag or commit (`unseen_git`)."""
+    push`, `"$(command -v git)" push`) may be git: its words, read as git's, block when they define
+    an alias or push with a force, delete or no-verify flag (`unseen_git`). A commit behind one is
+    the walker's to read, by git's own rules (`git_walk`'s maybe-git reading)."""
     if "$" not in command and "`" not in command:
         return
     for found in walk_commands(command, cwd):
@@ -729,48 +731,51 @@ def check_expanded_git(command: str, cwd: str) -> None:
         argv = shell_tokens.drop_redirections(found.argv)
         # the command word, or, behind a command that is not a printing one, any later word
         # (`setsid $GIT push`)
-        printing = shell_tokens.head_name(argv[0]) in shell_tokens.INERT_HEADS if argv else True
+        # (behind a wrapper's option the head may be its value: `exec -a echo $GIT push`)
+        printing = shell_tokens.head_name(argv[0]) in shell_tokens.INERT_HEADS and not found.wrapped if argv else True
         for position, head in enumerate(argv):
             if is_git_executable(head) or (position and printing):
                 break  # from a `git` word on, the walker reads git's own words
-            follows_expansion = position and ("$" in argv[position - 1] or "`" in argv[position - 1])
+            follows_expansion = position and shell_tokens.may_vanish(argv[position - 1])
             if ("$" in head or "`" in head) and not follows_expansion:
-                # one reading per run of expansions: the first one's reads past the rest (`$X $Y push`)
-                expanded_git_words(argv[position + 1 :])
+                # one reading per run of words that may vanish: the first one's reads past the
+                # rest (`$X $Y push`), and a word that cannot vanish starts its own (`x $A $B/y $GIT`)
+                expanded_git_words(argv[position + 1 :], head)
 
 
-def expanded_git_words(words: list[str]) -> None:
-    """Block when `words`, read as the words of git behind an expansion, define an alias
-    (`-c alias.x=...`), or push with a force, delete or no-verify flag, or commit."""
+def expanded_git_words(words: list[str], head: str = "") -> None:
+    """Block when `words`, read as the words of git behind the expansion `head`, define an alias
+    (`-c alias.x=...`), or push with a force, delete or no-verify flag."""
+    if head == shell_tokens.SUBSTITUTION_WORD:
+        head = "$(...)"  # the walker's stand-in for a command substitution, not what was written
     index = 0
     while index < len(words):
         word = words[index]
         if word in GIT_GLOBAL_VALUE:
             if word == "-c" and words[index + 1 : index + 2] and words[index + 1].lower().startswith("alias."):
-                raise block(EXPANDED_GIT.format(what="an inline alias (`-c alias.`)"))
+                raise block(EXPANDED_GIT.format(word=head, what="an inline alias (`-c alias.`)"))
             index += 2
         elif word.startswith("-") or shell_tokens.may_vanish(word):
             index += 1
         else:
             break
-    if index >= len(words) or words[index] not in {"push", "commit"}:
+    if index >= len(words) or words[index] != "push":
         return
     # git's own words, as the shell hands them over (a quoted `;` in a value is no cut), and the
     # text reading as well
-    if words[index] == "commit":
-        what = "`git commit`"
-    elif any(push_marker(word) for word in words[index + 1 :]):
+    if any(push_marker(word) for word in words[index + 1 :]):
         what = "`git push` with a force, delete or no-verify flag"
     else:
         what = unseen_git(" ".join(["git"] + words[index:]))
-    if what:
-        raise block(EXPANDED_GIT.format(what=what))
+    if what and "push" in what:
+        raise block(EXPANDED_GIT.format(word=head, what=what))
 
 
 EXPANDED_GIT = (
-    "this command's name is an expansion the guard cannot resolve, and its words read as {what}. "
-    "Run git by its name, so the guard can check it."
+    "`{word}` is an expansion the guard cannot resolve, and the words after it, read as git's, are "
+    "{what}. Run git by its name, so the guard can check it."
 )
+MAYBE_GIT = "read as git behind the expansion `{word}`: {message}"
 
 
 def gated_in_text(text: str, environ: dict[str, str]) -> str | None:
@@ -791,11 +796,39 @@ def gated_in_text(text: str, environ: dict[str, str]) -> str | None:
 
 def check_unseen_script(command: str, cwd: str, environ: dict[str, str]) -> None:
     """What a shell runs that the guard never reads as commands (`unseen_texts`, here-document
-    bodies included) is read by the rules for text that did not parse (`gated_in_text`)."""
-    for text in unseen_texts(command, cwd):
+    bodies included) is read by the rules for text that did not parse (`gated_in_text`), and, as
+    commands, by git's own rules (`bash <<< 'git send-pack --force origin main'`)."""
+    texts = unseen_texts(command, cwd)
+    for text in texts:
         what = gated_in_text(text, environ)
         if what:
             raise block(UNSEEN_SCRIPT.format(what=what))
+    for text in texts:
+        for piece in unseen_pieces(command) if text == command else [text]:
+            try:
+                piece_tokens = shell_tokens.tokenize(piece)
+            except ValueError:
+                continue
+            try:
+                check_actions(parse_git_actions(piece_tokens, cwd))
+            except Blocked as error:
+                raise block(UNSEEN_READ.format(message=str(error).replace("BLOCKED: ", "", 1))) from None
+
+
+UNSEEN_READ = "a shell in this command runs text the guard read as commands, and in it {message}"
+
+
+def unseen_pieces(command: str) -> list[str]:
+    """What a shell that reads this command's stdin may run, walked as commands: each here-document
+    body, each here-string, and each word with a space (an `echo` or `printf` text piped to it)."""
+    pieces = shell_lex.heredoc_bodies(command)
+    try:
+        tokens = shell_tokens.tokenize(command)
+    except ValueError:
+        return pieces
+    pieces += [tokens[index + 1] for index, token in enumerate(tokens) if token == "<<<" and index + 1 < len(tokens)]
+    pieces += [token for token in tokens if any(char.isspace() for char in token) and token not in pieces]
+    return pieces[:64]
 
 
 UNREAD_VALUE = (
@@ -889,61 +922,154 @@ def evaluate_walked(command: str, cwd: str, environ: dict[str, str]) -> None:
 
 def check_actions(found: list[dict]) -> None:
     """The git rules over one command's git actions, in order: a configured alias is expanded
-    first, then each action is checked with what the earlier ones staged, switched or configured."""
+    first, then each action is checked with what the earlier ones staged, switched or configured,
+    and its effects on the branch, the index and where a push goes are kept for the later ones
+    (`git_effects`)."""
     actions: list[dict] = []
     for action in found:
         if action.get("subcommand") in CHECKED_SUBCOMMANDS:
             actions.append(action)
-        else:
-            actions.extend(expand_configured_alias(action))
-
-    added: list[str] = []
-    switched = remote_config = False
-    for action in actions:
-        subcommand = action.get("subcommand")
-        if action.get("speculative"):
-            check_speculative(action)
             continue
-        args = own_args(action.get("args", []))
-        if subcommand in {"add", "stage"}:
-            added.extend(paths_added(action))
-        elif subcommand == "update-index":
-            added.extend(update_index_paths(action))
-        elif subcommand == "commit":
-            check_commit(action, added)
-        elif subcommand in {"push", "send-pack"}:
-            if remote_config:
-                raise block(
-                    "this command changes a remote's push or mirror configuration before it "
-                    "pushes, so the guard cannot tell what the push sends. Change the "
-                    "configuration and push as separate commands."
-                )
-            check_push({**action, "branch_unknown": True} if switched else action)
-        elif subcommand in {"checkout", "switch"} and switches_branch(subcommand, args):
-            switched = True
-        elif subcommand == "config" and any(REMOTE_PUSH_KEY.match(arg) for arg in args):
-            remote_config = True
-        elif subcommand == "remote" and any(arg.startswith("--mirror") for arg in args):
-            remote_config = True
-        elif subcommand in {"merge", "am", "rebase"} and any(
-            long_option_prefix(arg, "--no-verify", "--no-veri") for arg in args
-        ):
-            raise block(f"git {subcommand} --no-verify skips the hooks the toolkit runs")
+        expanded = expand_configured_alias(action)
+        if action.get("_alias") == "shell":
+            actions.append({**action, "effects_only": True, "effects_unknown": True})
+        elif not action.get("_alias"):
+            actions.append({**action, "effects_only": True})
+        actions.extend(expanded)
 
+    state = {"added": [], "switched": False, "remote_config": False, "index_unknown": None, "destination_unknown": False}
+    names = git_command_names()
+    for action in actions:
+        try:
+            check_action(action, state, names)
+        except Blocked as error:
+            if action.get("maybe_git"):
+                raise block(MAYBE_GIT.format(word=action["maybe_git"], message=str(error).replace("BLOCKED: ", "", 1))) from None
+            raise
+
+
+INDEX_UNKNOWN = (
+    "an earlier git command in this command (`git {subcommand}`) changes the index in a way the guard "
+    "cannot follow, so it cannot tell what this commit includes, and local workflow state files must "
+    "stay out of commits. Run the commit as a command of its own."
+)
+CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l", "get", "list", "--get-color", "--get-colorbool"}
+CONFIG_VALUE_OPTIONS = {"-f", "--file", "--blob", "--type", "--default"}
+
+
+def config_write(args: list[str]) -> tuple[str, str | None] | None:
+    """(key, value) a `git config` writes or unsets (value None), or None for a read."""
+    if any(arg in CONFIG_READS for arg in args):
+        return None
+    words: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in CONFIG_VALUE_OPTIONS:
+            index += 2
+            continue
+        if not arg.startswith("-"):
+            words.append(arg)
+        index += 1
+    if words[:1] in (["set"], ["unset"]):
+        unset = words[0] == "unset"
+        words = words[1:]
+    else:
+        unset = any(arg in {"--unset", "--unset-all"} for arg in args)
+    if not words:
+        return None
+    return words[0], None if unset or len(words) < 2 else words[1]
+
+
+def check_action(action: dict, state: dict, names: frozenset | None) -> None:
+    """One action's rules, given what the earlier actions staged, switched or configured (`state`),
+    then its own effects for the later ones."""
+    subcommand = action.get("subcommand")
+    if action.get("speculative"):
+        check_speculative(action)
+        return
+    args = own_args(action.get("args", []))
+    for raw_config in action.get("configs", []):
+        if raw_config.split("=", 1)[0].lower() == "core.hookspath":
+            raise block(f"git {subcommand} with a core.hooksPath override bypasses the hooks the toolkit runs")
+    effect = git_effects.effects(action, args, names)
+    if (action.get("maybe_git") or action.get("guessed")) and not effect.known:
+        # git or its subcommand an expansion, with words git would not take: probably not git
+        effect = git_effects.Effect()
+    if not action.get("effects_only"):
+        check_subcommand(action, subcommand, args, state)
+    if effect.branch == git_effects.U:
+        state["switched"] = True
+    if effect.index == git_effects.U and state["index_unknown"] is None:
+        state["index_unknown"] = subcommand
+    state["added"].extend(effect.paths)
+    if effect.destination == git_effects.U:
+        state["destination_unknown"] = True
+    if effect.commits in {git_effects.YES, git_effects.U}:
+        check_committed_index(action, state["added"], seen_only=effect.commits == git_effects.U)
+
+
+def check_subcommand(action: dict, subcommand: str | None, args: list[str], state: dict) -> None:
+    if subcommand in {"add", "stage"}:
+        state["added"].extend(paths_added(action))
+    elif subcommand == "update-index":
+        state["added"].extend(update_index_paths(action))
+    elif subcommand == "commit":
+        if state["index_unknown"]:
+            raise block(INDEX_UNKNOWN.format(subcommand=state["index_unknown"]))
+        check_commit(action, state["added"])
+    elif subcommand in {"push", "send-pack"}:
+        if state["remote_config"]:
+            raise block(
+                "this command changes a remote's push or mirror configuration before it "
+                "pushes, so the guard cannot tell what the push sends. Change the "
+                "configuration and push as separate commands."
+            )
+        extra = {"branch_unknown": True} if state["switched"] else {}
+        if state["destination_unknown"]:
+            extra["destination_unknown"] = True
+        check_push({**action, **extra})
+    elif subcommand in {"checkout", "switch"} and switches_branch(subcommand, args):
+        state["switched"] = True
+    elif subcommand == "config":
+        if any(REMOTE_PUSH_KEY.match(arg) for arg in args):
+            state["remote_config"] = True
+        written = config_write(args)
+        if written is not None:
+            key, value = written
+            if key.lower() == "core.hookspath":
+                raise block(
+                    "this writes core.hooksPath, which changes which hooks every later git command runs "
+                    "(the toolkit's hooks are its boundary). Ask the user to change it."
+                )
+            if key.lower() == "commit.gpgsign" and (value is None or config_value_false(value)):
+                raise block("turning commit.gpgsign off violates signing rules")
+            if PUSH_DEST_KEY.match(key) or EXPANSION_WORD.search(key):
+                state["remote_config"] = True
+    elif subcommand == "remote" and any(arg.startswith("--mirror") for arg in args):
+        state["remote_config"] = True
+    elif subcommand in {"merge", "am", "rebase", "pull"} and any(
+        long_option_prefix(arg, "--no-verify", "--no-veri") for arg in args
+    ):
+        raise block(f"git {subcommand} --no-verify skips the hooks the toolkit runs")
+    elif subcommand == "am" and any(short_commit_option_has_no_verify(arg) for arg in args):
+        raise block("git am -n skips the hooks the toolkit runs")
 
 CHECKED_SUBCOMMANDS = {
     "commit", "push", "add", "stage", "update-index", "send-pack", "checkout", "switch", "config",
-    "remote", "merge", "am", "rebase",
+    "remote", "merge", "am", "rebase", "pull",
 }
-REMOTE_PUSH_KEY = re.compile(r"(?i)remote\.[^.]+\.(?:push|mirror)$|push\.")
+REMOTE_PUSH_KEY = re.compile(r"(?i)remote\..+\.(?:push|mirror)$|push\.")
+EXPANSION_WORD = re.compile(r"[$`]")
 
 
 def switches_branch(subcommand: str, args: list[str]) -> bool:
     """Whether `git checkout` or `git switch` with these words may change the branch: anything but
-    a file checkout (`git checkout -- file`, `git checkout <tree> -- file`)."""
+    a file checkout (`git checkout -- file`, `git checkout <tree> -- file`; `checkout main --` is
+    a switch)."""
     if subcommand == "switch":
         return True
-    return "--" not in args and not any(arg in {"-p", "--patch"} for arg in args)
+    return not git_effects.file_checkout(args)
 
 
 def main() -> int:

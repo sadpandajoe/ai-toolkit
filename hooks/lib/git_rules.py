@@ -9,8 +9,9 @@ import re
 
 import shell_tokens
 from shell_dirs import UNKNOWN_PATH
-from shell_lex import residues
-from guard_base import Blocked, SEPARATORS, block, config_pair, git_output
+from shell_lex import brace_expand, residues
+import git_effects
+from guard_base import Blocked, SEPARATORS, block, config_pair, git_output, names
 
 
 # Local workflow state that never belongs in a commit, matched by basename.
@@ -72,16 +73,20 @@ def paths_added(action: dict) -> list[str]:
     tell. A brace word is every path it makes; a path an expansion names is `UNKNOWN_ADDED`."""
     if unread_config_source(action, listing=True):
         return [UNKNOWN_ADDED]  # the dry run cannot see the config this add reads
+    if any(arg.startswith("--pathspec-from-file") for arg in own_args(action.get("args", []))):
+        return [UNKNOWN_ADDED]  # paths from a file or stdin (`--pathspec-from-file=-`)
     args = [alternative for arg in own_args(action.get("args", [])) for alternative in brace_words(arg)]
-    if any(EXPANDED_PATH.search(arg) and not arg.startswith("-") for arg in args):
+    if BRACE_OVERFLOW in args or any(EXPANDED_PATH.search(arg) and not arg.startswith("-") for arg in args):
         return [UNKNOWN_ADDED]  # (a glob is git's to read: its dry run below matches it)
     listed = git_output(action, ["add", "--dry-run", *args])
     if listed is not None:
         found = []
         for line in listed.splitlines():
-            match = re.match(r"^add '(.*)'$", line.strip())
-            if match:
-                found.append(match.group(1))
+            match = re.match(r"^(add|remove) '(.*)'$", line.strip())
+            if not match:
+                return [UNKNOWN_ADDED]  # the dry run prints paths raw: a newline in one splits it
+            if match.group(1) == "add":
+                found.append(match.group(2))
         return found
     # The dry run failed (for example an ignored path without -f): fall back to
     # the literal pathspecs, so a refused add still counts as an attempt; a glob counts
@@ -96,6 +101,8 @@ def update_index_paths(action: dict) -> list[str]:
     if unread_config_source(action, listing=True):
         return [UNKNOWN_ADDED]
     args = own_args(action.get("args", []))
+    if any(arg in {"--stdin", "--index-info"} for arg in args):
+        return [UNKNOWN_ADDED]  # paths from stdin
     found: list[str] = []
     index = 0
     while index < len(args):
@@ -114,6 +121,15 @@ def update_index_paths(action: dict) -> list[str]:
     return found
 
 
+GIT_UNREADABLE_MAYBE = (
+    "this command has more expansions that may be git than the guard reads (16), and one may push "
+    "or commit. Run git by its name."
+)
+BRACES_UNREADABLE = (
+    "a brace word in this git command makes more words than the guard reads (1,024), and one may be "
+    "a push or commit flag or main. Spell the words out."
+)
+BRACE_OVERFLOW = "\ue002"  # a brace word past the expansion limit
 SUBCOMMAND_UNREADABLE = (
     "the guard cannot read which git subcommand `{word}` is (a substitution, an operator form, an "
     "array, the positional parameters after `set`, or a variable this command sets to a value it "
@@ -158,6 +174,77 @@ def check_speculative(action: dict) -> None:
         raise block(SPECULATIVE.format(word=word, subcommand=subcommand, what="force-push or delete main/master"))
 
 
+COMMIT_OPTION_UNKNOWN = (
+    "this `git commit` has an option the guard does not know (it knows git 2.39's), so it cannot tell "
+    "what the commit stages, and local workflow state files must stay out of commits. Spell the "
+    "options as git 2.39 does."
+)
+HOOK_SKIP_ENV = (("HUSKY", lambda value: value.strip() == "0"), ("HUSKY_SKIP_HOOKS", lambda value: bool(value.strip())),
+                 ("SKIP", lambda value: bool(value.strip())))
+
+
+def hook_skip(action: dict, what: str) -> None:
+    """Block a commit or push whose environment tells a hook manager to skip hooks (`HUSKY=0`,
+    `SKIP=lint` for pre-commit)."""
+    env = action.get("env", {})
+    for name, skips in HOOK_SKIP_ENV:
+        if name in env and skips(env[name]):
+            raise block(f"git {what} with `{name}={env[name]}` skips the hooks the toolkit runs")
+
+
+def commit_staging(action: dict, args: list[str]) -> list[str]:
+    """What `git commit` stages by itself: the tracked changes with `-a`, the paths it names
+    (with `-i`/`-o` or alone), `UNKNOWN_ADDED` for `--pathspec-from-file`. An option the guard does
+    not know blocks (`COMMIT_OPTION_UNKNOWN`), except in a reading the guard guessed (git's
+    subcommand an expansion, or git itself one): words git would not take are probably not git's."""
+    options, operands, known = git_effects.read_options("commit", args)
+    if not known:
+        if action.get("guessed") or action.get("maybe_git"):
+            return []
+        raise block(COMMIT_OPTION_UNKNOWN)
+    found: list[str] = []
+    if "pathspec-from-file" in options:
+        found.append(UNKNOWN_ADDED)
+    if "all" in options:
+        listed = names(git_output(action, ["diff", "--name-only", "-z"]))
+        found += listed if listed is not None else [UNKNOWN_ADDED]
+    paths = [operand for operand in operands if operand != "--"]
+    if paths:
+        if any(EXPANDED_PATH.search(path) for path in paths):
+            found.append(UNKNOWN_ADDED)
+        else:
+            listed = names(git_output(action, ["diff", "--name-only", "-z", "HEAD", "--", *paths]))
+            found += listed if listed is not None else paths
+    return found
+
+
+def check_committed_index(action: dict, added_before: list[str], seen_only: bool) -> None:
+    """A command that commits the index without `git commit` (`merge --continue`, `rebase
+    --continue`, `write-tree`): the state-file rule on what the index and the earlier commands
+    staged, and its `--no-verify` spelled long. `seen_only` (a command the guard does not know may
+    do it): only a state file actually seen blocks."""
+    args = own_args(action.get("args", []))
+    if not seen_only and any(long_option_prefix(arg, "--no-verify", "--no-veri") for arg in args):
+        raise block(f"git {action.get('subcommand')} --no-verify skips the hooks the toolkit runs")
+    staged = names(git_output(action, ["diff", "--cached", "--name-only", "-z"]))
+    if staged is None and not seen_only:
+        raise block(
+            f"the guard cannot read what `git {action.get('subcommand')}` commits (the repository or its "
+            "staged files could not be read), and local workflow state files must stay out of commits."
+        )
+    if UNKNOWN_ADDED in added_before and not seen_only:
+        raise block(
+            f"the guard cannot tell what `git {action.get('subcommand')}` commits: the same command stages "
+            "paths the guard cannot list. Run it as a command of its own."
+        )
+    protected = sorted({path for path in (staged or []) + added_before if is_protected_path(path)})
+    if protected:
+        raise block(
+            f"local workflow state is part of what `git {action.get('subcommand')}` commits ("
+            + ", ".join(protected) + "). Unstage it first (git reset HEAD <file>)."
+        )
+
+
 def check_commit(action: dict, added_before: list[str]) -> None:
     if action.get("unreadable"):
         raise block(action.get("unreadable_why") or GIT_UNREADABLE)
@@ -196,14 +283,22 @@ def check_commit(action: dict, added_before: list[str]) -> None:
             continue
         i += 1
 
-    staged = git_output(action, ["diff", "--cached", "--name-only"])
+    hook_skip(action, "commit")
+    extra = commit_staging(action, args)
+    if UNKNOWN_ADDED in extra:
+        raise block(
+            "the guard cannot tell what this commit includes (it stages paths from a file or stdin, "
+            "`--pathspec-from-file`), and local workflow state files must stay out of commits. Stage "
+            "named paths, then commit."
+        )
+    staged = names(git_output(action, ["diff", "--cached", "--name-only", "-z"]))
     if staged is None:
         raise block(
             "the guard cannot read what this commit includes (the repository or its staged "
             "files could not be read), and local workflow state files must stay out of "
             "commits. Run `git commit` from the repository."
         )
-    candidates = staged.splitlines() + added_before
+    candidates = staged + added_before + extra
     protected = []
     for path in candidates:
         if is_protected_path(path) and path not in protected:
@@ -368,32 +463,46 @@ def unread_config_source(action: dict, listing: bool = False) -> str | None:
     return None
 
 
+PUSH_DEST_KEY = re.compile(
+    r"(?i)^(?:remote\..+\.(?:push|mirror)|push\..+|remote\.pushdefault|branch\..+\.(?:merge|remote|pushremote))$"
+)
+
+
 def brace_words(word: str) -> list[str]:
-    """The words a brace expansion makes of `word` (`+mai{n,n}` is `+main`), or `word` itself."""
-    if "{" not in word or "," not in word:
+    """The words a brace expansion makes of `word` (`+mai{n,n}` is `+main`, `ma{i..i}n` is `main`),
+    in bash's order, with the residues of its expansions as well; `[BRACE_OVERFLOW]` past the
+    expansion limit; or `word` itself."""
+    if "{" not in word or ("," not in word and ".." not in word):
         return [word]
+    made = brace_expand(word)
+    if made is None:
+        return [BRACE_OVERFLOW]
     alternatives = sorted(option for option in residues(word) if option)
-    return alternatives or [word]
+    return [option for option in made if option] + [option for option in alternatives if option not in made] or [word]
 
 
-def forced_refspec_main(value: str) -> bool:
-    """Whether a `remote.<name>.push` refspec forces main/master (or a glob that may be it)."""
-    if not value.startswith("+"):
+def forced_refspec_main(value: str, forced: bool = False) -> bool:
+    """Whether a `remote.<name>.push` refspec forces main/master (or a glob that may be it): a `+`
+    one, or any one when the push itself is forced."""
+    if not value.startswith("+") and not forced:
         return False
-    dest = value[1:].rsplit(":", 1)[-1]
+    dest = value.lstrip("+").rsplit(":", 1)[-1]
     return bool(MAIN_REF.fullmatch(dest) or "*" in dest or dest in {"", "HEAD", "@"})
 
 
-def forced_by_config(action: dict, operands: list[str]) -> None:
+def forced_by_config(action: dict, operands: list[str], forced: bool = False) -> None:
     """Block a push whose remote's configuration forces or mirrors main: given in the command
     (`-c remote.origin.push=+refs/heads/main:refs/heads/main`, `-c remote.origin.mirror=true`)
     or configured in the repository, for a push that names no refspec of its own."""
     for raw_config in action.get("configs", []):
         key, value = config_pair(raw_config)
         key = key.lower()
+        if PUSH_DEST_KEY.match(key) and (value == "<config-env>" or EXPANSION.search(value)):
+            # a value the guard cannot read may be `+refs/heads/main:refs/heads/main`
+            raise block(FORCED_BY_CONFIG.format(source=f"`{key}`, a value the guard cannot read"))
         if key.startswith("remote.") and key.endswith(".mirror") and not config_value_false(value):
             raise block(FORCED_BY_CONFIG.format(source=f"`{key}`"))
-        if key.startswith("remote.") and key.endswith(".push") and forced_refspec_main(value):
+        if key.startswith("remote.") and key.endswith(".push") and forced_refspec_main(value, forced):
             raise block(FORCED_BY_CONFIG.format(source=f"`{key}`"))
     if len(operands) > 1:
         return
@@ -404,7 +513,7 @@ def forced_by_config(action: dict, operands: list[str]) -> None:
     if (mirror or "").strip() == "true":
         raise block(FORCED_BY_CONFIG.format(source=f"`remote.{remote}.mirror`"))
     pushes = git_output(action, ["config", "--get-all", f"remote.{remote}.push"]) or ""
-    if any(forced_refspec_main(line.strip()) for line in pushes.splitlines()):
+    if any(forced_refspec_main(line.strip(), forced) for line in pushes.splitlines()):
         raise block(FORCED_BY_CONFIG.format(source=f"`remote.{remote}.push`"))
 
 
@@ -447,10 +556,30 @@ def check_push(action: dict) -> None:
         and "GIT_WORK_TREE" not in action.get("env", {})
     )
 
-    forced_by_config(action, operands)
+    hook_skip(action, "push")
+    forced_by_config(action, operands, push_force)
+    if (push_force or delete_push) and len(operands) <= 1:
+        # no refspec of its own: where it goes comes from configuration
+        if action.get("destination_unknown"):
+            raise block(
+                "an earlier command in this command changes where a push goes (an upstream or a remote "
+                "rename), so the guard cannot tell which branch this forced push updates, and "
+                "force-pushing main/master is not allowed. Name the branch (`git push --force origin <branch>`)."
+            )
+        supplied = [config_pair(raw)[0] for raw in action.get("configs", []) if PUSH_DEST_KEY.match(config_pair(raw)[0])]
+        if supplied:
+            raise block(
+                f"this forced push sets where it goes (`{supplied[0]}`) in the same command, so the guard "
+                "cannot tell which branch it updates. Set push configuration and force-push in separate commands."
+            )
+        default = git_output(action, ["config", "--get", "push.default"])
+        if push_force and (default or "").strip().lower() == "matching":
+            raise block(FORCED_BY_CONFIG.format(source="`push.default=matching`"))
     # the first operand is the repository, whatever it spells; the refspecs follow it. A brace
     # word is every word it expands to (`{main,main}` is `main main`)
     refspecs = [alternative for operand in operands[1:] for alternative in brace_words(operand)]
+    if BRACE_OVERFLOW in refspecs and (push_force or delete_push):
+        raise block(BRACES_UNREADABLE)
     for operand in refspecs:
         force_refspec = operand.startswith("+")
         refspec = operand[1:] if force_refspec else operand

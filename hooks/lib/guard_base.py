@@ -72,8 +72,15 @@ QUERY_ENV = frozenset(
         "GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS",
     }
 )
-# Every query: no fsmonitor program, and no optional index write (which runs `post-index-change`).
-QUERY_CONFIG = ("-c", "core.fsmonitor=false")
+# Every query: no fsmonitor program, no optional index write (which runs `post-index-change`), and
+# path listings from the top of the repository whatever `diff.relative` says (set, it hides every
+# path outside the command's directory). Older git ignores the key; `--no-relative` would fail.
+QUERY_CONFIG = ("-c", "core.fsmonitor=false", "-c", "diff.relative=false")
+
+
+def names(listing: str | None) -> list[str] | None:
+    """The paths of a `-z` listing (raw: `core.quotePath` quotes `.ai-toolkit/café.md` without it)."""
+    return None if listing is None else [name for name in listing.split("\0") if name]
 
 
 def git_program() -> str | None:

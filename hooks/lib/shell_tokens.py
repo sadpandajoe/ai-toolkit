@@ -120,7 +120,7 @@ import signal
 from typing import Iterator
 
 from shell_lex import (
-    FdWord, KEYWORDS, SEPARATORS, SIMPLE_WRAPPERS, SUBSTITUTION_WORD, WORD_API, WORD_GH, WORD_GRAPHQL,
+    FdWord, KEYWORDS, SEPARATORS, SIMPLE_WRAPPERS, SUBSTITUTION_WORD, expand_words, has_brace, WORD_API, WORD_GH, WORD_GRAPHQL,
     WORD_PR, WORD_PUSH, command_spans, drop_redirections, is_assignment, join_toplevel, may_vanish,
     opens_substitution, tokenize, unquoted, words_in_order,
 )
@@ -818,6 +818,7 @@ def commands(
     _untrusted: bool = False,
     _fed: bool = False,
     _values: dict | None = None,
+    _braced: bool = False,
 ) -> Iterator[Command]:
     """Yield every command in `text`, in order, nested ones included.
 
@@ -853,6 +854,21 @@ def commands(
     again = -1  # `command_spans` yields a command twice when a backtick may fold its words
     for first, segment, cut in command_spans(tokens, merge=not _untrusted):
         workdir = model.at(first)
+        braces = getattr(tokens, "braces", True)  # every brace quoted: bash expands none
+        if not _braced and first != again and braces and any(has_brace(word) for word in segment):
+            # the segment with its brace words expanded in bash's order is read as well
+            # (`{gh,pr} merge 12`, `env {NAME,X}=1 ...`)
+            expanded = expand_words(segment)
+            braced_text = joined_words(expanded) if expanded is not None else None
+            if braced_text is None or depth >= DEPTH_LIMIT or not walk.charge(len(braced_text)):
+                said = " ".join(segment)
+                if WORD_GH.search(said) or WORD_GIT.search(said) or "AITK_PR_READY" in said or "SKIP_PRECHECK" in said:
+                    yield Command([], {}, None, True, said[:2000], True)  # past the limit: unreadable
+            elif expanded != segment:
+                yield from commands(
+                    braced_text, workdir, depth + 1, inherited, include_assignments=include_assignments,
+                    _walk=walk, _values=values, _untrusted=_untrusted, _fed=fed_any, _braced=True,
+                )
         spent = False
         # the bodies of the second reading are the first one's: read and charged once
         for inner in () if first == again else inner_commands(" ".join(segment), walk):
@@ -1044,6 +1060,20 @@ def commands(
 
 
 VALUE_HEADS_LIMIT = 32  # values of one command word read as the command
+
+
+def joined_words(words: list[str]) -> str:
+    """Words as shell text that tokenizes back to them: quoted, operators and a descriptor glued
+    to its operator kept as they are."""
+    parts: list[str] = []
+    for word in words:
+        if isinstance(word, FdWord):
+            parts.append(str(word))
+        elif word in REDIRECTIONS:
+            parts.append(word + " ")
+        else:
+            parts.append(shlex.quote(word) + " ")
+    return "".join(parts).rstrip()
 
 
 def value_heads(values: dict, word: str) -> set[str]:
