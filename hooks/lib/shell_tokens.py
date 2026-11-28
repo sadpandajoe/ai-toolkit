@@ -125,6 +125,7 @@ from shell_lex import (
     opens_substitution, tokenize, unquoted, words_in_order,
 )
 from shell_dirs import DirectoryModel, PIPES, hop_dir, unresolved_dir
+from shell_payloads import PWSH, flag_payloads, is_posix_shell, shell_script, trap_action
 
 # Re-exported: the git guard's modules, hooks/pre-push-validate.sh and the tests read these names through this module.
 from shell_lex import (  # noqa: F401
@@ -175,13 +176,17 @@ MAX_DIR_HOPS = 16
 BACKTICK = re.compile(r"`([^`]*)`")
 
 WRAPPER_VALUE_FLAGS = {
-    "env": {"-u", "--unset"},
+    "env": {"-u", "--unset", "-P", "-a", "--argv0"},
     "timeout": {"-s", "--signal", "-k", "--kill-after"},
-    "xargs": {"-I", "-i", "-n", "-P", "-L", "-d", "-E", "-s", "-a"},
+    "xargs": {"-I", "-i", "-n", "-P", "-L", "-d", "-E", "-s", "-a", "-J", "-R", "-S"},
     "nice": {"-n", "--adjustment"},
     "ionice": {"-c", "-n", "-p"},
     "stdbuf": {"-i", "-o", "-e"},
-    "sudo": {"-u", "-g", "-C", "-h", "-p", "-r", "-t", "-U"},
+    "sudo": {
+        "-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-T", "-U", "--prompt", "--user", "--group", "--host",
+        "--chdir", "--role", "--type", "--other-user", "--close-from", "--command-timeout",
+    },
+    "exec": {"-a"},
 }
 WRAPPERS = SIMPLE_WRAPPERS | set(WRAPPER_VALUE_FLAGS)
 RESCAN_WORDS = SHELLS | {"env", "eval"}
@@ -222,6 +227,7 @@ class Effects:
     assignments: dict[str, str] = field(default_factory=dict)
     chdir: list[str] = field(default_factory=list)
     split: str | None = None
+    wrapped: bool = False  # a wrapper's option came first: the head may be its value (`exec -a echo`)
 
 
 def skip_options(wrapper: str, rest: list[str], effects: Effects, *, scan: bool = False) -> list[str]:
@@ -235,12 +241,14 @@ def skip_options(wrapper: str, rest: list[str], effects: Effects, *, scan: bool 
             effects.assignments[name] = value
             rest = rest[1:]
         elif option:
+            effects.wrapped = True
             if option[0] == "chdir":
                 effects.chdir.append(option[1])
             else:
                 effects.split = option[1]
             rest = rest[option[2] :]
         elif arg.startswith("-") and arg != "-":
+            effects.wrapped = True  # past an option, the head may be its value (`exec -a echo ...`)
             rest = rest[2:] if arg in valued else rest[1:]
         elif wrapper == "timeout" and re.fullmatch(r"\d+(\.\d+)?[smhd]?", arg):
             rest = rest[1:]
@@ -658,6 +666,35 @@ def stdin_fed(segment: list[str], piped: bool) -> bool:
     return False
 
 
+def shell_unseen(argv: list[str], fed: bool) -> str:
+    """`unseen_script` for a shell head, by this module's own reading of its options."""
+    index = 1
+    while index < len(argv):
+        word = argv[index]
+        if word == "--":
+            index += 1
+            break
+        short = word[:1] in "-+" and not word.startswith("--") and len(word) > 1
+        if word in SHELL_VALUE_OPTIONS or (short and word[-1] in "oO"):
+            if word in SHELL_VALUE_OPTIONS and index + 1 < len(argv) and holds_substitution(argv[index + 1]):
+                return UNSEEN_BODIES  # `--rcfile <(echo ...)`: a startup file the guard cannot read
+            index += 2  # `-o pipefail`, `-euo pipefail`, `-O extglob`
+        elif short and word[0] == "-" and "c" in word[1:]:
+            return UNSEEN_BODIES if index + 1 < len(argv) and holds_substitution(argv[index + 1]) else ""
+        elif short and word[0] == "-" and "s" in word[1:]:
+            return UNSEEN_TEXT if fed else ""  # `-s`: the commands come from stdin
+        elif word[:1] in "-+" and len(word) > 1:
+            index += 1
+        else:
+            break
+    script = argv[index] if index < len(argv) else None
+    if script is None:
+        return UNSEEN_TEXT if fed else ""
+    if STDIN_SCRIPT.fullmatch(script):
+        return UNSEEN_TEXT
+    return UNSEEN_BODIES if SUBSTITUTION_WORD in script else ""
+
+
 def unseen_script(argv: list[str], fed: bool, own: bool | None = None) -> str:
     """What a shell, `source` or `eval` with these words runs that the guard never reads as
     commands: `UNSEEN_TEXT` when it reads a fed stdin (no `-c` and no script, `-s`, `-`,
@@ -674,31 +711,11 @@ def unseen_script(argv: list[str], fed: bool, own: bool | None = None) -> str:
     if head == "ssh":
         return UNSEEN_TEXT if fed else ""  # the remote shell reads ssh's stdin, or its command reads it
     if head in SHELLS or SHELL_NAME.fullmatch(head):
-        index = 1
-        while index < len(argv):
-            word = argv[index]
-            if word == "--":
-                index += 1
-                break
-            short = word[:1] in "-+" and not word.startswith("--") and len(word) > 1
-            if word in SHELL_VALUE_OPTIONS or (short and word[-1] in "oO"):
-                if word in SHELL_VALUE_OPTIONS and index + 1 < len(argv) and holds_substitution(argv[index + 1]):
-                    return UNSEEN_BODIES  # `--rcfile <(echo ...)`: a startup file the guard cannot read
-                index += 2  # `-o pipefail`, `-euo pipefail`, `-O extglob`
-            elif short and word[0] == "-" and "c" in word[1:]:
-                return UNSEEN_BODIES if index + 1 < len(argv) and holds_substitution(argv[index + 1]) else ""
-            elif short and word[0] == "-" and "s" in word[1:]:
-                return UNSEEN_TEXT if fed else ""  # `-s`: the commands come from stdin
-            elif word[:1] in "-+" and len(word) > 1:
-                index += 1
-            else:
-                break
-        script = argv[index] if index < len(argv) else None
-        if script is None:
-            return UNSEEN_TEXT if fed else ""
-        if STDIN_SCRIPT.fullmatch(script):
-            return UNSEEN_TEXT
-        return UNSEEN_BODIES if SUBSTITUTION_WORD in script else ""
+        kind = shell_unseen(argv, fed)
+        script = shell_script(argv)  # bash's own reading of its options (`bash -c -x "$(...)"`)
+        if kind != UNSEEN_TEXT and script is not None and holds_substitution(script[0]):
+            kind = UNSEEN_BODIES
+        return kind
     if head in {"source", "."}:
         operands = [word for word in argv[1:] if word != "--"]
         if not operands:
@@ -776,6 +793,7 @@ class Command:
     cut: bool = False  # an unquoted `$(`, an unclosed one or a backtick span: a flag may hide in or after it
     source: str = ""  # with `untrusted`: the text its tokens were read from (comments and here-document bodies gone)
     unseen: str = ""  # a shell here runs a script the guard never sees, and what to read of it: `unseen_script`
+    wrapped: bool = False  # a wrapper or its options came first (`exec -a echo ...`): the head may be a value
 
     @property
     def name(self) -> str:
@@ -891,40 +909,59 @@ def commands(
         target = workdir
         for value in effects.chdir:
             target = hop_dir(target, value, model.variables_at(first))
-        nested = None
+        nested_texts: list[str] = []
         if effects.split is not None:
             split = effects.split.replace("\\_", " ")
-            nested = " ".join(["env", split] + [shlex.quote(arg) for arg in rest])
+            nested_texts.append(" ".join(["env", split] + [shlex.quote(arg) for arg in rest]))
         elif rest and head_name(rest[0]) in SHELLS:
             flags = [i for i, arg in enumerate(rest[1:], 1) if is_shell_command_flag(arg)]
             if flags:
                 payload = rest[flags[0] + 1 :]
                 payload = payload[1:] if payload[:1] == ["--"] else payload  # `bash -c -- 'cmd'`
                 if payload:
-                    nested = payload[0]
+                    nested_texts.append(payload[0])
         elif rest and head_name(rest[0]) == "eval":
             payload = rest[1:]
-            nested = " ".join(payload[1:] if payload[:1] == ["--"] else payload)
-        if nested is not None:
+            nested_texts.append(" ".join(payload[1:] if payload[:1] == ["--"] else payload))
+        if effects.split is None and rest and (head_name(rest[0]) in PWSH or is_posix_shell(rest[0])):
+            # bash's own reading of its options (`bash -c -x 'cmd'`), and fish's and pwsh's text
+            script = shell_script(drop_redirections(rest))
+            if script is not None and script[0] not in nested_texts:
+                nested_texts.append(script[0])
+        if nested_texts:
             if include_assignments and effects.assignments:
                 yield Command([], dict(effects.assignments), target)
+            for nested in nested_texts:
+                if depth >= DEPTH_LIMIT:
+                    yield Command([], assignments, unresolved_dir(nested, target), True, nested)
+                else:
+                    yield from commands(
+                        nested, target, depth + 1, assignments, include_assignments=include_assignments,
+                        _walk=walk, _untrusted=_untrusted, _fed=fed_any,
+                    )
+            continue
+        trapped = trap_action(drop_redirections(rest)) if rest and head_name(rest[0]) == "trap" else None
+        if trapped is not None:
+            # `trap -- 'cmd' EXIT`: the text runs later, in this shell
             if depth >= DEPTH_LIMIT:
-                yield Command([], assignments, unresolved_dir(nested, target), True, nested)
+                yield Command([], assignments, unresolved_dir(trapped, target), True, trapped)
             else:
                 yield from commands(
-                    nested, target, depth + 1, assignments, include_assignments=include_assignments,
+                    trapped, target, depth + 1, assignments, include_assignments=include_assignments,
                     _walk=walk, _untrusted=_untrusted, _fed=fed_any,
                 )
-            continue
         positions: list[int] = []
         extra: list[Payload] = []
         # a real redirection is no word of the rescanned tail (`setsid gh pr create --draft >/dev/null`);
         # with a quoted operator about, it cannot be told from a word, so every word stays
         plain = rest if _untrusted else drop_redirections(rest)
         first_word = 1 if plain[:1] == rest[:1] else 0  # a redirection ahead of the head is no head
-        if plain and (
+        unknown_head = bool(plain) and (
             include_assignments or (head_name(plain[0]) not in NO_RESCAN_HEADS and not is_git_word(plain[0]))
-        ):
+        )
+        # behind a wrapper an inert head may be an option's value (`exec -a echo gh pr merge 12`)
+        wrapped_inert = bool(plain) and not include_assignments and effects.wrapped and head_name(plain[0]) in INERT_HEADS
+        if unknown_head or wrapped_inert:
             words = RESCAN_WORDS if include_assignments else DEFAULT_RESCAN_WORDS
             later = [
                 i
@@ -938,14 +975,14 @@ def commands(
             positions = later[:1] if include_assignments else later
             if _rescanned and target == start:
                 positions = []  # every later position is already a tail of the parent
-            if not include_assignments:
-                # `flock /tmp/x -c 'gh pr merge 12'`, `su -c ...`: a later -c word hands
-                # its string to a shell, whatever the wrapper is
-                flag = next((i for i, arg in enumerate(plain[first_word:], first_word) if is_shell_command_flag(arg)), None)
-                payload = plain[flag + 1 :] if flag is not None else []
-                payload = payload[1:] if payload[:1] == ["--"] else payload
-                if payload:
-                    extra.append(Payload(payload[0], target))
+            if not include_assignments and unknown_head:
+                # `flock /tmp/x -c 'gh pr merge 12'`, `su -c ...`, `fish --command ...`: a later -c
+                # or --command word hands its string to a shell, whatever the wrapper is
+                texts = flag_payloads(plain[first_word:])
+                if texts is None:
+                    yield Command([], {}, None, True, " ".join(segment)[:2000], True)  # past the cap
+                    continue
+                extra.extend(Payload(text, target) for text in texts)
         if positions or extra:
             quoted = [shlex.quote(word) for word in plain]
             suffix = [0] * (len(plain) + 1)  # characters of the tail that starts at each word
@@ -985,7 +1022,8 @@ def commands(
                 yield Command([], assignments, target)
             continue
         yield Command(
-            rest, assignments, target, untrusted=_untrusted, cut=cut, source=tokens.cleaned if _untrusted else ""
+            rest, assignments, target, untrusted=_untrusted, cut=cut, source=tokens.cleaned if _untrusted else "",
+            wrapped=effects.wrapped,
         )
 
 

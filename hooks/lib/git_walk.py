@@ -14,6 +14,7 @@ from typing import Iterator
 import shell_tokens
 from guard_base import SEPARATORS, block, config_pair, git_output, is_git_executable
 from gh_text import quoted_split
+import shell_payloads
 from git_rules import ENV_CLEARED, UNSET, unread_config_source
 
 
@@ -380,6 +381,7 @@ def parse_git_actions(
     wrapped = False  # the command word was reached through a wrapper (`exec`, `sudo`, `nohup`, ...)
     count = len(tokens)
     i = 0
+    flagged = [False]  # a segment's later `-c` strings were read (once per segment)
 
     def shell_dir() -> str | None:
         return current_workdir if shell_workdir is SAME else shell_workdir  # type: ignore[return-value]
@@ -411,6 +413,21 @@ def parse_git_actions(
             found.extend(recurse(tokens[j:end], current_workdir, dict(env_assignments)))
         return found
 
+    def flag_payloads(start: int) -> list[dict]:
+        """The git actions of the strings a later `-c` cluster or `--command` word hands to a shell,
+        in the command at token `start` (`shell_payloads.flag_payloads`)."""
+        if flagged[0]:
+            return []  # this segment's strings were read from its first word
+        flagged[0] = True
+        end = segment_end_index(tokens, start + 1)
+        texts = shell_payloads.flag_payloads(shell_tokens.drop_redirections(tokens[start + 1 : end]))
+        if texts is None:  # past the cap, with git or gh in the rest: one unreadable action, which blocks
+            return [{**new_action(None, {}, {}, True), "subcommand": "push", "unreadable": True}]
+        found: list[dict] = []
+        for text in texts:
+            found.extend(recurse(shell_tokens_or_empty(text), current_workdir, dict(env_assignments), None))
+        return found
+
     def span_tail(start: int) -> list[dict]:
         """The git actions of the words after the backtick span that opens at token `start`."""
         closing = next((j for j in range(start + 1, count) if tokens[j].count("`") % 2), None)
@@ -427,6 +444,7 @@ def parse_git_actions(
         if token in SEPARATORS:
             command_start = True
             wrapped = False
+            flagged[0] = False
             env_assignments = dict(exported_env)
             i += 1
             continue
@@ -532,8 +550,10 @@ def parse_git_actions(
         if command_start and (
             shell_tokens.head_name(token) in shell_tokens.SHELLS
             or shell_tokens.SHELL_NAME.fullmatch(shell_tokens.head_name(token))
-        ):  # `bash`, `/bin/sh`, `dash` (not `ssh`: its words are a remote command, read as words)
+            or shell_tokens.head_name(token) in shell_payloads.PWSH
+        ):  # `bash`, `/bin/sh`, `dash`, `fish`, `pwsh` (not `ssh`: its words are a remote command, read as words)
             segment_end = segment_end_index(tokens, i + 1)
+            picked = None  # the payload this loop reads; the helper's reading is added when it differs
             j = i + 1
             while j < segment_end:
                 shell_arg = tokens[j]
@@ -544,6 +564,7 @@ def parse_git_actions(
                     while command_index < segment_end and tokens[command_index] == "--":
                         command_index += 1
                     if command_index < segment_end:
+                        picked = tokens[command_index]
                         positional = tokens[command_index + 1 : segment_end]
                         actions.extend(
                             recurse(
@@ -555,6 +576,12 @@ def parse_git_actions(
                         )
                     break
                 j += 1
+            script = shell_payloads.shell_script(shell_tokens.drop_redirections(tokens[i:segment_end]))
+            if script is not None and script[0] != picked:
+                # bash's own reading of its options (`bash -c -x 'cmd'`), and fish's and pwsh's text
+                actions.extend(
+                    recurse(expand_shell_payload(script[0], script[1]), current_workdir, dict(exported_env), None)
+                )
             command_start = False
             i = segment_end
             continue
@@ -622,6 +649,14 @@ def parse_git_actions(
                     env_workdir = shell_tokens.hop_dir(env_workdir, env_token.split("=", 1)[1], model.variables_at(i))
                     j += 1
                     continue
+                option = shell_tokens.env_option(env_token, tokens[j:segment_end]) if env_token.startswith("-") else None
+                if option is not None and option[0] == "split":
+                    # `env -S 'git push --force origin main'`: the string is split into the command
+                    split = option[1].replace("\\_", " ")
+                    words = [shlex.quote(word) for word in tokens[j + option[2] : segment_end]]
+                    actions.extend(recurse(shell_tokens_or_empty(" ".join([split] + words)), env_workdir, child_env, shell_dir()))
+                    j = segment_end
+                    break
                 if env_token.startswith("--unset="):
                     child_env.pop(env_token.split("=", 1)[1], None)
                     child_env[UNSET + env_token.split("=", 1)[1]] = "1"
@@ -685,6 +720,9 @@ def parse_git_actions(
         if command_start and token == "trap" and i + 1 < count and tokens[i + 1] not in SEPARATORS:
             # `trap f EXIT`, `trap 'git push --force' EXIT`: the first word is a command run later
             actions.extend(recurse(shell_tokens_or_empty(tokens[i + 1]), current_workdir, dict(exported_env)))
+            trapped = shell_payloads.trap_action(tokens[i : segment_end_index(tokens, i + 1)])
+            if trapped is not None and trapped != tokens[i + 1]:
+                actions.extend(recurse(shell_tokens_or_empty(trapped), current_workdir, dict(exported_env)))  # `trap -- 'cmd'`
         if "`" in token and not command_start:
             # `: `f``: a backtick span among the words runs its body, functions included
             for body in shell_tokens.BACKTICK.findall(token):
@@ -702,7 +740,8 @@ def parse_git_actions(
             if command_start and shell_tokens.may_vanish(token) and i + 1 < count and tokens[i + 1] not in SEPARATORS:
                 # `$X git push`, `` `true` git push``: a word that expands to nothing leaves the
                 # next one the command. Read so, which only adds: as a command of its own the
-                # word runs no git the guard could read
+                # word runs no git the guard could read (`$SHELL -c '...'` hands it a string)
+                actions.extend(flag_payloads(i))
                 i += 1
                 continue
             if command_start and token.startswith("`") and token.count("`") % 2:
@@ -715,6 +754,10 @@ def parse_git_actions(
                 # command the guard does not know, a later `git` word may be the command it runs.
                 # Each is read as one too; a printing command (`echo git push`) runs none
                 actions.extend(later_git(i))
+            if command_start and shell_tokens.head_name(token) not in shell_tokens.NO_RESCAN_HEADS:
+                # `flock /tmp/x -c '...'`, `su -c '...'`, `script -c '...'`: a later -c or --command
+                # word hands its string to a shell (not behind a printing head, `grep -c`)
+                actions.extend(flag_payloads(i))
             command_start = False
             i += 1
             continue

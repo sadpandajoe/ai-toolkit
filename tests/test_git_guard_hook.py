@@ -2955,6 +2955,61 @@ class GitGuardHookTests(unittest.TestCase):
         )
         self.assertEqual([], sorted(path.name for path in work.glob("marker*")))
 
+    def test_text_a_command_hands_to_a_shell_is_read_by_both_walkers(self) -> None:
+        push = "'git push --force origin main'"
+        self.hook_codes(
+            (
+                # bash's own option grammar: `-c` makes the first word that is no option the script
+                (f"bash -c -x {push}", self.clean, 2),
+                ("bash -c -x 'gh pr merge 12'", self.clean, 2),
+                (f"bash -co pipefail {push}", self.clean, 2),
+                (f"env -S {push}", self.clean, 2),
+                # a later -c or --command word behind a command the guard does not know
+                (f"flock /tmp/lock -c {push}", self.clean, 2),
+                (f"su -c {push}", self.clean, 2),
+                (f"script -q /dev/null -c {push}", self.clean, 2),
+                (f"$SHELL -c {push}", self.clean, 2),
+                (f"fish --command {push}", self.clean, 2),
+                (f"fish -C {push}", self.clean, 2),
+                (f"pwsh -Command {push}", self.clean, 2),
+                ("fish --command 'gh pr merge 12'", self.clean, 2),
+                # trap's command, past `--`
+                (f"trap -- {push} EXIT", self.clean, 2),
+                ("f() {{ git push --force origin main; }}; trap -- f EXIT", self.clean, 2),
+                ("trap 'gh pr merge 12' EXIT", self.clean, 2),
+                ("trap -- 'gh pr merge 12' EXIT", self.clean, 2),
+                # a wrapper option's value is no printing head
+                ("exec -a echo gh pr merge 12", self.clean, 2),
+                ("exec -a echo git push --force origin main", self.clean, 2),
+                # ordinary commands
+                ("bash -c 'npm test'", self.clean, 0),
+                ("bash -x script.sh", self.clean, 0),
+                ("bash -o pipefail -c 'make'", self.clean, 0),
+                ("trap 'echo done' EXIT", self.clean, 0),
+                ("trap - EXIT", self.clean, 0),
+                ("trap -p", self.clean, 0),
+                ("env -S 'FOO=1 npm test'", self.clean, 0),
+                ("gcc -c x.c", self.clean, 0),
+                ("grep -c x file", self.clean, 0),
+                ("python3 -c 'print(1)'", self.clean, 0),
+                ("exec -a myname ./server", self.clean, 0),
+                ("sudo --prompt x ls", self.clean, 0),
+                ("gh pr review 12 -cb \"git push --force origin main\"", self.clean, 0),
+                ("timeout 5 grep -c \"git push --force origin main\" log", self.clean, 0),
+            )
+        )
+
+    def test_payload_flags_stay_fast_and_fail_closed_past_their_cap(self) -> None:
+        # 2,000 `-c` words after an unknown head: past the cap, git or gh in the rest blocks, and
+        # the walk stays quick either way
+        many = " ".join(["-c 'echo hi'"] * 2000)
+        started = time.monotonic()
+        for command in (f"flock /tmp/x {many} -c 'gh pr merge 12'", f"flock /tmp/x {many} -c 'git push --force origin main'"):
+            with self.subTest(command=command[-40:]), self.assertRaises(git_guard.Blocked):
+                git_guard.evaluate(command, str(self.clean), {})
+        git_guard.evaluate(f"flock /tmp/x {many} -c 'echo bye'", str(self.clean), {})
+        self.assertLess(time.monotonic() - started, 10)
+
     def test_git_answers_are_kept_for_one_command_only(self) -> None:
         import guard_base
 
