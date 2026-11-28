@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 
 
@@ -59,14 +60,43 @@ def git_output(action: dict, args: list[str]) -> str | None:
     return output
 
 
-def run_git(argv: list[str], workdir: str, extra_env: dict) -> str | None:
+# What the guard's own queries take from the command's environment: the variables that choose
+# the repository and index git reads, and the pathspec switches, none of which runs anything. The
+# queries run before the command is approved, so nothing else the command sets may choose the
+# program (`PATH=`) or a config file that runs one (`HOME=`, `GIT_CONFIG_*` with core.fsmonitor);
+# the rules read the command's config themselves (`git_rules.unread_config_source`).
+QUERY_ENV = frozenset(
+    {
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES",
+        "GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS",
+    }
+)
+# Every query: no fsmonitor program, and no optional index write (which runs `post-index-change`).
+QUERY_CONFIG = ("-c", "core.fsmonitor=false")
+
+
+def git_program() -> str | None:
+    """git's absolute path on the hook's own PATH, never the command's."""
+    return shutil.which("git", path=os.environ.get("PATH", os.defpath))
+
+
+def query_env(extra_env: dict) -> dict[str, str]:
     env = os.environ.copy()
-    env.update(extra_env)
+    env.update({key: value for key, value in extra_env.items() if key in QUERY_ENV})
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    return env
+
+
+def run_git(argv: list[str], workdir: str, extra_env: dict) -> str | None:
+    program = git_program()
+    if program is None:
+        return None
     try:
         result = subprocess.run(
-            argv,
+            [program, *QUERY_CONFIG, *argv[1:]],
             cwd=workdir,
-            env=env,
+            env=query_env(extra_env),
             text=True,
             capture_output=True,
             stdin=subprocess.DEVNULL,

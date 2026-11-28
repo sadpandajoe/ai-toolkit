@@ -86,7 +86,7 @@ def git_toplevel(path: str) -> str | None:
     """`git -C path rev-parse --show-toplevel`, or None when it fails (not a repository, no git)."""
     try:
         result = subprocess.run(
-            ["git", "-C", path, "rev-parse", "--show-toplevel"],
+            ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", path, "rev-parse", "--show-toplevel"],
             text=True,
             capture_output=True,
             stdin=subprocess.DEVNULL,

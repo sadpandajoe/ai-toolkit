@@ -2907,6 +2907,54 @@ class GitGuardHookTests(unittest.TestCase):
             )
         )
 
+    def test_the_guards_own_git_runs_nothing_the_command_supplies(self) -> None:
+        # The guard's own git queries (an add's dry run, the staged files, the branch) run before
+        # the command is approved, so nothing the command sets may choose the git program or a
+        # config that runs one; config the queries then cannot see makes what they read unknown.
+        work = Path(tempfile.mkdtemp(dir=self.temporary.name))
+        marker = work / "marker"
+        fake_bin = work / "bin"
+        fake_bin.mkdir()
+        (fake_bin / "git").write_text(f'#!/bin/sh\ntouch {marker}-path\nexec {shutil.which("git")} "$@"\n')
+        (fake_bin / "git").chmod(0o755)
+        home = work / "home"
+        home.mkdir()
+        (home / ".gitconfig").write_text(
+            f"[core]\n\tfsmonitor = touch {marker}-home; false\n[alias]\n\tx = push --force origin main\n"
+        )
+        count = f"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0='touch {marker}-count; false'"
+        self.hook_codes(
+            (
+                # nothing the command supplies runs
+                (f"{count} git add notes.txt", self.clean, 0),
+                (f"HOME={home} git add notes.txt", self.clean, 0),
+                (f"PATH={fake_bin}:/usr/bin:/bin git add notes.txt", self.clean, 0),
+                # an alias in config the queries no longer read still blocks
+                (f"HOME={home} git x", self.clean, 2),
+                (f"GIT_CONFIG_GLOBAL={home}/.gitconfig git x", self.clean, 2),
+                # the pathspec variables still reach the dry run
+                ("GIT_ICASE_PATHSPECS=1 git add -f project.MD && git commit -m x", self.clean, 2),
+                # config the dry run cannot see makes what an add stages unknown
+                (f"HOME={home} git add -A && git commit -m x", self.feature, 2),
+                ("git -c core.excludesFile=/dev/null add -A && git commit -m x", self.feature, 2),
+                # a commit without the config files git would read
+                ("env -i git commit -m x", self.feature, 2),
+                ("env -u HOME git commit -m x", self.feature, 2),
+                ("unset HOME; git commit -m x", self.feature, 2),
+                ("HOME= git commit -m x", self.feature, 2),
+                ("XDG_CONFIG_HOME=/tmp/h git commit -m x", self.feature, 2),
+                # the command's own index is still read
+                (f"GIT_INDEX_FILE={self.alt_index} git commit -m x", self.clean, 2),
+                # ordinary commands
+                ("git -c user.name=x -c user.email=y commit -m x", self.feature, 0),
+                ("GIT_AUTHOR_NAME=x git commit -m x", self.feature, 0),
+                ("env -i PATH=/usr/bin:/bin npm test", self.feature, 0),
+                ("env -i git status", self.feature, 0),
+                ("git -c core.autocrlf=false add README.md && git commit -m x", self.feature, 0),
+            )
+        )
+        self.assertEqual([], sorted(path.name for path in work.glob("marker*")))
+
     def test_git_answers_are_kept_for_one_command_only(self) -> None:
         import guard_base
 

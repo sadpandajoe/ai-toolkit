@@ -70,6 +70,8 @@ EXPANDED_PATH = re.compile(r"[$`]")  # a parameter or command substitution: what
 def paths_added(action: dict) -> list[str]:
     """What `git add <args>` (or `git stage`) would stage, as repository paths where git can
     tell. A brace word is every path it makes; a path an expansion names is `UNKNOWN_ADDED`."""
+    if unread_config_source(action, listing=True):
+        return [UNKNOWN_ADDED]  # the dry run cannot see the config this add reads
     args = [alternative for arg in own_args(action.get("args", [])) for alternative in brace_words(arg)]
     if any(EXPANDED_PATH.search(arg) and not arg.startswith("-") for arg in args):
         return [UNKNOWN_ADDED]  # (a glob is git's to read: its dry run below matches it)
@@ -91,6 +93,8 @@ def paths_added(action: dict) -> list[str]:
 
 def update_index_paths(action: dict) -> list[str]:
     """The paths `git update-index --add` (or `--cacheinfo`) puts in the index."""
+    if unread_config_source(action, listing=True):
+        return [UNKNOWN_ADDED]
     args = own_args(action.get("args", []))
     found: list[str] = []
     index = 0
@@ -125,9 +129,10 @@ def check_commit(action: dict, added_before: list[str]) -> None:
         raise block(CONFIG_SOURCE.format(source=config_source, what="commit"))
     if UNKNOWN_ADDED in added_before:
         raise block(
-            "the guard cannot tell what this commit includes: the same command stages a path an "
-            "expansion names, and local workflow state files must stay out of commits. Stage "
-            "named paths, or run `git commit` as a command of its own."
+            "the guard cannot tell what this commit includes: the same command stages paths the "
+            "guard cannot list (a path an expansion names, or an add under configuration the guard "
+            "cannot read), and local workflow state files must stay out of commits. Stage named "
+            "paths, or run `git commit` as a command of its own."
         )
     args = own_args(action.get("args", []))
     for raw_config in action.get("configs", []):
@@ -282,19 +287,47 @@ FORCED_BY_CONFIG = (
     "the configuration of this push ({source}) forces or mirrors main/master, and force-pushing "
     "main/master is not allowed."
 )
-UNREAD_CONFIG_ENV = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG")
+# Variables that redirect or drop a config file git reads. The guard's own queries never take
+# them from the command (`guard_base.QUERY_ENV`), so with one set they cannot see what git will.
+UNREAD_CONFIG_ENV = (
+    "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG", "GIT_CONFIG_NOSYSTEM",
+    "HOME", "XDG_CONFIG_HOME",
+)
+# Markers the walker leaves in an action's env (never a real name, so no query takes them):
+ENV_CLEARED = "\x00cleared"  # `env -i`: git runs with no HOME
+UNSET = "\x00unset:"  # `env -u NAME`, `unset NAME`, `export -n NAME`
+# Inline keys that change nothing of which paths an add stages or a diff lists (or that the rules
+# read themselves); any other inline key makes a listing query unknown.
+LISTING_NEUTRAL = re.compile(
+    r"(?i)^(?:user|author|committer|alias|gpg|color|advice|i18n|pager|credential|http|push|remote|branch)\."
+    r"|^(?:commit\.gpgsign|core\.(?:editor|pager|quotepath|autocrlf|safecrlf|eol)|sequence\.editor"
+    r"|init\.defaultbranch)$"
+)
 
 
-def unread_config_source(action: dict) -> str | None:
+def unread_config_source(action: dict, listing: bool = False) -> str | None:
     """A configuration source the guard does not read, set by the command itself: an include
-    (`-c include.path=...`) or a config file chosen by the environment (`GIT_CONFIG_GLOBAL=...`)."""
+    (`-c include.path=...`), a config file the environment chooses or drops (`GIT_CONFIG_GLOBAL=`,
+    `HOME=`, `env -i`, `unset HOME`), or, for a query that lists paths (`listing`), an inline key
+    that may change what it lists (`-c core.excludesFile=...`)."""
     for raw_config in action.get("configs", []):
         key, _value = config_pair(raw_config)
         if key.lower() == "include.path" or key.lower().startswith("includeif."):
             return f"`{key}`"
+    env = action.get("env", {})
     for name in UNREAD_CONFIG_ENV:
-        if name in action.get("env", {}):
+        if name in env:
             return f"`{name}`"
+    if ENV_CLEARED in env:
+        return "`env -i`"
+    for name in ("HOME", "XDG_CONFIG_HOME"):
+        if UNSET + name in env:
+            return f"an unset `{name}`"
+    if listing:
+        for raw_config in action.get("configs", []):
+            key, _value = config_pair(raw_config)
+            if not LISTING_NEUTRAL.match(key):
+                return f"`-c {key}`"
     return None
 
 

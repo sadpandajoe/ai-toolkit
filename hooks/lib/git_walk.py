@@ -14,6 +14,7 @@ from typing import Iterator
 import shell_tokens
 from guard_base import SEPARATORS, block, config_pair, git_output, is_git_executable
 from gh_text import quoted_split
+from git_rules import ENV_CLEARED, UNSET, unread_config_source
 
 
 SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "while", "until", "for", "select", "case", "!", "{"}
@@ -453,9 +454,22 @@ def parse_git_actions(
         ):
             i += 1  # `2>&1 git push`: the fd; the operator follows
             continue
+        if command_start and token == "unset":
+            # `unset HOME; git commit`: git then reads no HOME config (`unread_config_source`)
+            segment_end = segment_end_index(tokens, i + 1)
+            for name in tokens[i + 1 : segment_end]:
+                if not name.startswith("-"):
+                    exported_env[UNSET + name] = "1"
+            env_assignments = dict(exported_env)
+            command_start = False
+            i = segment_end
+            continue
         if command_start and token == "export":
             segment_end = segment_end_index(tokens, i + 1)
+            unexport = "-n" in tokens[i + 1 : segment_end]
             for export_token in tokens[i + 1 : segment_end]:
+                if unexport and not export_token.startswith("-"):
+                    exported_env[UNSET + export_token.split("=", 1)[0]] = "1"
                 if ASSIGNMENT.match(export_token):
                     key, value = export_token.split("=", 1)
                     shell_vars[key] = value
@@ -587,7 +601,11 @@ def parse_git_actions(
                     child_env[key] = value
                     j += 1
                     continue
-                if env_token in {"-i", "-0", "--ignore-environment", "--null"}:
+                if env_token in {"-i", "-", "--ignore-environment"}:
+                    child_env = {ENV_CLEARED: "1"}  # git then reads no HOME config
+                    j += 1
+                    continue
+                if env_token in {"-0", "--null"}:
                     child_env = {}
                     j += 1
                     continue
@@ -596,6 +614,8 @@ def parse_git_actions(
                         env_workdir = shell_tokens.hop_dir(env_workdir, tokens[j + 1], model.variables_at(i))
                     elif j + 1 < segment_end:
                         child_env.pop(tokens[j + 1], None)
+                        if env_token in {"-u", "--unset"}:
+                            child_env[UNSET + tokens[j + 1]] = "1"
                     j += 2
                     continue
                 if env_token.startswith("--chdir="):
@@ -604,6 +624,7 @@ def parse_git_actions(
                     continue
                 if env_token.startswith("--unset="):
                     child_env.pop(env_token.split("=", 1)[1], None)
+                    child_env[UNSET + env_token.split("=", 1)[1]] = "1"
                     j += 1
                     continue
                 if env_token.startswith("-"):
@@ -822,7 +843,7 @@ def git_command_names() -> frozenset[str] | None:
     """The names `git help` knows, read outside any repository (so no alias is in it); None if unreadable."""
     try:
         result = subprocess.run(
-            ["git", "--list-cmds=builtins,main,others"],
+            ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "--list-cmds=builtins,main,others"],
             cwd="/",
             text=True,
             capture_output=True,
@@ -841,6 +862,16 @@ def expand_configured_alias(action: dict) -> list[dict]:
     if not subcommand:
         return []
     alias_value = action.get("aliases", {}).get(subcommand)
+    config_source = unread_config_source(action) if alias_value is None else None
+    if config_source:
+        names = git_command_names()
+        if names is None or subcommand not in names:
+            raise block(
+                f"this command points git at configuration the guard cannot read ({config_source}), "
+                f"so it cannot tell whether `git {subcommand}` is an alias for a push or a commit. "
+                "Run git without it, or spell out the git command."
+            )
+        return []
     if alias_value is None and action.get("workdir") is None:
         names = git_command_names()
         if names is None or subcommand not in names:

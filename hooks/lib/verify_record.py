@@ -45,7 +45,7 @@ def git(cwd: str, *args: str, data: bytes | None = None) -> str | None:
     """Run git in `cwd`; stdout, or None when it fails."""
     try:
         result = subprocess.run(
-            ["git", "--no-optional-locks", *args],
+            ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", *args],
             cwd=cwd,
             input=data,
             capture_output=True,
