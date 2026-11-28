@@ -179,7 +179,8 @@ checks nothing is visible in the record. Its known limits:
   A gated `gh`, a `gh pr create`, a `gh api` pull request call, a `git push`
   with a force or delete flag, or a `git commit` in that text blocks, even
   one aimed at a feature branch (an accepted over-block). Line
-  continuations are joined and `$'...'` is decoded first. `curl ... | bash`
+  continuations are joined, `$'...'` is decoded and `#` comments are left
+  out first. `curl ... | bash`
   with none of those stays allowed, and a shell's name as an argument reads
   no script (`docker exec -it app bash`, `ps aux | grep sh`) unless a wrapper
   that runs its words hands it the stdin (`... | docker exec -i app bash`).
@@ -201,14 +202,40 @@ checks nothing is visible in the record. Its known limits:
   as `cd` or `git` may be that command (`${X}cd D`, `$X'cd' D`, `{c,}d D`,
   `${GIT:-git} push`). So the directory after `$X cd D` is unknown, `$X git
   push` and `git $X push` are read as git, and a quoted `"$X"` reads the same
-  (an accepted over-block). A command name that is an expansion the guard
-  cannot resolve (`$GIT push`, `$(which git) push`) blocks when its words,
-  read as git's own, push with a force or delete flag or commit. Behind a
-  command the guard does not know (`setsid`, `caffeinate`, `flock x`), a
-  later `git` word is read as the command too; a printing one (`echo git
-  push`) runs none. git nested more than 8 levels
-  deep (`sh -c`, `eval`, functions, backtick spans) blocks. Not seen: a word
-  that expands to a push option (`git push origin main $F`);
+  (an accepted over-block). An expansion the guard cannot resolve, as the
+  command name or behind a command that is not a printing one (`$GIT push`,
+  `$(which git) push`, `setsid $GIT push`), blocks when the words after it,
+  read as git's own, define an alias, push with a force, delete or no-verify
+  flag, or commit. A subcommand that is an expansion is read as what it may
+  come out as, or as both `push` and `commit`. Behind a command the guard
+  does not know (`setsid`, `caffeinate`, `flock x`, or an option's value it
+  takes for the command: `exec -a echo`), a later word that may start git
+  is read as the command too: git followed by a git command, `git-push`, a
+  shell with `-c`, or `env`, `sudo` or `eval` with git after them; past 16
+  of them the command blocks. A printing command (`echo git push`) runs
+  none. Accepted over-blocks: a word list or a remote command that holds a
+  forced push (`for w in git push --force ...`, `ssh host git push --force
+  origin main`, `docker exec app git push ...`). git nested more than 8
+  levels deep (`sh -c`, `eval`, functions, backtick spans) blocks. A
+  function a `trap`, a backtick span among the words, or a variable (`F=f;
+  $F`) runs is read. Not seen: a word that expands to a push option (`git
+  push origin main $F`);
+- what a command stages and where it pushes is read as git would: `git
+  stage` like `git add`, `git update-index --add`, a brace word as every
+  path or refspec it makes (`PROJECT.{md,md}`, `origin {main,main}`), and a
+  path an expansion names as unknown, which blocks the commit. A `git
+  checkout` or `git switch` earlier in the command leaves the branch unknown
+  to a later push (a file checkout, `checkout -- f`, does not). A push is
+  forced by its configuration too: `-c remote.<r>.push=+...main`, `-c
+  remote.<r>.mirror=true`, the same configured for the remote it names, or
+  a `git config` of `remote.*.push`, `remote.*.mirror` or `push.*` (or `git
+  remote add --mirror`) earlier in the command. `git send-pack` is read like
+  a push, `--prune` with a glob refspec like a delete, `merge`, `am` and
+  `rebase` with `--no-verify` block, and so does a commit or push that reads
+  configuration the guard cannot see (`-c include.path=`,
+  `GIT_CONFIG_GLOBAL=`). Not modelled: a plain, unforced push to main (`gh
+  pr checkout 12 && git push origin HEAD:main`), which GitHub's branch
+  protection refuses;
 - the model misses element and nameref assignments: `S[0]=x A=M` as one
   segment, `declare -n R=S; R=M`, `S[a[0]]=M` and `declare 'S[0]=M'`;
 - the directory a `gh pr create` runs in comes from `shell_dirs`' static

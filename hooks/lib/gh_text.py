@@ -35,11 +35,18 @@ def quoted_split(text: str) -> list[str]:
     pieces: list[str] = []
     stack: list[str] = []  # open `'`, `"`, backtick, `(` (of a `$(`) and `{` (of a `${`)
     start = index = 0
+    comments: list[tuple[int, int]] = []  # `# ...` to the end of its line: it runs nothing
     while index < len(text):
         char = text[index]
         top = stack[-1] if stack else ""
         if char == "\\" and top != "'":
             index += 2
+            continue
+        if char == "#" and top in {"", "("} and (index == 0 or text[index - 1] in " \t\n;&|("):
+            end = text.find("\n", index)
+            end = len(text) if end < 0 else end
+            comments.append((index, end))  # (an apostrophe in it opens no quote: `# don't`)
+            index = end
             continue
         if top == "'":
             if char == "'":
@@ -67,10 +74,22 @@ def quoted_split(text: str) -> list[str]:
         elif top == "{" and char == "}":
             stack.pop()
         elif not stack and char in ";&|\n" and not redirection_char(text, index):
-            pieces.append(text[start:index])
+            pieces.append(without_comments(text, start, index, comments))
             start = index + 1
         index += 1
-    return pieces + [text[start:]]
+    return pieces + [without_comments(text, start, len(text), comments)]
+
+
+def without_comments(text: str, start: int, end: int, comments: list[tuple[int, int]]) -> str:
+    """`text[start:end]` without the comments in it."""
+    out, position = [], start
+    for left, right in comments:
+        if right <= start or left >= end:
+            continue
+        out.append(text[position:max(left, position)])
+        position = max(position, min(right, end))
+    out.append(text[position:end])
+    return "".join(out)
 
 
 def unresolved_gated(text: str) -> Iterator[str]:
@@ -202,7 +221,8 @@ def push_marker(word: str) -> bool:
     name = word[2:].split("=", 1)[0]
     resolved = resolve_push_option(name)
     if resolved is not None:
-        return resolved[0] in FORCE_OR_DELETE and not resolved[1]
+        # a negated `verify` (`--no-verify`, `--no-veri`) skips the pre-push hook
+        return (resolved[0] in FORCE_OR_DELETE and not resolved[1]) or resolved == ("verify", True)
     return any(option.startswith(name) for option in FORCE_OR_DELETE)
 
 
@@ -221,7 +241,7 @@ def unseen_git(text: str) -> str | None:
     for piece in pieces:
         push = shell_tokens.words_in_order(piece, shell_tokens.WORD_GIT, shell_tokens.WORD_PUSH)
         if push and any(push_marker(word) for word in piece[push.end() :].split()):
-            return "`git push` with a force or delete flag"
+            return "`git push` with a force, delete or no-verify flag"
         if shell_tokens.words_in_order(piece, shell_tokens.WORD_GIT, GIT_COMMIT_WORD):
             return "`git commit`"
     return None

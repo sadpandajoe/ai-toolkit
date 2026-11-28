@@ -19,7 +19,45 @@ from gh_text import quoted_split
 SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "while", "until", "for", "select", "case", "!", "{"}
 # Wrappers that run the rest of the line as a command, after their own options.
 RUNNING_WRAPPERS = {"timeout", "nohup", "xargs", "nice", "ionice", "stdbuf", "exec"}
-LATER_GIT_LIMIT = 8  # later `git` words of one command read as the command it may run
+LATER_GIT_LIMIT = 16  # later words of one command read as the command it may run
+GIT_GLOBAL_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"}
+STARTS_COMMANDS = {"env", "sudo", "doas", "eval", "command", "builtin", "nohup", "timeout", "nice", "xargs", "exec"}
+GIT_COMMANDS = shell_tokens.GIT_ENTRY_POINTS | {"stage", "send-pack"}
+
+
+def subcommand_readings(word: str, shell_vars: dict) -> list[str]:
+    """The git subcommands a word may be: itself, a variable set in the same command (`P=push; git
+    $P`), what an expansion may come out as (`${S:-push}`), or, for an expansion the guard cannot
+    read, both `push` and `commit`, so either check runs."""
+    name = shell_var_name(word)
+    if name is not None and name in shell_vars:
+        return [shell_vars[name]]
+    if "$" not in word and "`" not in word:
+        return [word]
+    known = sorted(shell_tokens.may_be(word, {"push", "commit", "add", "stage", "send-pack"}))
+    return known or ["push", "commit"]
+
+
+def may_run_git(tokens: list[str], j: int, end: int) -> bool:
+    """Whether the word at token `j`, behind a command the guard does not know, may start a
+    command that runs git: git followed by a git command (`setsid git push`; `pytest -k git
+    tests` names none), a dashed entry point (`git-push`), a shell with a `-c` text, or a
+    command that runs the rest of its words (`env`, `sudo`, `eval`), with git among them."""
+    word = tokens[j]
+    name = shell_tokens.head_name(word)
+    if is_git_executable(word) or (("$" in word or "`" in word) and "git" in shell_tokens.may_be(word, {"git"})):
+        k = j + 1
+        while k < end and tokens[k].startswith("-"):
+            k += 2 if tokens[k] in GIT_GLOBAL_VALUE else 1
+        return k < end and (tokens[k] in GIT_COMMANDS or any(t.startswith("alias.") for t in tokens[j + 1 : k]))
+    if name.startswith("git-") and name[4:] in GIT_COMMANDS:
+        return True
+    rest = tokens[j + 1 : end]
+    if name in shell_tokens.SHELLS or shell_tokens.SHELL_NAME.fullmatch(name):
+        return any(shell_tokens.is_shell_command_flag(t) for t in rest) and any(shell_tokens.WORD_GIT.search(t) for t in rest)
+    if name in STARTS_COMMANDS:
+        return any(is_git_executable(t) or shell_tokens.WORD_GIT.search(t) for t in rest)
+    return False
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 
 
@@ -72,7 +110,11 @@ def expand_shell_payload(command_text: str, positional: list[str]) -> list[str]:
             else:
                 expanded.append(token)
         elif token in {"$*", "${*}", "\\$*", "\\${*}"}:
-            expanded.append(" ".join(positional_args) if positional_args else token)
+            # unquoted, `$*` splits into words as `$@` does; the quotes are gone by here
+            if positional_args:
+                expanded.extend(positional_args)
+            else:
+                expanded.append(token)
         else:
             replaced = token
             if positional_zero:
@@ -322,6 +364,7 @@ def parse_git_actions(
     shell_functions = dict(inherited_functions or {})
     inherited_alias_map = dict(inherited_aliases or {})
     command_start = True
+    wrapped = False  # the command word was reached through a wrapper (`exec`, `sudo`, `nohup`, ...)
     count = len(tokens)
     i = 0
 
@@ -342,14 +385,17 @@ def parse_git_actions(
         )
 
     def later_git(start: int) -> list[dict]:
-        """The git actions of every later `git` word of the command at token `start` (at most
-        `LATER_GIT_LIMIT`), each read as the command from there to the end of the command."""
+        """The git actions of every later word of the command at token `start` that may start
+        what it runs (`may_run_git`), each read as the command from there to the end of the
+        command. Past `LATER_GIT_LIMIT` of them, the command is one unreadable action, which
+        blocks."""
         end = segment_end_index(tokens, start + 1)
+        starts = [j for j in range(start + 1, end) if may_run_git(tokens, j, end)]
+        if len(starts) > LATER_GIT_LIMIT:
+            return [{**new_action(None, {}, {}, True), "subcommand": "push", "unreadable": True}]
         found: list[dict] = []
-        starts = [j for j in range(start + 1, end) if is_git_executable(tokens[j])][:LATER_GIT_LIMIT]
         for j in starts:
-            if j + 1 < end:
-                found.extend(recurse(tokens[j:end], current_workdir, dict(env_assignments)))
+            found.extend(recurse(tokens[j:end], current_workdir, dict(env_assignments)))
         return found
 
     def span_tail(start: int) -> list[dict]:
@@ -367,6 +413,7 @@ def parse_git_actions(
         current_workdir = model.at(i)
         if token in SEPARATORS:
             command_start = True
+            wrapped = False
             env_assignments = dict(exported_env)
             i += 1
             continue
@@ -412,8 +459,10 @@ def parse_git_actions(
             continue
         if command_start and token in {"time", "noglob"}:
             i += 1
+            wrapped = True
             continue
         if command_start and os.path.basename(token) in RUNNING_WRAPPERS:
+            wrapped = True
             # `timeout 60 git ...`, `nohup git ...`, `xargs git ...`, `nice -n 5 git ...`:
             # skip the wrapper and its own options; the rest is the command.
             segment_end = segment_end_index(tokens, i + 1)
@@ -454,7 +503,10 @@ def parse_git_actions(
                 continue
             i += 3
             continue
-        if command_start and token in {"bash", "sh", "zsh"}:
+        if command_start and (
+            shell_tokens.head_name(token) in shell_tokens.SHELLS
+            or shell_tokens.SHELL_NAME.fullmatch(shell_tokens.head_name(token))
+        ):  # `bash`, `/bin/sh`, `dash`
             segment_end = segment_end_index(tokens, i + 1)
             j = i + 1
             while j < segment_end:
@@ -488,11 +540,12 @@ def parse_git_actions(
             command_start = False
             i = segment_end
             continue
-        if command_start and token in {"sudo", "doas"}:
+        if command_start and shell_tokens.head_name(token) in {"sudo", "doas"}:
+            wrapped = True
             i += 1
             while i < count and tokens[i] not in SEPARATORS:
                 wrapper_token = tokens[i]
-                if wrapper_token in {"-u", "-g", "-h", "-p", "-C"}:
+                if wrapper_token in {"-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t", "-U", "-T", "--prompt", "--user", "--group", "--host", "--chdir", "--role", "--type", "--other-user", "--close-from", "--command-timeout"}:
                     i += 2
                     continue
                 if wrapper_token.startswith(("-u=", "-g=", "-h=", "-p=", "-C=")):
@@ -504,11 +557,12 @@ def parse_git_actions(
                 break
             continue
         if command_start and token in {"command", "builtin"}:
+            wrapped = True
             i += 1
             while i < count and tokens[i].startswith("-") and tokens[i] not in SEPARATORS:
                 i += 1
             continue
-        if command_start and token == "env":
+        if command_start and shell_tokens.head_name(token) == "env":
             segment_end = segment_end_index(tokens, i + 1)
             env_workdir = current_workdir
             child_env = dict(env_assignments)
@@ -525,7 +579,7 @@ def parse_git_actions(
                     child_env = {}
                     j += 1
                     continue
-                if env_token in {"-u", "--unset", "-C", "--chdir"}:
+                if env_token in {"-u", "--unset", "-C", "--chdir", "-P", "-a", "--argv0"}:  # (`-P`, `-a`: a value)
                     if env_token in {"-C", "--chdir"} and j + 1 < segment_end:
                         env_workdir = shell_tokens.hop_dir(env_workdir, tokens[j + 1], model.variables_at(i))
                     elif j + 1 < segment_end:
@@ -593,6 +647,15 @@ def parse_git_actions(
         # `${X}git push`, `${GIT:-git} push`: a word that may come out as git is read as git
         variable_git = variable_git or (command_start and "git" in shell_tokens.may_be(token, {"git"}))
 
+        if command_start and var_name and shell_vars.get(var_name) in shell_functions:
+            token = shell_vars[var_name]  # `F=f; $F`: the variable names a function
+        if command_start and token == "trap" and i + 1 < count and tokens[i + 1] not in SEPARATORS:
+            # `trap f EXIT`, `trap 'git push --force' EXIT`: the first word is a command run later
+            actions.extend(recurse(shell_tokens_or_empty(tokens[i + 1]), current_workdir, dict(exported_env)))
+        if "`" in token and not command_start:
+            # `: `f``: a backtick span among the words runs its body, functions included
+            for body in shell_tokens.BACKTICK.findall(token):
+                actions.extend(recurse(shell_tokens_or_empty(body), current_workdir, dict(exported_env)))
         if command_start and token in shell_functions:
             segment_end = segment_end_index(tokens, i + 1)
             positional = tokens[i + 1 : segment_end]
@@ -613,7 +676,8 @@ def parse_git_actions(
                 # `` `echo x` git push``: the span is walked as it was, and the words after it
                 # are read as a command of their own as well
                 actions.extend(span_tail(i))
-            if command_start and shell_tokens.head_name(token) not in shell_tokens.INERT_HEADS:
+            if command_start and (wrapped or shell_tokens.head_name(token) not in shell_tokens.INERT_HEADS):
+                # (after a wrapper the word may be an option's value: `exec -a echo git push`)
                 # `setsid git push`, `caffeinate git push`, `flock /tmp/x git push`: behind a
                 # command the guard does not know, a later `git` word may be the command it runs.
                 # Each is read as one too; a printing command (`echo git push`) runs none
@@ -706,10 +770,10 @@ def parse_git_actions(
                         actions.extend(nested_actions)
                     break
 
-                action["subcommand"] = opt
                 action["index"] = positions[j]
                 action["args"] = words[j + 1 :]
-                actions.append(action)
+                for subcommand in subcommand_readings(opt, shell_vars):
+                    actions.append({**action, "subcommand": subcommand})
                 break
 
         command_start = False

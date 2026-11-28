@@ -2749,6 +2749,8 @@ class GitGuardHookTests(unittest.TestCase):
             "eval \"$(echo true)\" && git commit --allow-empty -m x",
             "ps aux | grep sh; git commit --allow-empty -m x",
             "git log -1 2>&1 | grep -v bash; git commit --allow-empty -m x",
+            # an apostrophe in a comment opens no quote
+            heredoc.format(shell="bash", body="# don't worry\ngit push origin feature\nrm -rf dist"),
         ]
         self.codes(tuple((command, self.clean, 2) for command in blocked) + tuple((command, self.clean, 0) for command in allowed))
         # the user's AITK_PR_READY=1 lifts a merge in such a script, not a force push or an unchecked PR
@@ -2794,6 +2796,99 @@ class GitGuardHookTests(unittest.TestCase):
         for _ in range(10):
             nest = "sh -c " + shlex.quote(nest)
         self.codes(((nest, self.feature, 2),))
+
+    def test_a_command_the_guard_does_not_know_may_run_git(self) -> None:
+        self.hook_codes(
+            (
+                # a later word that may start git, behind an unknown command or an option's value
+                ('find . git git git git git git git git -maxdepth 0 -exec git push --force origin main \\;', self.clean, 2),
+                ('x git git git git git git git git git commit --no-verify -m x', self.clean, 2),
+                ("setsid bash -c 'git push --force origin main'", self.clean, 2),
+                ("flock /tmp/lock sh -c 'git push --force origin main'", self.clean, 2),
+                ("uv run bash -c 'git commit --no-verify -m x'", self.clean, 2),
+                ("/bin/sh -c 'git push --force origin main'", self.clean, 2),
+                ('/bin/bash -c "git commit --no-verify -m x"', self.clean, 2),
+                ("dash -c 'git push --force origin main'", self.clean, 2),
+                ("/usr/bin/env bash -c 'git push --force origin main'", self.clean, 2),
+                ('setsid env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x', self.clean, 2),
+                ('setsid git-push --force origin main', self.clean, 2),
+                ('setsid git-commit --no-verify -m x', self.clean, 2),
+                ('setsid $GIT push --force origin main', self.clean, 2),
+                ('setsid "$(which git)" push --force origin main', self.clean, 2),
+                ('setsid ${{GIT:-git}} push --force origin main', self.clean, 2),
+                ('exec -a echo git push --force origin main', self.clean, 2),
+                ('env -P echo /usr/bin/git push --force origin main', self.clean, 2),
+                ('xargs -J echo git push --force origin main', self.clean, 2),
+                ('sudo --prompt echo git push --force origin main', self.clean, 2),
+                ("sh -c 'git $*' _ push --force origin main", self.clean, 2),
+                # a `git` word that starts no git command is an argument, even where the
+                # directory is unknown; a printing command runs none
+                ('cd "$D" && pytest -k git tests/test_x.py', self.clean, 0),
+                ('cd "$D" && [ "$x" = git ] && echo y', self.clean, 0),
+                ('cd "$D" && if [ "$VCS" = git ]; then echo y; fi', self.clean, 0),
+                ('cd "$D" && apt-get install -y git curl', self.clean, 0),
+                ('cd "$(dirname "$0")" && brew install git gh', self.clean, 0),
+                ('cd "$D" && for t in git gh jq; do command -v $t; done', self.clean, 0),
+                ('cd "$D" && find . -name git -type d', self.clean, 0),
+                ('cd "$D" && mkdir -p src/git tests', self.clean, 0),
+                ('cd "$D" && claude mcp add git -- uvx mcp-server-git', self.clean, 0),
+                ('echo git push --force origin main', self.clean, 0),
+                ('setsid git push origin feature', self.clean, 0),
+            )
+        )
+
+    def test_staging_switching_and_config_are_read_as_git_would(self) -> None:
+        self.hook_codes(
+            (
+                ('git stage -f PROJECT.md && git commit -m x', self.feature, 2),
+                ('git update-index --add PROJECT.md && git commit -m x', self.feature, 2),
+                ('F=PROJECT.md; git add -f $F && git commit -m x', self.feature, 2),
+                ('git add -f PROJECT.{{md,md}} && git commit -m x', self.feature, 2),
+                ('git checkout main && git push -f origin HEAD', self.feature, 2),
+                ('git switch main && git push --force', self.feature, 2),
+                ('git checkout -B main && git push -f origin HEAD', self.feature, 2),
+                ('git push -f origin {{main,main}}', self.feature, 2),
+                ('git push origin +mai{{n,n}}', self.feature, 2),
+                ('git push -d origin {{main,main}}', self.feature, 2),
+                ('git push origin :{{main,main}}', self.feature, 2),
+                ('P=push; git $P --force origin main', self.feature, 2),
+                ('git ${{S:-push}} --force origin main', self.feature, 2),
+                ("sh -c 'git $*' _ push --force origin main", self.feature, 2),
+                ('git -c remote.origin.push=+refs/heads/main:refs/heads/main push origin', self.feature, 2),
+                ('git -c remote.origin.mirror=true push origin', self.feature, 2),
+                ('git config remote.origin.push +refs/heads/main:refs/heads/main && git push origin', self.feature, 2),
+                ('git send-pack --force origin main', self.feature, 2),
+                ('$GIT push --no-verify origin feature', self.feature, 2),
+                ("bash <<< 'git push --no-verify origin feature'", self.feature, 2),
+                ("$GIT -c alias.x='push --force origin main' x", self.feature, 2),
+                ('f() {{ git push --force origin main; }}; trap f EXIT', self.feature, 2),
+                ('f() {{ git commit --no-verify -m x; }}; : `f`', self.feature, 2),
+                ('f() {{ git push --force origin main; }}; F=f; $F', self.feature, 2),
+                ("git push --prune origin 'refs/heads/*:refs/heads/*'", self.feature, 2),
+                ('git merge --no-verify feature', self.feature, 2),
+                ('git -c include.path=/tmp/x commit -m x', self.feature, 2),
+                ('GIT_CONFIG_GLOBAL=/dev/null git commit -m x', self.feature, 2),
+                ('git add -f README.md && git commit --allow-empty -m x', self.feature, 0),
+                ('git checkout -- README.md && git push origin feature', self.feature, 0),
+                ('git switch feature && git push origin feature', self.feature, 0),
+                ('git push origin feature', self.feature, 0),
+                ('git push origin {{feature,other}}', self.feature, 0),
+                ('P=status; git $P', self.feature, 0),
+                ('git config user.name x && git push origin feature', self.feature, 0),
+                ('git merge --no-edit origin/main', self.feature, 0),
+                ('git remote add fork https://example.com/x.git && git push fork feature', self.feature, 0),
+                ("trap 'echo done' EXIT", self.feature, 0),
+                ('git $X status', self.feature, 0),
+                ('git push --prune origin feature', self.feature, 0),
+            )
+        )
+
+    def test_git_answers_are_kept_for_one_command_only(self) -> None:
+        import guard_base
+
+        git_guard.evaluate("git push origin feature; git push origin feature", str(self.feature), {})
+        self.assertEqual({}, guard_base.GIT_OUTPUTS)
+        self.assertFalse(guard_base.CACHING[0])
 
     def test_graphql_names_stand_where_a_variable_can(self) -> None:
         self.codes(
