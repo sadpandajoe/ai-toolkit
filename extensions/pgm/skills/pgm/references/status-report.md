@@ -5,8 +5,6 @@ last 14 days. It names risks from signals; it doesn't prescribe solutions.
 
 ## Collect
 
-Independent calls (per team, repository, epic) can run concurrently.
-
 - **Shortcut**, per team: `POST /stories/search` with
   `workflow_state_types: ["started"]` and `group_id` (WIP), and with
   `completed_at_start` 14 days ago and `group_id` (recently completed, with
@@ -18,8 +16,7 @@ Independent calls (per team, repository, epic) can run concurrently.
 - **Docs** (optional): a connected docs search for recent meeting notes, prior
   reports or open action items.
 
-Drop bot-owned stories and bot-authored PRs. Raw payloads are large: summarize
-them in fresh workers (one each for Shortcut, GitHub, docs) when available.
+Drop bot-owned stories and bot-authored PRs.
 
 Signals to flag: stories whose `moved_at` is older than `stalled_days`;
 `blocked` or `blocker` stories; WIP per member from `owner_ids`; PRs open
@@ -57,6 +54,5 @@ longer than `pr_review_hours` without an approving review; the review backlog
 - [Story/PR] — [team] — [date] (by team, most recent first, ~10 most notable)
 ```
 
-With `--audience`, format it per [comms.md](comms.md). Otherwise offer an
-audience summary, a deeper look at the top risks, or one team or epic
-expanded. Historical trends belong to the velocity report.
+With `--audience`, format it per [comms.md](comms.md). Historical trends
+belong to the velocity report.

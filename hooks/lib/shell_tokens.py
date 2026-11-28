@@ -46,11 +46,25 @@ simple command it can see, in order, with its wrapper-stripped argv:
   of `$(...)` and backtick substitutions are walked as nested commands.
 
 Known limits (this is a tripwire, not a shell sandbox): command matching is
-static, so a `cd` inside a conditional or a subshell counts as taken, shell
-functions and aliases are not expanded here, and a command nested deeper than
-DEPTH_LIMIT or one that does not tokenize is yielded as `unresolved` for the
-caller to decide. Rescanning a tail and scanning a `$(...)` or backtick body
-cost the characters they read, against MAX_TAIL_CHARS for the whole
+static, so shell functions and aliases are not expanded here, and a command
+nested deeper than DEPTH_LIMIT or one that does not tokenize is yielded as
+`unresolved` for the caller to decide. `DirectoryModel` decides the directory of
+every command (it is what `commands()` and `git_guard.parse_git_actions` both
+read): a subshell, `$(...)` and `<(...)` restore it, and a `cd` the model cannot
+be sure ran leaves it unknown (None) until a subshell restores it or an absolute
+`cd` re-anchors it: after `||`, after `&&` once the list ends, in a pipeline, in
+a list ended by `&`, in an if/while/until/for/select/case body, an `eval` that
+changes directory, and every `cd` in text where a quoted or escaped operator
+character (or one in `${...}`) came out as a bare token, which includes an
+unescaped `find -exec ... \\;`: an accepted over-block. A function runs where it is
+called, which is not followed: once the text defines one and a `cd` appears after
+the definition starts, everything from the definition on is unknown. So do `cd -`,
+`popd` and a bare `pushd`: the previous directory and the directory stack are not
+tracked. Only the exact words `cd`, `pushd` and `popd` move the shell (`CD` and
+`/usr/bin/cd` do not). Callers block the decisions that need the directory. Not
+modelled: a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`,
+`C=cd; $C X`, `trap 'cd X' DEBUG`, `eval "$X"`. Rescanning a tail and
+scanning a `$(...)` or backtick body cost the characters they read, against MAX_TAIL_CHARS for the whole
 `commands()` call: a segment that would pass it is yielded as one `unreadable`
 command with no known directory, and so is every later segment that would
 read more. An unreadable command is also `unresolved`, but its text cannot be
@@ -72,7 +86,20 @@ or a newline, more hops, `--git-dir`, `--work-tree`, `GIT_DIR` and `GIT_WORK_TRE
 the directory unknown (None). So does a `cd` target with `$`, a backtick, a glob
 character, a tab or a newline, except the one substitution read on purpose:
 `cd "$(git rev-parse --show-toplevel)"` (unquoted, or in backticks) is the git top
-level of the current directory.
+level of the current directory. The other `$` read is a variable an earlier segment
+set to a literal path (`S=/repo; cd $S`, `git -C $S`): `$NAME`, `${NAME}` or either
+followed by `/rest`, and `$HOME` as `~`; `DirectoryModel.variables_at` holds the table,
+under the certainty rules of a `cd`. Any other `$` (an unassigned variable, `$PWD`,
+`${S:-x}`, `$S$T`) stays unknown. `git_globals` does not read the table: the pre-push
+hook's `git -C $S` stays unknown.
+
+A substitution is one word of the command it sits in: `commands()` reads `$(...)`, `<(...)`
+and `>(...)` (`command_spans`) as the word `SUBSTITUTION_WORD` (glued to the text before its `$`)
+and goes on with the words after its `)` in the same command, while the commands inside it are
+yielded on their own. `Command.cut` marks a command with an unquoted substitution among its words, an
+unclosed `$(`, or a backtick span (read folded and as it is: `readings`). With a quoted operator about
+(`Tokens.quoted_operators`, also a `;`, `&` or `|` inside double quotes of their own within a
+double-quoted `$(...)`) the paren stack and the merge are not trusted and callers read the text as well.
 
 Operator runs: shlex returns a run of operator characters (`);`, `;(`, `&&(`, `)|`,
 `f()(`) as one token, so `tokenize` splits each by maximal munch into the shell
@@ -86,13 +113,27 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass, field
-import functools
 import os
 import re
 import shlex
 import signal
-import subprocess
 from typing import Iterator
+
+from shell_lex import (
+    FdWord, KEYWORDS, SEPARATORS, SIMPLE_WRAPPERS, SUBSTITUTION_WORD, expand_words, has_brace, WORD_API, WORD_GH, WORD_GRAPHQL,
+    WORD_PR, WORD_PUSH, command_spans, drop_redirections, is_assignment, join_toplevel, may_vanish,
+    opens_substitution, tokenize, unquoted, words_in_order,
+)
+from shell_dirs import DirectoryModel, PIPES, hop_dir, unresolved_dir
+from shell_payloads import PWSH, flag_payloads, is_posix_shell, shell_script, trap_action
+from shell_values import assigned_values, plain_variable
+
+# Re-exported: the git guard's modules, hooks/pre-push-validate.sh and the tests read these names through this module.
+from shell_lex import (  # noqa: F401
+    CURRENT_BRANCH_SUBSTITUTIONS, REDIRECTIONS, REDIRECTION_FD, SHELL_NAME, SHELLS, Tokens, WORD_GIT, command_words,
+    expand_ansi_c, head_name, may_be, quoted_substitution_separator,
+)
+from shell_dirs import UNKNOWN_CD_TARGET, advance_dir  # noqa: F401
 
 
 class DeadlineExceeded(BaseException):
@@ -125,10 +166,6 @@ def deadline(seconds: float) -> Iterator[None]:
         signal.signal(signal.SIGALRM, previous)
 
 
-SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")"}
-SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
-KEYWORDS = {"if", "then", "elif", "else", "do", "while", "until", "!", "{", "}"}
-SIMPLE_WRAPPERS = {"command", "exec", "nohup", "time"}
 DEPTH_LIMIT = 3
 # Characters the rescan tails of one `commands()` call may tokenize in all. A long
 # run of rescan words (`true sh sh sh ...`) otherwise costs a tail per word, each
@@ -136,36 +173,23 @@ DEPTH_LIMIT = 3
 # around one 100 KB word), not words.
 MAX_TAIL_CHARS = 100_000
 MAX_DIR_HOPS = 16
-# A directory word whose real value this module cannot know: a variable, tilde or
-# substitution the shell expands, a glob character (`*?[` pick a directory by pattern),
-# or a newline or tab (the line-based callers cannot carry one: the pre-push shell
-# reads the directory back with `read`, which strips a trailing tab).
-UNKNOWN_PATH = re.compile(r"[$~`\n\t*?\[]")
-# The same for a `cd` target, except `~`, which `advance_dir` expands the way the shell does.
-UNKNOWN_CD_TARGET = re.compile(r"[$`\n\t*?\[]")
-# The one substitution `advance_dir` resolves instead of leaving unknown: the git top level
-# of the current directory. Exactly this text, in the `$(...)` or the backtick spelling.
-TOPLEVEL_SUBSTITUTIONS = ("$(git rev-parse --show-toplevel)", "`git rev-parse --show-toplevel`")
 
-HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([^\s'\"<>;|&()\\]+)\2")
-WORD_START = " \t\n;&|("
 BACKTICK = re.compile(r"`([^`]*)`")
 
 WRAPPER_VALUE_FLAGS = {
-    "env": {"-u", "--unset"},
+    "env": {"-u", "--unset", "-P", "-a", "--argv0"},
     "timeout": {"-s", "--signal", "-k", "--kill-after"},
-    "xargs": {"-I", "-i", "-n", "-P", "-L", "-d", "-E", "-s", "-a"},
+    "xargs": {"-I", "-i", "-n", "-P", "-L", "-d", "-E", "-s", "-a", "-J", "-R", "-S"},
     "nice": {"-n", "--adjustment"},
     "ionice": {"-c", "-n", "-p"},
     "stdbuf": {"-i", "-o", "-e"},
-    "sudo": {"-u", "-g", "-C", "-h", "-p", "-r", "-t", "-U"},
+    "sudo": {
+        "-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-T", "-U", "--prompt", "--user", "--group", "--host",
+        "--chdir", "--role", "--type", "--other-user", "--close-from", "--command-timeout",
+    },
+    "exec": {"-a"},
 }
 WRAPPERS = SIMPLE_WRAPPERS | set(WRAPPER_VALUE_FLAGS)
-# The override scan only: redirection operators as the tokenizer splits them,
-# each followed by its target word, and the words that restart the scan when
-# they appear later in an argv (behind a wrapper this module does not know).
-REDIRECTIONS = {">", ">>", "<", "<<", "<<<", "<>", ">&", "<&", ">|", "&>", "&>>"}
-REDIRECTION_FD = re.compile(r"\d+|\{[A-Za-z_]\w*\}")
 RESCAN_WORDS = SHELLS | {"env", "eval"}
 # The default traversal rescans from a later gh or git word too: `setsid gh pr
 # merge 12` (or `uv run`, `flock`, `chronic`, `watch`, `find -exec`, `builtin`)
@@ -183,140 +207,6 @@ INERT_HEADS = {
     "fgrep", "rg", "ag", "ack", "man", "which", "type", "whereis", "diff", "cmp",
 }
 NO_RESCAN_HEADS = INERT_HEADS | {"gh", "git"}
-
-DIRECTORY_CHANGE = re.compile(r"(?<![\w-])(?:cd|pushd)(?![\w-])|--chdir|(?<!\w)-C")
-
-
-def split_lines(text: str) -> str:
-    """Normalize a command for tokenizing.
-
-    Unquoted newlines become `;`, backslash-newline joins lines, comments are
-    dropped, and here-document bodies are skipped, including one opened inside
-    a `$(...)` within double quotes (`--body "$(cat <<'EOF' ...)"`).
-    """
-    out: list[str] = []
-    quote: str | None = None
-    pending: list[tuple[bool, str]] = []
-    substitutions = 0
-    previous = "\n"
-    index = 0
-    while index < len(text):
-        char = text[index]
-        if char == "\\" and quote != "'" and index + 1 < len(text):
-            if text[index + 1] != "\n":
-                out.append(text[index : index + 2])
-                previous = "a"
-            index += 2
-            continue
-        if quote is None and char == "#" and previous in WORD_START:
-            while index < len(text) and text[index] != "\n":
-                index += 1
-            continue
-        if char == "<" and (quote is None or (quote == '"' and substitutions)):
-            match = None
-            if not text.startswith("<<<", index) and previous in WORD_START:
-                match = HEREDOC.match(text, index)
-            if match:
-                pending.append((match.group(1) == "-", match.group(3)))
-                out.append(match.group(0))
-                previous = "a"
-                index = match.end()
-                continue
-        if quote == '"':
-            if text.startswith("$(", index):
-                substitutions += 1
-            elif char == ")" and substitutions:
-                substitutions -= 1
-        if quote is None and char in "'\"":
-            quote = char
-        elif quote == char:
-            quote = None
-            substitutions = 0
-        if char == "\n" and (quote is None or pending):
-            out.append(" ; " if quote is None else "\n")
-            previous = "\n"
-            index += 1
-            for strip, delimiter in pending:
-                while index < len(text):
-                    end = text.find("\n", index)
-                    end = len(text) if end < 0 else end
-                    line = text[index:end]
-                    index = min(end + 1, len(text))
-                    if (line.strip() if strip else line) == delimiter:
-                        break
-            pending = []
-            continue
-        out.append(char)
-        previous = char
-        index += 1
-    return "".join(out)
-
-
-PUNCTUATION = frozenset("();<>|&")
-# One shell operator at a time, longest first (maximal munch). `()` stays whole: it is the
-# function-definition head `f()`. Redirection operators keep their spelling (`>&`, `&>>`).
-OPERATOR = re.compile(r"&>>|<<<|&&|\|\||>>|<<|<&|>&|&>|<>|>\||\|&|\(\)|.")
-
-
-def split_operators(token: str) -> list[str]:
-    """A token made only of operator characters, split into the operators it holds.
-
-    shlex (`punctuation_chars`) returns a whole run as one token: `);`, `;(`, `&&(`,
-    `)&&`, `)|`, `f()(`. Left fused, the command after the run reads as arguments of the
-    one before it. A quoted all-operator word (`'));'`) reads the same: an accepted over-block.
-    """
-    if token and all(char in PUNCTUATION for char in token):
-        return OPERATOR.findall(token)
-    return [token]
-
-
-def tokenize(text: str) -> list[str]:
-    """Shell words and operators; raises ValueError on unbalanced quotes."""
-    lexer = shlex.shlex(split_lines(text), posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    return [part for token in lexer for part in split_operators(token)]
-
-
-def join_toplevel(tokens: list[str]) -> list[str]:
-    """Rejoin `$ ( git rev-parse --show-toplevel )` and its backtick spelling into one word.
-
-    The lexer breaks the unquoted forms at the parentheses (or the backticks' spaces); quoted,
-    they are already one word. All three read as the same word, which `advance_dir` resolves.
-    """
-    joined: list[str] = []
-    index = 0
-    while index < len(tokens):
-        if tokens[index : index + 6] == ["$", "(", "git", "rev-parse", "--show-toplevel", ")"]:
-            joined.append(TOPLEVEL_SUBSTITUTIONS[0])
-            index += 6
-        elif tokens[index : index + 3] == ["`git", "rev-parse", "--show-toplevel`"]:
-            joined.append(TOPLEVEL_SUBSTITUTIONS[1])
-            index += 3
-        else:
-            joined.append(tokens[index])
-            index += 1
-    return joined
-
-
-def is_assignment(token: str, *, include_append: bool = False) -> bool:
-    name, sep, _ = token.partition("=")
-    if include_append and name.endswith("+"):
-        name = name[:-1]
-    return bool(sep) and name.isidentifier()
-
-
-def segments(tokens: list[str]) -> Iterator[list[str]]:
-    current: list[str] = []
-    for token in tokens:
-        if token in SEPARATORS:
-            if current:
-                yield current
-            current = []
-        else:
-            current.append(token)
-    if current:
-        yield current
 
 
 def env_option(arg: str, rest: list[str]) -> tuple[str, str, int] | None:
@@ -338,6 +228,7 @@ class Effects:
     assignments: dict[str, str] = field(default_factory=dict)
     chdir: list[str] = field(default_factory=list)
     split: str | None = None
+    wrapped: bool = False  # a wrapper's option came first: the head may be its value (`exec -a echo`)
 
 
 def skip_options(wrapper: str, rest: list[str], effects: Effects, *, scan: bool = False) -> list[str]:
@@ -351,12 +242,14 @@ def skip_options(wrapper: str, rest: list[str], effects: Effects, *, scan: bool 
             effects.assignments[name] = value
             rest = rest[1:]
         elif option:
+            effects.wrapped = True
             if option[0] == "chdir":
                 effects.chdir.append(option[1])
             else:
                 effects.split = option[1]
             rest = rest[option[2] :]
         elif arg.startswith("-") and arg != "-":
+            effects.wrapped = True  # past an option, the head may be its value (`exec -a echo ...`)
             rest = rest[2:] if arg in valued else rest[1:]
         elif wrapper == "timeout" and re.fullmatch(r"\d+(\.\d+)?[smhd]?", arg):
             rest = rest[1:]
@@ -365,20 +258,105 @@ def skip_options(wrapper: str, rest: list[str], effects: Effects, *, scan: bool 
     return rest
 
 
-def drop_redirections(segment: list[str]) -> list[str]:
-    """A segment's words without its redirections (operator, target and fd)."""
-    words: list[str] = []
+def printed_heads(tokens: list[str], first: int, segment: list[str], rest: list[str]) -> list[tuple[str | None, list[str]]]:
+    """What the shell may run when a substitution stands where the command word of `rest` does:
+    (the substitution's text, the words after it): `` `echo gh pr` merge 12`` runs `gh pr merge
+    12`. One pair per substitution that may be the command word: past a word that may
+    expand to nothing (`$X $(echo gh pr merge 12)`, `$(true) $(echo ...)`) the next one may be.
+    `rest` is `segment` past its prefixes, and `first` the index in `tokens` where `segment`
+    starts."""
+    texts: list[tuple[str | None, list[str]]] = []
+    before = sum(word.count(SUBSTITUTION_WORD) for word in segment[: len(segment) - len(rest)])
     index = 0
-    while index < len(segment):
-        token = segment[index]
-        if token in REDIRECTIONS:
-            index += 2
-        elif index + 1 < len(segment) and segment[index + 1] in REDIRECTIONS and REDIRECTION_FD.fullmatch(token):
+    while index < len(rest):
+        head = rest[index]
+        if len(texts) >= PRINTED_HEAD_LIMIT:
+            # past the limit, the rest is one text, read like text that did not parse
+            texts.append((None, rest[index:]))
+            break
+        if head.startswith("`"):
+            closing = index if head.count("`") >= 2 and head.endswith("`") else next(
+                (k for k in range(index + 1, len(rest)) if rest[k].count("`") % 2), len(rest) - 1
+            )
+            span = " ".join(rest[index : closing + 1])
+            match = BACKTICK.match(span)
+            body = match.group(1) if match else span[1:]
+            texts.append((body, rest[closing + 1 :]))
+            index = closing + 1
+            continue
+        glued = head[: -len(SUBSTITUTION_WORD)] if head.endswith(SUBSTITUTION_WORD) else None
+        if glued is not None and (not glued or may_vanish(glued)):
+            body = substitution_body(tokens, first, before + head.count(SUBSTITUTION_WORD))
+            texts.append((body, rest[index + 1 :]))
+            before += head.count(SUBSTITUTION_WORD)
             index += 1
-        else:
-            words.append(token)
-            index += 1
-    return words
+            continue
+        if not may_vanish(head):
+            break
+        before += head.count(SUBSTITUTION_WORD)
+        index += 1
+    return texts
+
+
+PRINTED_HEAD_LIMIT = 8  # substitutions in a row read as the command word, each with the words after it
+LOOKUP_BODY = re.compile(r"\s*(?:command\s+-[vV]|which|type\s+-[pP])\s+([\w./+-]+)\s*")
+CERTAIN_OPTIONS = re.compile(r"-[neE]+")
+
+
+def printed_words(body: str) -> str | None:
+    """The words a substitution body surely prints: an `echo` of literal words, with nothing that
+    could change or redirect its output (no expansion, escape, glob, redirection or other
+    command), else None."""
+    if any(char in body for char in ";&|<>()`$\\*?[\n#"):
+        return None
+    try:
+        words = shlex.split(body)
+    except ValueError:
+        return None
+    if words in (["true"], [":"], ["false"]):
+        return ""  # prints nothing: the words after it are the command
+    if not words or words[0] != "echo":
+        return None
+    args = words[1:]
+    while args and CERTAIN_OPTIONS.fullmatch(args[0]):
+        args = args[1:]
+    return " ".join(args)
+
+
+ESCAPING_PRINT = re.compile(r"\s*(?:printf\b|echo\s+-[a-zA-Z]*e)")
+
+
+def decoded_escapes(text: str) -> str:
+    """`text` with the backslash escapes `printf` and `echo -e` decode (`\\x67`, `\\147`, `\\u0067`)."""
+    text = re.sub(r"\\0?([0-7]{1,3})", lambda match: chr(int(match.group(1), 8)), text)
+    try:
+        return text.encode("latin-1", "backslashreplace").decode("unicode_escape")
+    except UnicodeDecodeError:
+        return text
+
+
+def substitution_body(tokens: list[str], first: int, wanted: int) -> str | None:
+    """The text of the `wanted`-th top-level `$(...)` (counted from 1) of the command whose first
+    token is `first`, or None when there is none."""
+    depth = seen = 0
+    start = None
+    for index in range(first, len(tokens)):
+        token = tokens[index]
+        if token == "(":
+            if depth == 0 and opens_substitution(tokens, index):
+                seen += 1
+                if seen == wanted:
+                    start = index + 1
+            depth += 1
+        elif token == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+            if depth == 0 and start is not None:
+                return " ".join(tokens[start:index])
+        elif depth == 0 and token in SEPARATORS:
+            return None
+    return " ".join(tokens[start:]) if start is not None else None
 
 
 def strip_prefixes(segment: list[str], *, scan: bool = False) -> tuple[list[str], Effects]:
@@ -419,12 +397,14 @@ class Payload:
     rescan: bool = False
 
 
-QUOTING = re.compile(r"['\"\\`]")
-GATED_BARE = re.compile(r"\bpush\b|\bpr\s+(?:ready|merge|create|new)\b")
-WORD_GH = re.compile(r"\bgh\b", re.I)
-WORD_GIT = re.compile(r"\bgit\b", re.I)
-WORD_PR = re.compile(r"\bpr\b")
-WORD_PUSH = re.compile(r"\bpush\b")
+GATED_BARE = re.compile(r"\bpush\b|\bpr\s+(?:ready|merge|create|new|revert)\b")
+API_UNREAD = re.compile(r"--input\b|query=@")  # a GraphQL query the text does not hold
+# what a `gh api` call names to reach a pull request: the REST path (`pulls` ending the
+# endpoint, or `pulls/<n>/merge`) or a GraphQL mutation
+API_PULLS = re.compile(
+    r"\bpulls(?=$|[\s?#'\"])|\bpulls/[^/\s]+/merge\b|\b(?:mergePullRequest|markPullRequestReadyForReview|enablePullRequestAutoMerge"
+    r"|enqueuePullRequest|createPullRequest|revertPullRequest)\b"
+)
 GIT_DASHED = re.compile(r"git-(.+)")
 # `git submodule--helper foreach` runs what `git submodule foreach` runs.
 GIT_SUBCOMMANDS = {"submodule--helper": "submodule"}
@@ -457,28 +437,6 @@ GIT_ENTRY_POINTS = frozenset(
 )
 
 
-def words_in_order(text: str, *patterns: re.Pattern[str]) -> re.Match[str] | None:
-    """The match of the last pattern when each one matches after the end of the previous one.
-
-    Linear in the text: every pattern is searched once, from where the one before it
-    ended (`gh`, then `pr`, then `merge`), where a single `gh.*pr.*merge` expression
-    backtracks across the whole text from every start.
-    """
-    match = None
-    position = 0
-    for pattern in patterns:
-        match = pattern.search(text, position)
-        if match is None:
-            return None
-        position = match.end()
-    return match
-
-
-def head_name(word: str) -> str:
-    """The basename of a command head, lower-cased (`GIT`, `/usr/bin/Gh` read as `git`, `gh`)."""
-    return os.path.basename(word).lower()
-
-
 def is_git_word(word: str) -> bool:
     """`git`, or a dashed entry point git installs (`git-push`, `/usr/lib/git-core/git-rebase`).
 
@@ -507,16 +465,6 @@ def git_argv(argv: list[str]) -> list[str] | None:
     return ["git", dashed.group(1), *argv[1:]] if dashed and dashed.group(1) in GIT_ENTRY_POINTS else None
 
 
-def unquoted(text: str) -> str:
-    """`text` as the shell reads it once quoting is gone.
-
-    Backslash-newline pairs are joined first, then quote characters, backslashes and
-    backticks are removed, so `"gh''" pr merge`, `g\\h pr ready` and `pu\\<newline>sh` read
-    as written. The one helper behind `mentions_gated` and `mentions_push`.
-    """
-    return QUOTING.sub("", text.replace("\\\n", ""))
-
-
 def mentions_push(text: str) -> bool:
     """Whether `text`, with its quoting removed (`unquoted`), has a `push` word."""
     return WORD_PUSH.search(unquoted(text)) is not None
@@ -530,7 +478,26 @@ def mentions_gated(text: str) -> bool:
     parse: it over-matches (`make push`, a filename `push`, `gh pr view`) on purpose.
     """
     text = unquoted(text)
-    return words_in_order(text, WORD_GH, WORD_PR) is not None or GATED_BARE.search(text) is not None
+    return (
+        words_in_order(text, WORD_GH, WORD_PR) is not None
+        or GATED_BARE.search(text) is not None
+        or mentions_api_publish(text)
+    )
+
+
+def mentions_api_publish(text: str) -> bool:
+    """Whether `text` has `gh`, then `api`, then a pull request path or mutation (`API_PULLS`)
+    or a GraphQL query it does not hold (`API_UNREAD` next to `graphql`)."""
+    return words_in_order(unquoted(text), WORD_GH, WORD_API, API_PULLS) is not None or mentions_api_unread(text)
+
+
+def mentions_api_unread(text: str) -> bool:
+    """Whether `text` has `gh`, `api` and `graphql` with `--input` or `query=@`, either order."""
+    text = unquoted(text)
+    return (
+        words_in_order(text, WORD_GH, WORD_API, WORD_GRAPHQL, API_UNREAD) is not None
+        or words_in_order(text, WORD_GH, WORD_API, API_UNREAD, WORD_GRAPHQL) is not None
+    )
 
 
 # A word that configures an inline git alias. These carry the key in the word and
@@ -656,10 +623,7 @@ def git_globals(args: list[str], workdir: str | None, assignments: dict[str, str
         arg = args[index]
         if arg == "-C" and index + 1 < len(args):
             hops += 1
-            if hops > MAX_DIR_HOPS or UNKNOWN_PATH.search(args[index + 1]):
-                directory = None
-            elif directory is not None:
-                directory = os.path.normpath(os.path.join(directory, args[index + 1]))
+            directory = None if hops > MAX_DIR_HOPS else hop_dir(directory, args[index + 1])
         elif arg in {"--git-dir", "--work-tree"} or arg.startswith(("--git-dir=", "--work-tree=")):
             directory = None
         index += 2 if arg in GIT_VALUE_FLAGS else 1
@@ -670,44 +634,101 @@ def is_shell_command_flag(arg: str) -> bool:
     return arg.startswith("-") and not arg.startswith("--") and "c" in arg[1:]
 
 
-@functools.lru_cache(maxsize=32)
-def git_toplevel(path: str) -> str | None:
-    """`git -C path rev-parse --show-toplevel`, or None when it fails (not a repository, no git)."""
-    try:
-        result = subprocess.run(
-            ["git", "-C", path, "rev-parse", "--show-toplevel"],
-            text=True,
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
-    top = result.stdout.strip()
-    return top if result.returncode == 0 and top and "\n" not in top else None
+STDIN_SCRIPT = re.compile(r"-|/dev/stdin|/dev/fd/\d+|/proc/self/fd/\d+")
+SHELL_VALUE_OPTIONS = {"--rcfile", "--init-file"}
+EXEC_WRAPPERS = {
+    "docker", "podman", "kubectl", "ssh", "xargs", "timeout", "nice", "nohup", "setsid", "stdbuf",
+    "chroot", "flock", "watch", "unbuffer", "script", "su", "doas", "sudo", "env", "exec", "command",
+    "time", "busybox", "toolbox", "distrobox", "lxc", "nsenter", "systemd-run",
+}
+UNSEEN_HEADS = re.compile(r"\b(?:bash|sh|zsh|dash|ksh|source|eval)\b|(?:^|[\s;&|(])\.(?=\s)")
+UNSEEN_TEXT, UNSEEN_BODIES = "text", "bodies"  # what of the command text a check reads: all, or its substitutions
 
 
-def advance_dir(workdir: str | None, args: list[str]) -> str | None:
-    """Follow `cd`/`pushd` so a check reads the repository the command runs in.
+def holds_substitution(word: str) -> bool:
+    return "$(" in word or "`" in word or SUBSTITUTION_WORD in word
 
-    A target the shell would expand (`$`, a backtick), a glob (`*?[`) or a target with a newline
-    or a tab leaves the directory unknown (None); `~` is expanded here the way the shell does.
-    The one substitution read instead is the git top level of the current directory
-    (`TOPLEVEL_SUBSTITUTIONS`), which is that repository's root, or unknown outside one.
-    """
-    if workdir is None:
-        return None
-    target = next((arg for arg in args if not arg.startswith("-")), None)
-    if target is None or target == "-":
-        return workdir
-    if target in TOPLEVEL_SUBSTITUTIONS:
-        return git_toplevel(workdir)
-    if UNKNOWN_CD_TARGET.search(target):
-        return None
-    path = os.path.expanduser(target)
-    path = path if os.path.isabs(path) else os.path.join(workdir, path)
-    return os.path.normpath(path) if os.path.isdir(path) else workdir
+
+def stdin_fed(segment: list[str], piped: bool) -> bool:
+    """Whether a command's stdin carries text the guard does not read as commands: a
+    here-document, a here-string or a process substitution on fd 0 (`<<`, `<<<`, `< <(...)`, no
+    other descriptor before it), or a pipe into it. A file (`< x.sh`, `</dev/null`) is a script
+    file, a limit of its own."""
+    if piped:
+        return True
+    for index, word in enumerate(segment):
+        fd = segment[index - 1] if index else None
+        if isinstance(fd, FdWord) and fd != "0":
+            continue
+        if word in {"<<", "<<<", "<&"}:
+            return True
+        if word == "<" and index + 1 < len(segment) and SUBSTITUTION_WORD in segment[index + 1]:
+            return True
+    return False
+
+
+def shell_unseen(argv: list[str], fed: bool) -> str:
+    """`unseen_script` for a shell head, by this module's own reading of its options."""
+    index = 1
+    while index < len(argv):
+        word = argv[index]
+        if word == "--":
+            index += 1
+            break
+        short = word[:1] in "-+" and not word.startswith("--") and len(word) > 1
+        if word in SHELL_VALUE_OPTIONS or (short and word[-1] in "oO"):
+            if word in SHELL_VALUE_OPTIONS and index + 1 < len(argv) and holds_substitution(argv[index + 1]):
+                return UNSEEN_BODIES  # `--rcfile <(echo ...)`: a startup file the guard cannot read
+            index += 2  # `-o pipefail`, `-euo pipefail`, `-O extglob`
+        elif short and word[0] == "-" and "c" in word[1:]:
+            return UNSEEN_BODIES if index + 1 < len(argv) and holds_substitution(argv[index + 1]) else ""
+        elif short and word[0] == "-" and "s" in word[1:]:
+            return UNSEEN_TEXT if fed else ""  # `-s`: the commands come from stdin
+        elif word[:1] in "-+" and len(word) > 1:
+            index += 1
+        else:
+            break
+    script = argv[index] if index < len(argv) else None
+    if script is None:
+        return UNSEEN_TEXT if fed else ""
+    if STDIN_SCRIPT.fullmatch(script):
+        return UNSEEN_TEXT
+    return UNSEEN_BODIES if SUBSTITUTION_WORD in script else ""
+
+
+def unseen_script(argv: list[str], fed: bool, own: bool | None = None) -> str:
+    """What a shell, `source` or `eval` with these words runs that the guard never reads as
+    commands: `UNSEEN_TEXT` when it reads a fed stdin (no `-c` and no script, `-s`, `-`,
+    `/dev/stdin`: a here-document, a here-string, a pipe) or an fd (`/dev/fd/3`), so the whole
+    command text is the script; `UNSEEN_BODIES` when the script is a process substitution
+    (`bash <(...)`, `. <(...)`) or a `-c` or `eval` text holds a substitution (`bash -c "$(cat
+    <<'EOF' ...)"`), so the substitutions' text is; "" otherwise. A command name that is an
+    expansion (`$SHELL`) reading its own segment's fed stdin (`own`) counts as a shell; a literal
+    shell may get one from anywhere in the command (`fed`). A script file (`bash x.sh`) and a
+    payload in a variable (`bash -c "$X"`) are limits of their own."""
+    if not argv:
+        return ""
+    head = head_name(argv[0])
+    if head == "ssh":
+        return UNSEEN_TEXT if fed else ""  # the remote shell reads ssh's stdin, or its command reads it
+    if head in SHELLS or SHELL_NAME.fullmatch(head):
+        kind = shell_unseen(argv, fed)
+        script = shell_script(argv)  # bash's own reading of its options (`bash -c -x "$(...)"`)
+        if kind != UNSEEN_TEXT and script is not None and holds_substitution(script[0]):
+            kind = UNSEEN_BODIES
+        return kind
+    if head in {"source", "."}:
+        operands = [word for word in argv[1:] if word != "--"]
+        if not operands:
+            return ""
+        if STDIN_SCRIPT.fullmatch(operands[0]):
+            return UNSEEN_TEXT
+        return UNSEEN_BODIES if SUBSTITUTION_WORD in operands[0] else ""
+    if head == "eval":
+        return UNSEEN_BODIES if any(holds_substitution(word) for word in argv[1:]) else ""
+    if (fed if own is None else own) and ("$" in argv[0] or "`" in argv[0]):
+        return UNSEEN_TEXT  # `$SHELL <<< ...`, `B=bash; $B <<< ...`, `$(which bash) -s <<EOF`
+    return ""
 
 
 def inner_commands(text: str, walk: Walk) -> Iterator[str | None]:
@@ -735,15 +756,6 @@ def inner_commands(text: str, walk: Walk) -> Iterator[str | None]:
             return
         yield text[start + 2 : position - 1 if depth == 0 else position]
         index = start + 2
-
-
-def unresolved_dir(text: str, workdir: str | None) -> str | None:
-    """Where an unparseable or too-deeply nested command runs.
-
-    The starting directory when nothing in it changes directory; otherwise
-    unknown (None), so a caller blocks rather than inherit the starting repo.
-    """
-    return None if DIRECTORY_CHANGE.search(text) else workdir
 
 
 class Walk:
@@ -778,6 +790,11 @@ class Command:
     unresolved: bool = False
     text: str = ""
     unreadable: bool = False
+    untrusted: bool = False  # a quoted operator came out bare: a redirection cannot be told from a word
+    cut: bool = False  # an unquoted `$(`, an unclosed one or a backtick span: a flag may hide in or after it
+    source: str = ""  # with `untrusted`: the text its tokens were read from (comments and here-document bodies gone)
+    unseen: str = ""  # a shell here runs a script the guard never sees, and what to read of it: `unseen_script`
+    wrapped: bool = False  # a wrapper or its options came first (`exec -a echo ...`): the head may be a value
 
     @property
     def name(self) -> str:
@@ -798,6 +815,10 @@ def commands(
     include_assignments: bool = False,
     _walk: Walk | None = None,
     _rescanned: bool = False,
+    _untrusted: bool = False,
+    _fed: bool = False,
+    _values: dict | None = None,
+    _braced: bool = False,
 ) -> Iterator[Command]:
     """Yield every command in `text`, in order, nested ones included.
 
@@ -825,17 +846,42 @@ def commands(
     except ValueError:
         yield Command([], inherited, unresolved_dir(text, workdir), True, text)
         return
-    for segment in segments(tokens):
+    # what the variables this text (and the one it came from) assigns may hold (`shell_values`)
+    values = assigned_values(tokens, getattr(tokens, "cleaned", "") or text, _values)
+    model = DirectoryModel(tokens, workdir, _untrusted)
+    _untrusted = model.untrusted  # a nested payload walks under the same doubt
+    fed_any = _fed or stdin_fed(tokens, False) or any(token in PIPES for token in tokens)
+    again = -1  # `command_spans` yields a command twice when a backtick may fold its words
+    for first, segment, cut in command_spans(tokens, merge=not _untrusted):
+        workdir = model.at(first)
+        braces = getattr(tokens, "braces", True)  # every brace quoted: bash expands none
+        if not _braced and first != again and braces and any(has_brace(word) for word in segment):
+            # the segment with its brace words expanded in bash's order is read as well
+            # (`{gh,pr} merge 12`, `env {NAME,X}=1 ...`)
+            expanded = expand_words(segment)
+            braced_text = joined_words(expanded) if expanded is not None else None
+            if braced_text is None or depth >= DEPTH_LIMIT or not walk.charge(len(braced_text)):
+                said = " ".join(segment)
+                if WORD_GH.search(said) or WORD_GIT.search(said) or "AITK_PR_READY" in said or "SKIP_PRECHECK" in said:
+                    yield Command([], {}, None, True, said[:2000], True)  # past the limit: unreadable
+            elif expanded != segment:
+                yield from commands(
+                    braced_text, workdir, depth + 1, inherited, include_assignments=include_assignments,
+                    _walk=walk, _values=values, _untrusted=_untrusted, _fed=fed_any, _braced=True,
+                )
         spent = False
-        for inner in inner_commands(" ".join(segment), walk):
+        # the bodies of the second reading are the first one's: read and charged once
+        for inner in () if first == again else inner_commands(" ".join(segment), walk):
             if inner is None:
                 spent = True
             elif depth >= DEPTH_LIMIT:
                 yield Command([], {}, unresolved_dir(inner, workdir), True, inner)
             else:
                 yield from commands(
-                    inner, workdir, depth + 1, include_assignments=include_assignments, _walk=walk
+                    inner, workdir, depth + 1, include_assignments=include_assignments, _walk=walk, _values=values,
+                    _untrusted=_untrusted, _fed=fed_any,
                 )
+        again = first
         rest, effects = strip_prefixes(segment, scan=include_assignments)
         if spent or (not include_assignments and mentions_gated(" ".join(git_runs_text(segment, rest)))):
             # Block on sight: the work budget is spent, or git is handed text (an inline
@@ -843,44 +889,106 @@ def commands(
             # operation. No directory is known and the text is not trusted.
             yield Command([], {}, None, True, " ".join(segment), True)
             continue
+        for body, tail in () if include_assignments or _untrusted else printed_heads(tokens, first, segment, rest):
+            # the shell runs what a substitution in command position prints, with the words after
+            # it. A lookup (`$(command -v gh)`) prints the name the argv reading already reads; an
+            # `echo` of literal words prints them, walked as a command; any other text is read as
+            # text that did not parse. Each text is charged to the work budget like a nested walk
+            if not walk.charge(len(body or "") + sum(len(word) + 1 for word in tail) + 1):
+                yield Command([], {}, None, True, " ".join(segment)[:2000], True)
+                break
+            if body is not None and LOOKUP_BODY.fullmatch(body):
+                continue
+            certain = printed_words(body) if body is not None else None
+            text = " ".join(([body] if body is not None else []) + tail)
+            if body is not None and ESCAPING_PRINT.match(body):
+                text += "\n" + " ".join([decoded_escapes(body)] + tail)  # `$(printf '\\x67h pr merge 12')`
+            if certain is not None and depth < DEPTH_LIMIT:
+                yield from commands(
+                    # redirections change nothing of the command the text makes: they are left out
+                    " ".join([certain] + [shlex.quote(word) for word in drop_redirections(tail)]), workdir, depth + 1,
+                    _walk=walk, _values=values, _untrusted=_untrusted, _fed=fed_any,
+                )
+            else:
+                yield Command([], {}, unresolved_dir(text, workdir), True, text)
+        if not include_assignments and rest:
+            # a stdin anywhere in the command may reach a shell in a group, a subshell, a body or a
+            # payload (`{ bash; } <<< ...`, `... | (cd x && bash)`, `bash -c 'exec sh' <<EOF`)
+            own = stdin_fed(segment, first > 0 and tokens[first - 1] in PIPES)
+            fed = fed_any or own
+            plain_rest = drop_redirections(rest)
+            unseen = unseen_script(plain_rest, fed, own)
+            if not unseen and fed and plain_rest and head_name(plain_rest[0]) in EXEC_WRAPPERS:
+                # behind a wrapper that runs its words (`docker exec -i app bash`), a shell still
+                # reads this stdin; a shell's name as `grep`'s argument is no shell
+                later = [i for i, word in enumerate(plain_rest[1:], 1) if head_name(word) in SHELLS]
+                unseen = next((kind for i in later[:8] if (kind := unseen_script(plain_rest[i:], True))), "")
+            if unseen:
+                yield Command([], {}, workdir, text=" ".join(segment), unseen=unseen)
         assignments = {**inherited, **effects.assignments}
         target = workdir
         for value in effects.chdir:
-            target = advance_dir(target, [value])
-        nested = None
+            target = hop_dir(target, value, model.variables_at(first))
+        nested_texts: list[str] = []
         if effects.split is not None:
             split = effects.split.replace("\\_", " ")
-            nested = " ".join(["env", split] + [shlex.quote(arg) for arg in rest])
+            nested_texts.append(" ".join(["env", split] + [shlex.quote(arg) for arg in rest]))
         elif rest and head_name(rest[0]) in SHELLS:
             flags = [i for i, arg in enumerate(rest[1:], 1) if is_shell_command_flag(arg)]
             if flags:
                 payload = rest[flags[0] + 1 :]
                 payload = payload[1:] if payload[:1] == ["--"] else payload  # `bash -c -- 'cmd'`
                 if payload:
-                    nested = payload[0]
+                    nested_texts.append(payload[0])
         elif rest and head_name(rest[0]) == "eval":
             payload = rest[1:]
-            nested = " ".join(payload[1:] if payload[:1] == ["--"] else payload)
-        if nested is not None:
+            nested_texts.append(" ".join(payload[1:] if payload[:1] == ["--"] else payload))
+        if effects.split is None and rest and (head_name(rest[0]) in PWSH or is_posix_shell(rest[0])):
+            # bash's own reading of its options (`bash -c -x 'cmd'`), and fish's and pwsh's text
+            script = shell_script(drop_redirections(rest))
+            if script is not None and script[0] not in nested_texts:
+                nested_texts.append(script[0])
+        if nested_texts:
             if include_assignments and effects.assignments:
                 yield Command([], dict(effects.assignments), target)
+            for nested in nested_texts:
+                if depth >= DEPTH_LIMIT:
+                    yield Command([], assignments, unresolved_dir(nested, target), True, nested)
+                else:
+                    yield from commands(
+                        nested, target, depth + 1, assignments, include_assignments=include_assignments,
+                        _walk=walk, _values=values, _untrusted=_untrusted, _fed=fed_any,
+                    )
+            continue
+        trapped = trap_action(drop_redirections(rest)) if rest and head_name(rest[0]) == "trap" else None
+        if trapped is not None:
+            # `trap -- 'cmd' EXIT`: the text runs later, in this shell
             if depth >= DEPTH_LIMIT:
-                yield Command([], assignments, unresolved_dir(nested, target), True, nested)
+                yield Command([], assignments, unresolved_dir(trapped, target), True, trapped)
             else:
                 yield from commands(
-                    nested, target, depth + 1, assignments, include_assignments=include_assignments, _walk=walk
+                    trapped, target, depth + 1, assignments, include_assignments=include_assignments,
+                    _walk=walk, _values=values, _untrusted=_untrusted, _fed=fed_any,
                 )
-            continue
         positions: list[int] = []
         extra: list[Payload] = []
-        if rest and (
-            include_assignments or (head_name(rest[0]) not in NO_RESCAN_HEADS and not is_git_word(rest[0]))
-        ):
+        # a real redirection is no word of the rescanned tail (`setsid gh pr create --draft >/dev/null`);
+        # with a quoted operator about, it cannot be told from a word, so every word stays
+        plain = rest if _untrusted else drop_redirections(rest)
+        first_word = 1 if plain[:1] == rest[:1] else 0  # a redirection ahead of the head is no head
+        unknown_head = bool(plain) and (
+            include_assignments or (head_name(plain[0]) not in NO_RESCAN_HEADS and not is_git_word(plain[0]))
+        )
+        # behind a wrapper an inert head may be an option's value (`exec -a echo gh pr merge 12`)
+        wrapped_inert = bool(plain) and not include_assignments and effects.wrapped and head_name(plain[0]) in INERT_HEADS
+        if unknown_head or wrapped_inert:
             words = RESCAN_WORDS if include_assignments else DEFAULT_RESCAN_WORDS
             later = [
                 i
-                for i, word in enumerate(rest[1:], 1)
-                if head_name(word) in words or (not include_assignments and is_git_word(word))
+                for i, word in enumerate(plain[first_word:], first_word)
+                if head_name(word) in words
+                or (not include_assignments and is_git_word(word))
+                or (not include_assignments and value_heads(values, word) & (words | {"git"}))
             ]
             # The override scan walks the first and lets the tail find the rest; the
             # default traversal exempts a gh or git head from rescanning, so a
@@ -889,18 +997,18 @@ def commands(
             positions = later[:1] if include_assignments else later
             if _rescanned and target == start:
                 positions = []  # every later position is already a tail of the parent
-            if not include_assignments:
-                # `flock /tmp/x -c 'gh pr merge 12'`, `su -c ...`: a later -c word hands
-                # its string to a shell, whatever the wrapper is
-                flag = next((i for i, arg in enumerate(rest[1:], 1) if is_shell_command_flag(arg)), None)
-                payload = rest[flag + 1 :] if flag is not None else []
-                payload = payload[1:] if payload[:1] == ["--"] else payload
-                if payload:
-                    extra.append(Payload(payload[0], target))
+            if not include_assignments and unknown_head:
+                # `flock /tmp/x -c 'gh pr merge 12'`, `su -c ...`, `fish --command ...`: a later -c
+                # or --command word hands its string to a shell, whatever the wrapper is
+                texts = flag_payloads(plain[first_word:])
+                if texts is None:
+                    yield Command([], {}, None, True, " ".join(segment)[:2000], True)  # past the cap
+                    continue
+                extra.extend(Payload(text, target) for text in texts)
         if positions or extra:
-            quoted = [shlex.quote(word) for word in rest]
-            suffix = [0] * (len(rest) + 1)  # characters of the tail that starts at each word
-            for number in range(len(rest) - 1, -1, -1):
+            quoted = [shlex.quote(word) for word in plain]
+            suffix = [0] * (len(plain) + 1)  # characters of the tail that starts at each word
+            for number in range(len(plain) - 1, -1, -1):
                 suffix[number] = suffix[number + 1] + len(quoted[number]) + 1
             cost = sum(suffix[position] for position in positions)
             cost += sum(len(payload.text) or 1 for payload in extra)
@@ -924,30 +1032,56 @@ def commands(
                             payload.workdir,
                             depth + 1,
                             include_assignments=include_assignments,
-                            _walk=walk,
+                            _walk=walk, _values=values,
                             _rescanned=payload.rescan and not include_assignments,
+                            _untrusted=_untrusted,
+                            # a rescanned tail is a shell on this stdin only behind a wrapper that
+                            # runs its words (`docker exec -i app bash`), not `grep sh`
+                            _fed=fed_any and (not payload.rescan or bool(plain) and head_name(plain[0]) in EXEC_WRAPPERS),
                         )
         if not rest:
             if include_assignments and effects.assignments:
                 yield Command([], assignments, target)
             continue
-        if head_name(rest[0]) in {"cd", "pushd"}:
-            workdir = advance_dir(workdir, rest[1:])
-        yield Command(rest, assignments, target)
+        yield Command(
+            rest, assignments, target, untrusted=_untrusted, cut=cut, source=tokens.cleaned if _untrusted else "",
+            wrapped=effects.wrapped,
+        )
+        head_value = values.get(plain_variable(rest[0]) or "") if not include_assignments else None
+        if head_value is not None:
+            # `c='gh pr'; $c merge 12`: each value the command gives the word, split, is the command too
+            for candidate in sorted(head_value.candidates)[:VALUE_HEADS_LIMIT]:
+                yield Command(
+                    candidate.split() + rest[1:], assignments, target, untrusted=_untrusted, cut=cut,
+                    source=tokens.cleaned if _untrusted else "", wrapped=effects.wrapped,
+                )
+            if len(head_value.candidates) > VALUE_HEADS_LIMIT:
+                yield Command([], {}, None, True, " ".join(rest)[:2000], True)
 
 
-def positional(args: list[str], value_flags: set[str]) -> list[str]:
-    """Non-option arguments, skipping the values of `value_flags`."""
-    found: list[str] = []
-    skip = False
-    for arg in args:
-        if skip:
-            skip = False
-        elif arg in value_flags:
-            skip = True
-        elif not arg.startswith("-"):
-            found.append(arg)
-    return found
+VALUE_HEADS_LIMIT = 32  # values of one command word read as the command
+
+
+def joined_words(words: list[str]) -> str:
+    """Words as shell text that tokenizes back to them: quoted, operators and a descriptor glued
+    to its operator kept as they are."""
+    parts: list[str] = []
+    for word in words:
+        if isinstance(word, FdWord):
+            parts.append(str(word))
+        elif word in REDIRECTIONS:
+            parts.append(word + " ")
+        else:
+            parts.append(shlex.quote(word) + " ")
+    return "".join(parts).rstrip()
+
+
+def value_heads(values: dict, word: str) -> set[str]:
+    """The command names the values the command gives a `$N` word start with."""
+    value = values.get(plain_variable(word) or "")
+    if value is None:
+        return set()
+    return {head_name(candidate.split()[0]) for candidate in value.candidates if candidate.split()}
 
 
 def truthy(value: str | None) -> bool:

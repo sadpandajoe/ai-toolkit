@@ -14,6 +14,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
+import shlex
 from pathlib import Path
 import shutil
 import signal
@@ -27,6 +29,10 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hooks" / "lib"))
 import git_guard  # noqa: E402
+import git_effects  # noqa: E402
+import git_walk  # noqa: E402
+import guard_base  # noqa: E402
+import gh_args  # noqa: E402
 import shell_tokens  # noqa: E402
 sys.path.pop(0)
 
@@ -65,10 +71,24 @@ STAGED_BLOCK = (
     "git ci -m state",
     'f(){{ git "$@"; }}; f commit -m state',
     "g=git; $g commit -m state",
+    # a directory the guard cannot read is no clean index: the commit blocks
+    'cd "$PWD" && git commit -m state',
+    "cd -P {repo} && git commit -m state",
+    "cd ~/{repo_home} && git commit -m state",
+    # a cd that fails leaves the shell where it was
+    "cd /nonexistent-aitk-dir; git commit -m state",
 )
 
 # Blocked in a repository with nothing staged in its default index.
 CLEAN_BLOCK = (
+    # a force push whose branch the guard cannot read blocks: it may be main
+    "cd /nonexistent-aitk-dir; git push --force",
+    "cd -P . && git push --force",
+    'cd "$PWD" && git push --force',
+    "cd ~/{repo_home} && git push --force",
+    "git -C ~/{repo_home} push --force",
+    # in a directory the guard cannot read, a word that is no git command may be an alias
+    'cd "$PWD" && git fpm',
     "GIT_INDEX_FILE={index} git commit -m state",
     # --no-verify, -n and signing overrides, in every spelling and wrapper
     "git commit --no-verify -m bad",
@@ -285,6 +305,76 @@ PR_PUBLISH_BLOCK = (
     "gh pr merge 'unbalanced",
     # A PR opens as a draft.
     "gh pr create --title t --body b",
+    # the verb as gh finds it: an unknown flag before it takes the next word as its value
+    "gh pr -t view merge 12",
+    "gh pr --body view merge 12",
+    "gh pr -t list create --fill",
+    # a verb or a gh the guard cannot read
+    "V=merge; gh pr $V 12",
+    'gh "$SUB" merge 12',
+    "g=gh; $g pr merge 12",
+    '"$GH" pr ready 12',
+    "${{GH}} pr merge 12",
+    # gh pr revert opens a pull request
+    "gh pr revert 12",
+    "gh pr revert 12 --title -d",
+    # flags as pflag reads them: `-d` is the title, a value it cannot parse sets nothing
+    "gh pr create -ft -d",
+    "gh pr create -d=false --fill",
+    "gh pr create -fd=false",
+    "gh pr create --draft=tRuE --fill",
+    "gh pr create --draft=yes --fill",
+    # a flag the tables do not know grants no draft, help or undo
+    "gh pr create --some-new-flag --draft --fill",
+    # a flag's value is no request for help, on every verb
+    "gh pr merge 12 --squash --body -h",
+    "gh pr merge 12 -b --help",
+    "gh pr merge 12 --subject -h",
+    # `--repo` takes `--undo` as its value, and `--undo=false` is no undo
+    "gh pr ready 12 --repo --undo",
+    "gh pr ready 12 --undo=false",
+    # `-h` is no cobra boolean at the root or `pr` level: it takes the next word
+    "gh pr -sb -h 12 merge",
+    "gh -sb -h 12 pr merge",
+    "gh pr -sb --h 12 merge",
+    "gh pr -db -h 12 revert --draft=false",
+    "gh pr -rb -h create merge",
+    # text the guard cannot parse: every gated match counts, a draft flag only in its own command
+    "gh pr revert 9 --draft && gh pr ready 12 'x",
+    "gh pr create -d --fill; gh pr merge 12 'x",
+    "gh pr create --fill; ls -d . 'x",
+    "gh pr revert 9; ls -d . 'x",
+    # a command name behind an expansion, in every form
+    '"${{GH:-/usr/local/bin/gh}}" pr merge 12',
+    '"$(realpath /usr/local/bin/gh)" pr merge 12',
+    "g=gx; ${{g/x/h}} pr merge 12",
+    "$(command -v gh) pr merge 12",
+    "`which gh` pr merge 12",
+    "{{gh,}} pr merge 12",
+    "gh {{pr,}} merge 12",
+    "gh pr {{merge,}} 12",
+    "gh pr merg[e] 12",
+    # a positional that may become a flag grants no draft, help or undo
+    "X=--draft=false; gh pr create --fill --draft $X",
+    "X=--undo=false; gh pr ready 12 --undo $X",
+    "X=--help=false; gh pr merge 12 --squash --help $X",
+    "X=--help=false; gh pr create --fill --help $X",
+    "gh pr create --fill --draft {{--draft=false,}}",
+    "gh pr ready --undo \"$PR\"",
+    # flags past an unquoted substitution are not read
+    "gh pr create --draft --fill --title $(echo t) --draft=false",
+    "gh pr ready 12 --undo $(true) --undo=false",
+    "gh pr create --draft --fill --title >(cat) --draft=false",
+    # the unknown verb
+    "gh pr $V 12",
+    "gh $SUB list",
+    'gh "$@"',
+    "for v in view checks; do gh pr $v 12; done",
+    # a flag's value is no request for help: gh opens a non-draft PR titled `-h`
+    "gh pr create --title -h --body x",
+    "gh pr create -t t --body --help",
+    "gh pr create --help=false --title t --body b",
+    "gh pr create --attach -h.png --title t --body b",
     "gh pr create --fill",
     "gh pr create --draft=false --fill",
     "gh pr create -t d --fill",
@@ -444,8 +534,10 @@ PR_PUBLISH_BLOCK = (
 # guard does not see, so it is allowed. The protection that holds is the session
 # environment: no override there, no ready PR from the toolkit's own commands.
 PR_PUBLISH_LIMITS = (
-    "g=gh; $g pr merge 12",
     "watch 'gh pr ready 12'",
+    # a variable from the environment behind an unknown wrapper (one this command sets is read:
+    # `test_variables_are_read_by_the_values_the_command_gives_them`)
+    'setsid "$GH" pr merge 12',
     "tmux new-session -d 'gh pr merge 12'",
     # other places git runs a shell it was given: filters
     "git filter-branch --index-filter 'gh pr ready 12' HEAD",
@@ -467,10 +559,36 @@ PR_PUBLISH_LIMITS = (
     "git m 12",
     # an alias value assigned in the environment of a shell, the key set inside its payload
     "env A='!gh pr merge 12' sh -c 'git --config-env=alias.x=A x'",
+    # `gh api`: the whole call in a variable, `curl`, and other API writes are not modelled;
+    # GitHub's branch protection is the boundary there
+    "gh api $ARGS",
+    "curl -X PUT https://api.github.com/repos/o/r/pulls/12/merge",
+    "gh api -X PUT repos/o/r/git/refs/heads/main -f sha=abc",
+    "gh api -X POST repos/o/r/merges -f base=main -f head=x",
+    "gh repo sync --force",
 )
 
 PR_PUBLISH_ALLOW = (
     "gh pr ready 12 --undo",
+    "gh pr ready 12 --undo=true",
+    "gh pr ready --undo -R o/r 12",
+    "gh pr revert 12 --draft",
+    "gh pr revert 12 -d -t t",
+    "gh pr create -d=true --fill",
+    "gh pr create --draft=T --fill",
+    "gh pr create -fd=1",
+    "gh pr create --fill -t x -d",
+    "gh pr merge -h",
+    "gh -R o/r pr merge --help",
+    '"$GH" pr view 12',
+    "gh pr view \"$N\"",
+    "gh pr view $N --json body",
+    "gh pr -R o/r view 12",
+    "gh run view $ID --log-failed",
+    'gh --jq "$Q" api /x',
+    "gh pr --json $F view 12",
+    'gh pr create --title "$T" -b "$B" --draft --fill',
+    "gh pr -h view checks",
     "gh pr merge --help",
     "gh pr view 12",
     "GH pr view 12",
@@ -547,6 +665,13 @@ PR_PUBLISH_ALLOW = (
 
 # Blocked whatever they run: the command sets, appends to or exports an override.
 OVERRIDE_ASSIGNMENT_BLOCK = (
+    # brace expansion builds the name (the segment is read expanded too)
+    "env {{AITK_PR_READY,X}}=1 ./ship.sh",
+    "export {{AITK_PR_READY,X}}=1; ./ship.sh",
+    # a number apart from its operator is the option's value, not a descriptor
+    "env -u 1 >/dev/null AITK_PR_READY=1 ./ship.sh",
+    # an ANSI-C-quoted name is decoded before the lexer reads it
+    "export $'\\x41ITK_PR_READY=1'; ./ship.sh",
     # operator runs the lexer used to fuse into one token are split, so the subshell or
     # function body after them is read
     "(>/dev/null AITK_PR_READY=1 ./ship.sh)",
@@ -638,9 +763,8 @@ OVERRIDE_ASSIGNMENT_BLOCK = (
 # session environment. The test below pins this list so a
 # fix moves the case into OVERRIDE_ASSIGNMENT_BLOCK and the docstring stays true.
 OVERRIDE_SCAN_LIMITS = (
-    # a redirection operator erased together with a quoted or numeric option value
+    # a redirection operator erased together with a quoted option value
     "env -u '>' AITK_PR_READY=1 ./ship.sh",
-    "env -u 1 >/dev/null AITK_PR_READY=1 ./ship.sh",
     # shell-specific grammar: zsh anonymous functions and precommand modifiers, a
     # function named after a wrapper, a `-c --` payload, a nameref set by a plain value
     "() {{ AITK_PR_READY=1 ./ship.sh; }}",
@@ -649,9 +773,6 @@ OVERRIDE_SCAN_LIMITS = (
     "repeat 1 AITK_PR_READY=1 ./ship.sh",
     "coproc AITK_PR_READY=1 ./ship.sh",
     "declare -n r; r=AITK_PR_READY; declare -x r=1; ./ship.sh",
-    # brace expansion builds the name
-    "env {{AITK_PR_READY,X}}=1 ./ship.sh",
-    "export {{AITK_PR_READY,X}}=1; ./ship.sh",
     # arithmetic and parameter-expansion setters (these export under `set -a`)
     "set -a; (( AITK_PR_READY = 1 )); ./ship.sh",
     "set -a; let SKIP_PRECHECK++; git push",
@@ -674,7 +795,6 @@ OVERRIDE_SCAN_LIMITS = (
     ". ./set-override.sh; ./ship.sh",
     "v=AITK_PR_READY; export \"${{!v}}\"=1; ./ship.sh",
     "X=READY; eval \"AITK_PR_$X=1\"; ./ship.sh",
-    "export $'\\x41ITK_PR_READY=1'; ./ship.sh",
     "env $(printf 'AITK_PR_READY=1') ./ship.sh",
     # an alias body is quoted text, and a profile write alters later shell startup
     "alias deliver='AITK_PR_READY=1 ./ship.sh'; deliver",
@@ -737,7 +857,28 @@ class GitGuardHookTests(unittest.TestCase):
         cls.global_config = base / "global.gitconfig"
         cls.staged = cls.make_repo(base / "staged")
         cls.clean = cls.make_repo(base / "clean")
+        # A commit with a passing scripts/verify.py record, so `gh pr create` cases test
+        # the draft rule alone (the verify gate has its own tests/test_verify_gate.py).
+        cls.verified = cls.make_repo(base / "verified")
+        (cls.verified / "app.py").write_text("x = 1\n")
+        git(cls.verified, "add", "app.py")
+        git(cls.verified, "commit", "-q", "-m", "base")
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "verify.py"), "--", "true"],
+            cwd=cls.verified,
+            env=base_env(),
+            capture_output=True,
+            check=True,
+        )
         cls.alt_index = base / "alt.index"
+        # a checkout on a feature branch, and one on a detached HEAD
+        cls.feature = cls.make_repo(base / "feature")
+        git(cls.feature, "commit", "-q", "--allow-empty", "-m", "base")
+        git(cls.feature, "switch", "-q", "-c", "feature")
+        git(cls.clean, "remote", "add", "fork", str(base / "no-such-fork"))
+        cls.detached = cls.make_repo(base / "detached")
+        git(cls.detached, "commit", "-q", "--allow-empty", "-m", "base")
+        git(cls.detached, "switch", "-q", "--detach")
 
         # PROJECT.md staged in the default index of one repository, and every
         # state file staged in its own non-default index.
@@ -787,6 +928,7 @@ class GitGuardHookTests(unittest.TestCase):
         return template.format(
             repo=repo,
             repo_rel=str(repo).lstrip("/"),
+            repo_home=os.path.relpath(repo, Path.home()),
             index=self.alt_index,
             global_config=self.global_config,
         )
@@ -830,9 +972,405 @@ class GitGuardHookTests(unittest.TestCase):
     def test_bypasses_and_force_pushes_block(self) -> None:
         self.assert_cases(CLEAN_BLOCK, self.clean, 2)
 
+    def test_a_force_push_is_checked_in_the_directory_it_runs_in(self) -> None:
+        main, feature = self.clean, self.feature
+        home = {"main_home": os.path.relpath(main, Path.home()), "feature_home": os.path.relpath(feature, Path.home())}
+        for template, expected in (
+            ("cd {main} && git push --force", 2),
+            ("pushd {main} && git push --force", 2),
+            ("cd ~/{main_home} && git push --force", 2),
+            ("git push --force", 0),
+            ("cd ~/{feature_home} && git push --force", 0),
+            ("cd -P {feature} && git push --force", 0),
+            # the cd fails, so the push runs here, on feature
+            ("cd /nonexistent-aitk-dir; git push --force", 0),
+        ):
+            command = template.format(main=main, feature=feature, **home)
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.run_hook(command, feature).returncode)
+        # a detached HEAD is a branch the guard read: no branch, so not main
+        for command in ("git push --force origin HEAD", "git push --force"):
+            with self.subTest(command=command, repo="detached"):
+                self.assertEqual(0, self.run_hook(command, self.detached).returncode)
+
+    def test_the_directory_model_follows_subshells_and_conditional_cds(self) -> None:
+        base = self.clean
+        (base / "other").mkdir(exist_ok=True)
+        here, other = str(base), str(base / "other")
+        for command, expected in (
+            # a subshell, a command substitution and a process substitution restore the directory
+            ("(cd other); gh pr view 1", here),
+            ("(cd other && npm test); gh pr view 1", here),
+            ("echo $(cd other && pwd); gh pr view 1", here),
+            ("cat <(cd other && ls); gh pr view 1", here),
+            # words after a substitution are that command's arguments, not a cd of their own
+            ("echo $(true) cd other; gh pr view 1", here),
+            ("echo $(true) cd other && gh pr view 1", here),
+            # a substitution where the command word stands may print nothing (`$(echo x >&2)`),
+            # whatever its body looks like: the directory is unknown
+            ("$(echo echo) cd other; gh pr view 1", None),
+            ("$(echo x >/dev/null) cd other; gh pr view 1", None),
+            ("diff <(true) cd other; gh pr view 1", here),
+            ("echo $(true) $(true) cd other; gh pr view 1", here),
+            ("echo $((1+2)) cd other; gh pr view 1", here),
+            # after assignments only, the words start the command
+            ("X=$(true) cd other && gh pr view 1", other),
+            ("X=$(true) Y=$(true) cd other && gh pr view 1", other),
+            ("(cd other && gh pr view 1)", other),
+            # the rest of an && chain runs only if the cd did
+            ("x && cd other && gh pr view 1", other),
+            ("cd other && gh pr view 1", other),
+            # an unconditional cd decides by whether the directory exists
+            ("cd other || exit 1; gh pr view 1", other),
+            # a cd that may not have run: unknown once its list ends
+            ("false && cd other; gh pr view 1", None),
+            ("true || cd other && gh pr view 1", None),
+            ("if true; then cd other; fi; gh pr view 1", None),
+            ("for i in 1; do cd other; done; gh pr view 1", None),
+            ("cd other | cat; gh pr view 1", None),
+            ("cd other & gh pr view 1", None),
+            # a cd the walk cannot see run
+            ("eval 'cd other'; gh pr view 1", None),
+            ("f() { cd other; }; f; gh pr view 1", None),
+            # a prefix that changes nothing about cd
+            ("builtin cd other && gh pr view 1", other),
+            ("command cd other && gh pr view 1", other),
+            # a group runs in this shell
+            ("{ cd other; }; gh pr view 1", other),
+            # a quoted or escaped paren is a bare token: the paren stack is not trusted
+            ("echo ')'; cd other && gh pr view 1", None),
+            ("find . \\( -name x \\) ; cd other && gh pr view 1", None),
+            ("echo ')'; gh pr view 1", here),
+            # a `~` in an assigned value: bash keeps a quoted one, and the quotes are gone here
+            ("S='~/other'; cd $S && gh pr view 1", None),
+            # an absolute cd makes the directory known again
+            (f"false && cd other; cd {here} && gh pr view 1", here),
+            # case bodies are bodies, and their parens are pattern syntax
+            ("case x in a) cd other;; esac; gh pr view 1", None),
+            ("case x in a) true;; esac; (cd other); gh pr view 1", here),
+            ("case x in (a) true;; esac; (cd other); gh pr view 1", here),
+            ("while x; do cd other; done; gh pr view 1", None),
+            ("until x; do cd other; done; gh pr view 1", None),
+            # a group that ends in `&` or a pipe, or only runs conditionally
+            ("{ cd other; } & gh pr view 1", None),
+            ("{ cd other; } | cat; gh pr view 1", None),
+            ("x && { cd other; }; gh pr view 1", None),
+            ("x && cd other || gh pr view 1", None),
+            # the exact words `cd`, `pushd`, `popd`, after builtin/command/time prefixes
+            ("time -p cd other && gh pr view 1", other),
+            ("time cd other && gh pr view 1", other),
+            ("CD other && gh pr view 1", here),
+            ("/usr/bin/cd other && gh pr view 1", here),
+            ("command -v cd; gh pr view 1", here),
+            ("command -V cd; gh pr view 1", here),
+            # a function runs where it is called: once one is defined, a cd after it is unknown
+            ("function f { cd other; }; f; gh pr view 1", None),
+            ("f()\n{\n  cd other\n}\ngh pr view 1", None),
+            ("function f\n{\n  cd other\n}\ngh pr view 1", None),
+            ("f ( ) { cd other; }; gh pr view 1", None),
+            ("f() { echo '}'; cd other; }; gh pr view 1", None),
+            ("f() { gh pr view 1; }; cd other; f", None),
+            (f"f() {{ cd other; }}; cd {here}; gh pr view 1", None),
+            # fi, done and esac close a body only as the first word of a segment
+            ("case x in a) true;; done) cd other;; esac; gh pr view 1", None),
+            ("if false; then command fi; cd other; fi; gh pr view 1", None),
+            ("if false; then X=1 fi; cd other; fi; gh pr view 1", None),
+            # a quoted or escaped operator, or a paren in ${...}, is a bare token
+            ("echo '('; cd other; echo ')'; gh pr view 1", None),
+            ("echo \\(; cd other; echo \\); gh pr view 1", None),
+            ("echo ${x:-(}; cd other; echo ${y:-)}; gh pr view 1", None),
+            ("echo ';' cd other ';'; gh pr view 1", None),
+            ("find . -exec true {} \\; ; cd other && gh pr view 1", None),
+            # a variable an earlier segment set to a literal path
+            ("S=other; cd $S && gh pr view 1", other),
+            ("S=other; cd ${S} && gh pr view 1", other),
+            ("S=other; cd \"$S/.\" && gh pr view 1", other),
+            ("export S=other; cd $S && gh pr view 1", other),
+            ("T=1 S=other; cd $S && gh pr view 1", other),
+            ("S=other; ( S=sub ); cd $S && gh pr view 1", other),
+            ("S=$X; cd $S && gh pr view 1", None),
+            ("S=other; S=$X; cd $S && gh pr view 1", None),
+            ("S=other; S+=x; cd $S && gh pr view 1", None),
+            ("S=other; read S; cd $S && gh pr view 1", None),
+            ("S=other; unset S; cd $S && gh pr view 1", None),
+            ("S=other; eval 'true'; cd $S && gh pr view 1", None),
+            ("false && S=other; cd $S && gh pr view 1", None),
+            ("true || S=other; cd $S && gh pr view 1", None),
+            ("S=other | cat; cd $S && gh pr view 1", None),
+            ("S=other & cd $S && gh pr view 1", None),
+            ("if x; then S=other; fi; cd $S && gh pr view 1", None),
+            ("(S=other); cd $S && gh pr view 1", None),
+            ("S=other cd $S && gh pr view 1", None),
+            ("S=other; cd ${S:-x} && gh pr view 1", None),
+            ("S=other; T=x; cd $S$T && gh pr view 1", None),
+            ("cd $PWD && gh pr view 1", None),
+            ("cd $UNSET && gh pr view 1", None),
+            # an assignment after a keyword, in a group, with a redirection, cut or an element
+            ("S=other; if x; then S=sub; fi; cd $S && gh pr view 1", None),
+            ("S=other; if x; then :; else S=sub; fi; cd $S && gh pr view 1", None),
+            ("S=other; for d in x; do S=sub; done; cd $S && gh pr view 1", None),
+            ("S=other; { S=sub; }; cd $S && gh pr view 1", None),
+            ("S=other; S=sub >/dev/null; cd $S && gh pr view 1", None),
+            ("S=other; S=`echo sub`; cd $S && gh pr view 1", None),
+            ("S=other; S[0]=sub; cd $S && gh pr view 1", None),
+            ("S=other; S=sub cd $S && gh pr view 1", other),
+            ("S='other x'; cd $S && gh pr view 1", None),
+            # a `;` inside a body does not end the list that a backgrounded compound closes
+            ("cd other && { :; :; } & gh pr view 1", None),
+            ("cd other && for i in 1; do :; done & gh pr view 1", None),
+            ("cd other && if x; then :; fi & gh pr view 1", None),
+            ("cd other && while x; do :; done & gh pr view 1", None),
+            # a nested `case` is a keyword, not a pattern
+            ("case x in a) case y in b) :;; esac; cd other;; esac; gh pr view 1", None),
+        ):
+            with self.subTest(command=command):
+                walked = [found for found in shell_tokens.commands(command, here) if found.is_gh]
+                self.assertEqual(1, len(walked))
+                self.assertEqual(expected, walked[0].workdir)
+
+    def test_a_force_push_after_a_subshell_or_conditional_cd_is_checked_where_it_runs(self) -> None:
+        main, feature = self.clean, self.feature
+        for template, cwd, expected in (
+            # from main: the push runs in main, or may
+            ("(cd {feature}); git push --force", main, 2),
+            ("echo $(cd {feature}); git push --force", main, 2),
+            ("false && cd {feature}; git push --force", main, 2),
+            ("true || cd {feature} && git push --force", main, 2),
+            ("if true; then cd {feature}; fi; git push --force", main, 2),
+            ("eval 'cd {feature}'; git push --force", main, 2),
+            ("f() {{ cd {feature}; }}; f; git push --force", main, 2),
+            ("cd {feature} | cat; git push --force", main, 2),
+            # from main: the push runs in feature
+            ("(cd {feature} && git push --force)", main, 0),
+            ("cd {feature} || exit 1; git push --force", main, 0),
+            ("x=1 && cd {feature} && git push --force", main, 0),
+            ("builtin cd {feature} && git push --force", main, 0),
+            ("{{ cd {feature}; }}; git push --force", main, 0),
+            # from feature: the push runs in feature (blocked before: the subshell's cd leaked)
+            ("(cd {main} && git status); git push --force", feature, 0),
+            # an ungated command never blocks on an unknown directory
+            ("false && cd {feature}; git status", main, 0),
+            # fake parens never restore: the cd between them runs here
+            ("echo '('; cd {main}; echo ')'; git push --force", feature, 2),
+            ("echo \\(; cd {main}; echo \\); git push --force", feature, 2),
+            ("echo ${{x:-(}}; cd {main}; echo ${{y:-)}}; git push --force", feature, 2),
+            ("echo ';' cd {main} ';'; git push --force", feature, 2),
+            # only the exact builtin words move the shell
+            ("CD {feature}; git push --force", main, 2),
+            ("/usr/bin/cd {feature}; git push --force", main, 2),
+            ("time -p cd {feature} && git push --force", main, 0),
+            ("command cd {feature} && git push --force", main, 0),
+            # a function's cd runs at the call
+            ("f() {{ cd {main}; }}; cd {feature}; f; git push --force", feature, 2),
+            ("f()\n{{\n  cd {feature}\n}}\ngit push --force", main, 2),
+            # a variable set to a literal path names that directory
+            ("S={feature}; cd $S && git push --force", main, 0),
+            ("S={feature}; git -C $S push --force", main, 0),
+            ('S={feature}; cd "$S" && git push --force', main, 0),
+            ("export S={feature}; cd ${{S}} && git push --force", main, 0),
+            ("S={main}; cd $S && git push --force", feature, 2),
+            ("S={main}; git -C $S push --force", feature, 2),
+            ("false && S={feature}; cd $S && git push --force", main, 2),
+            ("false && S={main}; git -C $S push --force", feature, 2),
+            ("S={feature} cd $S && git push --force", main, 2),
+            ("(S={feature}); cd $S && git push --force", main, 2),
+            ("S={feature}; S=$OTHER; cd $S && git push --force", main, 2),
+            ("S={feature}; S=$OTHER; git -C $S push --force", main, 2),
+            # an assignment the table must not miss
+            ("DIR={feature}; if [ -d {main} ]; then DIR={main}; fi; cd $DIR && git push --force", feature, 2),
+            ("DIR={feature}; if [ -d {main} ]; then DIR={main}; fi; git -C $DIR push --force", feature, 2),
+            ("DIR={feature}; if [ -d {main} ]; then DIR={main}; fi; env -C $DIR git push --force", feature, 2),
+            ("D={feature}; for d in x; do D={main}; done; cd $D && git push --force", feature, 2),
+            ("S={feature}; {{ S={main}; }}; cd $S && git push --force", feature, 2),
+            ("S={feature}; S={main} >/dev/null; cd $S && git push --force", feature, 2),
+            ("S={feature}; S=`echo {main}`; cd $S && git push --force", feature, 2),
+            ("S={feature}; S[0]={main}; cd $S && git push --force", feature, 2),
+            ("S='{feature} x'; cd $S && git push --force", main, 2),
+            # a list closed by `&` after a compound keeps the cd it held
+            ("cd {feature} && {{ :; :; }} & git push --force", main, 2),
+            # an argument that spells cd, after a substitution, moves nothing
+            ("echo $(true) cd {feature}; git push --force", main, 2),
+            ("echo $(true) cd {feature} && git push --force", main, 2),
+            ("X=$(true) cd {feature} && git push --force", main, 0),
+            ("cd {feature} && for i in 1; do :; done & git push --force", main, 2),
+            ("cd {feature} && if true; then :; fi & git push --force", main, 2),
+            ("cd {feature} && while false; do :; done & git push --force", main, 2),
+            # the shell expands the current branch where it stands, not in the push's directory
+            ("git -C {feature} push --force origin $(git branch --show-current)", main, 2),
+            ('git -C {feature} push --force origin "$(git branch --show-current)"', main, 2),
+            ("git -C {feature} push --force origin `git branch --show-current`", main, 2),
+            ("env -C {feature} git push --force origin $(git branch --show-current)", main, 2),
+            ("git -C {main} push --force origin $(git branch --show-current)", feature, 2),
+            # `@` is HEAD, a lone remote is a remote and `heads/main` is main
+            ("git push --force origin @", main, 2),
+            ("git push --force origin @", feature, 0),
+            ("git push --force fork", main, 2),
+            ("cd $NOWHERE && git push --force fork", feature, 2),
+            ("git push --force origin HEAD:heads/main", feature, 2),
+            ("git push --force origin heads/main", feature, 2),
+        ):
+            command = template.format(main=main, feature=feature)
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.run_hook(command, cwd).returncode)
+
+    def test_a_literal_variable_names_the_directory_of_a_commit(self) -> None:
+        for command, expected in (
+            ("S={staged}; cd $S && git commit -m state", 2),
+            ("S={clean}; cd $S && git commit -m x", 0),
+            ("S={staged}; git -C $S commit -m state", 2),
+            ("S={clean}; git -C $S commit -m x", 0),
+            ("S=$X; cd $S && git commit -m x", 2),
+            ("S={clean}; if true; then S={staged}; fi; cd $S && git commit -m x", 2),
+        ):
+            command = command.format(staged=self.staged, clean=self.clean)
+            with self.subTest(command=command):
+                self.assertEqual(expected, self.run_hook(command, self.staged).returncode)
+
+    def test_home_is_the_home_directory_in_a_cd_target(self) -> None:
+        home = self.clean
+        (home / "homesub").mkdir(exist_ok=True)
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            for command, expected in (
+                ("cd $HOME/homesub && gh pr view 1", str(home / "homesub")),
+                ("cd ${HOME}/homesub && gh pr view 1", str(home / "homesub")),
+                ("cd $HOME && gh pr view 1", str(home)),
+                ("HOME=$X; cd $HOME/homesub && gh pr view 1", None),
+            ):
+                with self.subTest(command=command):
+                    walked = [c for c in shell_tokens.commands(command, "/") if c.is_gh]
+                    self.assertEqual([expected], [c.workdir for c in walked])
+
+    def test_a_quoted_redirection_operator_hides_no_flag(self) -> None:
+        for command in (
+            "gh pr create --draft --fill --title '>' --draft=false",
+            "gh pr create --draft --fill --body '<' --draft=false",
+            "gh pr create --draft --fill --title \\> --draft=false",
+            "gh pr create --draft --fill --title '>>' --draft=false",
+            "gh pr create --draft --fill --title=$(echo t) --draft=false",
+            "gh api --jq '>' -X PUT repos/o/r/pulls/12/merge",
+            "gh pr merge 12 --help --help=false",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(2, self.run_hook(command, self.verified).returncode)
+        # the verify gate loses no `--head`, and has no override
+        for command in (
+            "gh pr create --draft --fill --title '>' --head other",
+            "gh pr create --draft --fill --body=$(cat b.md) --head other",
+        ):
+            with self.subTest(command=command):
+                result = self.run_hook(command, self.verified, env={"AITK_PR_READY": "1"})
+                self.assertEqual(2, result.returncode, result.stderr)
+        # a draft create next to one is told to run on its own, override or not
+        for env in ({}, {"AITK_PR_READY": "1"}):
+            with self.subTest(env=env):
+                result = self.run_hook("echo '>' && gh pr create --draft --fill", self.verified, env=env)
+                self.assertEqual(2, result.returncode)
+                self.assertIn("as a command of its own", result.stderr)
+        # one quoted word with an operator in it changes nothing
+        for command in ("gh pr create --draft --fill --title 'a > b'", "gh pr merge 12 --help"):
+            with self.subTest(command=command):
+                self.assertEqual(0, self.run_hook(command, self.verified).returncode)
+
+    def test_a_quoted_separator_in_unparsed_nested_text_does_not_split_gh_pr(self) -> None:
+        command = 'gh pr -t "a;b" merge 12'
+        for _ in range(5):
+            command = "sh -c " + shlex.quote(command)
+        self.assertEqual(2, self.run_hook(command, self.verified).returncode)
+
+    def test_graphql_variable_definitions_and_endpoint_spellings(self) -> None:
+        for query in (
+            "query($o: String! $n: String!){x}",
+            "query($o: String!\n$n: String!){x}",
+        ):
+            with self.subTest(query=query):
+                self.assertFalse(gh_args.read_api(["graphql", "-f", "query=" + query]).unreadable_query)
+        self.assertTrue(gh_args.read_api(["graphql", "-f", "query={x(a: \"$5\")}"]).unreadable_query)
+        for endpoint in ("repos/o/r/pulls/12/./merge", "repos/o//r/pulls/12/merge", "repos/o/r/pulls/12/%6Derge"):
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(gh_args.MERGE_API, gh_args.api_effect(["-X", "PUT", endpoint]))
+        self.assertEqual(
+            gh_args.MERGE_API,
+            gh_args.api_effect(["-X", "POST", "-H", "X-HTTP-Method-Override: PUT", "repos/o/r/pulls/12/merge"]),
+        )
+        self.assertIsNone(gh_args.api_effect(["repos/o/r/pulls/12"]))
+        self.assertTrue(gh_args.walk(["12", "--help"], "merge").asks_help)
+        self.assertFalse(gh_args.walk(["12", "--help", "--help=false"], "merge").asks_help)
+
+    def test_the_two_readers_walk_a_payload_under_the_same_doubt(self) -> None:
+        here = str(self.clean)
+        for command, expected in (
+            ("echo ')'; bash -c 'cd /usr && git push'", None),
+            ("false && cd /tmp; env -C /usr git push", None),
+            ("bash -c 'cd /usr && git push'", "/usr"),
+            ("env -C /usr git push", "/usr"),
+        ):
+            with self.subTest(command=command):
+                walked = [c for c in shell_tokens.commands(command, here) if c.name == "git"]
+                self.assertEqual([expected], [c.workdir for c in walked])
+        # the alias recursions keep the flag
+        self.assertTrue(
+            git_guard.parse_git_actions(
+                shell_tokens.tokenize("echo ')'; git -c alias.p=push p"), here
+            )[0]["untrusted"]
+        )
+
+    def test_a_crash_in_the_guard_blocks_what_quoting_hides(self) -> None:
+        deep = "f() { " * 400 + ":; " + "}; " * 400
+        self.assertEqual(2, self.run_hook(deep + "g'i't commit --no-verify -m x", self.clean).returncode)
+        # an internal error reads the unquoted text, not only the raw one
+        with mock.patch.object(git_guard, "evaluate", side_effect=RuntimeError("boom")):
+            for command, expected in (("g'i't push", 2), ("echo hello", 0)):
+                with self.subTest(command=command):
+                    stdin = io.StringIO(json.dumps({"tool_input": {"command": command}, "cwd": "/"}))
+                    with mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stderr", io.StringIO()):
+                        self.assertEqual(expected, git_guard.main())
+
+    def test_ansi_c_quoting_does_not_hide_the_rest_of_the_command(self) -> None:
+        self.assertEqual(2, self.run_hook("echo $'\\'' ; git commit --no-verify -m x #'", self.clean).returncode)
+        self.assertEqual(0, self.run_hook("printf $'a\\nb'; git status", self.clean).returncode)
+        self.assertEqual(["printf", "a\nb", ";", "git", "status"], shell_tokens.tokenize("printf $'a\\nb'; git status")[:5][:2] + [";", "git", "status"])
+        self.assertEqual(["echo", "'", ";", "echo"], shell_tokens.tokenize("echo $'\\'' ; echo"))
+        with self.assertRaises(ValueError):
+            shell_tokens.tokenize("echo $'abc")
+
+    def test_a_push_destination_behind_an_expansion_is_unknown(self) -> None:
+        for command, repo, expected in (
+            ("git push --force origin $BR", self.clean, 2),
+            ("git push --force origin $BR", self.feature, 2),
+            ("git push --delete origin `echo x`", self.feature, 2),
+            ("git push origin $BR", self.clean, 0),
+            ("git push --force origin \"$(git branch --show-current)\"", self.clean, 2),
+            ("git push --force origin \"$(git branch --show-current)\"", self.feature, 0),
+            ("git push --force origin $(git branch --show-current)", self.clean, 2),
+            ("git push --force origin $(git branch --show-current)", self.feature, 0),
+            ("git push --force origin `git branch --show-current`", self.feature, 0),
+        ):
+            with self.subTest(command=command, repo=repo.name):
+                self.assertEqual(expected, self.run_hook(command, repo).returncode)
+
     def test_ordinary_commands_are_allowed(self) -> None:
         self.assert_cases(CLEAN_ALLOW, self.clean, 0)
         self.assert_cases(("echo --no-verify", "echo git commit --no-verify"), self.staged, 0)
+
+    def test_nested_text_the_guard_cannot_parse_is_read_in_every_gated_match(self) -> None:
+        for inner in (
+            "gh pr revert 9 -d; gh pr merge 12",
+            "gh pr revert 9 --draft && gh pr ready 12",
+            "gh pr create -d --fill; gh pr merge 12",
+            "gh pr create --fill; ls -d .",
+            "gh pr revert 9; ls -d .",
+        ):
+            command = inner
+            for _ in range(5):
+                command = "sh -c " + shlex.quote(command)
+            with self.subTest(inner=inner):
+                result = self.run_hook(command, self.verified)
+                self.assertEqual(2, result.returncode, result.stderr)
+
+    def test_an_unreadable_verb_asks_for_the_literal_command(self) -> None:
+        result = self.run_hook("gh pr $V 12", self.verified)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("Write the command and the verb literally", result.stderr)
 
     def test_state_commit_names_the_files(self) -> None:
         result = self.run_hook("git add .ai-toolkit/config.json && git commit -m config", self.clean)
@@ -841,13 +1379,15 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertIn("stay out of commits", result.stderr)
 
     def test_pr_ready_and_merge_need_the_users_override(self) -> None:
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2)
+        # Every case runs where the commit has a passing verify record, so a block on a
+        # creation comes from the draft rule, not from the verify gate.
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2)
         # the retired v0.3 override in the session environment lifts nothing either
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"SKIP_PR_GATE": "1"})
-        self.assert_cases(PR_PUBLISH_BLOCK, self.clean, 2, env={"AITK_PR_READY": "0"})
-        self.assert_cases(PR_PUBLISH_ALLOW, self.clean, 0)
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2, env={"SKIP_PR_GATE": "1"})
+        self.assert_cases(PR_PUBLISH_BLOCK, self.verified, 2, env={"AITK_PR_READY": "0"})
+        self.assert_cases(PR_PUBLISH_ALLOW, self.verified, 0)
         self.assert_cases(PR_PUBLISH_LIMITS, self.clean, 0)
-        self.assert_cases(("gh pr create --fill",), self.clean, 0, env={"AITK_PR_READY": "1"})
+        self.assert_cases(("gh pr create --fill",), self.verified, 0, env={"AITK_PR_READY": "1"})
         self.assert_cases(
             ("gh pr merge 12 --squash", "gh pr ready 12", "nohup gh pr ready 12"),
             self.clean,
@@ -861,8 +1401,113 @@ class GitGuardHookTests(unittest.TestCase):
         self.assertIn("ask the user", merge.stderr)
         self.assertNotIn("AITK_PR_READY", merge.stderr)
 
+    def test_gh_api_calls_that_publish_a_pr_follow_the_pr_rules(self) -> None:
+        merge_or_ready = (
+            "gh api -X PUT repos/o/r/pulls/12/merge",
+            "gh api --method=put repos/{{owner}}/{{repo}}/pulls/12/merge",
+            "gh api -iX PUT repos/o/r/pulls/12/merge",
+            "gh api repos/o/r/pulls/$PR/merge -X PUT -f merge_method=squash",
+            "gh api /repos/o/r/pulls/12/merge -X GET -X PUT",
+            "gh api https://api.github.com/repos/o/r/pulls/12/merge --method PUT",
+            "gh api graphql -f query='mutation{{mergePullRequest(input:{{}}){{clientMutationId}}}}'",
+            "gh api /graphql -f query='mutation{{markPullRequestReadyForReview(input:{{}}){{clientMutationId}}}}'",
+            "gh api graphql -f query='mutation{{enablePullRequestAutoMerge(input:{{}}){{clientMutationId}}}}'",
+            "gh api graphql -f query='mutation{{enqueuePullRequest(input:{{}}){{clientMutationId}}}}'",
+            "\"$GH\" api -X PUT repos/o/r/pulls/12/merge",
+            # git handed text that runs one
+            "git rebase -x 'gh api -X PUT repos/o/r/pulls/12/merge' HEAD~1",
+        )
+        # opening a PR this way skips the verify gate, which has no override
+        create = (
+            "gh api repos/o/r/pulls -f title=t -f head=x -f base=main",
+            "gh api 'repos/o/r/pulls?x=1' -f title=t",
+            "gh api -X POST repos/o/r/pulls --input body.json",
+            "gh api graphql -f query='mutation{{createPullRequest(input:{{}}){{clientMutationId}}}}'",
+            "gh api graphql -f query='mutation{{revertPullRequest(input:{{}}){{clientMutationId}}}}'",
+        )
+        # a query the guard cannot read could be any of them
+        unreadable = (
+            "gh api graphql --input query.json",
+            "gh api graphql -F query=@query.graphql",
+            "gh api graphql -f query=\"$Q\"",
+            "gh api graphql -f query=\"$(cat q.graphql)\"",
+        )
+        allowed = (
+            "gh api repos/o/r/pulls",
+            "gh api repos/o/r/pulls/12",
+            "gh api repos/o/r/pulls/12/merge",
+            "gh api repos/o/r/pulls/12/merge --method GET",
+            "gh api repos/o/r/pulls -X GET -f state=open",
+            "gh api repos/o/r/pulls/12/comments -f body=ok",
+            "gh api repos/o/r/issues/12/comments -f body=ok",
+            "gh api graphql -f query='query{{viewer{{login}}}}'",
+            "gh api graphql -f query='query($n:Int!){{viewer{{repositories(first:$n){{totalCount}}}}}}' -F n=1",
+            "gh api graphql -f query='mutation{{addComment(input:{{}}){{clientMutationId}}}}'",
+        )
+        self.assert_cases(merge_or_ready + create + unreadable, self.verified, 2)
+        self.assert_cases(allowed, self.verified, 0)
+        # the user's override lifts merging and readying, never an unchecked PR or an unread query
+        self.assert_cases(merge_or_ready[:-1], self.verified, 0, env={"AITK_PR_READY": "1"})
+        self.assert_cases(create + unreadable, self.verified, 2, env={"AITK_PR_READY": "1"})
+
+    def test_gh_api_reads_the_shell_around_it(self) -> None:
+        merge = (
+            "gh api >/dev/null -X PUT repos/o/r/pulls/12/merge",
+            "gh >/dev/null api -X PUT repos/o/r/pulls/12/merge",
+            "gh api repos/o/r/pulls/$(echo 12)/merge -X PUT",
+            "gh api graphql -F id=$(echo x) -f query='mutation{{mergePullRequest(input:{{}}){{clientMutationId}}}}'",
+            "gh api -X PUT 'repos/o/r/pulls/12/merge#x'",
+            "gh api -X PUT repositories/1/pulls/12/merge",
+            "gh api -X PUT \"repos/o/r/pulls/12/${{X:?}}erge\"",
+            "gh api https://ghe.example.com/api/graphql -f query='mutation{{mergePullRequest(input:{{}}){{clientMutationId}}}}'",
+            "gh >/dev/null pr merge 12",
+            "gh pr >/dev/null merge 12",
+            "gh 2>&1 pr ready 12",
+        )
+        create = (
+            "gh api repos/$(echo o/r)/pulls -f title=t",
+            "gh api repositories/1/pulls -f title=t",
+            "gh api 'repos/o/r/pulls#x' -f title=t",
+            "echo repos/o/r/pulls/12/merge | xargs gh api -X PUT",
+            "gh api graphql -f query=\"mutation{{$M(input:{{}}){{clientMutationId}}}}\"",
+        )
+        allowed = (
+            "gh api repos/o/r/pulls > \"$OUT\"",
+            "gh api graphql -f query='query{{viewer{{login}}}}' >> $LOG",
+            "gh api repos/o/r/pulls 2>\"$ERR\"",
+            "gh api repos/o/r/pulls/$PR -X PATCH -f body=x",
+            "gh api -X PATCH repos/{{owner}}/{{repo}}/issues/$N -f state=closed",
+            "gh api -X DELETE repos/{{owner}}/{{repo}}/issues/comments/$ID",
+            "gh api repos/$GITHUB_REPOSITORY/statuses/$SHA -f state=success",
+            "gh api -X HEAD repos/o/r/pulls",
+            "gh api -X PUT \"repos/{{owner}}/{{repo}}/contents/docs/$NAME.md\" -f message=m",
+            "gh api graphql -f query='query($ids:[ID!]!){{nodes(ids:$ids){{id}}}}' -f 'ids[]=A'",
+            "gh api -h",
+            "VERSION=$(cat VERSION) npm run api graphql --input f",
+            "git rebase -x 'gh api repos/o/r/pulls/1/comments' HEAD~1",
+        )
+        self.assert_cases(merge, self.verified, 2)
+        self.assert_cases(create, self.verified, 2)
+        self.assert_cases(allowed, self.verified, 0)
+        self.assert_cases(("$(command -v gh) pr merge 12",), self.verified, 2)
+        # a literal backtick in a query is unreadable: an accepted over-block, no override
+        backtick = "gh api graphql -f query='mutation{{addComment(input:{{body:\"`x`\"}}){{clientMutationId}}}}'"
+        self.assert_cases((backtick,), self.verified, 2, env={"AITK_PR_READY": "1"})
+        # with the override a merge goes through, a create or an unread query does not
+        self.assert_cases(merge[:2] + merge[4:8], self.verified, 0, env={"AITK_PR_READY": "1"})
+
+    def test_a_text_fallback_for_gh_api_names_gh_api(self) -> None:
+        for command in (
+            "git rebase -x 'gh api repos/o/r/pulls' HEAD~1",
+            "git rebase -x 'gh api graphql --input q.json' HEAD~1",
+            "git rebase -x 'gh api -X PUT repos/o/r/pulls/12/merge' HEAD~1",
+        ):
+            result = self.run_hook(command, self.verified)
+            self.assertEqual(2, result.returncode, command)
+            self.assertIn("gh api", result.stderr, command)
+
     def test_a_non_draft_pr_is_sent_back_for_a_draft(self) -> None:
-        result = self.run_hook("gh pr create --fill", self.clean)
+        result = self.run_hook("gh pr create --fill", self.verified)
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("--draft", result.stderr)
         self.assertIn("stop and ask the user", result.stderr)
@@ -931,8 +1576,11 @@ class GitGuardHookTests(unittest.TestCase):
         exhausted = [found for found in shell_tokens.commands(spent, cwd) if found.unreadable]
         self.assertEqual([None], [found.workdir for found in exhausted])
         self.assertTrue(all(found.unresolved for found in exhausted))
-        # the user's session override still lifts the block, as for any gh pr publish
-        git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1"})
+        # AITK_PR_READY lifts the publish check's block, but an unreadable command could
+        # hide a `gh pr create`, and the verify gate has no override, so it still blocks
+        with self.assertRaises(git_guard.Blocked) as caught:
+            git_guard.evaluate(spent + "; gh pr merge 12", cwd, {"AITK_PR_READY": "1"})
+        self.assertIn("could not be read in full", str(caught.exception))
 
     def test_a_101_entry_config_prefix_with_an_alias_on_the_last_entry_blocks(self) -> None:
         # No count is parsed: the alias key anywhere in the prefix, next to a gated mention, blocks.
@@ -1153,7 +1801,7 @@ class GitGuardHookTests(unittest.TestCase):
         for args, expected in (
             (["sub"], f"{base}/sub"),
             ([""], base),
-            (["-"], base),
+            (["-"], None),  # the previous directory is not tracked
             (["$OTHER/.."], None),  # not the directory above a folder named `$OTHER`
             (["$DIR"], None),  # a folder with that literal name exists, but the shell expands it
             (["`pwd`"], None),
@@ -1163,6 +1811,10 @@ class GitGuardHookTests(unittest.TestCase):
                 self.assertEqual(expected, shell_tokens.advance_dir(base, args))
         self.assertIsNone(shell_tokens.advance_dir(None, ["sub"]))
         self.assertEqual(os.path.expanduser("~"), shell_tokens.advance_dir(base, ["~"]))
+        self.assertEqual(os.path.expanduser("~"), shell_tokens.advance_dir(base, []))  # a bare `cd`
+        self.assertEqual(f"{base}/sub", shell_tokens.advance_dir(base, ["-P", "sub"]))
+        walked = list(shell_tokens.commands("pushd sub && popd && gh pr view 1", base))
+        self.assertIsNone(walked[-1].workdir)  # the directory stack is not tracked
         # through the walk: the directory stays unknown for the command after the cd
         walked = list(shell_tokens.commands('cd "$OTHER/.." && gh pr view 1', base))
         self.assertIsNone(walked[-1].workdir)
@@ -1231,6 +1883,31 @@ class GitGuardHookTests(unittest.TestCase):
             found += expected
             self.assertEqual(expected, git_guard.has_unsafe_git_substitution(text), repr(text))
         self.assertGreater(found, 200)  # the sample has both outcomes
+
+    def test_many_git_commands_in_one_command_stay_fast(self) -> None:
+        # each push asked git the same questions again: about 25 ms each, past the deadline at 3,000
+        for text in ("git push origin feature; " * 3000, "x git push origin feature; " * 3000):
+            with self.subTest(text=text[:20]):
+                started = time.monotonic()
+                git_guard.evaluate(text, str(self.feature), {})
+                self.assertLess(time.monotonic() - started, 10.0)
+
+    def test_long_runs_of_words_that_may_expand_to_nothing_stay_fast_and_block(self) -> None:
+        # one reading per empty word nested past Python's recursion limit, and every `$(` read
+        # the command's words again from its first
+        cwd = str(self.feature)
+        for text in (
+            "$X " * 3000 + f"cd {self.clean}; git push --force",
+            "$X command " * 1500 + f"cd {self.clean}; git push --force",
+            "`true` " * 3000 + f"cd {self.clean}; git push --force",
+            "$(true) " * 2000 + f"cd {self.clean}; git push --force",
+            "$X " * 5000 + "git push --force origin main",
+        ):
+            with self.subTest(text=text[:20]):
+                started = time.monotonic()
+                with self.assertRaises(git_guard.Blocked):
+                    git_guard.evaluate(text, cwd, {})
+                self.assertLess(time.monotonic() - started, 5.0)
 
     def test_substitution_text_is_charged_against_the_work_budget(self) -> None:
         # Every `$(` rescanned to the end of the text and every body walked again: this input
@@ -1351,7 +2028,7 @@ class GitGuardHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as bare:
             walked = list(shell_tokens.commands('cd "$(git rev-parse --show-toplevel)" && gh pr create', bare))
             self.assertIsNone(walked[-1].workdir)
-        for other in ('cd "$(git rev-parse --show-cdup)"', 'cd "$(git rev-parse --show-toplevel)/x"', 'cd "$HOME"'):
+        for other in ('cd "$(git rev-parse --show-cdup)"', 'cd "$(git rev-parse --show-toplevel)/x"', 'cd "$HOME$X"'):
             with self.subTest(other=other):
                 walked = list(shell_tokens.commands(f"{other} && gh pr create", top))
                 self.assertIsNone(walked[-1].workdir)
@@ -1611,6 +2288,1185 @@ class GitGuardHookTests(unittest.TestCase):
             )
         self.assertEqual([], json.loads(result.stdout))
 
+    # ---- round 2: the classes the second Fable review found ----
+
+    def hook_codes(self, cases: tuple, **kwargs) -> None:
+        for template, repo, expected in cases:
+            command = template.format(main=self.clean, feature=self.feature)
+            with self.subTest(command=command, repo=repo.name):
+                result = self.run_hook(command, repo, **kwargs)
+                self.assertEqual(expected, result.returncode, result.stderr)
+
+    def test_unparsed_nested_text_blocks_wherever_origin_main_does(self) -> None:
+        main_verbs = shell_tokens.words_in_order
+        frozen_pattern = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new)\b"))
+
+        def main_blocks(text: str) -> bool:
+            # origin/main's rule for text that did not parse, frozen
+            match = main_verbs(text, *frozen_pattern)
+            return bool(match and not (match.group(1) in {"create", "new"} and git_guard.DRAFT_FLAG.search(text)))
+
+        holders = ("$((1|2))", "${X-a;b}", '"$(echo "a;b")"', "$'a\\';b'", "'a;b'", '"a|b"', "# it's\n")
+        verbs = ("merge 12", "ready 12", "create --fill", "create --draft --fill", "new --fill")
+        checked = 0
+        for holder in holders:
+            for verb in verbs:
+                for levels in (1, 2, 3, 5):
+                    inner = f"gh pr -t {holder} {verb}" if not holder.startswith("#") else f"{holder}gh pr {verb}"
+                    text = inner
+                    for _ in range(levels):
+                        text = "sh -c " + shlex.quote(text)
+                    if not main_blocks(text):
+                        continue
+                    checked += 1
+                    with self.subTest(text=text[:80]):
+                        with self.assertRaises(git_guard.Blocked):
+                            git_guard.check_pr_publish(text, str(self.clean), {})
+        self.assertGreater(checked, 50)
+        for levels in (1, 4):
+            text = "gh pr -t $((1|2)) merge 12"
+            for _ in range(levels):
+                text = "sh -c " + shlex.quote(text)
+            self.assertEqual(2, self.run_hook(text, self.verified).returncode)
+
+    def test_a_quoted_operator_makes_the_gh_reading_textual(self) -> None:
+        self.hook_codes(
+            (
+                ("gh >/dev/null pr -t '>' merge 12 --squash", self.clean, 2),
+                ("gh pr >/dev/null -t '<' ready 12", self.clean, 2),
+                ("gh >/dev/null pr -t '>' create --fill --head other", self.feature, 2),
+                ("gh pr -t ';' merge 12", self.clean, 2),
+                ("gh pr -t '|' ready 12", self.clean, 2),
+                ("gh pr -R '(' merge 12", self.clean, 2),
+                ("gh pr -t \\; merge 12", self.clean, 2),
+                ("gh api --jq '>' -X >/dev/null PUT repos/o/r/pulls/12/merge", self.clean, 2),
+                ("gh api --jq '>' -X >/dev/null POST repos/o/r/pulls", self.clean, 2),
+                ("sh -c 'gh pr -t \"$(echo \"a;b\")\" merge 12'", self.clean, 2),
+                # ordinary commands with a real redirection or a quoted word that holds an operator
+                ("gh pr create --draft --fill >/dev/null", self.verified, 0),
+                ("gh pr create --draft --fill --title 'a > b' 2>&1", self.verified, 0),
+                ("gh pr create --draft --fill --body \"$(cat <<'EOF'\na; b | c\nEOF\n)\"", self.verified, 0),
+            )
+        )
+        # the override lifts merge and ready, not the quoted-operator create
+        self.assertEqual(0, self.run_hook("gh pr -t ';' merge 12", self.clean, env={"AITK_PR_READY": "1"}).returncode)
+        result = self.run_hook("gh >/dev/null pr -t '>' create --fill", self.verified, env={"AITK_PR_READY": "1"})
+        self.assertEqual(2, result.returncode)
+        self.assertIn("as a command of its own", result.stderr)
+        result = self.run_hook("gh >/dev/null pr -t '>' create --fill", self.verified)
+        self.assertIn("as a command of its own", result.stderr)
+
+    def test_a_real_redirection_behind_a_wrapper_is_no_quoted_operator(self) -> None:
+        for command in (
+            "setsid gh pr create --draft --fill >/dev/null",
+            "uv run gh pr ready 12 --undo 2>&1",
+            "op run -- gh pr create --draft --fill 2>/dev/null",
+            "flock /tmp/x gh pr create --draft --fill </dev/null",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(0, self.run_hook(command, self.verified).returncode)
+        self.assertEqual(2, self.run_hook("setsid gh pr merge 12 >/dev/null", self.verified).returncode)
+        self.assertEqual(2, self.run_hook("setsid gh pr -t '>' merge 12", self.verified).returncode)
+
+    def test_a_substitution_is_one_word_of_its_command(self) -> None:
+        self.hook_codes(
+            (
+                ("gh -R $(echo o/r) pr merge 12", self.clean, 2),
+                ("gh pr -t $(echo x) merge 12", self.clean, 2),
+                ("gh pr -R `echo o/r` ready 12", self.clean, 2),
+                ("gh pr -R <(echo o/r) merge 12", self.clean, 2),
+                ("gh -R $(echo o/r) pr create --fill", self.verified, 2),
+                ("gh pr $(echo merge) 12", self.clean, 2),
+                ("gh $(echo pr) merge 12", self.clean, 2),
+                ("gh pr create --draft --fill --title=$(echo t) --draft=false", self.verified, 2),
+                ("gh -R $(echo o/r) pr view 12", self.clean, 0),
+                # no `$` at the end of a word is a substitution
+                ('gh pr create --draft --fill --title "Fix regex ^foo$"', self.verified, 0),
+                ("gh pr create --draft --fill --body 'ends with $'", self.verified, 0),
+                # an unquoted substitution among the words grants no draft: it may print flags
+                ("gh pr create --draft --fill --title $(echo t)", self.verified, 2),
+            )
+        )
+        words = [c.argv for c in shell_tokens.commands("gh -R $(echo o/r) pr merge 12", str(self.clean)) if c.is_gh]
+        self.assertEqual([["gh", "-R", "${}", "pr", "merge", "12"]], words)
+        inner = [c.argv for c in shell_tokens.commands("gh -R $(echo o/r) pr merge 12", str(self.clean)) if c.name == "echo"]
+        self.assertEqual([["echo", "o/r"]], inner)
+        cut = [c for c in shell_tokens.commands("gh pr create --title $(echo", str(self.clean)) if c.is_gh]
+        self.assertTrue(cut and cut[0].cut)
+
+    def test_git_reads_its_own_words_without_redirections_or_substitutions(self) -> None:
+        self.hook_codes(
+            (
+                ("git push --force 2>&1", self.clean, 2),
+                ("git push -f >/dev/null", self.clean, 2),
+                ("git push --force 2>&1 | tail -5", self.clean, 2),
+                ("git push --force fork 2>&1", self.clean, 2),
+                ("git push --force https://github.com/o/r.git", self.clean, 2),
+                ("git push -f ../other-clone", self.clean, 2),
+                (">/dev/null git push --force origin main", self.feature, 2),
+                ("2>&1 git push --force origin main", self.feature, 2),
+                ("git >/dev/null push --force origin main", self.feature, 2),
+                ("git -C $(echo .) push --force origin main", self.feature, 2),
+                ("git -c x=$(echo y) push --force origin main", self.feature, 2),
+                ("git push --force 2>&1", self.feature, 0),
+                ("git push --force origin feature >/dev/null", self.clean, 0),
+                ("git push origin main 2>&1", self.clean, 0),
+            )
+        )
+
+    def test_push_options_are_read_as_parse_options_does(self) -> None:
+        main, feature = self.clean, self.feature
+        for command, repo, expected in (
+            ("git push --force -o ci.skip origin", main, 2),
+            ("git push --force -oci.skip origin", main, 2),
+            ("git push --force --push-option=ci.skip origin", main, 2),
+            ("git push --force --push-option ci.skip origin", main, 2),
+            ("git push --force --repo origin", main, 2),
+            ("git push --force --receive-pack x origin", main, 2),
+            ("git push --force --recurse-submodules no origin", main, 2),
+            ("git push --force --recurse-submodules=no origin", main, 2),
+            ("git push --force origin 'refs/heads/*:refs/heads/*'", feature, 2),
+            ("git push origin '+refs/heads/*:refs/heads/*'", feature, 2),
+            ("git push --delete origin 'refs/heads/*'", feature, 2),
+            ("git push --force-w origin main", feature, 2),
+            ("git push --force-wi=main origin main", feature, 2),
+            ("git push --mirr", feature, 2),
+            ("git push --mirror origin", feature, 2),
+            ("git push --del origin main", feature, 2),
+            ("git push --no-verif origin feature", feature, 2),
+            # a value flag's word is its value, not a refspec or the repository
+            ("git push -o main origin feature", main, 0),
+            ("git push --force -o main origin feature", main, 0),
+            ("git push --force --push-option main origin feature", main, 0),
+            # a glob push that is no force, delete or `+` stays allowed
+            ("git push origin 'refs/heads/*:refs/heads/*'", feature, 0),
+            # an ambiguous prefix is an error in git: nothing is pushed, nothing to block
+            ("git push --forc origin feature", feature, 0),
+            ("git push --force --no-force origin main", main, 2),
+        ):
+            with self.subTest(command=command, repo=repo.name):
+                self.assertEqual(expected, self.run_hook(command, repo).returncode)
+        for name, expected in (
+            ("force", ("force", False)), ("force-w", ("force-with-lease", False)),
+            ("mirr", ("mirror", False)), ("del", ("delete", False)), ("forc", None), ("for", None),
+            ("no-force", ("force", True)), ("no-veri", ("verify", True)),
+        ):
+            with self.subTest(option=name):
+                self.assertEqual(expected, git_guard.resolve_push_option(name))
+
+    def test_a_shell_payload_does_not_know_the_outer_shells_directory(self) -> None:
+        for shell in ("sh -c", "bash -c", "eval"):
+            self.hook_codes(
+                (
+                    (shell + ' "cd {feature} && git push --force origin $(git branch --show-current)"', self.clean, 2),
+                    (shell + ' "git -C {feature} push --force origin $(git branch --show-current)"', self.clean, 2),
+                    (shell + ' "cd {feature} && git push --force origin feature"', self.clean, 0),
+                )
+            )
+        self.hook_codes(
+            (
+                ("git push --force origin $(git branch --show-current)", self.feature, 0),
+                ("git push --force origin $(git branch --show-current)", self.clean, 2),
+            )
+        )
+
+    def test_a_redirection_ahead_of_cd_does_not_hide_the_directory_change(self) -> None:
+        self.hook_codes(
+            (
+                (">/dev/null cd {feature} && git push --force", self.clean, 0),
+                (">/dev/null cd {main} && git push --force", self.feature, 2),
+            )
+        )
+
+    def codes(self, cases: tuple) -> None:
+        """(command, repo, expected exit code) with no placeholders to fill."""
+        for command, repo, expected in cases:
+            with self.subTest(command=command, repo=repo.name):
+                result = self.run_hook(command, repo)
+                self.assertEqual(expected, result.returncode, result.stderr)
+
+    def test_a_substitution_that_expands_to_nothing_leaves_the_cd_a_command(self) -> None:
+        self.hook_codes(
+            (
+                ("$(true) cd {main} && git push --force", self.feature, 2),
+                ("X=1 $(true) cd {main} && git push --force", self.feature, 2),
+                (">$(echo /dev/null) cd {main} && git push --force", self.feature, 2),
+                ("`true` cd {main} && git push --force", self.feature, 2),
+                ("if true; then X=$(true) cd {main}; fi; git push --force", self.feature, 2),
+                ("command $(true) cd {main} && git push --force", self.feature, 2),
+                ("$(true) $(true) cd {main} && git push --force", self.feature, 2),
+                # `echo` is the command whatever the substitution prints: the cd is its argument
+                ("echo $(true) cd {main}; git push --force", self.feature, 0),
+                ("echo $(true) cd {feature}; git push --force", self.clean, 2),
+                # assignments only before the substitution: the `cd` is the command, as before
+                ("X=$(true) cd {feature} && git push --force", self.clean, 0),
+                ("X=$(true) cd {main} && git push --force", self.feature, 2),
+                # a prefix word's options do not end the prefix
+                ("command -p $(true) cd {main} && git push --force", self.feature, 2),
+                ("builtin -- $(true) cd {main}; git push --force", self.feature, 2),
+                ("time -p $(true) cd {main} && git push --force", self.feature, 2),
+                ("command $X -p cd {main} && git push --force", self.feature, 2),
+                # a word may come out as nothing, or as `cd`, whatever its spelling
+                ("${{X:-${{Y}}}} cd {main} && git push --force", self.feature, 2),
+                ("${{X:-$(true)}} cd {main} && git push --force", self.feature, 2),
+                ("{{,}} cd {main} && git push --force", self.feature, 2),
+                ("${{X}}cd {main} && git push --force", self.feature, 2),
+                ("$X'cd' {main} && git push --force", self.feature, 2),
+                ("`true`cd {main} && git push --force", self.feature, 2),
+                ("{{c,}}d {main} && git push --force", self.feature, 2),
+            )
+        )
+        found = list(shell_tokens.commands("$(true) cd /tmp && gh pr create --draft --fill", "/"))
+        self.assertIsNone(found[-1].workdir)
+        found = list(shell_tokens.commands("echo $(true) cd /tmp; git status", "/"))
+        self.assertEqual("/", found[-1].workdir)
+        found = list(shell_tokens.commands("`true` cd /tmp; git status", "/"))
+        self.assertIsNone(found[-1].workdir)
+        found = list(shell_tokens.commands("X=$(true) cd /tmp && git status", "/"))
+        self.assertEqual("/tmp", found[-1].workdir)
+
+    def test_a_word_that_may_expand_to_nothing_leaves_the_next_word_the_command(self) -> None:
+        self.hook_codes(
+            (
+                # an empty `$X` is no word: the `cd` or `git` after it is the command
+                ("$X cd {main} && git push --force", self.feature, 2),
+                ("${{X:-}} cd {main}; git push --force", self.feature, 2),
+                ("$@ cd {main}; git push --force", self.feature, 2),
+                ("$X $(true) cd {main}; git push --force", self.feature, 2),
+                ("$X$(true) cd {main}; git push --force", self.feature, 2),
+                # a descriptor ahead of the substitution is part of a redirection, not the command
+                ("2>/dev/null $(true) cd {main}; git push --force", self.feature, 2),
+                ("{{fd}}>/dev/null $(true) cd {main}; git push --force", self.feature, 2),
+                ("2>/dev/null $X cd {main}; git push --force", self.feature, 2),
+                ("$X git push --force origin main", self.clean, 2),
+                ("env $X git push --force origin main", self.clean, 2),
+                ("sudo $X git push --force origin main", self.clean, 2),
+                ("$X $Y git push --force origin main", self.clean, 2),
+                ("`true` git push --force origin main", self.clean, 2),
+                ("`echo x` git push --force origin main", self.clean, 2),
+                ("`true; true` git push --force origin main", self.clean, 2),
+                ("`true; true` cd {main}; git push --force", self.feature, 2),
+                ("`true; f; true` x", self.clean, 0),
+                ("f() {{ git push --force origin main; }}; `true; f; true` x", self.clean, 2),
+                ("$X Y=1 $(true) cd {main}; git push --force", self.feature, 2),
+                ("$(echo x >&2) cd {main} && git push --force", self.feature, 2),
+                ("$(echo ' ') cd {main} && git push --force", self.feature, 2),
+                # what a substitution in command position prints runs as the command
+                ("`echo gh pr merge 12`", self.clean, 2),
+                ("$(echo gh pr merge 12)", self.clean, 2),
+                ("$(echo gh pr merge 12 --subject) --help", self.clean, 2),
+                ("`echo gh pr merge 12 --subject` --help", self.clean, 2),
+                ("$(printf 'gh pr ready 12')", self.clean, 2),
+                # with the words after it, past a word that may print nothing, and decoded
+                ("`echo gh pr` merge 12", self.clean, 2),
+                ("$(echo gh pr) merge 12", self.clean, 2),
+                ("$(echo gh api -X PUT) repos/o/r/pulls/12/merge", self.clean, 2),
+                ("eval \"$(echo gh pr) merge 12\"", self.clean, 2),
+                ("$X $(echo gh pr merge 12)", self.clean, 2),
+                ("$(true) $(echo gh pr merge 12)", self.clean, 2),
+                ("$(echo -e '\\x67h pr merge 12')", self.clean, 2),
+                ("$(printf '\\147h pr merge 12')", self.clean, 2),
+                # what an `echo` of literal words prints is read as the command it makes
+                ("$(echo gh) pr merge 12 --help", self.clean, 0),
+                ("$(which gh) pr view 12", self.clean, 0),
+                # git's name behind an expansion
+                ("$GIT push --force origin main", self.clean, 2),
+                ("${{GIT:-git}} push --force origin main", self.clean, 2),
+                ("$(which git) push --force origin main", self.clean, 2),
+                ("\"$(command -v git)\" push --force origin main", self.clean, 2),
+                ("${{X}}git push --force origin main", self.clean, 2),
+                ("git $X push --force origin main", self.clean, 2),
+                ("$GIT status", self.clean, 0),
+                # git's own words: a quoted separator in a value cuts nothing
+                ("$GIT push -o 'a;b' --force origin main", self.clean, 2),
+                ("$(which git) push -o 'a;b' --force origin main", self.clean, 2),
+                ("$GIT push -o 'a&b' --delete origin main", self.clean, 2),
+                ("$GIT push origin feature -o 'a;b'", self.clean, 0),
+                # behind a command the guard does not know, a later `git` may be what it runs
+                ("setsid git push --force origin main", self.clean, 2),
+                ("caffeinate git push --force origin main", self.clean, 2),
+                ("flock /tmp/x git push --force origin main", self.clean, 2),
+                ("caffeinate -i git commit --no-verify -m x", self.clean, 2),
+                ("echo git push --force origin main", self.clean, 0),
+                ("brew list git && git status", self.clean, 0),
+                # an assignment's backtick span, and nesting past the limit, fail closed
+                ("a=`b c` git push --force origin main", self.feature, 2),
+                ("a=`b c` git commit --no-verify -m x", self.clean, 2),
+                ("`true x` " * 9 + "git push --force origin main", self.feature, 2),
+                ("a=`date` git status", self.clean, 0),
+                ("$(command -v gh) pr view 12", self.clean, 0),
+                ("echo `echo gh pr merge 12`", self.clean, 0),
+                # ordinary commands stay allowed
+                ("$X git status", self.clean, 0),
+                ("$X git push origin feature", self.clean, 0),
+                ("$EDITOR notes.txt", self.clean, 0),
+            )
+        )
+        found = list(shell_tokens.commands("$X cd /tmp; git status", "/"))
+        self.assertIsNone(found[-1].workdir)
+
+    def test_a_word_glued_to_a_substitution_gets_no_draft_help_or_undo_credit(self) -> None:
+        body = "gh pr create --draft --fill --body \"$(cat <<'EOF'\nline; with | operators\nEOF\n)\""
+        self.codes(
+            (
+                ("gh pr merge 12 -b $(echo x)--help", self.clean, 2),
+                ("gh pr create --fill -t $(echo x)--draft", self.verified, 2),
+                ("gh pr ready 12 -R $(echo o/r)--undo", self.clean, 2),
+                ("gh api -X PUT repos/o/r/pulls/12/merge -f x=$(echo y)--help", self.clean, 2),
+                # a heredoc body is one double-quoted word, not an unquoted substitution
+                (body, self.verified, 0),
+                ("gh pr merge 12 --help", self.clean, 0),
+                ("gh pr create --draft --fill", self.verified, 0),
+            )
+        )
+
+    def test_only_an_unquoted_backtick_opens_a_span(self) -> None:
+        self.codes(
+            (
+                ("A='`' gh pr merge 12", self.clean, 2),
+                ("gh -R 'a`b' pr merge 12", self.clean, 2),
+                ("gh pr -t 'a`b' merge 12", self.clean, 2),
+                ("A='`' gh pr create --fill", self.verified, 2),
+                ("gh pr merge 12 -b `echo x` --help", self.clean, 2),
+                ("gh pr create --title 'Handle a stray ` in titles' --draft --fill", self.verified, 0),
+                ("gh pr create --draft --fill --title \"a ` b\"", self.verified, 0),
+            )
+        )
+        self.assertFalse(shell_tokens.tokenize("gh pr create -t 'a ` b' --draft").backticks)
+        self.assertTrue(shell_tokens.tokenize("gh pr create -t `echo b` --draft").backticks)
+
+    def test_a_number_is_a_descriptor_only_when_glued_to_its_operator(self) -> None:
+        self.hook_codes(
+            (
+                ("git push -o 5 >/dev/null --force origin main", self.feature, 2),
+                ("gh pr create --draft --fill -t 5 >/dev/null --draft=false", self.verified, 2),
+                ("git push 2>/dev/null --force origin main", self.feature, 2),
+                ("git push 5>/dev/null --force origin main", self.feature, 2),
+                ("git push 2>/dev/null origin feature", self.feature, 0),
+                ("git push --force origin feature 2>&1", self.feature, 0),
+                ("git push >&2 --force origin feature", self.feature, 0),
+                ("git push &>/dev/null --force origin feature", self.feature, 0),
+                ("git push 5>/dev/null --force origin feature", self.feature, 0),
+                ("git push {{fd}}>/dev/null --force origin feature", self.feature, 0),
+                ("git push -o 5 >/dev/null origin feature", self.feature, 0),
+                ("gh pr create --draft --fill 2>&1", self.verified, 0),
+            )
+        )
+        self.assertEqual(["git", "push", "-o", "5"], shell_tokens.tokenize("git push -o 5 >/dev/null")[:4])
+        self.assertEqual(["git", "push", "-o", "5", "--force"], shell_tokens.drop_redirections(
+            shell_tokens.tokenize("git push -o 5 >/dev/null --force")
+        ))
+        for text in ("a 2>&1 b", "a {fd}>x b", "a 5>x b", "a >&2 b", "a &>x b", "a 2>/dev/null b"):
+            with self.subTest(text=text):
+                self.assertEqual(["a", "b"], shell_tokens.drop_redirections(shell_tokens.tokenize(text)))
+        self.assertEqual(["a", "2", "b"], shell_tokens.drop_redirections(shell_tokens.tokenize("a 2 >x b")))
+        self.assertEqual(["a2", ">", "x"], shell_tokens.tokenize("a2>x"))
+        self.assertEqual(["a", "5", "<", "(", "b", ")"], shell_tokens.tokenize("a 5<(b)"))
+
+    def test_the_argv_reading_stays_when_a_quoted_operator_adds_the_text_reading(self) -> None:
+        self.codes(
+            (
+                ("gh pr $V 12; find . -name x -exec ls {} \\;", self.clean, 2),
+                ("$G pr merge 12; find . -name x -exec ls {} \\;", self.clean, 2),
+                ("$G pr create --fill; find . -name x -exec ls {} \\;", self.verified, 2),
+                ("gh pr m$X 12; echo '|'", self.clean, 2),
+                ("gh api \"$URL\" -X PUT | cut -d '|' -f1", self.clean, 2),
+                ("gh api graphql -f query=\"$Q\" | tr ';' ' '", self.clean, 2),
+                ("gh api 5 >/dev/null -X PUT \"$URL\" | cat", self.clean, 2),
+                ("gh pr -t ';' merge 12", self.clean, 2),
+                ("gh pr -t 'a;b' merge 12", self.clean, 2),
+                ("gh pr -t \\; merge 12", self.clean, 2),
+                ("gh pr create --draft --fill; find . -name x -exec ls {} \\;", self.verified, 2),
+                # a quoted `'>'` may be the word the argv reading dropped as a redirection
+                ("G=gh; $G pr -t '>' merge 12", self.clean, 2),
+                ("G=gh; $G pr -t '>' ready 12", self.clean, 2),
+                ("G=gh; $G pr -t '>' create --fill", self.verified, 2),
+                ("G=gh; $G api --jq '>' repos/o/r/pulls -f title=x -f head=b -f base=main", self.verified, 2),
+            )
+        )
+
+    def test_a_shell_that_runs_a_script_the_guard_cannot_see_has_its_text_read(self) -> None:
+        heredoc = "{shell} <<'EOF'\n{body}\nEOF"
+        blocked = [
+            heredoc.format(shell="bash", body="git push --force origin main"),
+            heredoc.format(shell="bash", body="gh pr merge 12"),
+            heredoc.format(shell="sh -s", body="gh pr ready 12"),
+            heredoc.format(shell="bash -s -- x", body="git push -f origin main"),
+            heredoc.format(shell="bash -", body="git push origin :main"),
+            heredoc.format(shell="bash -o pipefail", body="git push origin +main"),
+            heredoc.format(shell="env bash", body="git commit -am x"),
+            heredoc.format(shell="bash", body="gh pr create --draft --fill"),
+            heredoc.format(shell="bash", body="gh api repos/o/r/pulls -f title=x -f head=b -f base=main"),
+            "sh <<< 'gh pr merge 12'",
+            "nohup bash <<< 'git push --force origin main'",
+            "echo 'gh pr merge 12' | sh",
+            "printf 'git push --force origin main\\n' | bash",
+            "cat <<'EOF' | bash\ngh pr merge 12\nEOF",
+            "bash -c \"$(cat <<'EOF'\ngh pr merge 12\nEOF\n)\"",
+            "eval \"$(cat <<'EOF'\ngh pr merge 12\nEOF\n)\"",
+            "source /dev/stdin <<< 'gh pr merge 12'",
+            ". <(echo gh pr merge 12)",
+            "bash <(echo gh pr merge 12)",
+            # a stdin that reaches a shell in a group, a subshell, a body, a payload or an fd
+            "{ bash; } <<< 'gh pr merge 12'",
+            "(bash) <<< 'gh pr merge 12'",
+            "if true; then bash; fi <<< 'gh pr merge 12'",
+            "echo 'gh pr merge 12' | (cd /tmp && bash)",
+            "echo 'gh pr merge 12' | tee >(bash)",
+            "bash 3<<< 'gh pr merge 12' <&3",
+            heredoc.format(shell="bash -c 'exec sh'", body="git push --force origin main"),
+            "bash --rcfile <(echo gh pr merge 12) -i",
+            "b\\ash <<< 'gh pr merge 12'",
+            "ash <<< 'gh pr merge 12'",
+            heredoc.format(shell="bash", body="git com\\\nmit --no-verify -m x"),
+            heredoc.format(shell="bash", body="git push origin $'+main'"),
+            heredoc.format(shell="bash", body="git push -o 'a;b' --force origin main"),
+            "echo 'git push --force origin main' | docker exec -i app bash",
+            heredoc.format(shell="bash -euo pipefail", body="gh pr merge 12"),
+            "bash /dev/fd/3 3<<< 'gh pr merge 12'",
+            heredoc.format(shell="bash", body="git push \\\n  --force origin main"),
+            heredoc.format(shell="bash", body="git push --de origin main"),
+            heredoc.format(shell="bash", body="git push --mi origin"),
+            "$SHELL <<< 'gh pr merge 12'",
+            "B=bash; $B <<< 'gh pr merge 12'",
+            heredoc.format(shell="$(which bash) -s", body="gh pr merge 12"),
+        ]
+        allowed = [
+            "gh pr view 12 --json body -q .body > /dev/null <<'EOF'\nunused\nEOF",
+            "python3 - <<'EOF'\nprint('gh pr merge 12')\nEOF",
+            "curl -fsSL https://example.com/install.sh | bash",
+            "bash scripts/x.sh",
+            "bash -c 'echo hi'",
+            heredoc.format(shell="bash", body="echo hi\ngit status"),
+            heredoc.format(shell="bash", body="git push origin feature"),
+            "cat <<'EOF' > notes.md\ngh pr merge 12\nEOF",
+            "source .venv/bin/activate && true",
+            "bash -c \"$X\"",
+            # a shell's name as an argument reads no script, and only a substitution's text is read
+            "docker exec -it app bash && git commit --allow-empty -m x",
+            "brew list zsh && git commit --allow-empty -m x",
+            "command -v bash >/dev/null && git commit --allow-empty -m x",
+            "eval \"$(echo true)\" && git commit --allow-empty -m x",
+            "ps aux | grep sh; git commit --allow-empty -m x",
+            "git log -1 2>&1 | grep -v bash; git commit --allow-empty -m x",
+            # an apostrophe in a comment opens no quote
+            heredoc.format(shell="bash", body="# don't worry\ngit push origin feature\nrm -rf dist"),
+        ]
+        self.codes(tuple((command, self.clean, 2) for command in blocked) + tuple((command, self.clean, 0) for command in allowed))
+        # the user's AITK_PR_READY=1 lifts a merge in such a script, not a force push or an unchecked PR
+        env = {"AITK_PR_READY": "1"}
+        for command, expected in (
+            (heredoc.format(shell="bash", body="gh pr merge 12"), 0),
+            (heredoc.format(shell="bash", body="git push --force origin main"), 2),
+            (heredoc.format(shell="bash", body="gh pr create --fill"), 2),
+        ):
+            with self.subTest(command=command, env="AITK_PR_READY"):
+                self.assertEqual(expected, self.run_hook(command, self.clean, env=env).returncode)
+
+    def test_a_printing_command_still_runs_its_substitutions(self) -> None:
+        self.codes(
+            (
+                ("echo $(gh pr -t ';' merge 12)", self.clean, 2),
+                ("echo \"$(gh pr -t ';' merge 12)\"", self.clean, 2),
+                ("echo `gh pr -t ';' merge 12`", self.clean, 2),
+                ("cat <(gh pr -t ';' merge 12)", self.clean, 2),
+                ("echo $(echo $(gh pr -t ';' ready 12))", self.clean, 2),
+                ("echo '()' gh pr ready 12", self.clean, 0),
+                ("echo \"$(date)\" ';'", self.clean, 0),
+            )
+        )
+
+    def test_git_reads_its_words_as_written_beside_a_quoted_operator(self) -> None:
+        self.codes(
+            (
+                ("git push -o '>' --force origin main", self.feature, 2),
+                ("git push -o \\> --force origin main", self.feature, 2),
+                ("git push --repo '>' --force origin main", self.feature, 2),
+                ("git commit -m '>' --no-verify", self.clean, 2),
+                # a quoted separator cut git's words: each real piece is read with it as a word
+                ("git commit -m ';' --no-verify", self.clean, 2),
+                ("git push -o '|' --force origin main", self.feature, 2),
+                ("git push -o '(' --force origin main", self.feature, 2),
+                ("git commit --allow-empty -m 'fix; thing'", self.clean, 0),
+                ("git commit --allow-empty -m 'a (wip) b'", self.clean, 0),
+                ("git push --force origin feature; echo '|'", self.feature, 0),
+            )
+        )
+        nest = "git push --force origin main"
+        for _ in range(10):
+            nest = "sh -c " + shlex.quote(nest)
+        self.codes(((nest, self.feature, 2),))
+
+    def test_a_command_the_guard_does_not_know_may_run_git(self) -> None:
+        self.hook_codes(
+            (
+                # a later word that may start git, behind an unknown command or an option's value
+                ('find . git git git git git git git git -maxdepth 0 -exec git push --force origin main \\;', self.clean, 2),
+                ('x git git git git git git git git git commit --no-verify -m x', self.clean, 2),
+                ("setsid bash -c 'git push --force origin main'", self.clean, 2),
+                ("flock /tmp/lock sh -c 'git push --force origin main'", self.clean, 2),
+                ("uv run bash -c 'git commit --no-verify -m x'", self.clean, 2),
+                ("/bin/sh -c 'git push --force origin main'", self.clean, 2),
+                ('/bin/bash -c "git commit --no-verify -m x"', self.clean, 2),
+                ("dash -c 'git push --force origin main'", self.clean, 2),
+                ("/usr/bin/env bash -c 'git push --force origin main'", self.clean, 2),
+                ('setsid env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x', self.clean, 2),
+                ('setsid git-push --force origin main', self.clean, 2),
+                ('setsid git-commit --no-verify -m x', self.clean, 2),
+                ('setsid $GIT push --force origin main', self.clean, 2),
+                ('setsid "$(which git)" push --force origin main', self.clean, 2),
+                ('setsid ${{GIT:-git}} push --force origin main', self.clean, 2),
+                ('exec -a echo git push --force origin main', self.clean, 2),
+                ('env -P echo /usr/bin/git push --force origin main', self.clean, 2),
+                ('xargs -J echo git push --force origin main', self.clean, 2),
+                ('sudo --prompt echo git push --force origin main', self.clean, 2),
+                ("sh -c 'git $*' _ push --force origin main", self.clean, 2),
+                # a `git` word that starts no git command is an argument, even where the
+                # directory is unknown; a printing command runs none
+                ('cd "$D" && pytest -k git tests/test_x.py', self.clean, 0),
+                ('cd "$D" && [ "$x" = git ] && echo y', self.clean, 0),
+                ('cd "$D" && if [ "$VCS" = git ]; then echo y; fi', self.clean, 0),
+                ('cd "$D" && apt-get install -y git curl', self.clean, 0),
+                ('cd "$(dirname "$0")" && brew install git gh', self.clean, 0),
+                ('cd "$D" && for t in git gh jq; do command -v $t; done', self.clean, 0),
+                ('cd "$D" && find . -name git -type d', self.clean, 0),
+                ('cd "$D" && mkdir -p src/git tests', self.clean, 0),
+                ('cd "$D" && claude mcp add git -- uvx mcp-server-git', self.clean, 0),
+                ('echo git push --force origin main', self.clean, 0),
+                ('setsid git push origin feature', self.clean, 0),
+            )
+        )
+
+    def test_staging_switching_and_config_are_read_as_git_would(self) -> None:
+        self.hook_codes(
+            (
+                ('git stage -f PROJECT.md && git commit -m x', self.feature, 2),
+                ('git update-index --add PROJECT.md && git commit -m x', self.feature, 2),
+                ('F=PROJECT.md; git add -f $F && git commit -m x', self.feature, 2),
+                ('git add -f PROJECT.{{md,md}} && git commit -m x', self.feature, 2),
+                ('git checkout main && git push -f origin HEAD', self.feature, 2),
+                ('git switch main && git push --force', self.feature, 2),
+                ('git checkout -B main && git push -f origin HEAD', self.feature, 2),
+                ('git push -f origin {{main,main}}', self.feature, 2),
+                ('git push origin +mai{{n,n}}', self.feature, 2),
+                ('git push -d origin {{main,main}}', self.feature, 2),
+                ('git push origin :{{main,main}}', self.feature, 2),
+                ('P=push; git $P --force origin main', self.feature, 2),
+                ('git ${{S:-push}} --force origin main', self.feature, 2),
+                ("sh -c 'git $*' _ push --force origin main", self.feature, 2),
+                ('git -c remote.origin.push=+refs/heads/main:refs/heads/main push origin', self.feature, 2),
+                ('git -c remote.origin.mirror=true push origin', self.feature, 2),
+                ('git config remote.origin.push +refs/heads/main:refs/heads/main && git push origin', self.feature, 2),
+                ('git send-pack --force origin main', self.feature, 2),
+                ('$GIT push --no-verify origin feature', self.feature, 2),
+                ("bash <<< 'git push --no-verify origin feature'", self.feature, 2),
+                ("$GIT -c alias.x='push --force origin main' x", self.feature, 2),
+                ('f() {{ git push --force origin main; }}; trap f EXIT', self.feature, 2),
+                ('f() {{ git commit --no-verify -m x; }}; : `f`', self.feature, 2),
+                ('f() {{ git push --force origin main; }}; F=f; $F', self.feature, 2),
+                ("git push --prune origin 'refs/heads/*:refs/heads/*'", self.feature, 2),
+                ('git merge --no-verify feature', self.feature, 2),
+                ('git -c include.path=/tmp/x commit -m x', self.feature, 2),
+                ('GIT_CONFIG_GLOBAL=/dev/null git commit -m x', self.feature, 2),
+                ('git add -f README.md && git commit --allow-empty -m x', self.feature, 0),
+                ('git checkout -- README.md && git push origin feature', self.feature, 0),
+                ('git switch feature && git push origin feature', self.feature, 0),
+                ('git push origin feature', self.feature, 0),
+                ('git push origin {{feature,other}}', self.feature, 0),
+                ('P=status; git $P', self.feature, 0),
+                ('git config user.name x && git push origin feature', self.feature, 0),
+                ('git merge --no-edit origin/main', self.feature, 0),
+                ('git remote add fork https://example.com/x.git && git push fork feature', self.feature, 0),
+                ("trap 'echo done' EXIT", self.feature, 0),
+                ('git $X status', self.feature, 0),
+                ('git push --prune origin feature', self.feature, 0),
+            )
+        )
+
+    def test_the_seventh_reviews_regressions_stay_closed(self) -> None:
+        self.hook_codes(
+            (
+                # an escaped character before `#` starts no comment
+                ("echo a\\ #b; git commit -m ';' --no-verify", self.clean, 2),
+                ("echo a\\;#b; git commit -m ';' --no-verify", self.clean, 2),
+                ("echo a\\ #b; gh >'&' pr merge 12", self.clean, 2),
+                # git behind an unknown command, past its options, a redirection or an empty word
+                ("setsid git $X push --force origin main", self.clean, 2),
+                ("setsid git >/dev/null push --force origin main", self.clean, 2),
+                ("setsid git 2>/dev/null push --force origin main", self.clean, 2),
+                ("setsid git --config-env=alias.x=V x", self.clean, 2),
+                ("setsid git $P --force origin main", self.clean, 2),
+                # ssh and other names that end in `sh` are no local shell: their words are read
+                ("ssh host git push --force origin main", self.clean, 2),
+                ("refresh git push --force origin main", self.clean, 2),
+                ("ssh host uptime", self.clean, 0),
+                # a glob or a literal path is git's to read, not an expansion
+                ("git add hooks/*.sh && git commit --allow-empty -m x", self.clean, 0),
+                ("git add \"app/[slug]/page.tsx\" && git commit --allow-empty -m x", self.clean, 0),
+                ("git add -f PROJECT.m? && git commit -m x", self.clean, 2),
+            )
+        )
+
+    def test_the_guards_own_git_runs_nothing_the_command_supplies(self) -> None:
+        # The guard's own git queries (an add's dry run, the staged files, the branch) run before
+        # the command is approved, so nothing the command sets may choose the git program or a
+        # config that runs one; config the queries then cannot see makes what they read unknown.
+        work = Path(tempfile.mkdtemp(dir=self.temporary.name))
+        marker = work / "marker"
+        fake_bin = work / "bin"
+        fake_bin.mkdir()
+        (fake_bin / "git").write_text(f'#!/bin/sh\ntouch {marker}-path\nexec {shutil.which("git")} "$@"\n')
+        (fake_bin / "git").chmod(0o755)
+        home = work / "home"
+        home.mkdir()
+        (home / ".gitconfig").write_text(
+            f"[core]\n\tfsmonitor = touch {marker}-home; false\n[alias]\n\tx = push --force origin main\n"
+        )
+        count = f"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0='touch {marker}-count; false'"
+        self.hook_codes(
+            (
+                # nothing the command supplies runs
+                (f"{count} git add notes.txt", self.clean, 0),
+                (f"HOME={home} git add notes.txt", self.clean, 0),
+                (f"PATH={fake_bin}:/usr/bin:/bin git add notes.txt", self.clean, 0),
+                # an alias in config the queries no longer read still blocks
+                (f"HOME={home} git x", self.clean, 2),
+                (f"GIT_CONFIG_GLOBAL={home}/.gitconfig git x", self.clean, 2),
+                # the pathspec variables still reach the dry run
+                ("GIT_ICASE_PATHSPECS=1 git add -f project.MD && git commit -m x", self.clean, 2),
+                # config the dry run cannot see makes what an add stages unknown
+                (f"HOME={home} git add -A && git commit -m x", self.feature, 2),
+                ("git -c core.excludesFile=/dev/null add -A && git commit -m x", self.feature, 2),
+                # a commit without the config files git would read
+                ("env -i git commit -m x", self.feature, 2),
+                ("env -u HOME git commit -m x", self.feature, 2),
+                ("unset HOME; git commit -m x", self.feature, 2),
+                ("HOME= git commit -m x", self.feature, 2),
+                ("XDG_CONFIG_HOME=/tmp/h git commit -m x", self.feature, 2),
+                # the command's own index is still read
+                (f"GIT_INDEX_FILE={self.alt_index} git commit -m x", self.clean, 2),
+                # ordinary commands
+                ("git -c user.name=x -c user.email=y commit -m x", self.feature, 0),
+                ("GIT_AUTHOR_NAME=x git commit -m x", self.feature, 0),
+                ("env -i PATH=/usr/bin:/bin npm test", self.feature, 0),
+                ("env -i git status", self.feature, 0),
+                ("git -c core.autocrlf=false add README.md && git commit -m x", self.feature, 0),
+            )
+        )
+        self.assertEqual([], sorted(path.name for path in work.glob("marker*")))
+
+    def test_text_a_command_hands_to_a_shell_is_read_by_both_walkers(self) -> None:
+        push = "'git push --force origin main'"
+        self.hook_codes(
+            (
+                # bash's own option grammar: `-c` makes the first word that is no option the script
+                (f"bash -c -x {push}", self.clean, 2),
+                ("bash -c -x 'gh pr merge 12'", self.clean, 2),
+                (f"bash -co pipefail {push}", self.clean, 2),
+                (f"env -S {push}", self.clean, 2),
+                # a later -c or --command word behind a command the guard does not know
+                (f"flock /tmp/lock -c {push}", self.clean, 2),
+                (f"su -c {push}", self.clean, 2),
+                (f"script -q /dev/null -c {push}", self.clean, 2),
+                (f"$SHELL -c {push}", self.clean, 2),
+                (f"fish --command {push}", self.clean, 2),
+                (f"fish -C {push}", self.clean, 2),
+                (f"pwsh -Command {push}", self.clean, 2),
+                ("fish --command 'gh pr merge 12'", self.clean, 2),
+                # trap's command, past `--`
+                (f"trap -- {push} EXIT", self.clean, 2),
+                ("f() {{ git push --force origin main; }}; trap -- f EXIT", self.clean, 2),
+                ("trap 'gh pr merge 12' EXIT", self.clean, 2),
+                ("trap -- 'gh pr merge 12' EXIT", self.clean, 2),
+                # a wrapper option's value is no printing head
+                ("exec -a echo gh pr merge 12", self.clean, 2),
+                ("exec -a echo git push --force origin main", self.clean, 2),
+                # ordinary commands
+                ("bash -c 'npm test'", self.clean, 0),
+                ("bash -x script.sh", self.clean, 0),
+                ("bash -o pipefail -c 'make'", self.clean, 0),
+                ("trap 'echo done' EXIT", self.clean, 0),
+                ("trap - EXIT", self.clean, 0),
+                ("trap -p", self.clean, 0),
+                ("env -S 'FOO=1 npm test'", self.clean, 0),
+                ("gcc -c x.c", self.clean, 0),
+                ("grep -c x file", self.clean, 0),
+                ("python3 -c 'print(1)'", self.clean, 0),
+                ("exec -a myname ./server", self.clean, 0),
+                ("sudo --prompt x ls", self.clean, 0),
+                ("gh pr review 12 -cb \"git push --force origin main\"", self.clean, 0),
+                ("timeout 5 grep -c \"git push --force origin main\" log", self.clean, 0),
+            )
+        )
+
+    def test_payload_flags_stay_fast_and_fail_closed_past_their_cap(self) -> None:
+        # 2,000 `-c` words after an unknown head: past the cap, git or gh in the rest blocks, and
+        # the walk stays quick either way
+        many = " ".join(["-c 'echo hi'"] * 2000)
+        started = time.monotonic()
+        for command in (f"flock /tmp/x {many} -c 'gh pr merge 12'", f"flock /tmp/x {many} -c 'git push --force origin main'"):
+            with self.subTest(command=command[-40:]), self.assertRaises(git_guard.Blocked):
+                git_guard.evaluate(command, str(self.clean), {})
+        git_guard.evaluate(f"flock /tmp/x {many} -c 'echo bye'", str(self.clean), {})
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_variables_are_read_by_the_values_the_command_gives_them(self) -> None:
+        self.hook_codes(
+            (
+                # a value with several words, where a word with a space runs nothing
+                ('P="push --force origin main"; git $P', self.feature, 2),
+                ('CMD="git push --force origin main"; $CMD', self.feature, 2),
+                ('CMD="git push"; $CMD --force origin main', self.feature, 2),
+                ('CMD="git commit --no-verify -m x"; unset X; export CMD; $CMD', self.feature, 2),
+                ('for c in "git push --force origin main"; do $c; done', self.feature, 2),
+                # every value assigned anywhere counts, whatever runs last
+                ("P=push; P=status true; git $P --force origin main", self.feature, 2),
+                ("P=push; (P=status); git $P --force origin main", self.feature, 2),
+                ("P=push; false && P=status; git $P --force origin main", self.feature, 2),
+                ("F=--force; git push origin main $F", self.feature, 2),
+                ("F=--force; export F; git push origin main $F", self.feature, 2),
+                # a subcommand the guard cannot read
+                ("P=$(echo push); git $P --force origin main", self.feature, 2),
+                ("P=$1; git $P --force origin main", self.feature, 2),
+                ("S=commit; git ${{S:-push}} -n -m x", self.feature, 2),
+                ("IFS=,; P=push,--force,origin,main; git $P", self.feature, 2),
+                ("git $(echo push --force origin main)", self.feature, 2),
+                ("git ${{X:-push --force origin main}}", self.feature, 2),
+                ('A=(push --force origin main); git "${{A[@]}}"', self.feature, 2),
+                ('set -- push --force origin main; git "$@"', self.feature, 2),
+                # a command word set to a value the guard cannot read
+                ('read -r C <<< "git push"; $C --force origin main', self.feature, 2),
+                ('read -r C <<< "git push --force origin main"; $C', self.feature, 2),
+                ("printf -v C 'git push --force origin main'; $C", self.feature, 2),
+                # positional parameters split where a word with a space runs nothing
+                ("sh -c 'git $@' _ 'push --force origin main'", self.feature, 2),
+                ("f() {{ git $1; }}; f 'push --force origin main'", self.feature, 2),
+                ("f() {{ git $*; }}; f push --force origin main", self.feature, 2),
+                # gh through a variable the command sets
+                ('CMD="gh pr merge"; $CMD 12', self.feature, 2),
+                ("c='gh pr'; $c merge 12", self.feature, 2),
+                ("c='gh pr merge'; $c 12", self.feature, 2),
+                ("c='gh pr merge 12'; $c", self.feature, 2),
+                ("g=gh; setsid $g pr merge 12", self.feature, 2),
+                # ordinary commands
+                ("P=status; git $P", self.feature, 0),
+                ("git $X status", self.feature, 0),
+                ("B=feature; git push origin $B", self.feature, 0),
+                ('MSG="fix -n flag"; git commit -m "$MSG"', self.feature, 0),
+                ("P=status; export P; git $P", self.feature, 0),
+                ('c() {{ git commit -m "$*"; }}; c fix -n thing', self.feature, 0),
+                ("RM=$(which rm); $RM -rf build", self.clean, 0),
+                ("PY=$(which python3); $PY -m pytest -f tests", self.clean, 0),
+                ("PY=$(which python3); $PY -m pytest -n 4", self.clean, 0),
+                ("NPM=$(which npm); $NPM install --force", self.clean, 0),
+                ("for f in a.txt b.txt; do wc -l $f; done", self.feature, 0),
+                ("for s in status diff; do git $s; done", self.feature, 0),
+                ("PY=$(command -v python3); $PY scripts/check.py && git add -A && git commit -m x", self.feature, 0),
+                ("set -euo pipefail; git status", self.feature, 0),
+                # kept as before: a path a variable names is unknown to the staged set
+                ("F=README.md; git add $F && git commit -m x", self.feature, 2),
+            )
+        )
+
+    def test_value_readings_stay_fast_and_fail_closed_past_their_cap(self) -> None:
+        started = time.monotonic()
+        many = "; ".join(f"V{n}=x{n}" for n in range(2000)) + "; git " + " ".join(f"$V{n}" for n in range(0, 2000, 7))
+        git_guard.evaluate(many, str(self.feature), {})
+        # 33 values for one word: past the cap the command blocks
+        wide = "; ".join(f"P=v{n}" for n in range(33)) + "; git $P"
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate(wide, str(self.feature), {})
+        # five variables of two values each, among the arguments: 32 readings, still read
+        five = "; ".join(f"A{n}=a{n}; A{n}=b{n}" for n in range(5)) + "; git push origin " + " ".join(f"$A{n}" for n in range(5))
+        git_guard.evaluate(five, str(self.feature), {})
+        self.assertLess(time.monotonic() - started, 15)
+
+    def test_brace_words_are_expanded_in_bash_order_in_both_walkers(self) -> None:
+        self.hook_codes(
+            (
+                ("git push origin {{main,--force}}", self.feature, 2),
+                ("git push {{--force,origin}} main", self.feature, 2),
+                ("git {{push,origin}} --force main", self.feature, 2),
+                ("setsid git {{push,origin}} --force main", self.feature, 2),
+                ("git commit {{-n,-m}} x", self.feature, 2),
+                ("git {{commit,--no-verify}} -m x", self.feature, 2),
+                ("{{git,push}} --force origin main", self.feature, 2),
+                ("setsid {{git,push}} --force origin main", self.feature, 2),
+                ("{{gh,pr}} merge 12", self.feature, 2),
+                ("git push origin ma{{i..i}}n --force", self.feature, 2),
+                ("git push origin {{feature,other}}", self.feature, 0),
+                ("git add src/{{a,b}}.py && git commit -m x", self.feature, 0),
+                ("git log --format='{{%h,%s}}'", self.feature, 0),
+                ('git commit -m "{{fix,feat}}: x"', self.feature, 0),
+                ("echo {{a,b}}", self.feature, 0),
+                ("mkdir -p src/{{a,b}} && git add src && git commit -m x", self.feature, 0),
+                ("git add file{{1..100}}.txt && git commit -m x", self.feature, 0),
+                ("for i in {{1..2000}}; do echo $i; done", self.feature, 0),
+                # a quoted brace is never expanded (a read-only GraphQL query has one with a comma)
+                (
+                    "gh api graphql -f query='query($o: String!, $n: String!) "
+                    "{{ repository(owner: $o, name: $n) {{ id }} }}' -f o=a -f n=b",
+                    self.feature,
+                    0,
+                ),
+                ('git push origin "{{main,--force}}"', self.feature, 0),
+            )
+        )
+
+    def test_brace_verdicts_do_not_depend_on_the_hash_seed(self) -> None:
+        others = ",".join(f"b{n}" for n in range(60))
+        commands = (
+            f"git push -f origin {{{others},main}}",
+            f"git add -f {{{others},PROJECT.md}} && git commit -m x",
+        )
+        code = (
+            "import json, sys; sys.path.insert(0, sys.argv[1]); import git_guard\n"
+            "out = []\n"
+            "for command in json.loads(sys.argv[3]):\n"
+            "    try:\n"
+            "        git_guard.evaluate(command, sys.argv[2], {})\n"
+            "        out.append(0)\n"
+            "    except git_guard.Blocked:\n"
+            "        out.append(2)\n"
+            "print(json.dumps(out))\n"
+        )
+        for seed in range(6):
+            with self.subTest(seed=seed):
+                result = subprocess.run(
+                    [sys.executable, "-c", code, str(ROOT / "hooks" / "lib"), str(self.clean), json.dumps(commands)],
+                    env={**base_env(), "PYTHONHASHSEED": str(seed)}, capture_output=True, text=True, check=True,
+                )
+                self.assertEqual([2, 2], json.loads(result.stdout), result.stderr)
+
+    def test_brace_expansion_stays_fast_and_fails_closed_past_its_limit(self) -> None:
+        started = time.monotonic()
+        word = "x" + "{a,b}" * 12  # 4,096 words, past the limit
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate(f"git push -f origin {word}", str(self.feature), {})
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate(f"setsid {word} gh pr merge 12", str(self.feature), {})
+        git_guard.evaluate(f"echo {word}", str(self.feature), {})
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_an_expansion_that_may_be_git_is_read_by_gits_own_rules(self) -> None:
+        outside = Path(self.temporary.name)  # a directory in no repository
+        self.hook_codes(
+            (
+                # behind a wrapper's option, an unknown head, or a word that cannot vanish
+                ("exec -a echo $GIT push --force origin main", self.feature, 2),
+                ("sudo --prompt echo $GIT push --force origin main", self.feature, 2),
+                ("x $A $B/y $GIT push --force origin main", self.feature, 2),
+                ("setsid $GIT push --force origin main", self.feature, 2),
+                # the rules a literal git gets: send-pack, prune, an inline alias, a subcommand variable
+                ("$(which git) send-pack --force origin main", self.feature, 2),
+                ("$(which git) push --prune origin 'refs/heads/*:refs/heads/*'", self.feature, 2),
+                ("export V='commit --no-verify'; $(which git) --config-env=alias.x=V x -m msg", self.feature, 2),
+                ("$(which git) $P --force origin main", self.feature, 2),
+                ("$(which git) commit --no-verify -m x", self.feature, 2),
+                ("`which git` commit --no-verify -m x", self.feature, 2),
+                ('"$(command -v git)" commit -n -m x', self.feature, 2),
+                # in command order, with the command's own staging and environment
+                ("git add -f PROJECT.md && $GIT commit -m x", self.clean, 2),
+                ("$GIT add -f PROJECT.md && $GIT commit -m x", self.clean, 2),
+                ("HOME=/tmp/h $GIT commit -m x", self.feature, 2),
+                # the text a shell reads unseen, read as commands too
+                ("bash <<< 'git send-pack --force origin main'", self.feature, 2),
+                ("echo 'git send-pack --force origin main' | sh", self.feature, 2),
+                # a commit a literal git commit would make passes
+                ("$GIT commit -m x", self.feature, 0),
+                ("$GIT commit -a -m x", self.feature, 0),
+                ('svn --username "$U" commit -m x', self.feature, 0),
+                ('hg -R "$R" commit -m x', self.feature, 0),
+                ('make -C "$DIR" commit', self.feature, 0),
+                ('svn --username "$U" commit -m x', outside, 0),
+                ('make -C "$DIR" commit', outside, 0),
+                # no git command name after it: nothing is read
+                ("$EDITOR file", self.feature, 0),
+                ('"$VENV/bin/python" -m pytest -n auto', self.feature, 0),
+                ("$(npm bin)/eslint .", self.feature, 0),
+                ("`which gh` pr create --draft --fill", self.verified, 0),
+                # a guessed reading with words git would not take is probably not git: no option
+                # rule and no effects (`$X` here is the environment's, `log` perhaps)
+                ("git $X --oneline -5", self.feature, 0),
+                ("`true` $(command -v gh) --repo=o/r pr edit 12 --fill", self.feature, 0),
+                ("P=commit; git $P --newfangled -m x", self.feature, 2),
+                ("$NPM add lodash && git commit -m x", self.feature, 0),
+                ("bash <<'EOF'\nnpm test\nEOF", self.feature, 0),
+                ("setsid " + " ".join(f"$V{n}" for n in range(40)), self.feature, 0),
+            )
+        )
+
+    def test_the_maybe_git_reading_stays_fast(self) -> None:
+        started = time.monotonic()
+        git_guard.evaluate("setsid " + " ".join(f"$V{n}" for n in range(500)), str(self.feature), {})
+        git_guard.evaluate("bash <<'EOF'\n" + "echo line\n" * 1000 + "EOF", str(self.feature), {})
+        # past 16 expansions that a git command name follows, the command blocks
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate("setsid " + " ".join(f"$G{n} status" for n in range(17)), str(self.feature), {})
+        self.assertLess(time.monotonic() - started, 15)
+
+    def test_what_git_changes_on_the_way_is_read_from_a_table_of_what_is_neutral(self) -> None:
+        self.hook_codes(
+            (
+                # the branch changed by other commands
+                ("git branch -M main && git push -f origin HEAD", self.feature, 2),
+                ("git branch --mov main && git push -f origin HEAD", self.feature, 2),
+                ("git symbolic-ref HEAD refs/heads/main && git push --force", self.feature, 2),
+                ("git rebase origin/main main && git push -f origin HEAD", self.feature, 2),
+                ("git branch zzz-new && git checkout zzz-new && git push -f origin HEAD", self.feature, 2),
+                ("git branch -u origin/main && git push --force", self.feature, 2),
+                # staging the words do not show
+                ("printf 'PROJECT.md\\n' | git add -f --pathspec-from-file=- && git commit -m x", self.feature, 2),
+                ("echo PROJECT.md | git update-index --add --stdin && git commit -m x", self.feature, 2),
+                ("git mv README.md PROJECT.md && git commit -m x", self.feature, 2),
+                ("git fetch origin other:other && git checkout other PROJECT.md && git commit -m x", self.feature, 2),
+                # commits that are not `git commit`
+                ("git add -A && git rebase --continue", self.clean, 2),
+                ("git add -f PROJECT.md && git merge --continue", self.clean, 2),
+                ("git add -f PROJECT.md && git commit-tree $(git write-tree) -p HEAD -m x", self.clean, 2),
+                # configuration written or given inline
+                ("git config core.hooksPath /dev/null && git commit -m x", self.feature, 2),
+                ("git config core.hooksPath /dev/null", self.feature, 2),
+                ("git config --unset core.hooksPath", self.feature, 2),
+                ("git config commit.gpgsign false", self.feature, 2),
+                ("git -c core.hooksPath=/dev/null merge feature", self.feature, 2),
+                ("git pull --no-verify", self.feature, 2),
+                ("git am -n x.patch", self.feature, 2),
+                ("git config remote.my.fork.push +refs/heads/main:refs/heads/main && git push my.fork", self.feature, 2),
+                ("git config branch.feature.merge refs/heads/main && git -c push.default=upstream push -f", self.feature, 2),
+                # where a push with no refspec goes, set by the command
+                ("git -c push.default=matching push --force origin", self.feature, 2),
+                ("git -c remote.origin.push=HEAD:main push -f", self.feature, 2),
+                ("git -c push.default=upstream -c branch.feature.merge=refs/heads/main push --force", self.feature, 2),
+                ("git --config-env=remote.origin.push=V push origin", self.feature, 2),
+                ('git -c "remote.origin.push=$SPEC" push origin', self.feature, 2),
+                # hook skips by environment
+                ("HUSKY=0 git commit -m x", self.feature, 2),
+                ("SKIP=lint git commit -m x", self.feature, 2),
+                # ordinary flows
+                ("git fetch && git rebase origin/main && git push --force-with-lease", self.feature, 0),
+                ("git rebase -i --autosquash origin/main", self.feature, 0),
+                ("git commit --fixup HEAD~1", self.feature, 0),
+                ("git push -u origin HEAD", self.feature, 0),
+                ("git checkout -b feat && git add -A && git commit -m x", self.feature, 0),
+                ("git status && git commit -m x", self.feature, 0),
+                ("git diff --cached && git commit -m x", self.feature, 0),
+                ("git reset HEAD~1 && git add -A && git commit -m x", self.feature, 0),
+                ("git reset --soft HEAD~1 && git commit -m x", self.feature, 0),
+                ("git checkout origin/main -- README.md && git commit -m x", self.feature, 0),
+                ("git checkout main -- . && git push -f origin HEAD", self.feature, 0),
+                ("git stash && git pull --rebase && git stash pop", self.feature, 0),
+                ("git reset HEAD README.md && git commit -m x", self.feature, 0),
+                ("git rm --cached README.md && git commit -m x", self.feature, 0),
+                ("git mv a.txt b.txt && git commit -m x", self.feature, 0),
+                ("git submodule add https://example.com/x.git lib && git commit -m x", self.feature, 0),
+                ("git lfs track '*.bin' && git add .gitattributes && git commit -m x", self.feature, 0),
+                ("git init && git add . && git commit -m x", self.feature, 0),
+                ("git add a.py && git commit -m a && git add b.py && git commit -m b", self.feature, 0),
+                ("git commit -m a && git commit --amend --no-edit", self.feature, 0),
+                ("git apply fix.patch && git add -A && git commit -m x", self.feature, 0),
+                ("git submodule update --remote && git add lib && git commit -m bump", self.feature, 0),
+                ("git stash drop && git commit -m x", self.feature, 0),
+                ("git merge-base --is-ancestor origin/main HEAD && git push origin feature", self.feature, 0),
+                ("git check-ignore -q PROJECT.md && git commit -m x", self.feature, 0),
+                ("git reflog -5 && git push --force-with-lease", self.feature, 0),
+                ("git switch -c feat --track origin/main && git push -u origin feat", self.feature, 0),
+                ("git branch --set-upstream-to=origin/feat && git push", self.feature, 0),
+                ("git remote rename origin upstream && git push upstream feature", self.feature, 0),
+                ("$KUBECTL apply -f x.yaml && git add -A && git commit -m deploy", self.feature, 0),
+                ("git hash-object -w f && git commit -m x", self.feature, 0),
+                ('git commit -am "fix: thing"', self.feature, 0),
+                ("git -c push.default=current push --force origin feature", self.feature, 0),
+                ("git config --get push.default", self.feature, 0),
+            )
+        )
+
+    def test_a_commit_that_stages_by_itself_is_read(self) -> None:
+        repo = self.make_repo(Path(tempfile.mkdtemp(dir=self.temporary.name)) / "tracked")
+        (repo / "PROJECT.md").write_text("one\n")
+        git(repo, "add", "PROJECT.md")
+        git(repo, "commit", "-q", "-m", "tracked by mistake")
+        (repo / "PROJECT.md").write_text("two\n")
+        hook = repo / ".git" / "hooks" / "post-index-change"
+        marker = repo.parent / "index-changed"
+        hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        hook.chmod(0o755)
+        self.hook_codes(
+            (
+                ("git commit -a -m x", repo, 2),
+                ("git commit --al -m x", repo, 2),
+                # a guessed reading with an option git 2.39 lacks still reads the options it knows
+                ("$(which git) commit -a --bogus -m x", repo, 2),
+                ("git commit -m x .", repo, 2),
+                ("git commit -m x PROJECT.md", repo, 2),
+                ("git commit -m x README.md", repo, 0),
+            )
+        )
+        self.assertFalse(marker.exists(), "a guard query wrote the index (post-index-change ran)")
+
+    def test_the_paths_git_stages_are_read_the_way_git_reads_them(self) -> None:
+        base = Path(tempfile.mkdtemp(dir=self.temporary.name))
+        trees = self.make_repo(base / "trees")
+        (trees / "README.md").write_text("a\n")
+        git(trees, "add", "README.md")
+        git(trees, "commit", "-q", "-m", "base")
+        git(trees, "switch", "-q", "-c", "other")
+        (trees / "PROJECT.md").write_text("state\n")
+        git(trees, "add", "-f", "PROJECT.md")
+        git(trees, "commit", "-q", "-m", "state on another branch")
+        git(trees, "switch", "-q", "main")
+        (trees / "list.txt").write_text("PROJECT.md\n")
+        # a path git prints quoted (`core.quotePath`), one outside a `diff.relative` directory,
+        # and one whose newline splits the dry run's line
+        quoted = self.make_repo(base / "quoted")
+        (quoted / ".ai-toolkit").mkdir()
+        (quoted / ".ai-toolkit" / "café.md").write_text("x\n")
+        git(quoted, "add", "-f", ".ai-toolkit/café.md")
+        relative = self.make_repo(base / "relative")
+        (relative / "sub").mkdir()
+        (relative / "PROJECT.md").write_text("x\n")
+        git(relative, "add", "-f", "PROJECT.md")
+        git(relative, "config", "diff.relative", "true")
+        newline = self.make_repo(base / "newline")
+        (newline / ".ai-toolkit").mkdir()
+        (newline / ".ai-toolkit" / "a\nb").write_text("x\n")
+        self.hook_codes(
+            (
+                # globs and pathspec magic, which `git ls-tree` reads literally
+                ("git checkout other -- '*.md' && git commit -m x", trees, 2),
+                ("git checkout other -- ':(icase)project.md' && git commit -m x", trees, 2),
+                ("git restore --staged --source=other 'PROJ*' && git commit -m x", trees, 2),
+                ("git reset other -- '*.md' && git commit -m x", trees, 2),
+                # paths from a file
+                ("git checkout --pathspec-from-file=list.txt other && git commit -m x", trees, 2),
+                ("git reset --pathspec-from-file=list.txt other && git commit -m x", trees, 2),
+                # option values taken for operands
+                ("git submodule add -b main https://example.com/x.git PROJECT.md && git commit -m x", trees, 2),
+                ("git symbolic-ref -m why HEAD refs/heads/main && git push --force", self.feature, 2),
+                # a trailing `--` switches the branch
+                ("git checkout main -- && git push --force", self.feature, 2),
+                ("git commit -m x", quoted, 2),
+                ("git commit -m x", relative / "sub", 2),
+                ("git add -f .ai-toolkit/ && git commit -m x", newline, 2),
+                # what they leave neutral
+                ("git checkout other -- README.md && git commit -m x", trees, 0),
+                ("git checkout other -- && git commit -m x", trees, 0),
+                ("git reset --pathspec-from-file=list.txt && git commit -m x", trees, 0),
+                ("git submodule add -b main https://example.com/x.git vendor/x && git commit -m x", trees, 0),
+                ("git checkout main -- README.md && git push --force", self.feature, 0),
+            )
+        )
+
+    def test_each_rule_that_had_no_test_of_its_own_holds(self) -> None:
+        # the seventh review's item 15: each of these was a rule with no test
+        blob = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"  # the empty blob
+        limit = git_walk.LATER_GIT_LIMIT
+        self.hook_codes(
+            (
+                ("git am --no-verify x.patch", self.feature, 2),
+                ("git rebase --no-verify origin/main", self.feature, 2),
+                (f"git update-index --add --cacheinfo 100644,{blob},PROJECT.md && git commit -m x", self.feature, 2),
+                ("git remote add --mirror=push m https://example.com/x.git && git push m", self.feature, 2),
+                ("GIT_CONFIG_SYSTEM=/tmp/x git push origin feature", self.feature, 2),
+                ("git -c includeIf.gitdir:/.path=/tmp/x commit -m x", self.feature, 2),
+                ("git config push.default upstream && git push -f", self.feature, 2),
+                # past the limit of later words read as git, the command blocks; at it, each is read
+                ("x" + " git status" * (limit + 1), self.feature, 2),
+                ("x" + " git status" * limit, self.feature, 0),
+                # without what each rule reads
+                ("git am x.patch", self.feature, 0),
+                ("git rebase origin/main", self.feature, 0),
+                ("git push origin feature", self.feature, 0),
+                ("git push -f", self.feature, 0),
+            )
+        )
+
+    def test_the_guards_queries_never_take_the_commands_inline_config(self) -> None:
+        argv, _workdir = guard_base.git_base({"workdir": "/x", "configs": ["core.fsmonitor=touch m", "alias.x=y"]})
+        self.assertNotIn("-c", argv)
+
+    def test_effect_readers_stay_fast(self) -> None:
+        started = time.monotonic()
+        chain = " && ".join(["git status"] * 200) + " && git push --force-with-lease"
+        git_guard.evaluate(chain, str(self.feature), {})
+        for command in ("checkout", "reset", "rebase", "branch", "commit"):
+            git_effects.read_options(command, ["-q"] * 1000 + ["--no-such-option"] * 1000)
+        self.assertLess(time.monotonic() - started, 20)
+
+    def test_git_answers_are_kept_for_one_command_only(self) -> None:
+        import guard_base
+
+        git_guard.evaluate("git push origin feature; git push origin feature", str(self.feature), {})
+        self.assertEqual({}, guard_base.GIT_OUTPUTS)
+        self.assertFalse(guard_base.CACHING[0])
+
+    def test_graphql_names_stand_where_a_variable_can(self) -> None:
+        self.codes(
+            (
+                (
+                    "gh api graphql -f query=\"mutation(\\$M: ID!) { $M(input: {pullRequestId: \\$M}) "
+                    "{ clientMutationId } }\" -f M=PR_x",
+                    self.clean,
+                    2,
+                ),
+                (
+                    "gh api graphql -f query='mutation($M: ID!) { '\"$M\"'(input: {pullRequestId: $M}) "
+                    "{ clientMutationId } }' -f M=PR_x",
+                    self.clean,
+                    2,
+                ),
+            )
+        )
+
+    def test_ordinary_commands_with_quotes_and_separators_are_not_blocked(self) -> None:
+        self.codes(
+            (
+                (
+                    "gh pr create --draft --fill --body \"$(git log --format='- %s' origin/main..HEAD | head -5)\"",
+                    self.verified,
+                    0,
+                ),
+                (
+                    "gh pr edit 12 --body \"$(gh pr view 12 --json body -q '.body' | sed 's/old/new/')\"",
+                    self.verified,
+                    0,
+                ),
+                ("gh pr comment 12 --body \"$(echo 'ready to merge; thanks')\"", self.verified, 0),
+                ("find . -name '*.md' -exec grep -l 'gh pr merge' {} \\;", self.verified, 0),
+                ("gh pr list | cut -d '|' -f1; git merge --no-edit origin/main", self.verified, 0),
+                ("echo '()' gh pr ready 12", self.verified, 0),
+            )
+        )
+
+    def test_a_separator_inside_inner_double_quotes_is_the_only_doubt_in_a_substitution(self) -> None:
+        doubtful = shell_tokens.quoted_substitution_separator
+        for text in ('"$(echo "a;b")"', '"$(echo "a" "b|c")"', 'x "$(echo "a&b")" y'):
+            with self.subTest(text=text):
+                self.assertTrue(doubtful(text))
+        for text in (
+            "\"$(echo 'a;b')\"",
+            "\"$(a | b)\"",
+            "\"$(git log --format='- %s' o..H | head -5)\"",
+            "'$(echo \"a;b\")'",
+            "$(echo \"a;b\")",
+        ):
+            with self.subTest(text=text):
+                self.assertFalse(doubtful(text))
+        started = time.monotonic()
+        self.assertFalse(doubtful('git status "' + "$(" * 5000 + '"'))
+        self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_quoted_split_cuts_where_the_shell_does(self) -> None:
+        split = git_guard.quoted_split
+        self.assertEqual(["gh pr $(a; b) merge 12"], split("gh pr $(a; b) merge 12"))
+        self.assertEqual(["gh pr `a; b` merge 12"], split("gh pr `a; b` merge 12"))
+        self.assertEqual(["gh pr -t 'a;b' merge 12"], split("gh pr -t 'a;b' merge 12"))
+        self.assertEqual(['gh pr -t "a;b" merge 12'], split('gh pr -t "a;b" merge 12'))
+        self.assertEqual(["gh pr -t \\; merge 12"], split("gh pr -t \\; merge 12"))
+        self.assertEqual(['gh pr -t "$(echo "a;b")" merge 12'], split('gh pr -t "$(echo "a;b")" merge 12'))
+        self.assertEqual(["a", " b"], split("a; b"))
+        self.assertEqual(["a >&2 b"], split("a >&2 b"))
+        self.assertEqual(["a &>x b"], split("a &>x b"))
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
  *
  *   node <toolkit-root>/scripts/qa/record.mjs \
  *     --url https://<ws>.us1a.app-stg.preset.io/ --role viewer \
- *     --source-id sc-NNNNN --name short-flow-name --flow ./flow.mjs [--headless]
+ *     --source-id pr-NNNN --name short-flow-name --flow ./flow.mjs [--headless]
  *
  * The flow file default-exports `async ({ page, context, url, role }) => {}`
  * and drives the scenario after login. Output:

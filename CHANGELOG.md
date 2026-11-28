@@ -12,6 +12,86 @@
   references are cut, and script output is left to each script's header.
   The incidents, script commands, org-data keys, authorization, validation
   labels, row vocabulary and report formats stay.
+- A PR opens only for a tested tree. `scripts/verify.py -- <command>` runs
+  a check and records the tree it ran on; the git guard blocks `gh pr
+  create` until the newest run of each command on that exact tree passed.
+  `--partial` records related checks only, with what CI still runs, and the
+  PR's test plan states the level. It has no off switch: when nothing
+  meaningful can run, the user's agreement goes into a `--partial` record.
+  Review stays advisory. The session-start hook warns once when
+  `SKIP_PR_GATE` is still set from v0.3, since it lifts nothing.
+- The git guard fails closed where it used to guess. Each of these was
+  allowed before:
+  - from a checkout of main, `cd ~/repo && git push --force`,
+    `cd /nonexistent; git push --force`, `cd -P . && ...` and
+    `git push --force origin $BR`: a push, delete or commit whose
+    repository, branch or staged files the guard cannot read now blocks;
+  - `(cd ../feat); git push --force`, `false && cd ../feat; ...` and
+    `eval 'cd ../feat'; ...`: one directory model (`shell_dirs`) now
+    serves every rule. A subshell, `$(...)` or `<(...)` restores the
+    directory. A `cd` that may not have run leaves it unknown, which
+    blocks only the decisions that need it. Those are a `cd` after `||`,
+    after `&&` once its list ends, in a pipeline, after `&`, in an
+    if/while/for/case body, in an `eval` or a function, or in text with a
+    quoted operator;
+  - `gh pr -t view merge 12`, `gh pr $V 12`, `"$GH" pr ready 12`,
+    `gh pr revert 12`, `gh pr create -d=false`, `gh pr merge 12 --body -h`:
+    gh's verb and flags are now read the way gh 2.103.0 does
+    (`hooks/lib/gh_args.py`), and a flag that version lacks grants no
+    draft, help or undo;
+  - `gh api` calls that merge, ready or open a PR: merging and readying
+    now need `AITK_PR_READY=1`, and opening one this way, or a call the
+    guard cannot read, always blocks (other API writes and `curl` are not
+    modelled; branch protection is the boundary for those);
+  - `$'...'` quoting hid the rest of a command from the tokenizer, and a
+    crash allowed a command when quoting hid the git word.
+
+  `scripts/verify.py` records a check that ran and then exited 126 or 127
+  (`exit 127`, `exec ...`, an expansion or a `PATH=` prefix in the first
+  word). The record keeps the last 200 runs. The known limits, including
+  that GitHub's branch protection is the boundary for other API writes,
+  are in ARCHITECTURE.
+- The git guard's own git queries run nothing the checked command supplies.
+  Before, a `PATH=` prefix, or `core.fsmonitor` in the command's config, ran
+  a program while the guard was only evaluating the command. The queries now
+  run git from the hook's own PATH, with fsmonitor off and no index write, and
+  take only the variables that choose the repository. Config they cannot see
+  (`HOME=`, `GIT_CONFIG_*`, `env -i`) makes a commit or push block. Each of
+  these was allowed before and now blocks or is read:
+  - text handed to a shell, read the same way by both walkers: `bash -c -x`,
+    `env -S`, fish and pwsh flags, `trap --`, `flock -c`, `su -c`;
+  - variables, read by every value the command gives them
+    (`P=push; P=status true; git $P --force origin main`, `c='gh pr'; $c merge
+    12`). A subcommand the guard cannot read (`git $(echo push)`, `git
+    "$@"`) blocks;
+  - brace words, expanded in bash's order (`git {push,origin} --force main`);
+  - an expansion that may be git (`$GIT`, `$(which git)`), read by git's own
+    rules. A commit behind one (`$GIT commit -m x`, `svn --username "$U"
+    commit`) is no longer blocked outright: the one loosening;
+  - what git changes on the way, from one table of neutral subcommands
+    (`git_effects`):
+    - the branch: `git branch -M main`, `git checkout main --`;
+    - the index: `git mv` to a state file, `git checkout other -- '*.md'`;
+    - commits made without `git commit`: `merge --continue`, `write-tree`;
+    - where a push with no refspec goes: `push.default=matching`;
+    - `core.hooksPath` and `commit.gpgSign` writes, `HUSKY=0`, `SKIP=`.
+  - staged paths, now listed raw and from the top of the repository: a
+    staged `.ai-toolkit/café.md`, and a root `PROJECT.md` committed from a
+    subdirectory under `diff.relative=true`.
+- `rules/universal.md`: fix the behavior, not the test; attachment names and
+  private repositories are under the PII rule. The reviewer grades a
+  loosened, skipped or deleted test `[major]` unless the test was wrong.
+- `test-pr` names PR-bound evidence by the PR or a slug, never a ticket ID.
+- Codex: `install.sh` adds a marked hook-trust check to `AGENTS.md`, since
+  untrusted plugin hooks leave a session with no rules and no git guard;
+  `fix-ci` and `test-pr` say what to do when an agent's sandbox refuses the
+  network.
+- The PGM preflight is a script again (`extensions/pgm/skills/pgm/scripts/preflight.py`).
+- Tests hold the Codex agents' model and effort equal to `second-opinion.py`'s pins.
+- `second-opinion.py`'s deep Claude tier moves to `claude-fable-5-2`, and
+  `show-cost.py` prices it.
+- `superset-local` keeps three worktree failure modes: Node version, a stale
+  `.env.local`, a leaked venv.
 
 ## 0.4.0 — 2026-11-06
 

@@ -1,8 +1,7 @@
 # Shortcut API Fetch
 
-Make every Shortcut REST call with `<skill-dir>/scripts/sc.sh` (resolve
-`<skill-dir>` from the installed shortcut skill); never hand-write curl or a
-retry wrapper. It needs `$SHORTCUT_API_TOKEN` (exit 2 when unset).
+`<skill-dir>` is the installed shortcut skill; `sc.sh` exits 2 when
+`$SHORTCUT_API_TOKEN` is unset.
 
 ```bash
 SC=<skill-dir>/scripts/sc.sh
@@ -11,10 +10,8 @@ $SC post /stories/search '{"group_id": "<team-uuid>"}'  # JSON body, or @file.js
 $SC search 'owner:me is:started'                       # GET /search/stories, all pages
 ```
 
-`sc.sh` sends `Shortcut-Token` without printing it; retries once, because the
-first call of a session can fail with `organization2_missing` (HTTP 4xx/5xx
-count as failures, and exit 1 means the retry failed too: surface the gap,
-never continue with missing data); parses with `json.loads(..., strict=False)`,
+`sc.sh` sends `Shortcut-Token` without printing it; retries once (HTTP 4xx/5xx
+count as failures); parses with `json.loads(..., strict=False)`,
 since `description` and `comments[].text` carry control characters that break
 raw `jq`; and joins every `search` page by following `next`.
 `SHORTCUT_API_BASE` overrides the host (tests use it).

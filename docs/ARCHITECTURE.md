@@ -15,8 +15,8 @@ A line, file or module exists only if it is one of these:
 1. **A fact the model can't infer.** Preset and Superset hosts and
    credentials, the external CI that `gh run list` doesn't show, cherry-pick
    incidents, browser-recording traps, the user's thresholds and preferences.
-2. **A boundary a hook or script enforces.** The git guard, the production
-   refusals in the Preset scripts.
+2. **A boundary a hook or script enforces.** The git guard and its verify
+   gate, the production refusals in the Preset scripts, the PGM preflight.
 3. **A format surviving code parses.** For example, the host table that
    `scripts/preset/hosts.mjs` and its test hold in step.
 4. **A Claude Code ↔ Codex portability shim.**
@@ -58,6 +58,267 @@ read-only commands only. The reviewer contract goes in as system or developer
 instructions, and the diff (or a file such as `PLAN.md`) on stdin, so the
 worker needs no file pointers.
 
+## The PR gate
+
+A draft PR opens only for a tree a check passed on. `scripts/verify.py -- <command>`
+runs the check and records, in `.ai-toolkit/verify.json`, the commit it
+started from and the blob id of every path the working tree changed
+(`hooks/lib/verify_record.py`). Before `gh pr create`, the git guard compares
+that with `git diff --raw <base> <commit>`, where the commit is HEAD or the
+`--head` branch: a run before the commit counts once the commit holds exactly
+what was tested, and any edit in between does not. The newest run of each
+command on that tree must have passed, so a failed run blocks the tree until
+that same command passes there or the tree changes. A command whose first
+word is no program on PATH and no builtin or keyword of `sh` (exit 126 or 127,
+no expansion in the word, no leading `PATH=`) records nothing; one that ran and
+then exited 126 or 127 is a failure. Untracked files
+a check creates are its outputs, remembered apart from the records, left out
+of later runs, and forgotten once deleted.
+`--partial` marks a
+run of related checks only and names what CI still runs; the PR's test plan
+carries the level. The record and the fingerprint stay outside `.git`, which
+Codex keeps read-only; adding `.ai-toolkit/` to `info/exclude` is best effort.
+
+The gate has no off switch. A session-wide one is easy to leave on, and v0.3
+told users to start sessions with `SKIP_PR_GATE=1`, so an old name would have
+switched the new gate off unseen (the session-start hook now warns when it is
+still set). When nothing meaningful can run, the user's agreement goes into a
+`--partial` record the PR discloses; a misfire is escaped by opening the PR
+from the user's own terminal, where the hook does not run.
+
+The gate checks that tests ran, not that the change was reviewed: a recorded
+command run is something a hook can check, while whether a review was good
+enough is a judgment, so review stays in the `review` skill. The record is a
+tripwire against forgetting, not proof: it shows what ran, so a command that
+checks nothing is visible in the record. Its known limits:
+
+- it keeps the last 200 runs from the newest 20 commits they started from, so
+  200 further runs, or runs on 20 newer commits, drop a failure;
+- it is a plain file: deleting it or writing it by hand goes unseen;
+- the guard reads the command's text. `gh` behind a variable or an escape
+  (`"$GH" pr ready 12`) and a verb a variable hides (`gh pr $V 12`) are gated,
+  and flags are read as gh's pflag does, from gh 2.103.0's tables
+  (`hooks/lib/gh_args.py`; a flag a newer gh adds grants no draft or help),
+  and `gh pr revert` is gated like `create`. A positional word with an expansion
+  grants no draft, help or undo (accepted over-block: `gh pr ready --undo
+  "$PR"`). Not seen: an unquoted expansion in a flag's value that splits
+  into a flag (`-b $V` holding `x --draft=false`) or vanishes so the next
+  word becomes the value (`-t $X --draft` with `X` unset); the guard cannot
+  tell `$V` from `"$V"`. A `$(...)` is one word of the command it sits in, so
+  `gh -R $(echo o/r) pr merge 12` is read and a substitution where the verb
+  stands is unknown. What a substitution where the command word stands prints
+  is run as the command with the words after it, so that text is read like
+  text the guard cannot parse (`$(echo gh pr) merge 12` and `$X $(echo gh pr
+  merge 12)` block), with `printf` and `echo -e` escapes decoded. A lookup
+  (`$(command -v gh) pr view 12`) is read as the name it looks up, and an
+  `echo` of literal words as the command it makes (`$(echo gh) pr merge 12
+  --help` is help). Not seen: other encodings of the printed text
+  (`$(base64 -d <<< ...)`); a
+  command with an unquoted substitution or a backtick span among its words
+  grants no draft, help or undo (`-t $(x)--draft`; accepted over-block:
+  `gh pr create --draft -t $(git log -1 --format=%s)`). A backtick opens a span
+  only outside quotes (`'a`b'` opens none); a command with one is read folded
+  and as it is. Text
+  the guard cannot parse is searched for `gh`, `pr`, then `ready`, `merge`,
+  `create`, `new` or `revert` in order over the whole text as well as piece by
+  piece. A function wrapper (`g() { gh "$@"; }; g pr merge 12`), a name from
+  the session environment behind an unknown wrapper (`setsid "$GH" pr merge
+  12`), `gh` aliases and extensions and connector tools open a PR unseen. A
+  variable the command sets is read by its values, so `g=gh; setsid $g pr
+  merge 12` and `c='gh pr'; $c merge 12` block;
+- `gh api` PR create, merge and ready are gated: a PUT to `pulls/<n>/merge` (also
+  `repositories/<id>/...`) or a GraphQL `mergePullRequest`,
+  `markPullRequestReadyForReview`, `enablePullRequestAutoMerge` or
+  `enqueuePullRequest` needs `AITK_PR_READY=1`; a POST to `pulls`, a
+  `createPullRequest` or `revertPullRequest`, and a GraphQL query the guard
+  cannot read (`--input`, `-F query=@file`, a shell expansion or backtick in
+  `query=`; a `$name` counts as a GraphQL variable only when an operation's
+  definition list declares it and it stands where GraphQL allows a variable,
+  inside parentheses: `x: $M(input: ...)` is a field, not a variable) block
+  with no override, like an unchecked `gh pr create`. An
+  expansion in the endpoint, the method or a `-H` value, or an unclosed `$(`,
+  blocks when it could be one of these. Not seen: `gh api $ARGS` (the whole call in a
+  variable), a whole path segment that is an expansion standing alone for
+  `pulls` or `merge`, and `curl`. Other API writes (refs, contents, merges
+  into a branch, `gh repo sync --force`) are not modelled either: for those,
+  GitHub's branch protection is the boundary, not this hook. A literal query
+  holding a backtick blocks with no override (an accepted over-block), and so
+  does one with a `$5` inside a string literal;
+- a quoted or escaped operator character standing alone as a word (`'>'`, `\;`,
+  a `;` inside a `${...}`, or inside the quotes of a `$(...)` within double
+  quotes) reads like the operator and cuts the command. The guard then reads
+  the text as well as the words, which stay read with no draft, help or undo
+  credit, also as they stand, since a redirection may be a quoted word
+  (`G=gh; $G pr -t '>' merge 12`, `git push -o '>' --force origin main`).
+  git's words are also read in each real piece with the separators the lexer
+  made of quoted words kept as words (`git commit -m ';' --no-verify`). The
+  text is read
+  in each piece cut where the shell really separates commands, without
+  the quoted words that hold whitespace and without the words of an
+  `echo`-like command (its substitutions are read: `echo $(gh pr -t ';' merge 12)`), a
+  `gh ... pr ... ready|merge|create|new|revert` or a `gh api` pull request
+  mention blocks, and `gh pr create` must run as a command of its own. A
+  separator in the inner double quotes of a `$(...)` within double quotes
+  triggers it (`"$(echo "a;b")"`), one in single quotes does not. Over-block
+  that remains: a verb word as an argument in the same piece as `gh pr`
+  (`gh pr list --search merge | cut -d '|' -f1`);
+- a shell that runs a script the guard never reads as commands has that
+  script read like text that did not parse:
+  - when its stdin carries text and it has no script, or `-s`, `-` or
+    `/dev/stdin` (a here-document, a here-string, a process substitution or a
+    pipe on fd 0; a file there is a script file),
+    or the script is a `/dev/fd/N`, the whole command text is read,
+    here-document bodies included. The stdin may be the command's anywhere,
+    reaching a shell in a group, a subshell, a body or a payload (`{ bash; }
+    <<< ...`, `... | (cd x && bash)`, `bash -c 'exec sh' <<EOF`), or an fd
+    dup (`<&3`). A shell is any name ending in `sh` (`ash`, `bash5`, `ssh`,
+    whose remote shell reads it too), and a command name that is an
+    expansion with such a stdin (`$SHELL <<< ...`) counts as one;
+  - when the script or a startup file is a process substitution (`bash
+    <(...)`, `. <(...)`, `--rcfile <(...)`) or a `-c` or `eval` text holds a
+    substitution, the substitutions' text is read.
+  A gated `gh`, a `gh pr create`, a `gh api` pull request call, a `git push`
+  with a force or delete flag, or a `git commit` in that text blocks, even
+  one aimed at a feature branch (an accepted over-block). Line
+  continuations are joined, `$'...'` is decoded and `#` comments are left
+  out first. `curl ... | bash`
+  with none of those stays allowed, and a shell's name as an argument reads
+  no script (`docker exec -it app bash`, `ps aux | grep sh`) unless a wrapper
+  that runs its words hands it the stdin (`... | docker exec -i app bash`).
+  Not read: a script file (`bash x.sh`, also one the same command writes
+  first), a payload in a variable (`bash -c "$X"`, `eval "$X"`), words from
+  stdin (`... | xargs gh`), other interpreters (`python3 -`, `perl -e`, `node
+  -e`) and a `<<-` whose delimiter follows a space;
+- a digit word or `{name}` glued to `<` or `>` after a word boundary is a file
+  descriptor (`2>&1`, `{fd}>x`) and is no word; a digit apart from the operator
+  (`-o 5 >x`) is an argument, and `gh` reads the command both ways;
+- git's words are read without redirections and with each `$(...)` as one word,
+  push options as git 2.39's parse-options does, and the words after a `$(...)`
+  continue its command for the directory too (`X=$(x) cd D` is a `cd`, `echo
+  $(x) cd D` moves nothing, and a prefix's options keep it a prefix: `command
+  -p $(x) cd D`). A word is read by what it may come out as when its
+  expansions are empty or take their default: a word that may come out as
+  nothing (a `$(...)` whatever its body, `$X`, `${X:-${Y}}`, `{,}`, a backtick
+  word) leaves the next word the command as well, and one that may come out
+  as `cd` or `git` may be that command (`${X}cd D`, `$X'cd' D`, `{c,}d D`,
+  `${GIT:-git} push`). So the directory after `$X cd D` is unknown, `$X git
+  push` and `git $X push` are read as git, and a quoted `"$X"` reads the same
+  (an accepted over-block).
+- variables are read by every value the command gives them (`shell_values`):
+  a literal value assigned anywhere counts, whatever runs last (`P=push;
+  P=status true; git $P` may push), and a value with several words is split
+  where a word with a space could run nothing, the command word and git's
+  subcommand (`P="push --force origin main"; git $P`, `CMD="git push"; $CMD
+  --force origin main`). A variable the command never touches is the session
+  environment's, set by the user, and keeps the readings above (`git $X
+  status`). git's subcommand as an expansion the guard cannot read (a
+  substitution, an operator form, an array, `$@` after `set`, a variable set
+  by `read`, `printf -v` or to a value that is not literal) blocks: write it
+  literally. A command word the command sets to a value the guard cannot read
+  is read as `git push`/`git commit` for an explicit main destination, a
+  ref-wide flag or a long `--no-verify`, and the text that can be its value
+  (the segments that write it, here-strings, here-document bodies) is read as
+  text. Positional parameters are split in the same two places. Not seen: a
+  multi-word value used unquoted among git's arguments, and a variable set for
+  later commands through a file the shell sources at start;
+- brace words are expanded in bash's order, sequences included, for the whole
+  segment in both walkers (`git {push,origin} --force main`, `{gh,pr} merge 12`,
+  `ma{i..i}n`); past 1,024 words a segment that names git or gh blocks. A
+  command whose every brace is quoted is not expanded (`gh api graphql -f
+  query='{ a, b }'`); when one stands outside quotes or in a substitution, a
+  quoted brace in another word is expanded too (an accepted over-block);
+- an expansion the guard cannot resolve, as the command name (`$GIT`, `$(which
+  git)`, a backtick span) or behind a command that is not a printing one with a
+  git command name after it (`setsid $GIT push`, `svn --username "$U" commit`),
+  is read as git by git's own rules, in command order and with the command's
+  environment: it blocks what a literal `git` there would. A reading whose
+  subcommand is no git command, that runs outside any repository, or whose
+  subcommand cannot be read is dropped; past 16 the command blocks. Such a
+  reading, or git's subcommand guessed from an expansion (`git $X`), with an
+  option git 2.39 does not know is probably not git: it has no effects and no
+  unknown-option rule, but a commit's known options and literal paths are
+  still read (`$(which git) commit -a --bogus` stages a tracked state file).
+  The words after it also block when they push with a force, delete or
+  no-verify flag or define an alias. Behind a command the guard does not know (`setsid`,
+  `caffeinate`, `flock x`, or an option's value it takes for the command:
+  `exec -a echo`), a later word that may start git is read as the command too;
+  past 16 of them the command blocks. A printing command (`echo git push`) runs
+  none. Accepted over-blocks: a word list or a remote command that holds a
+  forced push (`for w in git push --force ...`, `ssh host git push --force
+  origin main`, `docker exec app git push ...`). git nested more than 8 levels
+  deep blocks. The text handed to a shell is read the same way in both walkers
+  (`shell_payloads`): bash's option grammar (`bash -c -x 'cmd'`), `env -S`,
+  fish's and pwsh's flags, `trap -- 'cmd'`, and a later `-c` or `--command`
+  behind a command that is not a printing one, git or gh (`flock -c`, `su -c`,
+  `script -c`, `$SHELL -c`); past 8 such strings, one that names git or gh
+  blocks;
+- what git changes on the way to a later push or commit is read from one table
+  of what is neutral (`git_effects`, with git 2.39's options in `git_options`):
+  each subcommand's effect on the branch, the index, where a push with no
+  refspec goes, and whether it commits the index itself. A reader is neutral
+  only when every option is one it knows. So `git branch -M main`, `symbolic-ref
+  HEAD`, `rebase X main`, `bisect` or a third-party git command before a forced
+  push of HEAD makes the branch unknown; `cherry-pick -n`, `merge --squash`,
+  `stash pop` or an unlisted command before a commit blocks it (run the commit
+  as a command of its own); `git mv`, a tree read into the index (`checkout X --
+  f`, `reset X -- f`, `restore --source`, read by git's own pathspec rules, so
+  `'*.md'` and `:(icase)` count, and every path of the tree for
+  `--pathspec-from-file`), `submodule add`, `reset --soft`, `commit -a` and a
+  commit's own pathspecs name what they stage; `git checkout main --`, with
+  nothing after the `--`, is a branch switch; `add --pathspec-from-file` and
+  `update-index --stdin` stage unknown paths; and
+  `merge`/`rebase`/`cherry-pick`/`revert --continue`, `am --continue` and
+  `write-tree` get the state-file rule. `branch -u`, `remote rename` and `push
+  -u` make the destination of a later forced push with no refspec unknown. A
+  `git config` write or unset of `core.hooksPath`, `commit.gpgSign` turned off,
+  and `core.hooksPath` inline on any git command block; so do `pull
+  --no-verify`, `am -n`, and `HUSKY=0` or `SKIP=...` on a commit or push. A
+  push is forced by its configuration too: `-c remote.<r>.push=...main` (`+`
+  or, on a forced push, not), `-c remote.<r>.mirror=true`, `push.default=
+  matching`, an inline push key with a value the guard cannot read, or a `git
+  config` of a push-destination key (`remote.*.push`, `remote.*.mirror`,
+  `push.*`, `remote.pushDefault`, `branch.*.merge|remote|pushRemote`, dotted
+  remote names too) earlier in the command. `git send-pack` is read like a
+  push, `--prune` with a glob refspec like a delete. Not modelled: a plain,
+  unforced push to main (`gh pr checkout 12 && git push origin HEAD:main`),
+  which GitHub's branch protection refuses, and programs that run git
+  themselves (`./switch.sh && git push -f origin HEAD`);
+- the guard's own git queries take from the command only the variables that
+  choose the repository and index, run git's absolute path from the hook's own
+  PATH, and never run fsmonitor or write the index. They list paths raw (`-z`:
+  `core.quotePath` would quote `.ai-toolkit/café.md`) and from the top of the
+  repository (`diff.relative=false`), and a dry-run line they cannot read (a
+  newline in a path) makes the add unknown. What they then cannot see
+  is unknown: a commit or push with `HOME=`, `XDG_CONFIG_HOME=`,
+  `GIT_CONFIG_GLOBAL=`/`SYSTEM`/`NOSYSTEM`/`PARAMETERS`, `env -i` or an unset
+  HOME blocks; an add under one, or with an inline key that may change what it
+  lists (`-c core.excludesFile=`), stages unknown paths. A repository's own
+  filter drivers still run in the guard's `git add --dry-run`, as in the add
+  itself;
+- the model misses element and nameref assignments: `S[0]=x A=M` as one
+  segment, `declare -n R=S; R=M`, `S[a[0]]=M` and `declare 'S[0]=M'`;
+- the directory a `gh pr create` runs in comes from `shell_dirs`' static
+  model: a subshell's `cd` is restored, and a `cd` that may not have run (after
+  `||`, after `&&` once the list ends, in a pipeline, in a list ended by `&`, in
+  an if/while/until/for/select/case body, in an `eval`, or in text with a quoted
+  or escaped operator character, `find -exec ... \;` included, an accepted
+  over-block) leaves the directory unknown until an absolute `cd`, and so does
+  everything after a function definition that a `cd` follows;
+  `cd -`, `popd` and a bare `pushd` leave it unknown too, which blocks the
+  decisions that need it. A directory the same command creates, `GIT_DIR`,
+  `GIT_WORK_TREE`, a variable that is not a literal path set earlier in the same
+  command (`S=/repo; cd $S` is read, `$PWD`, `${S:-x}` and `$S$T` are not),
+  a sourced file's `cd`, `CDPATH`, `pushd +N`, `cd ~-`,
+  `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"` are not
+  followed;
+- it checks the local commit, while the PR shows the pushed branch;
+- the could-not-start rule reads only the first word, so a check that goes on to
+  run more after a missing first program (`"no-such-tool; exit 127"`), a leading
+  redirection (`"2>err.log ./run-tests.sh"`) or a function it defines
+  (`"f() { exit 127; }; f"`) records nothing; and the other way, a typo behind
+  `exec` or an expansion (`"exec pytets"`, `"$HOME/bin/pytets"`) records a
+  failure only the user can get past.
+
 ## Local notes
 
 `PROJECT.md`, `PROJECT_ARCHIVE.md`, `PLAN.md`, `WATCH.md`, `CHERRY_PICK.md`
@@ -71,4 +332,7 @@ Both CLIs install the repository root as a plugin from the one-plugin
 marketplace in `.claude-plugin/marketplace.json`. Claude Code discovers
 `skills/` and `hooks/hooks.json` by convention, and its manifest adds the PGM
 skill and the agents. The Codex manifest names the skills and hooks. Codex
-runs plugin hooks only after the user trusts them in `/hooks`.
+runs plugin hooks only after the user trusts them in `/hooks`; until then
+neither the rules nor the git guard reach a session, so `install.sh` adds a
+marked block to `${CODEX_HOME:-~/.codex}/AGENTS.md` that tells the model to
+stop and ask for the trust when the rules are missing.

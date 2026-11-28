@@ -2,8 +2,8 @@
 
 Run as `python3 -E -s hooks/lib/git_guard.py` with the PreToolUse payload on
 stdin (`hooks/prevent-project-commit.sh` does this). It imports only the
-standard library and its sibling `shell_tokens`, so it runs without the rest of
-the toolkit. Exit 0 allows, exit 2 blocks
+standard library and its sibling modules in `hooks/lib/`, so it runs without
+the rest of the toolkit. Exit 0 allows, exit 2 blocks
 with the reason on stderr, which the agent sees.
 
 Blocked:
@@ -16,9 +16,19 @@ Blocked:
   earlier in the same command (`git add PROJECT.md && git commit`): the hook
   runs before the add, so the staged set is `git diff --cached` plus what those
   adds would stage;
-- `gh pr create` (or `gh pr new`) without `--draft`, and `gh pr ready` and
+- `gh pr create` (or `gh pr new`, `gh pr revert`) without `--draft`, and `gh pr ready` and
   `gh pr merge`, unless the user set `AITK_PR_READY=1` in the environment the
   session started with (set only when the user asked in words);
+- `gh pr create` (or `gh pr new`) whose commit has no passing check recorded on
+  its exact tree by `scripts/verify.py` (`check_pr_verified`, the record format
+  in `verify_record`). No session override lifts it: when nothing meaningful
+  can run, the user's agreement goes into a `--partial` record, or the user
+  opens the PR from their own terminal, where this hook does not run. The PR's
+  commit is HEAD of the directory the command runs in, as `shell_tokens` models
+  it (`shell_tokens.DirectoryModel`: a subshell's `cd` is restored, one that may not have
+  run leaves the directory unknown), or its
+  `--head` branch when that resolves locally; a directory the guard knows it
+  cannot follow, and a creation it cannot read, block;
 - a command that assigns or exports any toolkit override itself (a prefix, an
   assignment-only segment, `env`, `export`/`declare`/`typeset`/`readonly`/
   `local`, a literal `+=` append, inside `bash -c`, `eval`, `env -S`, a
@@ -29,15 +39,49 @@ Blocked:
 
 Every command the shell would run is checked: newline- and `;`-separated
 commands, and-lists and or-lists, subshells, `sh -c` and `eval` payloads,
-command substitutions, shell functions, and commands behind `env`, `sudo`,
-`command`, `timeout`, `nohup`, `xargs`, `nice`, `ionice`, `stdbuf` or `time`.
+command substitutions, shell functions (also run by `trap`, a backtick span or a
+variable), and commands behind `env`, `sudo`, `command`, `timeout`, `nohup`, `xargs`,
+`nice`, `ionice`, `stdbuf` or `time`. Behind any other command that is not a printing
+one (`setsid`, `caffeinate`, `flock x`), a later word that may start git is read as
+the command too (`git_walk.may_run_git`).
 A command that mentions git or gh and cannot be parsed blocks; an internal
 error blocks a command that mentions git, gh or an override, and the wrapper
 fails closed on those when python3 is missing.
 
-Known limits (a tripwire, not a shell sandbox): a git alias defined in a file
-the hook cannot read, `gh api` calls, and programs that run git themselves are
-not seen. Substitution bodies are scanned wherever they are quoted, so a
+Text that did not parse, or nests too deep, is searched for `gh`, then `pr`, then
+`ready`/`merge`/`create`/`new`/`revert` in order over the whole text (origin/main's rule, a draft
+flag anywhere exempting only a create, new or revert) AND piece by piece, and blocks on either. A
+quoted or escaped operator standing alone as a word (`'>'`, `\\;`, `${X-a;b}`) makes the guard
+read the whole command that way too (`untrusted_text_verbs`, `gh_api_text_creates`): ready and
+merge are lifted by the override, create, new and revert never get a draft credit.
+
+Git's own words: redirections are dropped and a `$(...)` is one word before the globals, the
+subcommand and the arguments are read, and a redirection ahead of the head does not hide it
+(`>/dev/null git push`). Push options are read as git 2.39's parse-options does (`PUSH_OPTIONS`):
+value flags take the next word, a unique prefix of a long option is that option, an ambiguous
+one pushes nothing, the first operand is the repository, whatever it spells, and a refspec
+destination with a `*` counts as main. `--mirror` blocks. A `sh -c`, `bash -c` or `eval`
+payload does not know the outer shell's directory, so `$(git branch --show-current)` inside one
+is never resolved.
+
+Known limits (a tripwire, not a shell sandbox): a word from the session environment that
+expands to a push option (`git push origin main $F`, `git push $F origin main`; one the command
+sets is read by its values, so `F=--force; git push origin main $F` blocks), a git alias defined
+in a file the hook cannot read, `gh api` writes other than merging, readying or opening a PR,
+and programs that run git themselves are not seen. Directory changes follow `shell_tokens`' rules (`cd`, `pushd`, `git -C`,
+`env -C`): `cd -`, `popd`, a bare `pushd`, a target the shell expands, a `cd` that may
+not have run (after `||`, after `&&` once the list ends, in a pipeline, in a list ended
+by `&`, in an if/while/until/for/select/case body), an `eval` that changes directory,
+every `cd` in text with a quoted or escaped operator character (so an unescaped
+`find -exec ... \\;` too) and everything after a function definition followed by a
+`cd` leave the directory unknown until a subshell restores it or an absolute `cd`
+re-anchors it (not after a function). Not modelled: a sourced file's `cd`, `CDPATH`,
+`pushd +N`, `cd ~-`, `C=cd; $C X`, `trap 'cd X' DEBUG` and `eval "$X"`, and so do
+`--git-dir`/`--work-tree` values the shell expands. Where the directory is unknown
+the guard cannot read the repository, so it blocks what needs it: a force push or a
+delete whose branch it cannot read, a commit whose staged files it cannot read, and a
+subcommand that is not a git command (it may be a repository alias for a gated
+operation). Substitution bodies are scanned wherever they are quoted, so a
 single-quoted `$(...)` that only prints text blocks like a live one.
 
 Override-assignment check: a tripwire, not a sandbox. It is the opt-in token
@@ -58,8 +102,8 @@ What actually protects the PR boundary is elsewhere: a non-draft `gh pr create`,
 environment. This check keeps the agent from shopping for an override it
 cannot get.
 
-Known limits of the scan, each a real override it does not see:
-- brace expansion that builds a name (`env {NAME,X}=1 ...`);
+Known limits of the scan, each a real override it does not see (a brace that builds a name,
+`env {NAME,X}=1 ...`, is expanded and blocks):
 - arithmetic setters, which export under `set -a`: `(( NAME = 1 ))`,
   `let NAME++`, `let NAME=1`, `((++NAME))` after a falsy export, an indexed
   write (`NAME[0]=1`) and a `${NAME:=1}` expansion;
@@ -68,7 +112,7 @@ Known limits of the scan, each a real override it does not see:
 - heredoc bodies, which the tokenizer skips, so a body piped to a shell is not
   read (the same property keeps prose in a heredoc commit message allowed);
 - a name quoted with a locale string (`AITK_PR_$"READY"`);
-- a redirection operator erased with a quoted or numeric option value
+- a redirection operator erased with a quoted option value
   (`env -u '>' NAME=1 ...`);
 - shell-specific grammar: a zsh anonymous function (`() { ...; }`), a function
   named after a wrapper (`env() { ...; }`), `nocorrect`/`repeat N`/`coproc`
@@ -76,8 +120,7 @@ Known limits of the scan, each a real override it does not see:
   (`declare -n r; r=NAME; declare -x r=1`);
 - `read`, `printf -v` and `mapfile` (write targets, not assignments),
   `source`/`.` and scripts run separately, dynamically built names (`${!v}`,
-  `eval "AITK_PR_$X=1"`), ANSI-C-quoted names (`$'\\x41ITK_PR_READY=1'`),
-  substitution-built assignments (`env $(printf '...') ...`), aliases (the body
+  `eval "AITK_PR_$X=1"`), substitution-built assignments (`env $(printf '...') ...`), aliases (the body
   is quoted text) and profile writes, which alter later shell startup rather
   than this command.
 
@@ -117,7 +160,7 @@ with a `git` word, and `git config alias.NAME ...`; a bare `alias.NAME` word alo
 wrapper in front), are only checked for a MENTION of a gated operation after the quote characters,
 backslashes and backticks are removed (`shell_tokens.mentions_gated`: `gh` followed
 later by `pr`, `git` followed later by `push`, a bare `push`, `pr ready`/`merge`/
-`create`/`new`). A mention makes the command unreadable and it blocks. No alias is
+`create`/`new`/`revert`). A mention makes the command unreadable and it blocks. No alias is
 looked up, so a builtin and an alias are not told apart. Plain `git rebase -x 'make
 test'`, `git bisect run ./t.sh`, `git submodule foreach 'echo $name'` and `git -c
 alias.st=status st` are not affected. Budget: the traversal charges the characters of
@@ -132,10 +175,43 @@ on commands that only carry such a word after an unknown head (`ssh host gh pr m
 words git runs (a commit message that says `gh pr merge` next to `-c alias.x=...`, an
 alias that is never invoked, `git rebase -x 'echo push'`, a filename such as
 `./push.sh`), and on a quoted `()` followed by a quoted `{`, which reads as a function
-head (`echo '()' '{' gh pr ready 12`). Known limits, each a real `gh pr ready`/`merge`
-it does not see (pinned in `PR_PUBLISH_LIMITS`): `gh` reached through a variable
-(`g=gh; $g pr merge 12`), a quoted command string handed to a wrapper that runs it
-through a shell without `-c` (`watch 'gh pr ready 12'`, `tmux new-session '...'`), every
+head (`echo '()' '{' gh pr ready 12`). Flags and the verb are read as gh's own parser
+does (`gh_args`, with the flag tables of gh 2.103.0: a version assumption, so a flag a newer
+gh adds is unknown and grants no draft, help or undo). A command name or verb that holds a
+variable, substitution, brace or glob (`"$GH" pr ready 12`, `$(command -v gh) pr merge 12`,
+`{gh,} pr merge 12`, `gh pr $V 12`) is read as gh or as an unknown verb (cobra's reading
+decides it), which is gated; `gh pr revert` is gated like `create`. A positional word with an
+expansion (`--draft $X`), or an unquoted `$(...)`, `<(...)` or backtick span anywhere among the
+words (`-t $(x)--draft`), or a quoted or escaped operator about, grant no draft, help or undo
+(accepted over-block: `gh pr ready --undo "$PR"`, `gh pr create --draft -t $(git log -1 --format=%s)`),
+and a creation with one fails the verify gate. A backtick opens a span only outside quotes; a
+command with one is read folded and as it is. The argv reading always runs; a quoted or escaped
+operator adds a text reading of each piece cut where the shell really separates commands (`quoted_split`). A `$(...)` inside a command is one word of it, so the words
+after it are read (`gh -R $(echo o/r) pr merge 12`); one where the verb stands is unknown.
+
+`gh api` PR create, merge and ready are gated too (`gh_args.api_effect`, redirections
+dropped first): a PUT to `repos/<o>/<r>/pulls/<n>/merge` or `repositories/<id>/pulls/<n>/merge`
+needs `AITK_PR_READY=1` like `gh pr merge`, as does a GraphQL query naming `mergePullRequest`,
+`markPullRequestReadyForReview`, `enablePullRequestAutoMerge` or `enqueuePullRequest`. A POST
+to `.../pulls`, a query naming `createPullRequest` or `revertPullRequest`, and a query the
+guard cannot read (`--input`, `-F query=@file`, a `query=` with a shell expansion or backtick;
+a `$name` is a GraphQL variable only when an operation's definition list declares it) block with no override, like an
+unchecked `gh pr create`; so does a non-GET call with no endpoint. PATCH, DELETE, HEAD and the
+rest do neither. An expansion in the endpoint, a method that is an expansion, an unknown flag,
+a `-H` value with an expansion (it may be a method override) or an unclosed `$(` may be either, and blocks when it could be
+(`gh api "$URL" -X PUT`). Other API writes (refs, contents, merges into a branch, `gh repo
+sync --force`) and `curl` are not modelled: for those, GitHub's branch protection is the
+boundary, not this hook. Not seen, pinned in `PR_PUBLISH_LIMITS`: `gh api $ARGS` (the whole
+call in a variable), a whole-segment expansion standing alone for `pulls` or `merge`
+(`repos/o/r/$X`), and `curl`. A literal query holding a backtick blocks with no override (an
+accepted over-block). Known limits, each a real
+`gh pr
+ready`/`merge` it does not see (pinned in `PR_PUBLISH_LIMITS`): `gh` reached through a
+function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and extensions, a name from
+the session environment behind an unknown wrapper (`setsid "$GH" pr merge 12`: rescanning from
+every expansion word could spend the work budget on ordinary commands; a variable the command
+sets is read by its values, `g=gh; setsid $g pr merge 12`, `c='gh pr'; $c merge 12`), a
+quoted command string handed to a wrapper that runs it through a shell without `-c` (`watch 'gh pr ready 12'`, `tmux new-session '...'`), every
 git config value or tool option that runs a shell other than an inline alias (`git
 filter-branch` filters, `git -c core.pager=...`, `-c credential.helper='!...'`, `git
 difftool -x`, `sequence.editor`, `core.editor`, `diff.external`, `core.sshCommand` and
@@ -162,7 +238,8 @@ and `git log -c alias.x push` do not; a `g -c alias.x x` wrapper is an accepted 
 `~` for `-C`) leaves the working
 directory unknown (`None`) before any path arithmetic, so the review gate blocks `cd
 "$X" && gh pr create` with "cannot follow" (`cd "$(git rev-parse --show-toplevel)"`, exactly
-that text, is read as the git top level instead), and the global options that take a separate value
+that text, is read as the git top level instead; so is `$NAME` or `${NAME}` when an earlier
+segment set `NAME=` to a literal path, from the model's table, never `shell_vars`), and the global options that take a separate value
 (`--attr-source`, `--super-prefix`, `--namespace`, `-C`, `-c`, `--git-dir`,
 `--work-tree`, `--config-env`) do not hide the subcommand. The patterns that scan
 unresolved text are searched in order, once (`shell_tokens.words_in_order`), so a
@@ -173,870 +250,32 @@ one pass over the openers, a position index for the git words).
 
 from __future__ import annotations
 
-import bisect
 import json
 import os
 import re
-import shlex
-import subprocess
 import sys
-from typing import Iterator
 
+import gh_args
+import guard_base
+import shell_lex
 import shell_tokens
+import shell_values
+import verify_record
+from guard_base import Blocked, block, is_git_executable
+import git_effects
+from git_rules import PUSH_DEST_KEY, check_commit, check_committed_index, check_push, check_speculative, config_value_false, short_commit_option_has_no_verify, is_protected_path, long_option_prefix, own_args, paths_added, update_index_paths
+from gh_text import COMMAND_SEPARATOR, push_marker, unresolved_gated, unseen_git, untrusted_pieces, untrusted_text_verbs
+from git_walk import GIT_GLOBAL_VALUE, expand_configured_alias, git_command_names, has_unsafe_git_substitution, parse_git_actions
+
+# Re-exported: the tests read these names through this module.
+from git_rules import STATE_FILES, resolve_push_option  # noqa: F401
+from gh_text import DRAFT_FLAG, UNRESOLVED_PR_PUBLISH, quoted_split  # noqa: F401
 
 
-# Local workflow state that never belongs in a commit, matched by basename.
-STATE_FILES = (
-    "PROJECT.md",
-    "PROJECT_ARCHIVE.md",
-    "PLAN.md",
-    "WATCH.md",
-    "CHERRY_PICK.md",
-    "CI_FIX.md",
-)
-
-
-SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "|&"}
-SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "while", "until", "for", "select", "case", "!", "{"}
-# Wrappers that run the rest of the line as a command, after their own options.
-RUNNING_WRAPPERS = {"timeout", "nohup", "xargs", "nice", "ionice", "stdbuf", "exec"}
-ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 MENTIONS_GIT = re.compile(r"\bgit\b|\bgh\b", re.I)
 # The in-process time limit of `main()`. A hook past its timeout in hooks/hooks.json (30 s)
 # fails open, so the guard stops itself first and blocks what it could not finish reading.
 DEADLINE_SECONDS = 20.0
-GH_GLOBAL_VALUE_FLAGS = {"-R", "--repo", "--hostname"}
-PROTECTED_DIRECTORY = ".ai-toolkit"
-
-
-class Blocked(Exception):
-    pass
-
-
-def block(message: str) -> Blocked:
-    return Blocked(f"BLOCKED: {message}")
-
-
-def resolve_path(base: str, path: str) -> str:
-    if os.path.isabs(path):
-        return path
-    return os.path.abspath(os.path.join(base, path))
-
-
-def is_git_executable(token: str) -> bool:
-    """`git` or a path to it, whatever the case (`GIT` runs git on a case-insensitive filesystem)."""
-    return token.lower() == "git" or ("/" in token and os.path.basename(token).lower() == "git")
-
-
-def config_pair(raw: str) -> tuple[str, str]:
-    if "=" not in raw:
-        return raw, ""
-    key, value = raw.split("=", 1)
-    return key, value
-
-
-def configs_from_env(env: dict[str, str]) -> list[str]:
-    configs: list[str] = []
-    try:
-        count = int(env.get("GIT_CONFIG_COUNT", "0"))
-    except ValueError:
-        return configs
-    for index in range(count):
-        key = env.get(f"GIT_CONFIG_KEY_{index}")
-        value = env.get(f"GIT_CONFIG_VALUE_{index}", "")
-        if key:
-            configs.append(f"{key}={value}")
-    return configs
-
-
-def register_config(action: dict, raw_config: str) -> None:
-    action["configs"].append(raw_config)
-    key, value = config_pair(raw_config)
-    if key.lower().startswith("alias."):
-        action["aliases"][key.split(".", 1)[1]] = "commit --no-verify" if value == "<config-env>" else value
-
-
-def git_base(action: dict) -> tuple[list[str], str]:
-    git_args = ["git"]
-    if action.get("git_dir"):
-        git_args.append(f"--git-dir={action['git_dir']}")
-    if action.get("work_tree"):
-        git_args.append(f"--work-tree={action['work_tree']}")
-    return git_args, action["workdir"]
-
-
-def git_output(action: dict, args: list[str]) -> str | None:
-    git_args, workdir = git_base(action)
-    env = os.environ.copy()
-    env.update(action.get("env", {}))
-    try:
-        result = subprocess.run(
-            git_args + args,
-            cwd=workdir,
-            env=env,
-            text=True,
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=20,
-            check=False,
-        )
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout
-
-
-def shell_tokens_or_empty(command_text: str) -> list[str]:
-    try:
-        return shell_tokens.tokenize(command_text)
-    except ValueError:
-        return []
-
-
-def expand_shell_payload(command_text: str, positional: list[str]) -> list[str]:
-    nested = shell_tokens_or_empty(command_text)
-    if not nested:
-        return []
-    expanded: list[str] = []
-    positional_zero = positional[0] if positional else ""
-    positional_args = positional[1:] if positional else []
-    for token in nested:
-        if token in {"$@", "${@}", "\\$@", "\\${@}"}:
-            if positional_args:
-                expanded.extend(positional_args)
-            else:
-                expanded.append(token)
-        elif token in {"$*", "${*}", "\\$*", "\\${*}"}:
-            expanded.append(" ".join(positional_args) if positional_args else token)
-        else:
-            replaced = token
-            if positional_zero:
-                replaced = replaced.replace("\\${0}", positional_zero).replace("${0}", positional_zero)
-                replaced = replaced.replace("\\$0", positional_zero).replace("$0", positional_zero)
-            for index, value in enumerate(positional_args, start=1):
-                replaced = replaced.replace(f"\\${{{index}}}", value).replace(f"${{{index}}}", value)
-                replaced = replaced.replace(f"\\${index}", value).replace(f"${index}", value)
-            expanded.append(replaced)
-    return expanded
-
-
-def expand_positional_tokens(tokens: list[str], positional: list[str]) -> list[str]:
-    expanded: list[str] = []
-    for token in tokens:
-        if token in {"$@", "${@}"}:
-            expanded.extend(positional)
-        elif token in {"$*", "${*}"}:
-            expanded.append(" ".join(positional))
-        else:
-            expanded.append(token)
-    return expanded
-
-
-def shell_var_name(token: str) -> str | None:
-    if token.startswith("${") and token.endswith("}"):
-        return token[2:-1]
-    if token.startswith("$") and len(token) > 1:
-        return token[1:]
-    return None
-
-
-SUBSTITUTION_START = re.compile(r"`|\$\(|<\(")
-GIT_WORD_START = re.compile(r"\bgit(?=[\s\-$])", re.I)
-COMMIT_OR_PUSH = re.compile(r"(?:commit|push)\b")
-VARIABLE_GIT_ASSIGNMENT = re.compile(r"=git", re.I)
-VARIABLE_GIT_ARGUMENT = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\s+(?:commit|push)\b")
-
-
-def substitution_bodies(text: str) -> Iterator[str]:
-    """Each `` `...` ``, `$(...)` and `<(...)` span, left to right and without overlap.
-
-    The spans `` `[^`]*`|\\$\\([^)]*\\)|<\\([^)]*\\) `` would find, in linear time: an opener
-    with no closer after it ends the search for that kind, where the pattern retries it
-    from every later opener across the rest of the text.
-    """
-    position = 0
-    closed = {"`": True, ")": True}
-    while True:
-        start = SUBSTITUTION_START.search(text, position)
-        if start is None:
-            return
-        closer = "`" if start.group(0) == "`" else ")"
-        end = text.find(closer, start.end()) if closed[closer] else -1
-        if end < 0:
-            closed[closer] = False
-            position = start.end()
-            continue
-        yield text[start.start() : end + 1]
-        position = end + 1
-
-
-def positions_of(pattern: re.Pattern[str], text: str) -> list[int]:
-    return [match.start() for match in pattern.finditer(text)]
-
-
-def first_from(positions: list[int], at: int) -> int | None:
-    """The first of the sorted `positions` that is `at` or later."""
-    index = bisect.bisect_left(positions, at)
-    return positions[index] if index < len(positions) else None
-
-
-def variable_name_before(text: str, end: int) -> bool:
-    """Whether `text` ends, before `end`, in an identifier: `[A-Za-z_][A-Za-z0-9_]*`."""
-    index = end
-    while index > 0 and text[index - 1].isascii() and (text[index - 1].isalnum() or text[index - 1] == "_"):
-        index -= 1
-        if text[index].isalpha() or text[index] == "_":
-            return True
-    return False
-
-
-def body_runs_git_commit_or_push(body: str) -> bool:
-    """`git commit`/`git push` (a dashed or `${...}` spelling too, or `NAME=git ... $VAR push`).
-
-    Equivalent to the patterns `\\bgit(?:\\s+|-|\\$\\{[^}]+\\})[^)]*(commit|push)\\b` and
-    `[A-Za-z_]\\w*=git[^)]*\\$[A-Za-z_]\\w*\\s+(commit|push)\\b`, in linear time: the word
-    positions are listed once and each `git` start looks up the next one by bisection, where
-    the patterns retry the tail from every `git` word across the whole body.
-    """
-    pushes = positions_of(COMMIT_OR_PUSH, body)
-    arguments = positions_of(VARIABLE_GIT_ARGUMENT, body)
-    if not pushes and not arguments:
-        return False
-    parentheses = positions_of(re.compile(r"\)"), body)
-    braces = positions_of(re.compile(r"\}"), body)
-
-    def reaches(after: int, targets: list[int]) -> bool:
-        # a target at or after `after` with no `)` between
-        target = first_from(targets, after)
-        if target is None:
-            return False
-        closing = first_from(parentheses, after)
-        return closing is None or closing >= target
-
-    if pushes:
-        for start in GIT_WORD_START.finditer(body):
-            after = start.end()
-            if body[after] == "$":
-                if body[after + 1 : after + 2] != "{":
-                    continue
-                close = first_from(braces, after + 2)
-                if close is None or close == after + 2:
-                    continue  # `${...}` needs a name and a closing brace
-                after = close
-            if reaches(after + 1, pushes):
-                return True
-    if arguments:
-        for assignment in VARIABLE_GIT_ASSIGNMENT.finditer(body):
-            if variable_name_before(body, assignment.start()) and reaches(assignment.end(), arguments):
-                return True
-    return False
-
-
-def has_unsafe_git_substitution(command_text: str) -> bool:
-    return any(body_runs_git_commit_or_push(body) for body in substitution_bodies(command_text))
-
-
-def segment_end_index(tokens: list[str], start: int) -> int:
-    end = start
-    while end < len(tokens) and tokens[end] not in SEPARATORS:
-        end += 1
-    return end
-
-
-def new_action(workdir: str, aliases: dict, env: dict) -> dict:
-    action = {
-        "subcommand": None,
-        "index": None,
-        "args": [],
-        "workdir": workdir,
-        "git_dir": None,
-        "work_tree": None,
-        "configs": [],
-        "aliases": dict(aliases),
-        "env": dict(env),
-    }
-    for raw_config in configs_from_env(env):
-        register_config(action, raw_config)
-    return action
-
-
-def parse_git_actions(
-    tokens: list[str],
-    base_workdir: str,
-    depth: int = 0,
-    inherited_env: dict | None = None,
-    inherited_vars: dict | None = None,
-    inherited_functions: dict | None = None,
-    inherited_aliases: dict | None = None,
-) -> list[dict]:
-    """Every git invocation in `tokens`, in order, with its effective context."""
-    actions: list[dict] = []
-    if depth > 8:
-        return actions
-    current_workdir = base_workdir
-    exported_env = dict(inherited_env or {})
-    env_assignments = dict(exported_env)
-    shell_vars = dict(inherited_vars or {})
-    shell_functions = dict(inherited_functions or {})
-    inherited_alias_map = dict(inherited_aliases or {})
-    command_start = True
-    count = len(tokens)
-    i = 0
-
-    def recurse(sub_tokens: list[str], workdir: str, env: dict) -> list[dict]:
-        return parse_git_actions(
-            sub_tokens,
-            workdir,
-            depth + 1,
-            env,
-            dict(shell_vars),
-            dict(shell_functions),
-            dict(inherited_alias_map),
-        )
-
-    while i < count:
-        token = tokens[i]
-        if token in SEPARATORS:
-            command_start = True
-            env_assignments = dict(exported_env)
-            i += 1
-            continue
-        if command_start and ASSIGNMENT.match(token):
-            key, value = token.split("=", 1)
-            shell_vars[key] = value
-            env_assignments[key] = value
-            i += 1
-            continue
-        if command_start and token == "export":
-            segment_end = segment_end_index(tokens, i + 1)
-            for export_token in tokens[i + 1 : segment_end]:
-                if ASSIGNMENT.match(export_token):
-                    key, value = export_token.split("=", 1)
-                    shell_vars[key] = value
-                    exported_env[key] = value
-                elif export_token in shell_vars:
-                    exported_env[export_token] = shell_vars[export_token]
-            env_assignments = dict(exported_env)
-            command_start = False
-            i = segment_end
-            continue
-        if command_start and token in SHELL_KEYWORDS:
-            i += 1
-            continue
-        if command_start and token in {"time", "noglob"}:
-            i += 1
-            continue
-        if command_start and os.path.basename(token) in RUNNING_WRAPPERS:
-            # `timeout 60 git ...`, `nohup git ...`, `xargs git ...`, `nice -n 5 git ...`:
-            # skip the wrapper and its own options; the rest is the command.
-            segment_end = segment_end_index(tokens, i + 1)
-            rest = shell_tokens.skip_options(
-                os.path.basename(token), tokens[i + 1 : segment_end], shell_tokens.Effects()
-            )
-            i = segment_end - len(rest)
-            continue
-        if command_start and token == "cd":
-            segment_end = segment_end_index(tokens, i + 1)
-            if i + 1 < segment_end:
-                current_workdir = resolve_path(current_workdir, tokens[i + 1])
-            command_start = False
-            i = segment_end
-            continue
-        if command_start and token == "function" and i + 2 < count:
-            fn_name = tokens[i + 1]
-            brace_index = i + 2
-            if brace_index < count and tokens[brace_index] == "()":
-                brace_index += 1
-            if brace_index < count and tokens[brace_index] == "{":
-                body_start = brace_index + 1
-                body_end = body_start
-                while body_end < count and tokens[body_end] != "}":
-                    body_end += 1
-                if body_end < count:
-                    shell_functions[fn_name] = tokens[body_start:body_end]
-                    i = body_end + 1
-                    command_start = False
-                    continue
-        if command_start and i + 2 < count and tokens[i + 1] == "()" and tokens[i + 2] == "{":
-            body_start = i + 3
-            body_end = body_start
-            while body_end < count and tokens[body_end] != "}":
-                body_end += 1
-            if body_end < count:
-                shell_functions[token] = tokens[body_start:body_end]
-                i = body_end + 1
-                command_start = False
-                continue
-            i += 3
-            continue
-        if command_start and token in {"bash", "sh", "zsh"}:
-            segment_end = segment_end_index(tokens, i + 1)
-            j = i + 1
-            while j < segment_end:
-                shell_arg = tokens[j]
-                if shell_arg == "-c" or (
-                    shell_arg.startswith("-") and not shell_arg.startswith("--") and "c" in shell_arg[1:]
-                ):
-                    command_index = j + 1
-                    while command_index < segment_end and tokens[command_index] == "--":
-                        command_index += 1
-                    if command_index < segment_end:
-                        positional = tokens[command_index + 1 : segment_end]
-                        actions.extend(
-                            recurse(
-                                expand_shell_payload(tokens[command_index], positional),
-                                current_workdir,
-                                dict(exported_env),
-                            )
-                        )
-                    break
-                j += 1
-            command_start = False
-            i = segment_end
-            continue
-        if command_start and token == "eval":
-            segment_end = segment_end_index(tokens, i + 1)
-            eval_parts = tokens[i + 1 : segment_end]
-            payload = eval_parts[0] if len(eval_parts) == 1 else " ".join(shlex.quote(part) for part in eval_parts)
-            actions.extend(recurse(shell_tokens_or_empty(payload), current_workdir, dict(exported_env)))
-            command_start = False
-            i = segment_end
-            continue
-        if command_start and token in {"sudo", "doas"}:
-            i += 1
-            while i < count and tokens[i] not in SEPARATORS:
-                wrapper_token = tokens[i]
-                if wrapper_token in {"-u", "-g", "-h", "-p", "-C"}:
-                    i += 2
-                    continue
-                if wrapper_token.startswith(("-u=", "-g=", "-h=", "-p=", "-C=")):
-                    i += 1
-                    continue
-                if wrapper_token.startswith("-"):
-                    i += 1
-                    continue
-                break
-            continue
-        if command_start and token in {"command", "builtin"}:
-            i += 1
-            while i < count and tokens[i].startswith("-") and tokens[i] not in SEPARATORS:
-                i += 1
-            continue
-        if command_start and token == "env":
-            segment_end = segment_end_index(tokens, i + 1)
-            env_workdir = current_workdir
-            child_env = dict(env_assignments)
-            j = i + 1
-            while j < segment_end:
-                env_token = tokens[j]
-                if ASSIGNMENT.match(env_token):
-                    key, value = env_token.split("=", 1)
-                    shell_vars[key] = value
-                    child_env[key] = value
-                    j += 1
-                    continue
-                if env_token in {"-i", "-0", "--ignore-environment", "--null"}:
-                    child_env = {}
-                    j += 1
-                    continue
-                if env_token in {"-u", "--unset", "-C", "--chdir"}:
-                    if env_token in {"-C", "--chdir"} and j + 1 < segment_end:
-                        env_workdir = resolve_path(current_workdir, tokens[j + 1])
-                    elif j + 1 < segment_end:
-                        child_env.pop(tokens[j + 1], None)
-                    j += 2
-                    continue
-                if env_token.startswith("--chdir="):
-                    env_workdir = resolve_path(current_workdir, env_token.split("=", 1)[1])
-                    j += 1
-                    continue
-                if env_token.startswith("--unset="):
-                    child_env.pop(env_token.split("=", 1)[1], None)
-                    j += 1
-                    continue
-                if env_token.startswith("-"):
-                    j += 1
-                    continue
-                break
-            if j < segment_end:
-                actions.extend(recurse(tokens[j:segment_end], env_workdir, child_env))
-            command_start = False
-            i = segment_end
-            continue
-        word = token
-        if command_start and shell_var_name(token) is not None:
-            word = shell_vars.get(shell_var_name(token) or "", token)  # `G=git-push; $G -f origin main`
-        dashed = shell_tokens.git_argv([word]) if command_start else None
-        if dashed and len(dashed) == 2:
-            # a dashed entry point (`git-push -f origin main`, a path ending in `/git-push`,
-            # or a variable that holds one) is `git push -f origin main`; any other
-            # `git-*` word is an ordinary executable. The action is built here, from its own
-            # segment: splicing the tokens, or keeping the rest of the line per action, would
-            # cost the whole remaining text every time.
-            action = new_action(current_workdir, inherited_alias_map, env_assignments)
-            action["subcommand"] = dashed[1]
-            action["index"] = i
-            action["args"] = tokens[i + 1 : segment_end_index(tokens, i + 1)]
-            actions.append(action)
-            command_start = False
-            i += 1
-            continue
-        dynamic_git = None
-        if command_start:
-            dynamic_git = re.fullmatch(
-                r"git(?:\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*)(?:(commit|push))?", token, re.I
-            )
-
-        if command_start and dynamic_git:
-            subcommand = dynamic_git.group(1)
-            args = tokens[i + 1 : segment_end_index(tokens, i + 1)]
-            if subcommand is None and args:
-                subcommand = args[0]
-                args = args[1:]
-            action = new_action(current_workdir, inherited_alias_map, env_assignments)
-            action["subcommand"] = subcommand
-            action["index"] = i
-            action["args"] = args
-            actions.append(action)
-            command_start = False
-            i += 1
-            continue
-
-        var_name = shell_var_name(token) if command_start else None
-        variable_git = var_name and is_git_executable(shell_vars.get(var_name, ""))
-
-        if command_start and token in shell_functions:
-            segment_end = segment_end_index(tokens, i + 1)
-            positional = tokens[i + 1 : segment_end]
-            function_tokens = expand_positional_tokens(shell_functions[token], positional)
-            actions.extend(recurse(function_tokens, current_workdir, dict(exported_env)))
-            command_start = False
-            i = segment_end
-            continue
-
-        if not (command_start and (is_git_executable(token) or variable_git)):
-            command_start = False
-            i += 1
-            continue
-
-        action = new_action(current_workdir, inherited_alias_map, env_assignments)
-        j = i + 1
-        while j < count:
-            opt = tokens[j]
-            if opt in SEPARATORS:
-                break
-            if opt == "-C":
-                if j + 1 >= count:
-                    break
-                action["workdir"] = resolve_path(action["workdir"], tokens[j + 1])
-                j += 2
-                continue
-            if opt == "--git-dir":
-                if j + 1 >= count:
-                    break
-                action["git_dir"] = resolve_path(action["workdir"], tokens[j + 1])
-                j += 2
-                continue
-            if opt.startswith("--git-dir="):
-                action["git_dir"] = resolve_path(action["workdir"], opt.split("=", 1)[1])
-                j += 1
-                continue
-            if opt == "--work-tree":
-                if j + 1 >= count:
-                    break
-                action["work_tree"] = resolve_path(action["workdir"], tokens[j + 1])
-                action["workdir"] = action["work_tree"]
-                j += 2
-                continue
-            if opt.startswith("--work-tree="):
-                action["work_tree"] = resolve_path(action["workdir"], opt.split("=", 1)[1])
-                action["workdir"] = action["work_tree"]
-                j += 1
-                continue
-            if opt == "-c":
-                if j + 1 >= count:
-                    break
-                register_config(action, tokens[j + 1])
-                j += 2
-                continue
-            if opt == "--config-env":
-                if j + 1 >= count:
-                    break
-                key, env_name = config_pair(tokens[j + 1])
-                register_config(action, f"{key}={env_assignments.get(env_name, '<config-env>')}")
-                j += 2
-                continue
-            if opt.startswith("--config-env="):
-                key, env_name = config_pair(opt.split("=", 1)[1])
-                register_config(action, f"{key}={env_assignments.get(env_name, '<config-env>')}")
-                j += 1
-                continue
-            if opt in {"--namespace", "--super-prefix", "--attr-source"}:  # `--exec-path` alone takes no value
-                j += 2
-                continue
-            if opt.startswith(("--namespace=", "--exec-path=", "--super-prefix=", "--attr-source=")):
-                j += 1
-                continue
-            if opt.startswith("-"):
-                j += 1
-                continue
-            if opt in action["aliases"]:
-                alias_tokens = shell_tokens_or_empty(action["aliases"][opt])
-                if alias_tokens:
-                    shell_alias = False
-                    if alias_tokens[0].startswith("!"):
-                        alias_tokens[0] = alias_tokens[0][1:]
-                        shell_alias = True
-                    if alias_tokens and not shell_alias and not is_git_executable(alias_tokens[0]):
-                        alias_tokens = ["git"] + alias_tokens
-                    nested_actions = parse_git_actions(
-                        alias_tokens + tokens[j + 1 : segment_end_index(tokens, j + 1)],
-                        action["workdir"],
-                        depth + 1,
-                        dict(exported_env),
-                        dict(shell_vars),
-                        dict(shell_functions),
-                        dict(action.get("aliases", {})),
-                    )
-                    for nested_action in nested_actions:
-                        nested_action["configs"] = action["configs"] + nested_action.get("configs", [])
-                        nested_action["env"] = dict(action.get("env", {}), **nested_action.get("env", {}))
-                    actions.extend(nested_actions)
-                break
-
-            action["subcommand"] = opt
-            action["index"] = j
-            action["args"] = tokens[j + 1 : segment_end_index(tokens, j + 1)]
-            actions.append(action)
-            break
-
-        command_start = False
-        i += 1
-
-    return actions
-
-
-def expand_configured_alias(action: dict) -> list[dict]:
-    subcommand = action.get("subcommand")
-    if not subcommand:
-        return []
-    alias_value = action.get("aliases", {}).get(subcommand)
-    if alias_value is None:
-        alias_value = git_output(action, ["config", "--get", f"alias.{subcommand}"])
-        if alias_value is not None:
-            alias_value = alias_value.strip()
-    if not alias_value:
-        return []
-
-    alias_tokens = shell_tokens_or_empty(alias_value)
-    if not alias_tokens:
-        return []
-    shell_alias = False
-    if alias_tokens[0].startswith("!"):
-        alias_tokens[0] = alias_tokens[0][1:]
-        shell_alias = True
-    if alias_tokens and not shell_alias and not is_git_executable(alias_tokens[0]):
-        alias_tokens = ["git"] + alias_tokens
-
-    nested = parse_git_actions(
-        alias_tokens + action.get("args", []),
-        action.get("workdir"),
-        1,
-        action.get("env", {}),
-        inherited_aliases=action.get("aliases", {}),
-    )
-    for nested_action in nested:
-        nested_action["configs"] = action.get("configs", []) + nested_action.get("configs", [])
-        nested_action["env"] = dict(action.get("env", {}), **nested_action.get("env", {}))
-    return nested
-
-
-def short_commit_option_has_no_verify(arg: str) -> bool:
-    if not arg.startswith("-") or arg.startswith("--"):
-        return False
-    # For options whose argument may be attached (`-mmsg`, `-Ffile`,
-    # `-Ccommit`, `-ccommit`), Git treats the rest of the token as data.
-    # Only an `n` before such a consuming option is the no-verify flag.
-    for char in arg[1:]:
-        if char == "n":
-            return True
-        if char in {"m", "F", "C", "c"}:
-            return False
-    return False
-
-
-def config_value_false(value: str) -> bool:
-    return value.strip().lower() in {"false", "no", "off", "0"}
-
-
-def long_option_prefix(arg: str, option: str, min_prefix: str) -> bool:
-    name = arg.split("=", 1)[0]
-    return name.startswith("--") and len(name) >= len(min_prefix) and option.startswith(name)
-
-
-def is_protected_path(path: str) -> bool:
-    """A local workflow state file, or anything under `.ai-toolkit/`."""
-    parts = [part for part in path.replace("\\", "/").split("/") if part]
-    return bool(parts) and (parts[-1] in STATE_FILES or PROTECTED_DIRECTORY in parts)
-
-
-def own_args(args: list[str]) -> list[str]:
-    for stop, token in enumerate(args):
-        if token in SEPARATORS:
-            return args[:stop]
-    return args
-
-
-def paths_added(action: dict) -> list[str]:
-    """What `git add <args>` would stage, as repository paths where git can tell."""
-    args = own_args(action.get("args", []))
-    listed = git_output(action, ["add", "--dry-run", *args])
-    if listed is not None:
-        found = []
-        for line in listed.splitlines():
-            match = re.match(r"^add '(.*)'$", line.strip())
-            if match:
-                found.append(match.group(1))
-        return found
-    # The dry run failed (for example an ignored path without -f): fall back to
-    # the literal pathspecs, so a refused add still counts as an attempt.
-    return [arg for arg in args if not arg.startswith("-")]
-
-
-def check_commit(action: dict, added_before: list[str]) -> None:
-    args = own_args(action.get("args", []))
-    for raw_config in action.get("configs", []):
-        key, value = config_pair(raw_config)
-        key = key.lower()
-        if key == "core.hookspath":
-            raise block("git commit with core.hooksPath override bypasses pre-commit hooks")
-        if key == "commit.gpgsign" and (value == "<config-env>" or config_value_false(value)):
-            raise block("git commit with commit.gpgsign=false violates signing rules")
-
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "--":
-            break
-        if long_option_prefix(arg, "--no-verify", "--no-veri"):
-            raise block("git commit --no-verify violates global pre-commit rules")
-        if long_option_prefix(arg, "--no-gpg-sign", "--no-g"):
-            raise block("git commit --no-gpg-sign violates global signing rules")
-        if short_commit_option_has_no_verify(arg):
-            raise block("git commit -n bypasses pre-commit hooks")
-        if arg in {"-m", "-F", "-C", "-c", "--message", "--file", "--reuse-message", "--reedit-message"}:
-            i += 2
-            continue
-        i += 1
-
-    staged = git_output(action, ["diff", "--cached", "--name-only"])
-    candidates = (staged.splitlines() if staged is not None else []) + added_before
-    protected = []
-    for path in candidates:
-        if is_protected_path(path) and path not in protected:
-            protected.append(path)
-    if protected:
-        listing = "\n".join(f"  - {path}" for path in protected)
-        raise Blocked(
-            "BLOCKED: local workflow state is part of this commit. PROJECT.md and the other "
-            "workflow state files, and everything under .ai-toolkit/ (org config, memory, "
-            "metrics), stay out of commits.\n"
-            f"{listing}\n"
-            "Unstage with: git reset HEAD <file>, and do not add these files."
-        )
-
-
-def check_push(action: dict) -> None:
-    args = own_args(action.get("args", []))
-    for raw_config in action.get("configs", []):
-        key, _value = config_pair(raw_config)
-        if key.lower() == "core.hookspath":
-            raise block("git push with core.hooksPath override bypasses pre-push hooks")
-
-    current_branch = (git_output(action, ["branch", "--show-current"]) or "").strip()
-    push_force = False
-    dest_main = False
-    ref_wide = False
-    has_explicit_ref = False
-    operands: list[str] = []
-    delete_push = False
-
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "--":
-            operands.extend(args[i + 1 :])
-            break
-        if long_option_prefix(arg, "--no-verify", "--no-veri"):
-            raise block("git push --no-verify bypasses pre-push hooks")
-        if "=" in arg and (
-            long_option_prefix(arg, "--force-with-lease", "--force-w")
-            or long_option_prefix(arg, "--force-with-includes", "--force-w")
-        ):
-            push_force = True
-            lease_ref = arg.split("=", 1)[1].split(":", 1)[0]
-            if re.fullmatch(r"(refs/heads/)?(main|master)", lease_ref):
-                dest_main = True
-                has_explicit_ref = True
-        if (
-            arg in {"--force", "--force-with-lease", "-f"}
-            or long_option_prefix(arg, "--force", "--forc")
-            or long_option_prefix(arg, "--force-with-lease", "--force-w")
-            or long_option_prefix(arg, "--force-with-includes", "--force-w")
-        ):
-            push_force = True
-        elif arg in {"--delete", "-d"} or long_option_prefix(arg, "--delete", "--del"):
-            delete_push = True
-        elif arg.startswith("--force="):
-            push_force = True
-            lease_ref = arg.split("=", 1)[1].split(":", 1)[0]
-            if re.fullmatch(r"(refs/heads/)?(main|master)", lease_ref):
-                dest_main = True
-                has_explicit_ref = True
-        elif arg in {"--all", "--mirror"}:
-            ref_wide = True
-        elif arg.startswith("-") and not arg.startswith("--"):
-            if "f" in arg[1:]:
-                push_force = True
-        elif arg.startswith("--"):
-            pass
-        else:
-            operands.append(arg)
-        i += 1
-
-    for index, operand in enumerate(operands):
-        force_refspec = operand.startswith("+")
-        refspec = operand[1:] if force_refspec else operand
-        if force_refspec:
-            push_force = True
-        if refspec == ":":
-            ref_wide = True
-        if len(operands) >= 2 and index == 0:
-            continue
-        if len(operands) == 1 and operand in {"origin", "upstream"}:
-            continue
-
-        has_explicit_ref = True
-        deleting_ref = refspec.startswith(":")
-        dest = refspec.rsplit(":", 1)[-1]
-        if dest == "HEAD":
-            dest = current_branch
-        if re.fullmatch(r"(refs/heads/)?(main|master)", dest or ""):
-            dest_main = True
-            if deleting_ref:
-                delete_push = True
-
-    if push_force and not has_explicit_ref and not dest_main:
-        push_target = (
-            git_output(action, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{push}"]) or ""
-        ).strip()
-        if re.fullmatch(r"([^/]+/)?(main|master)", push_target or ""):
-            dest_main = True
-    if push_force and (ref_wide or dest_main or (not has_explicit_ref and current_branch in {"main", "master"})):
-        raise block("force-pushing main/master is not allowed")
-    if delete_push and dest_main:
-        raise block("deleting main/master is not allowed")
 
 
 PR_PUBLISH_MESSAGE = (
@@ -1057,43 +296,43 @@ PR_PUBLISH_EFFECT = {
     "merge": "merges a pull request",
     "create": "without `--draft` opens a pull request ready for review (add `--draft`)",
     "new": "without `--draft` opens a pull request ready for review (add `--draft`)",
+    "revert": "without `--draft` opens a pull request ready for review (add `--draft`)",
 }
-# `gh`, then `pr`, then the verb, each searched after the one before it: linear in the text
-UNRESOLVED_PR_PUBLISH = (shell_tokens.WORD_GH, shell_tokens.WORD_PR, re.compile(r"\b(ready|merge|create|new)\b"))
-# gh pr create flags that take a value, so the draft scan skips their values.
-CREATE_VALUE_FLAGS = {
-    "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file",
-    "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project",
-    "-r", "--reviewer", "-T", "--template", "-t", "--title", "-R", "--repo",
-    "--hostname",
+PR_PUBLISH_UNKNOWN = (
+    "the guard cannot read which gh command or verb this runs (a shell expansion in its name "
+    "or verb), and `gh pr ready`, `gh pr merge` and a non-draft `gh pr create` need the user's "
+    "explicit request in words (rules/universal.md). Write the command and the verb literally "
+    "(`gh pr view 12`, not `gh pr $V 12`)."
+)
+PR_PUBLISH_API = (
+    "`gh api` {what}, and only the user's explicit request in words authorizes that "
+    "(rules/universal.md). Do not bypass this on your own: stop and ask the user, who "
+    "alone can override it."
+)
+PR_API_CREATE = {
+    gh_args.CREATE_API: (
+        "`gh api` {what}, which skips the verify gate that `gh pr create` passes and which has "
+        "no override. Open the PR with `gh pr create --draft`, which the guard checks."
+    ),
+    gh_args.UNREADABLE_API: (
+        "`gh api` {what}, and the PR gate has no override. Write the endpoint, the method and "
+        "the GraphQL query literally in the command (no variable in the endpoint, method or "
+        "query, no redirection ahead of them, no `--input` or `@file`), or open the PR with "
+        "`gh pr create --draft`, which the guard checks."
+    ),
 }
-CREATE_SHORT_VALUE = {"a", "B", "b", "F", "H", "l", "m", "p", "r", "T", "t", "R"}
-DRAFT_FLAG = re.compile(r"(?<![\w-])(?:--draft(?:=(?:true|1|t))?|-[A-Za-z]*d[A-Za-z]*)(?![\w=-])")
-
-
-def is_draft(args: list[str]) -> bool:
-    """Whether a `gh pr create` argument list asks for a draft PR."""
-    draft = False
-    skip = False
-    for arg in args:
-        if skip:
-            skip = False
-            continue
-        if arg == "--":
-            break
-        if arg in CREATE_VALUE_FLAGS:
-            skip = True
-        elif arg == "--draft":
-            draft = True
-        elif arg.startswith("--draft="):
-            draft = arg.split("=", 1)[1].strip().lower() in {"true", "1", "t"}
-        elif arg.startswith("-") and not arg.startswith("--") and len(arg) > 1:
-            for char in arg[1:]:
-                if char == "d":
-                    draft = True
-                if char in CREATE_SHORT_VALUE:
-                    break
-    return draft
+API_WHAT = {
+    gh_args.MERGE_API: "merges or readies a pull request",
+    gh_args.CREATE_API: "opens a pull request",
+    gh_args.UNREADABLE_API: "has an endpoint or GraphQL query the guard cannot read, so it could open a pull request",
+}
+PR_PUBLISH_UNTRUSTED = " The guard cannot rely on this command's flags ({why}); spell them out."
+PR_QUOTED_OPERATOR = (
+    "`gh pr {verb}` shares its command with a quoted or escaped `<`, `>`, `;`, `|`, `&` or "
+    "parenthesis standing alone as a word (`'>'`, `\\;`), which the guard cannot tell from an "
+    "operator, so it cannot read which words are this command's flags. Run `gh pr {verb}` as a "
+    "command of its own, without such a word."
+)
 
 
 OVERRIDE_VARIABLES = ("AITK_PR_READY", "SKIP_PRECHECK")
@@ -1107,7 +346,6 @@ EXPORTING_BUILTINS = {"export", "declare", "typeset", "readonly", "local", "inte
 OVERRIDE_ASSIGNMENT = re.compile(r"\b(?:AITK_PR_READY|SKIP_PRECHECK)\+?=")
 EXPORTING_BUILTIN = re.compile(r"\b(?:export|declare|typeset|readonly|local|integer|float)\b")
 OVERRIDE_MENTION = re.compile(r"\b(?:AITK_PR_READY|SKIP_PRECHECK)\b")
-COMMAND_SEPARATOR = re.compile(r"[;&|\n]")
 # The message names no variable: hook output never spells an override out.
 OVERRIDE_MESSAGE = (
     "BLOCKED: this command sets a toolkit override variable in its own environment. "
@@ -1159,40 +397,504 @@ def check_override_assignment(command: str, cwd: str) -> None:
             raise Blocked(OVERRIDE_MESSAGE)
 
 
+_WALKED: dict[tuple[str, str], list[shell_tokens.Command]] = {}  # filled only inside `evaluate`
+_WALKING = [False]
+
+
+def walk_commands(command: str, cwd: str) -> list[shell_tokens.Command]:
+    """`shell_tokens.commands(command, cwd)`, walked once per `evaluate` and shared by its checks
+    (a check called on its own walks afresh)."""
+    if not _WALKING[0]:
+        return list(shell_tokens.commands(command, cwd))
+    key = (command, cwd)
+    if key not in _WALKED:
+        _WALKED[key] = list(shell_tokens.commands(command, cwd))
+    return _WALKED[key]
+
+
 def check_pr_publish(command: str, cwd: str, environ: dict[str, str]) -> None:
-    """A non-draft `gh pr create`, `gh pr ready` and `gh pr merge` need the
+    """A non-draft `gh pr create`/`new`/`revert`, `gh pr ready` and `gh pr merge` need the
     user's AITK_PR_READY=1, read only from the session environment."""
     if shell_tokens.truthy(environ.get("AITK_PR_READY")):
         return
-    for found in shell_tokens.commands(command, cwd):
+    read_sources: set[str] = set()
+    found_all = walk_commands(command, cwd)
+    for found in found_all:
+        if found.untrusted and not found.unresolved and found.source not in read_sources:
+            # a quoted operator: the words may be cut wrong, so the text is read too (the
+            # argv reading below still runs, whatever this finds)
+            read_sources.add(found.source)
+            for piece in untrusted_pieces(found.source):
+                for verb in untrusted_text_verbs(piece):
+                    if verb in {"ready", "merge"}:
+                        raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
+                    raise block(PR_QUOTED_OPERATOR.format(verb=verb))
+                if shell_tokens.mentions_api_publish(piece):
+                    raise block(PR_PUBLISH_API.format(what="could merge, ready or open a pull request"))
         if found.unreadable:
             # the work budget is spent, or git is handed text that mentions a gated
             # operation: the text cannot show what runs, so a contiguous `gh` in it
             # proves nothing either way
-            raise block(PR_PUBLISH_UNREADABLE)
+            raise block(PR_PUBLISH_UNREADABLE + api_note(found.text))
         if found.unresolved:
-            match = shell_tokens.words_in_order(found.text, *UNRESOLVED_PR_PUBLISH)
-            # Unparseable: trust `--draft` on a creation only when the raw text carries it.
-            if match and not (match.group(1) in {"create", "new"} and DRAFT_FLAG.search(found.text)):
-                raise block(PR_PUBLISH_MESSAGE.format(verb=match.group(1), effect=PR_PUBLISH_EFFECT[match.group(1)]))
+            for verb in unresolved_gated(found.text):
+                raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]))
+            if shell_tokens.mentions_api_publish(found.text):
+                raise block(PR_PUBLISH_API.format(what="could merge, ready or open a pull request"))
             continue
-        if not found.is_gh:
+        for verb, args, cut in gh_verbs(found):
+            flags = gh_args.walk(args, verb, cut)
+            if verb == gh_args.UNKNOWN:
+                raise block(PR_PUBLISH_UNKNOWN)
+            if not publishes_nothing(verb, flags):
+                note = "" if flags.trusted else PR_PUBLISH_UNTRUSTED.format(
+                    why=untrusted_reason(flags, cut, found.untrusted)
+                )
+                raise block(PR_PUBLISH_MESSAGE.format(verb=verb, effect=PR_PUBLISH_EFFECT[verb]) + note)
+        for args, cut in gh_api_calls(found):
+            if gh_args.api_effect(args, cut) == gh_args.MERGE_API:
+                raise block(PR_PUBLISH_API.format(what=API_WHAT[gh_args.MERGE_API]))
+
+
+def untrusted_reason(flags: gh_args.Flags, cut: bool, untrusted: bool = False) -> str:
+    if flags.unknown_flags:
+        return f"it has the flag `{flags.unknown_flags[0]}`, which gh 2.103.0 does not have"
+    if untrusted:
+        return "a quoted or escaped operator in the command may cut or hide its words"
+    if cut:
+        return "an unquoted `$(`, `<(` or backtick span may hide or glue a flag"
+    return "a word with a variable, brace or glob may become a flag"
+
+
+def publishes_nothing(verb: str, flags: gh_args.Flags) -> bool:
+    """Whether `gh pr VERB` with these flags opens, readies or merges nothing: help, a draft
+    (create, new, revert), or `--undo` (ready, which converts back to a draft)."""
+    if verb in {"create", "new", "revert"}:
+        return flags.on("draft") or flags.asks_help
+    if verb == "ready":
+        return flags.on("undo") or flags.asks_help
+    return verb == "merge" and flags.asks_help
+
+
+def argv_readings(found: shell_tokens.Command) -> list[list[str]]:
+    """A command's words without its redirections, read two ways: a digit word apart from its
+    operator (`gh api 5 >/dev/null ...`) is an argument to the shell and to gh, and an earlier
+    guard dropped it as a descriptor. With a quoted operator about (`found.untrusted`) a
+    redirection may be a quoted word (`$G pr -t '>' merge 12`), so the words as they stand are
+    read too. A wrong guess can only block more, so every reading counts."""
+    readings = []
+    for guess in (False, True):
+        argv = shell_tokens.drop_redirections(found.argv, guess)
+        if argv and argv not in readings:
+            readings.append(argv)
+    if found.untrusted and found.argv and found.argv not in readings:
+        readings.append(list(found.argv))
+    return readings
+
+
+def gh_verbs(found: shell_tokens.Command) -> list[tuple[str, list[str], bool]]:
+    """The gated `gh pr` verbs one command can run, with the arguments to read for each and
+    whether the command is cut (an unquoted substitution, an unclosed `$(`, a backtick span, or a
+    quoted operator about, which may cut the words in two: no draft, help or undo credit; see
+    `gh_args.pr_commands`). Its redirections are dropped. A command name that holds an expansion
+    (`"$GH"`, `${g/x/h}`, `{gh,}`, a substitution) is read as gh. A command with a quoted operator
+    about (`found.untrusted`) is also read as text, which adds to this: `untrusted_pieces`."""
+    found_verbs: list[tuple[str, list[str], bool]] = []
+    for argv in argv_readings(found):
+        if os.path.basename(argv[0]).lower() == "gh":
+            commands = gh_args.pr_commands(argv[1:])
+        elif gh_args.has_expansion(argv[0]):
+            commands = gh_args.pr_commands(argv[1:], expands=True)
+        else:
             continue
-        args = found.argv[1:]
-        if {"-h", "--help"} & set(args):
+        found_verbs.extend((verb, args, found.cut or found.untrusted) for verb, args in commands)
+    return found_verbs
+
+
+def api_note(text: str) -> str:
+    """Names `gh api` when it is why a command's text was refused."""
+    if shell_tokens.mentions_api_publish(text):
+        return (
+            " The text names `gh api` with a pull request path, a pull request mutation or a "
+            "query the guard cannot read (`gh api` merge, ready and create are gated)."
+        )
+    return ""
+
+
+def gh_api_calls(found: shell_tokens.Command) -> list[tuple[list[str], bool]]:
+    """The arguments after `api` of every `gh api` one command can run, each with whether the
+    command is cut (see `gh_verbs`); the name is read as in `gh_verbs`."""
+    found_calls: list[tuple[list[str], bool]] = []
+    for argv in argv_readings(found):
+        if os.path.basename(argv[0]).lower() == "gh":
+            calls = gh_args.api_commands(argv[1:])
+        elif gh_args.has_expansion(argv[0]):
+            calls = gh_args.api_commands(argv[1:], expands=True)
+        else:
             continue
-        words = shell_tokens.positional(args, GH_GLOBAL_VALUE_FLAGS)
-        if words[:2] not in (["pr", "ready"], ["pr", "merge"], ["pr", "create"], ["pr", "new"]):
+        found_calls.extend((args, found.cut or found.untrusted) for args in calls)
+    return found_calls
+
+
+PR_VERIFY_BLOCK = "`gh pr create` opens a PR only for a tree a check passed on, and {reason}. {remedy}"
+VERIFY_REMEDY_RUN = (
+    "Run the change's own test or acceptance command through `python3 {script} -- <command>`; "
+    "when only related checks can run here, add `--partial \"<what CI still runs>\"`. A command "
+    "that checks nothing is working around the hook. If nothing meaningful can run for this "
+    "change, stop and ask the user; with their agreement, record the closest real check with `--partial`."
+)
+VERIFY_REMEDY_FAILED = (
+    "Only a pass of that same command on this tree clears it; a different command does not. Fix "
+    "what fails and run it again through `python3 {script} -- <command>`; if the command itself "
+    "is wrong, stop and tell the user, who can open the PR from their own terminal, where this "
+    "hook does not run."
+)
+VERIFY_REMEDY_UNSTABLE = (
+    "Only a run of that same command that leaves the files as they were clears this tree; a "
+    "different command does not. Run it again through `python3 {script} -- <command>`; if it "
+    "rewrites files every time, commit what it writes or stop and tell the user."
+)
+VERIFY_REMEDY_UNCOMMITTED = (
+    "This checkout also holds changes the commit doesn't ({paths}); every check run here includes "
+    "them, so a new run cannot match the commit. Commit them if they belong to the change (a run "
+    "made before the commit counts once the commit holds exactly what it tested); otherwise stop "
+    "and tell the user. Deleting, reverting or ignoring work you didn't make to get past this is "
+    "working around the hook."
+)
+VERIFY_REMEDY_OTHER_BRANCH = (
+    "`verify.py` records the checkout it runs in, so run the check in a checkout of `{branch}` "
+    "and open the PR from there."
+)
+VERIFY_REMEDY_NO_BRANCH = "Open the PR from a checkout of that branch, after its check passed there."
+VERIFY_REMEDY_NO_CHECKOUT = "Run `gh pr create` from the repository, after its check passed there."
+VERIFY_REMEDY_NO_COMMIT = "Commit the change first, then run its check through `python3 {script} -- <command>`."
+PR_VERIFY_UNREADABLE = (
+    "this command could not be read in full, so the guard cannot rule out a `gh pr create` in it, "
+    "and the PR gate has no override. Run `gh pr create` as a plain command from the repository "
+    "and the rest as plain commands; if this one cannot be split, stop and tell the user."
+)
+PR_VERIFY_UNKNOWN = (
+    "the guard cannot read which gh command or verb this runs (a shell expansion), so it cannot "
+    "rule out a `gh pr create`, and the PR gate has no override. Write the command and the "
+    "verb literally."
+)
+PR_VERIFY_UNKNOWN_FLAG = (
+    "`gh pr create` has the flag `{flag}`, which the guard does not know (it knows gh 2.103.0's "
+    "flags), so it cannot tell which branch it opens (`--head` may hide behind it), and the PR "
+    "gate has no override. Use only flags gh 2.103.0 has."
+)
+PR_VERIFY_EXPANDED = (
+    "`gh pr create` has a word with a variable, brace or glob that may become a flag (`--head x`), "
+    "so the guard cannot tell which branch it opens, and the PR gate has no override. Spell "
+    "the flags out."
+)
+VERIFY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts", "verify.py")
+CREATE_WORD = re.compile(r"\b(create|new)\b")
+# in text that did not parse: `pulls` not followed by an id (`pulls/12/merge` is a merge), or a creating mutation
+API_CREATE_TEXT = re.compile(r"\bpulls(?=$|[\s?#'\"])|\b(?:createPullRequest|revertPullRequest)\b")
+
+
+def gh_api_text_creates(text: str) -> bool:
+    """Whether text the guard cannot read as commands has a `gh api` that could open a pull request."""
+    text = shell_tokens.unquoted(text)
+    return (
+        shell_tokens.words_in_order(text, shell_tokens.WORD_GH, shell_tokens.WORD_API, API_CREATE_TEXT) is not None
+        or shell_tokens.mentions_api_unread(text)
+    )
+
+
+def refuse(reason: str, remedy: str, **values: str) -> Blocked:
+    return block(PR_VERIFY_BLOCK.format(reason=reason, remedy=remedy.format(script=VERIFY_SCRIPT, **values)))
+
+
+def require_verified(workdir: str, heads: list[str]) -> None:
+    top = verify_record.toplevel(workdir)
+    if top is None:
+        raise refuse(f"`{workdir}` is not inside a git checkout", VERIFY_REMEDY_NO_CHECKOUT)
+    if len(set(heads)) > 1:
+        named = ", ".join(f"`{head}`" for head in heads)
+        raise refuse(f"it names more than one `--head` branch ({named})", "Give `--head` once.")
+    current = verify_record.commit(top)
+    branch = heads[0].split(":", 1)[-1] if heads else ""
+    if heads:
+        target = verify_record.commit(top, branch)
+        if target is None:
+            raise refuse(f"its `--head` branch `{heads[0]}` is not a local branch the guard can read", VERIFY_REMEDY_NO_BRANCH)
+    else:
+        target = current
+        if target is None:
+            raise refuse("this checkout has no commit yet", VERIFY_REMEDY_NO_COMMIT)
+    ok, reason, record = verify_record.verdict(top, target, is_protected_path)
+    if ok:
+        return
+    # Name a remedy that can lift this block, or the model loops on one that cannot.
+    if target != current:
+        raise refuse(reason, VERIFY_REMEDY_OTHER_BRANCH, branch=branch)
+    pending = uncommitted(top, target)
+    if pending:
+        raise refuse(reason, VERIFY_REMEDY_UNCOMMITTED, paths=verify_record.listing(pending))
+    if record is not None:
+        raise refuse(reason, VERIFY_REMEDY_FAILED if record["exit"] != 0 else VERIFY_REMEDY_UNSTABLE)
+    raise refuse(reason, VERIFY_REMEDY_RUN)
+
+
+def uncommitted(top: str, target: str) -> list[str]:
+    """What a check run in this checkout would see that its commit `target` lacks."""
+    read = verify_record.worktree_paths(top, target, is_protected_path, verify_record.known_outputs(top))
+    return read[0] if read else []
+
+
+def check_pr_verified(command: str, cwd: str, environ: dict[str, str]) -> None:
+    """`gh pr create` needs a passing `scripts/verify.py` record on the tree it opens.
+    No override lifts it (`environ` is unused, kept for the checks' shared signature)."""
+    read_sources: set[str] = set()
+    found_all = walk_commands(command, cwd)
+    for found in found_all:
+        if found.untrusted and not found.unresolved and found.source not in read_sources:
+            read_sources.add(found.source)  # a quoted operator: the text is read too (`untrusted_pieces`)
+            for piece in untrusted_pieces(found.source):
+                for verb in untrusted_text_verbs(piece):
+                    if verb in {"create", "new"}:
+                        raise block(PR_QUOTED_OPERATOR.format(verb=verb))
+                if gh_api_text_creates(piece):
+                    raise block(PR_API_CREATE[gh_args.UNREADABLE_API].format(what="could open a pull request"))
+        if found.unreadable:
+            raise block(PR_VERIFY_UNREADABLE + api_note(found.text))
+        if found.unresolved:
+            if shell_tokens.words_in_order(found.text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
+                raise block(PR_VERIFY_UNREADABLE)
+            if gh_api_text_creates(found.text):
+                raise block(PR_API_CREATE[gh_args.UNREADABLE_API].format(what="could open a pull request"))
             continue
-        if words[1] in {"create", "new"} and is_draft(args):
+        for args, cut in gh_api_calls(found):
+            effect = gh_args.api_effect(args, cut)
+            if effect in {gh_args.CREATE_API, gh_args.UNREADABLE_API}:
+                raise block(PR_API_CREATE[effect].format(what=API_WHAT[effect]))
+        for verb, args, cut in gh_verbs(found):
+            if verb not in {"create", "new", gh_args.UNKNOWN}:
+                continue  # a revert's tree is made on the server
+            if verb == gh_args.UNKNOWN:
+                raise block(PR_VERIFY_UNKNOWN)
+            flags = gh_args.walk(args, verb, cut)
+            if flags.asks_help:
+                continue
+            if flags.unknown_flags:
+                raise block(PR_VERIFY_UNKNOWN_FLAG.format(flag=flags.unknown_flags[0]))
+            if flags.expanded:
+                raise block(PR_VERIFY_EXPANDED)
+            if found.workdir is None:
+                raise block(
+                    "the guard cannot follow the directory this `gh pr create` runs in, so it "
+                    "cannot check which commit it opens. Run it as a plain command from the repository."
+                )
+            require_verified(found.workdir, flags.heads)
+
+
+UNSEEN_SCRIPT = (
+    "a shell in this command runs text the guard cannot read as commands (its stdin from a "
+    "here-document, a here-string or a pipe, a process substitution, or a substitution in its "
+    "`-c` or `eval` text), and that text has {what}. Run {what} as a plain command, so the guard "
+    "can check it."
+)
+UNSEEN_FED = re.compile(r"<|\|")
+UNSEEN_HEAD_TEXT = re.compile(r"[a-z]*sh[\d.]*\b|\b(?:source|eval)\b|(?:^|[\s;&|(])\.(?=\s)")
+
+
+def unseen_texts(command: str, cwd: str) -> list[str]:
+    """The text of what a shell here runs unseen (`shell_tokens.unseen_script`): the whole command
+    when a shell reads its stdin, the bodies of its substitutions when one holds the script."""
+    bare = re.sub(r"[\\'\"]", "", command)  # the walk reads words unquoted: `b\ash`, `ba''sh`
+    if not UNSEEN_HEAD_TEXT.search(bare) and not (("$" in command or "`" in command) and UNSEEN_FED.search(command)):
+        return []
+    kinds = {found.unseen for found in walk_commands(command, cwd) if found.unseen}
+    if shell_tokens.UNSEEN_TEXT in kinds:
+        return [command]
+    if not kinds:
+        return []
+    bodies: list[str] = []
+    for body in shell_tokens.inner_commands(command.replace("<(", "$(").replace(">(", "$("), shell_tokens.Walk()):
+        if body is None:
+            return [command]  # past the budget: all of it
+        bodies.append(body)
+    return bodies
+
+
+def check_expanded_git(command: str, cwd: str) -> None:
+    """A command name that is an expansion the guard cannot resolve (`$GIT push`, `$(which git)
+    push`, `"$(command -v git)" push`) may be git: its words, read as git's, block when they define
+    an alias or push with a force, delete or no-verify flag (`unseen_git`). A commit behind one is
+    the walker's to read, by git's own rules (`git_walk`'s maybe-git reading)."""
+    if "$" not in command and "`" not in command:
+        return
+    for found in walk_commands(command, cwd):
+        if found.unresolved or not found.argv:
             continue
-        if words[1] == "ready" and "--undo" in args:
-            continue  # converting back to a draft publishes nothing
-        raise block(PR_PUBLISH_MESSAGE.format(verb=words[1], effect=PR_PUBLISH_EFFECT[words[1]]))
+        argv = shell_tokens.drop_redirections(found.argv)
+        # the command word, or, behind a command that is not a printing one, any later word
+        # (`setsid $GIT push`)
+        # (behind a wrapper's option the head may be its value: `exec -a echo $GIT push`)
+        printing = shell_tokens.head_name(argv[0]) in shell_tokens.INERT_HEADS and not found.wrapped if argv else True
+        for position, head in enumerate(argv):
+            if is_git_executable(head) or (position and printing):
+                break  # from a `git` word on, the walker reads git's own words
+            follows_expansion = position and shell_tokens.may_vanish(argv[position - 1])
+            if ("$" in head or "`" in head) and not follows_expansion:
+                # one reading per run of words that may vanish: the first one's reads past the
+                # rest (`$X $Y push`), and a word that cannot vanish starts its own (`x $A $B/y $GIT`)
+                expanded_git_words(argv[position + 1 :], head)
+
+
+def expanded_git_words(words: list[str], head: str = "") -> None:
+    """Block when `words`, read as the words of git behind the expansion `head`, define an alias
+    (`-c alias.x=...`), or push with a force, delete or no-verify flag."""
+    if head == shell_tokens.SUBSTITUTION_WORD:
+        head = "$(...)"  # the walker's stand-in for a command substitution, not what was written
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word in GIT_GLOBAL_VALUE:
+            if word == "-c" and words[index + 1 : index + 2] and words[index + 1].lower().startswith("alias."):
+                raise block(EXPANDED_GIT.format(word=head, what="an inline alias (`-c alias.`)"))
+            index += 2
+        elif word.startswith("-") or shell_tokens.may_vanish(word):
+            index += 1
+        else:
+            break
+    if index >= len(words) or words[index] != "push":
+        return
+    # git's own words, as the shell hands them over (a quoted `;` in a value is no cut), and the
+    # text reading as well
+    if any(push_marker(word) for word in words[index + 1 :]):
+        what = "`git push` with a force, delete or no-verify flag"
+    else:
+        what = unseen_git(" ".join(["git"] + words[index:]))
+    if what and "push" in what:
+        raise block(EXPANDED_GIT.format(word=head, what=what))
+
+
+EXPANDED_GIT = (
+    "`{word}` is an expansion the guard cannot resolve, and the words after it, read as git's, are "
+    "{what}. Run git by its name, so the guard can check it."
+)
+MAYBE_GIT = "read as git behind the expansion `{word}`: {message}"
+
+
+def gated_in_text(text: str, environ: dict[str, str]) -> str | None:
+    """What the rules for text that did not parse find gated in `text`: a gated `gh` (the user's
+    AITK_PR_READY=1 lifts only ready, merge and a non-draft open), a `gh pr create` or a `gh api`
+    PR creation, a forced or deleting `git push`, a `git commit`; None if nothing."""
+    if not shell_tokens.truthy(environ.get("AITK_PR_READY")):
+        for verb in unresolved_gated(text):
+            return f"`gh pr {verb}`"
+        if shell_tokens.mentions_api_publish(text):
+            return "a `gh api` pull request call"
+    if shell_tokens.words_in_order(text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
+        return "`gh pr create`"
+    if gh_api_text_creates(text):
+        return "a `gh api` pull request creation"
+    return unseen_git(text)
+
+
+def check_unseen_script(command: str, cwd: str, environ: dict[str, str]) -> None:
+    """What a shell runs that the guard never reads as commands (`unseen_texts`, here-document
+    bodies included) is read by the rules for text that did not parse (`gated_in_text`), and, as
+    commands, by git's own rules (`bash <<< 'git send-pack --force origin main'`)."""
+    texts = unseen_texts(command, cwd)
+    for text in texts:
+        what = gated_in_text(text, environ)
+        if what:
+            raise block(UNSEEN_SCRIPT.format(what=what))
+    for text in texts:
+        for piece in unseen_pieces(command) if text == command else [text]:
+            try:
+                piece_tokens = shell_tokens.tokenize(piece)
+            except ValueError:
+                continue
+            try:
+                check_actions(parse_git_actions(piece_tokens, cwd))
+            except Blocked as error:
+                raise block(UNSEEN_READ.format(message=str(error).replace("BLOCKED: ", "", 1))) from None
+
+
+UNSEEN_READ = "a shell in this command runs text the guard read as commands, and in it {message}"
+
+
+def unseen_pieces(command: str) -> list[str]:
+    """What a shell that reads this command's stdin may run, walked as commands: each here-document
+    body, each here-string, and each word with a space (an `echo` or `printf` text piped to it)."""
+    pieces = shell_lex.heredoc_bodies(command)
+    try:
+        tokens = shell_tokens.tokenize(command)
+    except ValueError:
+        return pieces
+    pieces += [tokens[index + 1] for index, token in enumerate(tokens) if token == "<<<" and index + 1 < len(tokens)]
+    pieces += [token for token in tokens if any(char.isspace() for char in token) and token not in pieces]
+    return pieces[:64]
+
+
+UNREAD_VALUE = (
+    "`{word}` is set in this command to a value the guard cannot read, and the text that can be its "
+    "value has {what}. Write the command literally, so the guard can check it."
+)
+
+
+def unread_value_texts(command: str) -> list[tuple[str, str]]:
+    """(word, text) for a command word `$N` that the command sets to a value the guard cannot read
+    (`read -r C <<< ...`, `printf -v C ...`): the text that can be its value, which is every segment
+    that writes N (not its uses) and every here-string and here-document body."""
+    try:
+        tokens = shell_tokens.tokenize(command)
+    except ValueError:
+        return []
+    values = shell_values.assigned_values(tokens, command)
+    names = {
+        name
+        for index, token in enumerate(tokens)
+        if (name := shell_values.plain_variable(token)) in values
+        and values[name].unknown
+        and shell_values.command_position(tokens, index)
+    }
+    if not names:
+        return []
+    texts: list[str] = []
+    for _start, segment in shell_lex.segment_spans(tokens):
+        joined = " ".join(segment)
+        if shell_values.plain_variable(segment[0]) not in names and any(
+            re.search(rf"(?<![A-Za-z0-9_$]){re.escape(name)}(?![A-Za-z0-9_])", joined) for name in names
+        ):
+            texts.append(joined)
+    texts += [tokens[index + 1] for index, token in enumerate(tokens) if token == "<<<" and index + 1 < len(tokens)]
+    texts += shell_lex.heredoc_bodies(command)
+    word = "$" + sorted(names)[0]
+    return [(word, text) for text in texts]
+
+
+def check_unread_value(command: str, environ: dict[str, str]) -> None:
+    """A command word the command sets to a value the guard cannot read is read as the text that
+    can be its value (`read -r C <<< "git push --force origin main"; $C`)."""
+    if "$" not in command:
+        return
+    for word, text in unread_value_texts(command):
+        what = gated_in_text(text, environ)
+        if what:
+            raise block(UNREAD_VALUE.format(word=word, what=what))
 
 
 def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
     """Raise Blocked when `command`, run in `cwd`, breaks a guarded rule."""
+    _WALKED.clear()
+    guard_base.GIT_OUTPUTS.clear()
+    _WALKING[0] = guard_base.CACHING[0] = True
+    try:
+        evaluate_walked(command, cwd, environ)
+    finally:
+        _WALKING[0] = guard_base.CACHING[0] = False
+        _WALKED.clear()
+        guard_base.GIT_OUTPUTS.clear()
+
+
+def evaluate_walked(command: str, cwd: str, environ: dict[str, str]) -> None:
+    """`evaluate`, with one shared walk of the command's words."""
     if not command or not cwd:
         return
     check_override_assignment(command, cwd)
@@ -1212,23 +914,163 @@ def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
         raise block("git commit/push inside command substitution or process substitution bypasses safety checks")
 
     check_pr_publish(command, cwd, environ)
+    check_pr_verified(command, cwd, environ)
+    check_unseen_script(command, cwd, environ)
+    check_unread_value(command, environ)
+    check_expanded_git(command, cwd)
+    check_actions(parse_git_actions(tokens, cwd))
 
+
+def check_actions(found: list[dict]) -> None:
+    """The git rules over one command's git actions, in order: a configured alias is expanded
+    first, then each action is checked with what the earlier ones staged, switched or configured,
+    and its effects on the branch, the index and where a push goes are kept for the later ones
+    (`git_effects`)."""
     actions: list[dict] = []
-    for action in parse_git_actions(tokens, cwd):
-        if action.get("subcommand") in {"commit", "push", "add"}:
+    for action in found:
+        if action.get("subcommand") in CHECKED_SUBCOMMANDS:
             actions.append(action)
-        else:
-            actions.extend(expand_configured_alias(action))
+            continue
+        expanded = expand_configured_alias(action)
+        if action.get("_alias") == "shell":
+            actions.append({**action, "effects_only": True, "effects_unknown": True})
+        elif not action.get("_alias"):
+            actions.append({**action, "effects_only": True})
+        actions.extend(expanded)
 
-    added: list[str] = []
+    state = {"added": [], "switched": False, "remote_config": False, "index_unknown": None, "destination_unknown": False}
+    names = git_command_names()
     for action in actions:
-        subcommand = action.get("subcommand")
-        if subcommand == "add":
-            added.extend(paths_added(action))
-        elif subcommand == "commit":
-            check_commit(action, added)
-        elif subcommand == "push":
-            check_push(action)
+        try:
+            check_action(action, state, names)
+        except Blocked as error:
+            if action.get("maybe_git"):
+                raise block(MAYBE_GIT.format(word=action["maybe_git"], message=str(error).replace("BLOCKED: ", "", 1))) from None
+            raise
+
+
+INDEX_UNKNOWN = (
+    "an earlier git command in this command (`git {subcommand}`) changes the index in a way the guard "
+    "cannot follow, so it cannot tell what this commit includes, and local workflow state files must "
+    "stay out of commits. Run the commit as a command of its own."
+)
+CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l", "get", "list", "--get-color", "--get-colorbool"}
+CONFIG_VALUE_OPTIONS = {"-f", "--file", "--blob", "--type", "--default"}
+
+
+def config_write(args: list[str]) -> tuple[str, str | None] | None:
+    """(key, value) a `git config` writes or unsets (value None), or None for a read."""
+    if any(arg in CONFIG_READS for arg in args):
+        return None
+    words: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in CONFIG_VALUE_OPTIONS:
+            index += 2
+            continue
+        if not arg.startswith("-"):
+            words.append(arg)
+        index += 1
+    if words[:1] in (["set"], ["unset"]):
+        unset = words[0] == "unset"
+        words = words[1:]
+    else:
+        unset = any(arg in {"--unset", "--unset-all"} for arg in args)
+    if not words:
+        return None
+    return words[0], None if unset or len(words) < 2 else words[1]
+
+
+def check_action(action: dict, state: dict, names: frozenset | None) -> None:
+    """One action's rules, given what the earlier actions staged, switched or configured (`state`),
+    then its own effects for the later ones."""
+    subcommand = action.get("subcommand")
+    if action.get("speculative"):
+        check_speculative(action)
+        return
+    args = own_args(action.get("args", []))
+    for raw_config in action.get("configs", []):
+        if raw_config.split("=", 1)[0].lower() == "core.hookspath":
+            raise block(f"git {subcommand} with a core.hooksPath override bypasses the hooks the toolkit runs")
+    effect = git_effects.effects(action, args, names)
+    if (action.get("maybe_git") or action.get("guessed")) and not effect.known:
+        # git or its subcommand an expansion, with words git would not take: probably not git
+        effect = git_effects.Effect()
+    if not action.get("effects_only"):
+        check_subcommand(action, subcommand, args, state)
+    if effect.branch == git_effects.U:
+        state["switched"] = True
+    if effect.index == git_effects.U and state["index_unknown"] is None:
+        state["index_unknown"] = subcommand
+    state["added"].extend(effect.paths)
+    if effect.destination == git_effects.U:
+        state["destination_unknown"] = True
+    if effect.commits in {git_effects.YES, git_effects.U}:
+        check_committed_index(action, state["added"], seen_only=effect.commits == git_effects.U)
+
+
+def check_subcommand(action: dict, subcommand: str | None, args: list[str], state: dict) -> None:
+    if subcommand in {"add", "stage"}:
+        state["added"].extend(paths_added(action))
+    elif subcommand == "update-index":
+        state["added"].extend(update_index_paths(action))
+    elif subcommand == "commit":
+        if state["index_unknown"]:
+            raise block(INDEX_UNKNOWN.format(subcommand=state["index_unknown"]))
+        check_commit(action, state["added"])
+    elif subcommand in {"push", "send-pack"}:
+        if state["remote_config"]:
+            raise block(
+                "this command changes a remote's push or mirror configuration before it "
+                "pushes, so the guard cannot tell what the push sends. Change the "
+                "configuration and push as separate commands."
+            )
+        extra = {"branch_unknown": True} if state["switched"] else {}
+        if state["destination_unknown"]:
+            extra["destination_unknown"] = True
+        check_push({**action, **extra})
+    elif subcommand in {"checkout", "switch"} and switches_branch(subcommand, args):
+        state["switched"] = True
+    elif subcommand == "config":
+        if any(REMOTE_PUSH_KEY.match(arg) for arg in args):
+            state["remote_config"] = True
+        written = config_write(args)
+        if written is not None:
+            key, value = written
+            if key.lower() == "core.hookspath":
+                raise block(
+                    "this writes core.hooksPath, which changes which hooks every later git command runs "
+                    "(the toolkit's hooks are its boundary). Ask the user to change it."
+                )
+            if key.lower() == "commit.gpgsign" and (value is None or config_value_false(value)):
+                raise block("turning commit.gpgsign off violates signing rules")
+            if PUSH_DEST_KEY.match(key) or EXPANSION_WORD.search(key):
+                state["remote_config"] = True
+    elif subcommand == "remote" and any(arg.startswith("--mirror") for arg in args):
+        state["remote_config"] = True
+    elif subcommand in {"merge", "am", "rebase", "pull"} and any(
+        long_option_prefix(arg, "--no-verify", "--no-veri") for arg in args
+    ):
+        raise block(f"git {subcommand} --no-verify skips the hooks the toolkit runs")
+    elif subcommand == "am" and any(short_commit_option_has_no_verify(arg) for arg in args):
+        raise block("git am -n skips the hooks the toolkit runs")
+
+CHECKED_SUBCOMMANDS = {
+    "commit", "push", "add", "stage", "update-index", "send-pack", "checkout", "switch", "config",
+    "remote", "merge", "am", "rebase", "pull",
+}
+REMOTE_PUSH_KEY = re.compile(r"(?i)remote\..+\.(?:push|mirror)$|push\.")
+EXPANSION_WORD = re.compile(r"[$`]")
+
+
+def switches_branch(subcommand: str, args: list[str]) -> bool:
+    """Whether `git checkout` or `git switch` with these words may change the branch: anything but
+    a file checkout (`git checkout -- file`, `git checkout <tree> -- file`; `checkout main --` is
+    a switch)."""
+    if subcommand == "switch":
+        return True
+    return not git_effects.file_checkout(args)
 
 
 def main() -> int:
@@ -1258,7 +1100,11 @@ def main() -> int:
         return 2
     except Exception as error:  # noqa: BLE001 - an internal error blocks git, gh and overrides
         text = command if isinstance(command, str) else raw
-        if MENTIONS_GIT.search(text) or OVERRIDE_MENTION.search(text):
+        # quoting can hide the word from a raw match (`g'i't`): read it as the shell does
+        if any(
+            MENTIONS_GIT.search(form) or OVERRIDE_MENTION.search(form)
+            for form in (text, shell_tokens.unquoted(text))
+        ):
             print(
                 f"BLOCKED: the git guard hook failed ({type(error).__name__}: {error}). "
                 "Stop and ask the user; do not work around the hook.",

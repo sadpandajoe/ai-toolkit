@@ -22,7 +22,10 @@ description: Start a local Superset stack and find its frontend URL, check Docke
 - Never change Docker Desktop settings programmatically; suggest Settings →
   Resources → Memory.
 - A git worktree shares `.git` but not dependencies, build outputs or `.env`
-  files; install or copy them before tests or builds there.
+  files; install or copy them before tests or builds there. A `node_modules`
+  built under another Node version fails with native-module errors, a copied
+  `.env.local` misses keys added on main since, and the main worktree's venv
+  can stay active in the shell (check `which python`).
 
 Skip the capacity check when `up.sh` reports the stack already up.
 

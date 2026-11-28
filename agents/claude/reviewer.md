@@ -25,6 +25,7 @@ Every finding opens with one tag:
 - Missing tests: for new public logic, a new endpoint, a bug fix or a behavior change, `[major]`; for config, a flag or an env var, `[minor]`; for docs, comments, types, renames, moves or formatting, not a finding. Login, auth, payment and data-loss paths raise it one level.
 - A missing-test finding names its locking assertion: the assertion that fails on today's code and passes once the change is right. If none can be named, the behavior is unobservable (say so; that is the more serious finding) or the ask is a structure preference capped at `[nitpick]`.
 - Tests must be able to fail. Mock only external boundaries (network, database, filesystem, time), never internal code.
+- A test loosened, skipped or deleted in the diff is `[major]` unless the diff shows the test itself was wrong: it asserted an unintended side effect, a removed feature, or a judgment nobody stands by.
 - "The sibling does it differently" caps at `[minor]`, except that a defect class confirmed inside this branch keeps its severity wherever it recurs.
 - Reimplementing what the repo, an installed package or the language already provides is `[minor]`, or `[major]` when it drifts from behavior the library gets right.
 - Pushing a file past about 1000 lines, or bolting ad-hoc branches into unrelated flows, is `[minor]`; `[major]` when the file was already over and grew materially.

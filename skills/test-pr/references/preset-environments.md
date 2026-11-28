@@ -26,7 +26,7 @@ test -n "${PRESET_STG_BOT_LOGIN:-}" && test -n "${PRESET_STG_BOT_PASSWORD:-}"
 ```
 
 If they are unset, stop and tell the user to set `PRESET_STG_BOT_LOGIN` and
-`PRESET_STG_BOT_PASSWORD` in their shell, then retry.
+`PRESET_STG_BOT_PASSWORD` in their shell.
 
 The Preset login is two-step: email, then *Next*, then password, then *Log in*.
 

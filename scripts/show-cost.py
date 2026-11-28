@@ -64,7 +64,13 @@ PRICING = {
         "cache_read": 0.40,
         "cache_create": 5.00,
     },
-    # Fable 5.1 cache reads bill at 0.025x input.
+    # Fable 5.2 and 5.1 cache reads bill at 0.025x input.
+    "claude-fable-5-2": {
+        "input": 8.00,
+        "output": 40.00,
+        "cache_read": 0.20,
+        "cache_create": 10.00,
+    },
     "claude-fable-5-1": {
         "input": 10.00,
         "output": 50.00,

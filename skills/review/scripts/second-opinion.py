@@ -43,7 +43,7 @@ CONTRACT = ROOT / "agents" / "claude" / "reviewer.md"
 # Promoting a model is a one-line change here.
 MODELS = {
     "codex": {"standard": "gpt-6.1-sol", "deep": "gpt-6-astra"},
-    "claude": {"standard": "claude-opus-5-5", "deep": "claude-fable-5-1"},
+    "claude": {"standard": "claude-opus-5-5", "deep": "claude-fable-5-2"},
 }
 EFFORT = {"standard": "high", "deep": "xhigh"}
 CLAUDE_BUDGET_USD = {"standard": "5", "deep": "15"}

@@ -1,6 +1,7 @@
 #!/bin/sh
 #
-# install.sh — link the Codex agents, which a Codex plugin cannot ship.
+# install.sh — link the Codex agents, which a Codex plugin cannot ship, and
+# add a hook-trust check to Codex's personal AGENTS.md.
 #
 # Everything else installs as a plugin (README, Install):
 #   claude plugin marketplace add <this checkout> && claude plugin install ai-toolkit@ai-toolkit
@@ -12,26 +13,81 @@
 # ${CODEX_HOME:-~/.codex}/agents/, leaves any file there that is not its own
 # link untouched (and says so), and --uninstall removes only links that point
 # into this checkout.
+#
+# Codex runs plugin hooks only after the user trusts them in /hooks. Until
+# then neither the rules nor the git guard reach a session, and nothing says
+# so. The marked block it keeps in ${CODEX_HOME:-~/.codex}/AGENTS.md tells the
+# model how to notice; the rest of that file is never touched, and
+# --uninstall removes only the block.
 
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 TARGET=${CODEX_HOME:-$HOME/.codex}/agents
+AGENTS_FILE=${CODEX_HOME:-$HOME/.codex}/AGENTS.md
+BEGIN='# >>> ai-toolkit hook check >>>'
+END='# <<< ai-toolkit hook check <<<'
+CHECK='AI Toolkit is installed as a Codex plugin. Its session-start hook puts a section headed "AI Toolkit Rules" in your context. If that section is missing, Codex has not trusted the plugin'"'"'s hooks, so its git guard is not running either: before any commit, push or pull request, tell the user to trust the ai-toolkit hooks in /hooks.'
+
+# Remove each complete marked block from AGENTS.md, writing through a symlink in
+# place. A start marker with no end marker after it is the user's edit: its lines
+# stay, so nothing past the block is ever lost. When another start marker follows
+# before any end marker, the held lines stay but the orphaned marker goes, or the
+# next install would refuse over a block with no end. Fails, keeping the
+# rewritten copy and saying where, when AGENTS.md cannot be rewritten.
+remove_check() {
+    [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE" || return 0
+    tmp=$(mktemp "${TMPDIR:-/tmp}/aitk-agents.XXXXXX") || return 1
+    awk -v b="$BEGIN" -v e="$END" '
+        held && $0 == b { printf "%s", substr(buf, length(b) + 2); buf = $0 "\n"; next }
+        !held && $0 == b { held = 1; buf = $0 "\n"; next }
+        held { buf = buf $0 "\n"; if ($0 == e) { held = 0; buf = "" }; next }
+        { print }
+        END { if (held) printf "%s", buf }
+    ' "$AGENTS_FILE" >"$tmp" || { rm -f "$tmp"; return 1; }
+    if ! cat "$tmp" >"$AGENTS_FILE"; then
+        echo "could not rewrite $AGENTS_FILE; what it should hold is in $tmp" >&2
+        return 1
+    fi
+    rm -f "$tmp"
+}
+
+# Whether AGENTS.md is there but cannot be written (read-only, or a symlink into
+# a store such as home-manager's): then it is left alone.
+read_only_check() {
+    [ -e "$AGENTS_FILE" ] && [ ! -w "$AGENTS_FILE" ]
+}
+
+# Whether AGENTS.md holds a start marker with no end marker after it.
+incomplete_check() {
+    [ -f "$AGENTS_FILE" ] && awk -v b="$BEGIN" -v e="$END" '
+        $0 == b { open = 1 } $0 == e { open = 0 } END { exit open ? 0 : 1 }
+    ' "$AGENTS_FILE"
+}
 
 case "${1:-}" in
     --uninstall)
-        [ -d "$TARGET" ] || exit 0
         for link in "$TARGET"/*.toml; do
             [ -L "$link" ] || continue
             case $(readlink "$link") in
                 "$ROOT"/agents/codex/*) rm "$link" && echo "removed $link" ;;
             esac
         done
+        if ! { [ -f "$AGENTS_FILE" ] && grep -qxF -- "$BEGIN" "$AGENTS_FILE"; }; then
+            :
+        elif read_only_check; then
+            echo "left $AGENTS_FILE alone: it is not writable; remove its hook check by hand" >&2
+        elif incomplete_check; then
+            echo "left $AGENTS_FILE alone: its hook check has no end marker ($END); remove it by hand" >&2
+        else
+            remove_check || exit 1
+            echo "removed the hook check from $AGENTS_FILE"
+        fi
         exit 0
         ;;
     "") ;;
     *)
-        sed -n '3,15p' "$0"
+        sed -n '3,21p' "$0"
         exit 2
         ;;
 esac
@@ -48,6 +104,24 @@ for agent in "$ROOT"/agents/codex/*.toml; do
     fi
     ln -s "$agent" "$link" && echo "linked $link"
 done
+
+block=$(printf '%s\n%s\n%s' "$BEGIN" "$CHECK" "$END")
+if incomplete_check; then
+    echo "left $AGENTS_FILE alone: its hook check has no end marker ($END); fix or remove it, then run ./install.sh again" >&2
+elif [ -f "$AGENTS_FILE" ] && awk -v b="$BEGIN" -v e="$END" '$0 == b { on = 1 } on { print } $0 == e { exit }' \
+    "$AGENTS_FILE" | grep -qxF -- "$CHECK"; then
+    :
+elif read_only_check; then
+    echo "left $AGENTS_FILE alone: it is not writable; add the hook check by hand if you want it:" >&2
+    printf '%s\n' "$block" >&2
+else
+    remove_check || exit 1
+    mkdir -p "$(dirname -- "$AGENTS_FILE")"
+    if [ -s "$AGENTS_FILE" ] && [ -n "$(tail -c 1 "$AGENTS_FILE")" ]; then
+        printf '\n' >>"$AGENTS_FILE"
+    fi
+    printf '%s\n' "$block" >>"$AGENTS_FILE" && echo "added the hook check to $AGENTS_FILE"
+fi
 
 if grep -qF '# >>> ai-toolkit managed guidance >>>' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md" 2>/dev/null; then
     echo "note: an older bin/aitk install is still in place; run 'git checkout 0.3.0 && ./install.sh --uninstall' in that checkout first" >&2
