@@ -196,12 +196,13 @@ def commit_staging(action: dict, args: list[str]) -> list[str]:
     """What `git commit` stages by itself: the tracked changes with `-a`, the paths it names
     (with `-i`/`-o` or alone), `UNKNOWN_ADDED` for `--pathspec-from-file`. An option the guard does
     not know blocks (`COMMIT_OPTION_UNKNOWN`), except in a reading the guard guessed (git's
-    subcommand an expansion, or git itself one): words git would not take are probably not git's."""
+    subcommand an expansion, or git itself one): words git would not take are probably not git's,
+    so the options and literal paths it does know are read (a newer git may take the rest)."""
     options, operands, known = git_effects.read_options("commit", args)
     if not known:
-        if action.get("guessed") or action.get("maybe_git"):
-            return []
-        raise block(COMMIT_OPTION_UNKNOWN)
+        if not (action.get("guessed") or action.get("maybe_git")):
+            raise block(COMMIT_OPTION_UNKNOWN)
+        operands = [operand for operand in operands if not EXPANDED_PATH.search(operand)]
     found: list[str] = []
     if "pathspec-from-file" in options:
         found.append(UNKNOWN_ADDED)
@@ -287,9 +288,9 @@ def check_commit(action: dict, added_before: list[str]) -> None:
     extra = commit_staging(action, args)
     if UNKNOWN_ADDED in extra:
         raise block(
-            "the guard cannot tell what this commit includes (it stages paths from a file or stdin, "
-            "`--pathspec-from-file`), and local workflow state files must stay out of commits. Stage "
-            "named paths, then commit."
+            "the guard cannot tell what this commit includes (it names a path an expansion makes, or "
+            "takes paths from a file or stdin with `--pathspec-from-file`), and local workflow state "
+            "files must stay out of commits. Stage named paths, then commit."
         )
     staged = names(git_output(action, ["diff", "--cached", "--name-only", "-z"]))
     if staged is None:

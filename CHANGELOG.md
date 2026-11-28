@@ -51,6 +51,33 @@
   word). The record keeps the last 200 runs. The known limits, including
   that GitHub's branch protection is the boundary for other API writes,
   are in ARCHITECTURE.
+- The git guard's own git queries run nothing the checked command supplies.
+  Before, a `PATH=` prefix, or `core.fsmonitor` in the command's config, ran
+  a program while the guard was only evaluating the command. The queries now
+  run git from the hook's own PATH, with fsmonitor off and no index write, and
+  take only the variables that choose the repository. Config they cannot see
+  (`HOME=`, `GIT_CONFIG_*`, `env -i`) makes a commit or push block. Each of
+  these was allowed before and now blocks or is read:
+  - text handed to a shell, read the same way by both walkers: `bash -c -x`,
+    `env -S`, fish and pwsh flags, `trap --`, `flock -c`, `su -c`;
+  - variables, read by every value the command gives them
+    (`P=push; P=status true; git $P --force origin main`, `c='gh pr'; $c merge
+    12`). A subcommand the guard cannot read (`git $(echo push)`, `git
+    "$@"`) blocks;
+  - brace words, expanded in bash's order (`git {push,origin} --force main`);
+  - an expansion that may be git (`$GIT`, `$(which git)`), read by git's own
+    rules. A commit behind one (`$GIT commit -m x`, `svn --username "$U"
+    commit`) is no longer blocked outright: the one loosening;
+  - what git changes on the way, from one table of neutral subcommands
+    (`git_effects`):
+    - the branch: `git branch -M main`, `git checkout main --`;
+    - the index: `git mv` to a state file, `git checkout other -- '*.md'`;
+    - commits made without `git commit`: `merge --continue`, `write-tree`;
+    - where a push with no refspec goes: `push.default=matching`;
+    - `core.hooksPath` and `commit.gpgSign` writes, `HUSKY=0`, `SKIP=`.
+  - staged paths, now listed raw and from the top of the repository: a
+    staged `.ai-toolkit/café.md`, and a root `PROJECT.md` committed from a
+    subdirectory under `diff.relative=true`.
 - `rules/universal.md`: fix the behavior, not the test; attachment names and
   private repositories are under the PII rule. The reviewer grades a
   loosened, skipped or deleted test `[major]` unless the test was wrong.

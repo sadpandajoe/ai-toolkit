@@ -64,10 +64,11 @@ destination with a `*` counts as main. `--mirror` blocks. A `sh -c`, `bash -c` o
 payload does not know the outer shell's directory, so `$(git branch --show-current)` inside one
 is never resolved.
 
-Known limits (a tripwire, not a shell sandbox): a word that expands to a push option
-(`git push origin main $F`, `git push $F origin main`), a git alias defined in a file
-the hook cannot read, `gh api` calls, and programs that run git themselves are
-not seen. Directory changes follow `shell_tokens`' rules (`cd`, `pushd`, `git -C`,
+Known limits (a tripwire, not a shell sandbox): a word from the session environment that
+expands to a push option (`git push origin main $F`, `git push $F origin main`; one the command
+sets is read by its values, so `F=--force; git push origin main $F` blocks), a git alias defined
+in a file the hook cannot read, `gh api` writes other than merging, readying or opening a PR,
+and programs that run git themselves are not seen. Directory changes follow `shell_tokens`' rules (`cd`, `pushd`, `git -C`,
 `env -C`): `cd -`, `popd`, a bare `pushd`, a target the shell expands, a `cd` that may
 not have run (after `||`, after `&&` once the list ends, in a pipeline, in a list ended
 by `&`, in an if/while/until/for/select/case body), an `eval` that changes directory,
@@ -101,8 +102,8 @@ What actually protects the PR boundary is elsewhere: a non-draft `gh pr create`,
 environment. This check keeps the agent from shopping for an override it
 cannot get.
 
-Known limits of the scan, each a real override it does not see:
-- brace expansion that builds a name (`env {NAME,X}=1 ...`);
+Known limits of the scan, each a real override it does not see (a brace that builds a name,
+`env {NAME,X}=1 ...`, is expanded and blocks):
 - arithmetic setters, which export under `set -a`: `(( NAME = 1 ))`,
   `let NAME++`, `let NAME=1`, `((++NAME))` after a falsy export, an indexed
   write (`NAME[0]=1`) and a `${NAME:=1}` expansion;
@@ -206,10 +207,10 @@ call in a variable), a whole-segment expansion standing alone for `pulls` or `me
 accepted over-block). Known limits, each a real
 `gh pr
 ready`/`merge` it does not see (pinned in `PR_PUBLISH_LIMITS`): `gh` reached through a
-function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and extensions, an
-expanded name behind an unknown wrapper (`g=gh; setsid $g pr merge 12`: rescanning from every
-expansion word could spend the work budget on ordinary commands), a variable that holds more
-than the name (`c='gh pr'; $c merge 12`), a
+function wrapper (`g() { gh "$@"; }; g pr merge 12`), `gh` aliases and extensions, a name from
+the session environment behind an unknown wrapper (`setsid "$GH" pr merge 12`: rescanning from
+every expansion word could spend the work budget on ordinary commands; a variable the command
+sets is read by its values, `g=gh; setsid $g pr merge 12`, `c='gh pr'; $c merge 12`), a
 quoted command string handed to a wrapper that runs it through a shell without `-c` (`watch 'gh pr ready 12'`, `tmux new-session '...'`), every
 git config value or tool option that runs a shell other than an inline alias (`git
 filter-branch` filters, `git -c core.pager=...`, `-c credential.helper='!...'`, `git

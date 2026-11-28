@@ -121,10 +121,11 @@ checks nothing is visible in the record. Its known limits:
   and as it is. Text
   the guard cannot parse is searched for `gh`, `pr`, then `ready`, `merge`,
   `create`, `new` or `revert` in order over the whole text as well as piece by
-  piece. A function wrapper (`g() { gh "$@"; }; g pr merge 12`), an expanded
-  name behind an unknown wrapper (`g=gh; setsid $g pr merge 12`), a variable
-  that holds more than the name (`c='gh pr'; $c merge 12`), `gh` aliases and
-  extensions and connector tools open a PR unseen;
+  piece. A function wrapper (`g() { gh "$@"; }; g pr merge 12`), a name from
+  the session environment behind an unknown wrapper (`setsid "$GH" pr merge
+  12`), `gh` aliases and extensions and connector tools open a PR unseen. A
+  variable the command sets is read by its values, so `g=gh; setsid $g pr
+  merge 12` and `c='gh pr'; $c merge 12` block;
 - `gh api` PR create, merge and ready are gated: a PUT to `pulls/<n>/merge` (also
   `repositories/<id>/...`) or a GraphQL `mergePullRequest`,
   `markPullRequestReadyForReview`, `enablePullRequestAutoMerge` or
@@ -202,40 +203,98 @@ checks nothing is visible in the record. Its known limits:
   as `cd` or `git` may be that command (`${X}cd D`, `$X'cd' D`, `{c,}d D`,
   `${GIT:-git} push`). So the directory after `$X cd D` is unknown, `$X git
   push` and `git $X push` are read as git, and a quoted `"$X"` reads the same
-  (an accepted over-block). An expansion the guard cannot resolve, as the
-  command name or behind a command that is not a printing one (`$GIT push`,
-  `$(which git) push`, `setsid $GIT push`), blocks when the words after it,
-  read as git's own, define an alias, push with a force, delete or no-verify
-  flag, or commit. A subcommand that is an expansion is read as what it may
-  come out as, or as both `push` and `commit`. Behind a command the guard
-  does not know (`setsid`, `caffeinate`, `flock x`, or an option's value it
-  takes for the command: `exec -a echo`), a later word that may start git
-  is read as the command too: git followed by a git command, `git-push`, a
-  shell with `-c`, or `env`, `sudo` or `eval` with git after them; past 16
-  of them the command blocks. A printing command (`echo git push`) runs
+  (an accepted over-block).
+- variables are read by every value the command gives them (`shell_values`):
+  a literal value assigned anywhere counts, whatever runs last (`P=push;
+  P=status true; git $P` may push), and a value with several words is split
+  where a word with a space could run nothing, the command word and git's
+  subcommand (`P="push --force origin main"; git $P`, `CMD="git push"; $CMD
+  --force origin main`). A variable the command never touches is the session
+  environment's, set by the user, and keeps the readings above (`git $X
+  status`). git's subcommand as an expansion the guard cannot read (a
+  substitution, an operator form, an array, `$@` after `set`, a variable set
+  by `read`, `printf -v` or to a value that is not literal) blocks: write it
+  literally. A command word the command sets to a value the guard cannot read
+  is read as `git push`/`git commit` for an explicit main destination, a
+  ref-wide flag or a long `--no-verify`, and the text that can be its value
+  (the segments that write it, here-strings, here-document bodies) is read as
+  text. Positional parameters are split in the same two places. Not seen: a
+  multi-word value used unquoted among git's arguments, and a variable set for
+  later commands through a file the shell sources at start;
+- brace words are expanded in bash's order, sequences included, for the whole
+  segment in both walkers (`git {push,origin} --force main`, `{gh,pr} merge 12`,
+  `ma{i..i}n`); past 1,024 words a segment that names git or gh blocks. A
+  command whose every brace is quoted is not expanded (`gh api graphql -f
+  query='{ a, b }'`); when one stands outside quotes or in a substitution, a
+  quoted brace in another word is expanded too (an accepted over-block);
+- an expansion the guard cannot resolve, as the command name (`$GIT`, `$(which
+  git)`, a backtick span) or behind a command that is not a printing one with a
+  git command name after it (`setsid $GIT push`, `svn --username "$U" commit`),
+  is read as git by git's own rules, in command order and with the command's
+  environment: it blocks what a literal `git` there would. A reading whose
+  subcommand is no git command, that runs outside any repository, or whose
+  subcommand cannot be read is dropped; past 16 the command blocks. Such a
+  reading, or git's subcommand guessed from an expansion (`git $X`), with an
+  option git 2.39 does not know is probably not git: it has no effects and no
+  unknown-option rule, but a commit's known options and literal paths are
+  still read (`$(which git) commit -a --bogus` stages a tracked state file).
+  The words after it also block when they push with a force, delete or
+  no-verify flag or define an alias. Behind a command the guard does not know (`setsid`,
+  `caffeinate`, `flock x`, or an option's value it takes for the command:
+  `exec -a echo`), a later word that may start git is read as the command too;
+  past 16 of them the command blocks. A printing command (`echo git push`) runs
   none. Accepted over-blocks: a word list or a remote command that holds a
   forced push (`for w in git push --force ...`, `ssh host git push --force
-  origin main`, `docker exec app git push ...`). git nested more than 8
-  levels deep (`sh -c`, `eval`, functions, backtick spans) blocks. A
-  function a `trap`, a backtick span among the words, or a variable (`F=f;
-  $F`) runs is read. Not seen: a word that expands to a push option (`git
-  push origin main $F`);
-- what a command stages and where it pushes is read as git would: `git
-  stage` like `git add`, `git update-index --add`, a brace word as every
-  path or refspec it makes (`PROJECT.{md,md}`, `origin {main,main}`), and a
-  path an expansion names as unknown, which blocks the commit. A `git
-  checkout` or `git switch` earlier in the command leaves the branch unknown
-  to a later push (a file checkout, `checkout -- f`, does not). A push is
-  forced by its configuration too: `-c remote.<r>.push=+...main`, `-c
-  remote.<r>.mirror=true`, the same configured for the remote it names, or
-  a `git config` of `remote.*.push`, `remote.*.mirror` or `push.*` (or `git
-  remote add --mirror`) earlier in the command. `git send-pack` is read like
-  a push, `--prune` with a glob refspec like a delete, `merge`, `am` and
-  `rebase` with `--no-verify` block, and so does a commit or push that reads
-  configuration the guard cannot see (`-c include.path=`,
-  `GIT_CONFIG_GLOBAL=`). Not modelled: a plain, unforced push to main (`gh
-  pr checkout 12 && git push origin HEAD:main`), which GitHub's branch
-  protection refuses;
+  origin main`, `docker exec app git push ...`). git nested more than 8 levels
+  deep blocks. The text handed to a shell is read the same way in both walkers
+  (`shell_payloads`): bash's option grammar (`bash -c -x 'cmd'`), `env -S`,
+  fish's and pwsh's flags, `trap -- 'cmd'`, and a later `-c` or `--command`
+  behind a command that is not a printing one, git or gh (`flock -c`, `su -c`,
+  `script -c`, `$SHELL -c`); past 8 such strings, one that names git or gh
+  blocks;
+- what git changes on the way to a later push or commit is read from one table
+  of what is neutral (`git_effects`, with git 2.39's options in `git_options`):
+  each subcommand's effect on the branch, the index, where a push with no
+  refspec goes, and whether it commits the index itself. A reader is neutral
+  only when every option is one it knows. So `git branch -M main`, `symbolic-ref
+  HEAD`, `rebase X main`, `bisect` or a third-party git command before a forced
+  push of HEAD makes the branch unknown; `cherry-pick -n`, `merge --squash`,
+  `stash pop` or an unlisted command before a commit blocks it (run the commit
+  as a command of its own); `git mv`, a tree read into the index (`checkout X --
+  f`, `reset X -- f`, `restore --source`, read by git's own pathspec rules, so
+  `'*.md'` and `:(icase)` count, and every path of the tree for
+  `--pathspec-from-file`), `submodule add`, `reset --soft`, `commit -a` and a
+  commit's own pathspecs name what they stage; `git checkout main --`, with
+  nothing after the `--`, is a branch switch; `add --pathspec-from-file` and
+  `update-index --stdin` stage unknown paths; and
+  `merge`/`rebase`/`cherry-pick`/`revert --continue`, `am --continue` and
+  `write-tree` get the state-file rule. `branch -u`, `remote rename` and `push
+  -u` make the destination of a later forced push with no refspec unknown. A
+  `git config` write or unset of `core.hooksPath`, `commit.gpgSign` turned off,
+  and `core.hooksPath` inline on any git command block; so do `pull
+  --no-verify`, `am -n`, and `HUSKY=0` or `SKIP=...` on a commit or push. A
+  push is forced by its configuration too: `-c remote.<r>.push=...main` (`+`
+  or, on a forced push, not), `-c remote.<r>.mirror=true`, `push.default=
+  matching`, an inline push key with a value the guard cannot read, or a `git
+  config` of a push-destination key (`remote.*.push`, `remote.*.mirror`,
+  `push.*`, `remote.pushDefault`, `branch.*.merge|remote|pushRemote`, dotted
+  remote names too) earlier in the command. `git send-pack` is read like a
+  push, `--prune` with a glob refspec like a delete. Not modelled: a plain,
+  unforced push to main (`gh pr checkout 12 && git push origin HEAD:main`),
+  which GitHub's branch protection refuses, and programs that run git
+  themselves (`./switch.sh && git push -f origin HEAD`);
+- the guard's own git queries take from the command only the variables that
+  choose the repository and index, run git's absolute path from the hook's own
+  PATH, and never run fsmonitor or write the index. They list paths raw (`-z`:
+  `core.quotePath` would quote `.ai-toolkit/café.md`) and from the top of the
+  repository (`diff.relative=false`), and a dry-run line they cannot read (a
+  newline in a path) makes the add unknown. What they then cannot see
+  is unknown: a commit or push with `HOME=`, `XDG_CONFIG_HOME=`,
+  `GIT_CONFIG_GLOBAL=`/`SYSTEM`/`NOSYSTEM`/`PARAMETERS`, `env -i` or an unset
+  HOME blocks; an add under one, or with an inline key that may change what it
+  lists (`-c core.excludesFile=`), stages unknown paths. A repository's own
+  filter drivers still run in the guard's `git add --dry-run`, as in the add
+  itself;
 - the model misses element and nameref assignments: `S[0]=x A=M` as one
   segment, `declare -n R=S; R=M`, `S[a[0]]=M` and `declare 'S[0]=M'`;
 - the directory a `gh pr create` runs in comes from `shell_dirs`' static

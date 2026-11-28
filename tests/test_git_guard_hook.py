@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hooks" / "lib"))
 import git_guard  # noqa: E402
 import git_effects  # noqa: E402
+import git_walk  # noqa: E402
 import guard_base  # noqa: E402
 import gh_args  # noqa: E402
 import shell_tokens  # noqa: E402
@@ -3294,6 +3295,8 @@ class GitGuardHookTests(unittest.TestCase):
             (
                 ("git commit -a -m x", repo, 2),
                 ("git commit --al -m x", repo, 2),
+                # a guessed reading with an option git 2.39 lacks still reads the options it knows
+                ("$(which git) commit -a --bogus -m x", repo, 2),
                 ("git commit -m x .", repo, 2),
                 ("git commit -m x PROJECT.md", repo, 2),
                 ("git commit -m x README.md", repo, 0),
@@ -3351,6 +3354,30 @@ class GitGuardHookTests(unittest.TestCase):
                 ("git reset --pathspec-from-file=list.txt && git commit -m x", trees, 0),
                 ("git submodule add -b main https://example.com/x.git vendor/x && git commit -m x", trees, 0),
                 ("git checkout main -- README.md && git push --force", self.feature, 0),
+            )
+        )
+
+    def test_each_rule_that_had_no_test_of_its_own_holds(self) -> None:
+        # the seventh review's item 15: each of these was a rule with no test
+        blob = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"  # the empty blob
+        limit = git_walk.LATER_GIT_LIMIT
+        self.hook_codes(
+            (
+                ("git am --no-verify x.patch", self.feature, 2),
+                ("git rebase --no-verify origin/main", self.feature, 2),
+                (f"git update-index --add --cacheinfo 100644,{blob},PROJECT.md && git commit -m x", self.feature, 2),
+                ("git remote add --mirror=push m https://example.com/x.git && git push m", self.feature, 2),
+                ("GIT_CONFIG_SYSTEM=/tmp/x git push origin feature", self.feature, 2),
+                ("git -c includeIf.gitdir:/.path=/tmp/x commit -m x", self.feature, 2),
+                ("git config push.default upstream && git push -f", self.feature, 2),
+                # past the limit of later words read as git, the command blocks; at it, each is read
+                ("x" + " git status" * (limit + 1), self.feature, 2),
+                ("x" + " git status" * limit, self.feature, 0),
+                # without what each rule reads
+                ("git am x.patch", self.feature, 0),
+                ("git rebase origin/main", self.feature, 0),
+                ("git push origin feature", self.feature, 0),
+                ("git push -f", self.feature, 0),
             )
         )
 

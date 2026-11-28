@@ -1207,6 +1207,3 @@ def expand_configured_alias(action: dict) -> list[dict]:
         nested_action["configs"] = action.get("configs", []) + nested_action.get("configs", [])
         nested_action["env"] = dict(action.get("env", {}), **nested_action.get("env", {}))
     return nested
-
-
-GIT_GLOBAL_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"}
