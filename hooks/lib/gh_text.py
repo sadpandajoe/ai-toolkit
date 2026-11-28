@@ -36,13 +36,20 @@ def quoted_split(text: str) -> list[str]:
     stack: list[str] = []  # open `'`, `"`, backtick, `(` (of a `$(`) and `{` (of a `${`)
     start = index = 0
     comments: list[tuple[int, int]] = []  # `# ...` to the end of its line: it runs nothing
+    escaped_end = -1  # where the last escaped character ends: `a\\ #b` holds no comment
     while index < len(text):
         char = text[index]
         top = stack[-1] if stack else ""
         if char == "\\" and top != "'":
             index += 2
+            escaped_end = index
             continue
-        if char == "#" and top in {"", "("} and (index == 0 or text[index - 1] in " \t\n;&|("):
+        if (
+            char == "#"
+            and top in {"", "("}
+            and index != escaped_end
+            and (index == 0 or text[index - 1] in " \t\n;&|(")
+        ):
             end = text.find("\n", index)
             end = len(text) if end < 0 else end
             comments.append((index, end))  # (an apostrophe in it opens no quote: `# don't`)

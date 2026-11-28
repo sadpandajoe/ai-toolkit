@@ -2883,6 +2883,30 @@ class GitGuardHookTests(unittest.TestCase):
             )
         )
 
+    def test_the_seventh_reviews_regressions_stay_closed(self) -> None:
+        self.hook_codes(
+            (
+                # an escaped character before `#` starts no comment
+                ("echo a\\ #b; git commit -m ';' --no-verify", self.clean, 2),
+                ("echo a\\;#b; git commit -m ';' --no-verify", self.clean, 2),
+                ("echo a\\ #b; gh >'&' pr merge 12", self.clean, 2),
+                # git behind an unknown command, past its options, a redirection or an empty word
+                ("setsid git $X push --force origin main", self.clean, 2),
+                ("setsid git >/dev/null push --force origin main", self.clean, 2),
+                ("setsid git 2>/dev/null push --force origin main", self.clean, 2),
+                ("setsid git --config-env=alias.x=V x", self.clean, 2),
+                ("setsid git $P --force origin main", self.clean, 2),
+                # ssh and other names that end in `sh` are no local shell: their words are read
+                ("ssh host git push --force origin main", self.clean, 2),
+                ("refresh git push --force origin main", self.clean, 2),
+                ("ssh host uptime", self.clean, 0),
+                # a glob or a literal path is git's to read, not an expansion
+                ("git add hooks/*.sh && git commit --allow-empty -m x", self.clean, 0),
+                ("git add \"app/[slug]/page.tsx\" && git commit --allow-empty -m x", self.clean, 0),
+                ("git add -f PROJECT.m? && git commit -m x", self.clean, 2),
+            )
+        )
+
     def test_git_answers_are_kept_for_one_command_only(self) -> None:
         import guard_base
 

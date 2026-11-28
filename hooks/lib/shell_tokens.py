@@ -633,7 +633,7 @@ def is_shell_command_flag(arg: str) -> bool:
 
 STDIN_SCRIPT = re.compile(r"-|/dev/stdin|/dev/fd/\d+|/proc/self/fd/\d+")
 SHELL_VALUE_OPTIONS = {"--rcfile", "--init-file"}
-SHELL_NAME = re.compile(r"[a-z]*sh[\d.]*")  # bash, ash, fish, mksh, bash5, ssh (a remote shell reads it too)
+SHELL_NAME = re.compile(r"(?:ba|z|da|k|a|mk|ya|po|c|tc|fi)?sh(?:-?[\d.]+)?")  # bash, ash, fish, mksh, bash5, bash-5.2
 EXEC_WRAPPERS = {
     "docker", "podman", "kubectl", "ssh", "xargs", "timeout", "nice", "nohup", "setsid", "stdbuf",
     "chroot", "flock", "watch", "unbuffer", "script", "su", "doas", "sudo", "env", "exec", "command",
@@ -678,6 +678,8 @@ def unseen_script(argv: list[str], fed: bool, own: bool | None = None) -> str:
     if not argv:
         return ""
     head = head_name(argv[0])
+    if head == "ssh":
+        return UNSEEN_TEXT if fed else ""  # the remote shell reads ssh's stdin, or its command reads it
     if head in SHELLS or SHELL_NAME.fullmatch(head):
         index = 1
         while index < len(argv):

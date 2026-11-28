@@ -47,9 +47,21 @@ def may_run_git(tokens: list[str], j: int, end: int) -> bool:
     name = shell_tokens.head_name(word)
     if is_git_executable(word) or (("$" in word or "`" in word) and "git" in shell_tokens.may_be(word, {"git"})):
         k = j + 1
-        while k < end and tokens[k].startswith("-"):
-            k += 2 if tokens[k] in GIT_GLOBAL_VALUE else 1
-        return k < end and (tokens[k] in GIT_COMMANDS or any(t.startswith("alias.") for t in tokens[j + 1 : k]))
+        while k < end and not ("$" in tokens[k] or "`" in tokens[k]) and (
+            tokens[k].startswith("-")
+            or tokens[k] in shell_tokens.REDIRECTIONS
+            or (isinstance(tokens[k], shell_tokens.FdWord) and k + 1 < end)
+        ):
+            # git's options and a redirection with its descriptor and target (`git 2>/dev/null push`)
+            if tokens[k] in shell_tokens.REDIRECTIONS:
+                k += 2
+            elif isinstance(tokens[k], shell_tokens.FdWord):
+                k += 1
+            else:
+                k += 2 if tokens[k] in GIT_GLOBAL_VALUE else 1
+        defines_alias = any("alias." in t.lower() for t in tokens[j + 1 : k])  # `-c alias.x=`, `--config-env=alias.x=V`
+        expanded = k < end and ("$" in tokens[k] or "`" in tokens[k] or ("{" in tokens[k] and "," in tokens[k]))
+        return k < end and (tokens[k] in GIT_COMMANDS or defines_alias or expanded)
     if name.startswith("git-") and name[4:] in GIT_COMMANDS:
         return True
     rest = tokens[j + 1 : end]
@@ -506,7 +518,7 @@ def parse_git_actions(
         if command_start and (
             shell_tokens.head_name(token) in shell_tokens.SHELLS
             or shell_tokens.SHELL_NAME.fullmatch(shell_tokens.head_name(token))
-        ):  # `bash`, `/bin/sh`, `dash`
+        ):  # `bash`, `/bin/sh`, `dash` (not `ssh`: its words are a remote command, read as words)
             segment_end = segment_end_index(tokens, i + 1)
             j = i + 1
             while j < segment_end:

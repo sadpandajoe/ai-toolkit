@@ -3,6 +3,8 @@ as git's parse-options does (`PUSH_OPTIONS`), and the protected paths (`STATE_FI
 
 from __future__ import annotations
 
+import fnmatch
+import os
 import re
 
 import shell_tokens
@@ -62,14 +64,15 @@ def own_args(args: list[str]) -> list[str]:
 
 
 UNKNOWN_ADDED = "\ue001"  # a staged path an expansion names (`git add -f $F`)
+EXPANDED_PATH = re.compile(r"[$`]")  # a parameter or command substitution: what it names is unknown
 
 
 def paths_added(action: dict) -> list[str]:
     """What `git add <args>` (or `git stage`) would stage, as repository paths where git can
     tell. A brace word is every path it makes; a path an expansion names is `UNKNOWN_ADDED`."""
     args = [alternative for arg in own_args(action.get("args", [])) for alternative in brace_words(arg)]
-    if any(UNKNOWN_PATH.search(arg) and not arg.startswith("-") for arg in args):
-        return [UNKNOWN_ADDED]
+    if any(EXPANDED_PATH.search(arg) and not arg.startswith("-") for arg in args):
+        return [UNKNOWN_ADDED]  # (a glob is git's to read: its dry run below matches it)
     listed = git_output(action, ["add", "--dry-run", *args])
     if listed is not None:
         found = []
@@ -79,8 +82,11 @@ def paths_added(action: dict) -> list[str]:
                 found.append(match.group(1))
         return found
     # The dry run failed (for example an ignored path without -f): fall back to
-    # the literal pathspecs, so a refused add still counts as an attempt.
-    return [arg for arg in args if not arg.startswith("-")]
+    # the literal pathspecs, so a refused add still counts as an attempt; a glob counts
+    # for every state file it matches (`PROJECT.m?`)
+    literal = [arg for arg in args if not arg.startswith("-")]
+    globbed = [name for arg in literal if re.search(r"[*?\[]", arg) for name in STATE_FILES if fnmatch.fnmatch(name, os.path.basename(arg))]
+    return literal + globbed
 
 
 def update_index_paths(action: dict) -> list[str]:
@@ -99,7 +105,7 @@ def update_index_paths(action: dict) -> list[str]:
         elif not arg.startswith("-"):
             found.append(arg)
         index += 1
-    if any(UNKNOWN_PATH.search(path) for path in found):
+    if any(EXPANDED_PATH.search(path) for path in found):
         return [UNKNOWN_ADDED]
     return found
 
