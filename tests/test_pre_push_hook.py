@@ -387,12 +387,11 @@ class PrePushHookTests(unittest.TestCase):
         for command in ("git config --get alias.push", "git grep alias.x=1 push"):
             with self.subTest(command=command):
                 self.assert_unreadable(self.run_hook(command))
-        # Accepted limit (a real push this hook does not see): git reached through a variable.
-        # The git guard reads `G=git-push; $G -f origin main`; this hook does not resolve `$G`.
+        # git reached through a variable is read by the values the command gives it, as in the
+        # git guard, so the push is seen and validated
         for command in ("G=git-push; $G origin main", "G=git-push\n$G -f origin main", "G=git; $G push origin main"):
             with self.subTest(command=command):
-                result = self.run_hook(command, STUB_PRECOMMIT="fail")
-                self.assertEqual(0, result.returncode, result.stderr)
+                self.assert_blocked(self.run_hook(command, STUB_PRECOMMIT="fail"), "pre-commit failed")
         # a git-* name git does not install is not an entry point, so it is read as an argument
         # only where it follows a rescan word; as a head on its own it is an executable
         for command in ("git-run origin main", "./git-lfs push", "git-x --force"):

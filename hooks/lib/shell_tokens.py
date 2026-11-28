@@ -126,6 +126,7 @@ from shell_lex import (
 )
 from shell_dirs import DirectoryModel, PIPES, hop_dir, unresolved_dir
 from shell_payloads import PWSH, flag_payloads, is_posix_shell, shell_script, trap_action
+from shell_values import assigned_values, plain_variable
 
 # Re-exported: the git guard's modules, hooks/pre-push-validate.sh and the tests read these names through this module.
 from shell_lex import (  # noqa: F401
@@ -816,6 +817,7 @@ def commands(
     _rescanned: bool = False,
     _untrusted: bool = False,
     _fed: bool = False,
+    _values: dict | None = None,
 ) -> Iterator[Command]:
     """Yield every command in `text`, in order, nested ones included.
 
@@ -843,6 +845,8 @@ def commands(
     except ValueError:
         yield Command([], inherited, unresolved_dir(text, workdir), True, text)
         return
+    # what the variables this text (and the one it came from) assigns may hold (`shell_values`)
+    values = assigned_values(tokens, getattr(tokens, "cleaned", "") or text, _values)
     model = DirectoryModel(tokens, workdir, _untrusted)
     _untrusted = model.untrusted  # a nested payload walks under the same doubt
     fed_any = _fed or stdin_fed(tokens, False) or any(token in PIPES for token in tokens)
@@ -858,7 +862,7 @@ def commands(
                 yield Command([], {}, unresolved_dir(inner, workdir), True, inner)
             else:
                 yield from commands(
-                    inner, workdir, depth + 1, include_assignments=include_assignments, _walk=walk,
+                    inner, workdir, depth + 1, include_assignments=include_assignments, _walk=walk, _values=values,
                     _untrusted=_untrusted, _fed=fed_any,
                 )
         again = first
@@ -887,7 +891,7 @@ def commands(
                 yield from commands(
                     # redirections change nothing of the command the text makes: they are left out
                     " ".join([certain] + [shlex.quote(word) for word in drop_redirections(tail)]), workdir, depth + 1,
-                    _walk=walk, _untrusted=_untrusted, _fed=fed_any,
+                    _walk=walk, _values=values, _untrusted=_untrusted, _fed=fed_any,
                 )
             else:
                 yield Command([], {}, unresolved_dir(text, workdir), True, text)
@@ -937,7 +941,7 @@ def commands(
                 else:
                     yield from commands(
                         nested, target, depth + 1, assignments, include_assignments=include_assignments,
-                        _walk=walk, _untrusted=_untrusted, _fed=fed_any,
+                        _walk=walk, _values=values, _untrusted=_untrusted, _fed=fed_any,
                     )
             continue
         trapped = trap_action(drop_redirections(rest)) if rest and head_name(rest[0]) == "trap" else None
@@ -948,7 +952,7 @@ def commands(
             else:
                 yield from commands(
                     trapped, target, depth + 1, assignments, include_assignments=include_assignments,
-                    _walk=walk, _untrusted=_untrusted, _fed=fed_any,
+                    _walk=walk, _values=values, _untrusted=_untrusted, _fed=fed_any,
                 )
         positions: list[int] = []
         extra: list[Payload] = []
@@ -966,7 +970,9 @@ def commands(
             later = [
                 i
                 for i, word in enumerate(plain[first_word:], first_word)
-                if head_name(word) in words or (not include_assignments and is_git_word(word))
+                if head_name(word) in words
+                or (not include_assignments and is_git_word(word))
+                or (not include_assignments and value_heads(values, word) & (words | {"git"}))
             ]
             # The override scan walks the first and lets the tail find the rest; the
             # default traversal exempts a gh or git head from rescanning, so a
@@ -1010,7 +1016,7 @@ def commands(
                             payload.workdir,
                             depth + 1,
                             include_assignments=include_assignments,
-                            _walk=walk,
+                            _walk=walk, _values=values,
                             _rescanned=payload.rescan and not include_assignments,
                             _untrusted=_untrusted,
                             # a rescanned tail is a shell on this stdin only behind a wrapper that
@@ -1025,6 +1031,27 @@ def commands(
             rest, assignments, target, untrusted=_untrusted, cut=cut, source=tokens.cleaned if _untrusted else "",
             wrapped=effects.wrapped,
         )
+        head_value = values.get(plain_variable(rest[0]) or "") if not include_assignments else None
+        if head_value is not None:
+            # `c='gh pr'; $c merge 12`: each value the command gives the word, split, is the command too
+            for candidate in sorted(head_value.candidates)[:VALUE_HEADS_LIMIT]:
+                yield Command(
+                    candidate.split() + rest[1:], assignments, target, untrusted=_untrusted, cut=cut,
+                    source=tokens.cleaned if _untrusted else "", wrapped=effects.wrapped,
+                )
+            if len(head_value.candidates) > VALUE_HEADS_LIMIT:
+                yield Command([], {}, None, True, " ".join(rest)[:2000], True)
+
+
+VALUE_HEADS_LIMIT = 32  # values of one command word read as the command
+
+
+def value_heads(values: dict, word: str) -> set[str]:
+    """The command names the values the command gives a `$N` word start with."""
+    value = values.get(plain_variable(word) or "")
+    if value is None:
+        return set()
+    return {head_name(candidate.split()[0]) for candidate in value.candidates if candidate.split()}
 
 
 def truthy(value: str | None) -> bool:

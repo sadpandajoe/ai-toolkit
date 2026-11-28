@@ -93,9 +93,9 @@
 # for-each-repo`'s options, or a command past the work
 # budget is unreadable when it mentions `push` (the same message, with "could not
 # be read in full"); an unreadable command without a push mention does not block.
-# Only the user's SKIP_PRECHECK lifts it. Accepted limits: git reached through a variable
-# (`G=git-push; $G origin main`) is not resolved here and is not seen (the git guard
-# does read it); any `push` word in
+# Only the user's SKIP_PRECHECK lifts it. git reached through a variable is read by the
+# values the command gives it (`G=git-push; $G origin main` is a push). Accepted
+# limits: any `push` word in
 # such text blocks (`./push.sh`, `echo push`, `git config --get alias.push`, `git grep
 # alias.x=1 push`, `git --exec-path push`), any later argument that names a git entry point
 # restarts the scan and reads as that command (`chmod +x bin/git-push`, `make git-push`,

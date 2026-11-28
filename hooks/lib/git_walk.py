@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import bisect
 import functools
+import itertools
 import os
 import re
 import shlex
@@ -15,13 +16,15 @@ import shell_tokens
 from guard_base import SEPARATORS, block, config_pair, git_output, is_git_executable
 from gh_text import quoted_split
 import shell_payloads
-from git_rules import ENV_CLEARED, UNSET, unread_config_source
+import shell_values
+from git_rules import ENV_CLEARED, SUBCOMMAND_UNREADABLE, UNSET, VALUES_UNREADABLE, unread_config_source
 
 
 SHELL_KEYWORDS = {"if", "then", "do", "else", "elif", "while", "until", "for", "select", "case", "!", "{"}
 # Wrappers that run the rest of the line as a command, after their own options.
 RUNNING_WRAPPERS = {"timeout", "nohup", "xargs", "nice", "ionice", "stdbuf", "exec"}
 LATER_GIT_LIMIT = 16  # later words of one command read as the command it may run
+VALUE_READING_LIMIT = 32  # readings one command's assigned values may make (`shell_values`)
 GIT_GLOBAL_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"}
 STARTS_COMMANDS = {"env", "sudo", "doas", "eval", "command", "builtin", "nohup", "timeout", "nice", "xargs", "exec"}
 GIT_COMMANDS = shell_tokens.GIT_ENTRY_POINTS | {"stage", "send-pack"}
@@ -153,6 +156,76 @@ def expand_positional_tokens(tokens: list[str], positional: list[str]) -> list[s
     return expanded
 
 
+POSITIONAL_REF = re.compile(r"^\\?\$(?:([1-9])|\{([1-9][0-9]*)\})$")
+POSITIONAL_ALL = {"$*", "${*}", "$@", "${@}", "\\$*", "\\${*}", "\\$@", "\\${@}"}
+
+
+def value_slot(tokens: list[str], index: int) -> bool:
+    """Whether token `index` stands where a word with a space could run nothing: the command word,
+    or git's subcommand (past git's options and their values)."""
+    if index == 0 or tokens[index - 1] in SEPARATORS or tokens[index - 1] in SHELL_KEYWORDS:
+        return True
+    j = index - 1
+    while j >= 0:
+        if j >= 1 and tokens[j - 1] in GIT_GLOBAL_VALUE:
+            j -= 2
+        elif tokens[j].startswith("-"):
+            j -= 1
+        else:
+            break
+    return j >= 0 and is_git_executable(tokens[j])
+
+
+def positional_split(tokens: list[str], args: list[str]) -> list[str] | None:
+    """`tokens` (a function body, a `sh -c` text) with the positional parameters split into words
+    where they stand in a command word or git's subcommand (`f() { git $*; }; f push --force`,
+    `sh -c 'git $@' _ 'push --force origin main'`), or None when that changes nothing. Elsewhere
+    they stay as `expand_positional_tokens` reads them (`git commit -m "$*"`)."""
+    out: list[str] = []
+    changed = False
+    for index, token in enumerate(tokens):
+        if value_slot(tokens, index):
+            if token in POSITIONAL_ALL:
+                out.extend(word for arg in args for word in arg.split())
+                changed = True
+                continue
+            match = POSITIONAL_REF.match(token)
+            if match:
+                number = int(match.group(1) or match.group(2))
+                if number <= len(args) and args[number - 1].split() != [args[number - 1]]:
+                    out.extend(args[number - 1].split())
+                    changed = True
+                    continue
+        out.append(token)
+    return out if changed else None
+
+
+def value_word_readings(readings: list, values: dict) -> list | None:
+    """For each reading of git's words, one more with every standalone `$N` the command gives
+    literal values replaced by each of them, as one word (`F=--force; git push origin main $F`).
+    None past `VALUE_READING_LIMIT` readings (the caller blocks)."""
+    extra = []
+    for words, positions in readings:
+        slots = [
+            (k, sorted(values[name].candidates))
+            for k, word in enumerate(words)
+            if k and (name := shell_values.plain_variable(word)) in values and values[name].candidates
+        ]
+        if not slots:
+            continue
+        total = 1
+        for _k, options in slots:
+            total *= len(options)
+        if total > VALUE_READING_LIMIT:
+            return None
+        for combination in itertools.product(*(options for _k, options in slots)):
+            replaced = list(words)
+            for (k, _options), value in zip(slots, combination):
+                replaced[k] = value
+            extra.append((replaced, positions))
+    return extra
+
+
 def shell_var_name(token: str) -> str | None:
     if token.startswith("${") and token.endswith("}"):
         return token[2:-1]
@@ -163,6 +236,7 @@ def shell_var_name(token: str) -> str | None:
 
 SUBSTITUTION_START = re.compile(r"`|\$\(|<\(")
 GIT_WORD_START = re.compile(r"\bgit(?=[\s\-$])", re.I)
+WHITESPACE = re.compile(r"\s")
 COMMIT_OR_PUSH = re.compile(r"(?:commit|push)\b")
 VARIABLE_GIT_ASSIGNMENT = re.compile(r"=git", re.I)
 VARIABLE_GIT_ARGUMENT = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\s+(?:commit|push)\b")
@@ -355,6 +429,7 @@ def parse_git_actions(
     shell_workdir: object = SAME,
     _pieces: bool = False,
     _aliases_open: tuple[str, ...] = (),
+    inherited_values: dict | None = None,
 ) -> list[dict]:
     """Every git invocation in `tokens`, in order, with its effective context.
 
@@ -369,6 +444,8 @@ def parse_git_actions(
             return [{**new_action(None, {}, {}, True), "subcommand": "push", "unreadable": True}]
         return actions
     tokens = shell_tokens.join_toplevel(tokens)  # `cd $(git rev-parse --show-toplevel)` is one word
+    # what the variables this text assigns may hold, an enclosing text's included (`shell_values`)
+    values = shell_values.assigned_values(tokens, getattr(tokens, "cleaned", "") or " ".join(tokens), inherited_values)
     model = shell_tokens.DirectoryModel(tokens, base_workdir, parens_untrusted)
     parens_untrusted = model.untrusted
     current_workdir = base_workdir
@@ -397,6 +474,7 @@ def parse_git_actions(
             dict(inherited_alias_map),
             parens_untrusted,
             shell_workdir if shell is SAME else shell,
+            inherited_values=values,
         )
 
     def later_git(start: int) -> list[dict]:
@@ -411,6 +489,32 @@ def parse_git_actions(
         found: list[dict] = []
         for j in starts:
             found.extend(recurse(tokens[j:end], current_workdir, dict(env_assignments)))
+        return found
+
+    def unreadable_action(why: str) -> dict:
+        return {**new_action(None, {}, {}, True), "subcommand": "push", "unreadable": True, "unreadable_why": why}
+
+    def subcommand_value_readings(word: str, rest_words: list[str], action: dict) -> list[dict]:
+        """The subcommands a word holding an expansion may be, by what the command assigns
+        (`shell_values`): a variable the command never touches is the environment's and keeps the
+        readings of `subcommand_readings`; one with literal values is each value, as one word and
+        split (`P="push --force origin main"; git $P`); anything else may be a push or a commit
+        with any flags, which the guard cannot read: an unreadable action, which blocks."""
+        if "$" not in word and "`" not in word:
+            return []
+        if shell_values.is_positional_word(word):
+            # empty at the top level unless a `set` gave them values (in a body they are expanded)
+            return [unreadable_action(SUBCOMMAND_UNREADABLE.format(word=word))] if shell_values.POSITIONAL in values else []
+        name = shell_values.plain_variable(word)
+        if name is not None and name not in values:
+            return []
+        value = values.get(name or "")
+        if value is None or value.unknown or not value.candidates or len(value.candidates) > VALUE_READING_LIMIT:
+            return [unreadable_action(SUBCOMMAND_UNREADABLE.format(word=word))]
+        found = []
+        for candidate in sorted(value.candidates):
+            for split in shell_values.split_readings(candidate):
+                found.append({**action, "subcommand": split[0], "args": split[1:] + rest_words})
         return found
 
     def flag_payloads(start: int) -> list[dict]:
@@ -566,6 +670,9 @@ def parse_git_actions(
                     if command_index < segment_end:
                         picked = tokens[command_index]
                         positional = tokens[command_index + 1 : segment_end]
+                        split = positional_split(shell_tokens_or_empty(picked), positional[1:])
+                        if split is not None:
+                            actions.extend(recurse(split, current_workdir, dict(exported_env), None))
                         actions.extend(
                             recurse(
                                 expand_shell_payload(tokens[command_index], positional),
@@ -582,6 +689,9 @@ def parse_git_actions(
                 actions.extend(
                     recurse(expand_shell_payload(script[0], script[1]), current_workdir, dict(exported_env), None)
                 )
+                split = positional_split(shell_tokens_or_empty(script[0]), script[1][1:])
+                if split is not None:
+                    actions.extend(recurse(split, current_workdir, dict(exported_env), None))
             command_start = False
             i = segment_end
             continue
@@ -671,6 +781,26 @@ def parse_git_actions(
             command_start = False
             i = segment_end
             continue
+        head_value = values.get(shell_values.plain_variable(token) or "") if command_start else None
+        if head_value is not None:
+            # `CMD="git push --force origin main"; $CMD`, `G=git-push; $G`, `F=f; $F`: each value the
+            # command gives the word, split, with the words after it, is read as the command too
+            if len(head_value.candidates) > VALUE_READING_LIMIT:
+                actions.append(unreadable_action(VALUES_UNREADABLE))
+            else:
+                held = shell_vars.get(shell_values.plain_variable(token) or "")
+                # one word, the one `shell_vars` holds, is read by the readings below
+                read = [value for value in sorted(head_value.candidates) if value != held or WHITESPACE.search(value)]
+                if read:
+                    rest = [shlex.quote(word) for word in tokens[i + 1 : segment_end_index(tokens, i + 1)]]
+                for candidate in read:
+                    actions.extend(recurse(shell_tokens_or_empty(" ".join([candidate] + rest)), current_workdir, dict(env_assignments)))
+            if head_value.unknown:
+                # set to a value the guard cannot read (`read -r C`, `C=$(...)`): it may be git
+                for subcommand in ("push", "commit"):
+                    action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted, shell_dir())
+                    action.update(subcommand=subcommand, index=i, speculative=token, args=git_words(tokens, i, parens_untrusted)[0][1:])
+                    actions.append(action)
         word = token
         if command_start and shell_var_name(token) is not None:
             word = shell_vars.get(shell_var_name(token) or "", token)  # `G=git-push; $G -f origin main`
@@ -732,6 +862,9 @@ def parse_git_actions(
             positional = tokens[i + 1 : segment_end]
             function_tokens = expand_positional_tokens(shell_functions[token], positional)
             actions.extend(recurse(function_tokens, current_workdir, dict(exported_env)))
+            split = positional_split(shell_functions[token], positional)
+            if split is not None:
+                actions.extend(recurse(split, current_workdir, dict(exported_env)))
             command_start = False
             i = segment_end
             continue
@@ -762,7 +895,12 @@ def parse_git_actions(
             i += 1
             continue
 
-        for words, positions in git_readings(tokens, i, parens_untrusted):
+        base_readings = git_readings(tokens, i, parens_untrusted)
+        valued = value_word_readings(base_readings, values)
+        if valued is None:
+            actions.append(unreadable_action(VALUES_UNREADABLE))
+            valued = []
+        for words, positions in base_readings + valued:
             action = new_action(current_workdir, inherited_alias_map, env_assignments, parens_untrusted, shell_dir())
             count_words = len(words)
             j = 1
@@ -848,6 +986,7 @@ def parse_git_actions(
 
                 action["index"] = positions[j]
                 action["args"] = words[j + 1 :]
+                actions.extend(subcommand_value_readings(opt, words[j + 1 :], action))
                 for subcommand in subcommand_readings(opt, shell_vars):
                     actions.append({**action, "subcommand": subcommand})
                 break

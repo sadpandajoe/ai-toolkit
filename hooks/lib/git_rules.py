@@ -114,6 +114,19 @@ def update_index_paths(action: dict) -> list[str]:
     return found
 
 
+SUBCOMMAND_UNREADABLE = (
+    "the guard cannot read which git subcommand `{word}` is (a substitution, an operator form, an "
+    "array, the positional parameters after `set`, or a variable this command sets to a value it "
+    "cannot read), and it may be a push or a commit with any flags. Write the git subcommand literally."
+)
+VALUES_UNREADABLE = (
+    "this command gives a variable more values than the guard reads, and one may be a push or a "
+    "commit with any flags. Write the git command literally."
+)
+SPECULATIVE = (
+    "`{word}` is set in this command to a value the guard cannot read, and the words after it, read "
+    "as `git {subcommand}`, {what}. Write the command literally."
+)
 GIT_UNREADABLE = (
     "git in this command is nested too deep for the guard to read (sh -c, eval, functions "
     "or substitution spans more than 8 levels in), so it cannot tell what it pushes or commits. "
@@ -121,9 +134,33 @@ GIT_UNREADABLE = (
 )
 
 
+def check_speculative(action: dict) -> None:
+    """A reading of `$C <words>` as `git push <words>` or `git commit <words>`, where the command
+    sets C to a value the guard cannot read. It blocks only on what no ordinary command spells:
+    a forced or deleting push that names main/master or every ref, or `--no-verify` in full. The
+    current branch and short flags are not read (`$RM -rf build`, `$PY -m pytest -n 4`)."""
+    args = own_args(action.get("args", []))
+    word, subcommand = action["speculative"], action.get("subcommand")
+    if any(long_option_prefix(arg, "--no-verify", "--no-veri") for arg in args):
+        raise block(SPECULATIVE.format(word=word, subcommand=subcommand, what="skip the hooks (`--no-verify`)"))
+    if subcommand != "push":
+        return
+    read = read_push_options(args)
+    if read is None:
+        return
+    force, delete, wide, lease_main, operands = read
+    refspecs = operands[1:]
+    forced = force or any(spec.startswith("+") for spec in refspecs)
+    deleting = delete or any(spec.startswith(":") and len(spec) > 1 for spec in refspecs)
+    dests = [spec.lstrip("+").rsplit(":", 1)[-1] for spec in refspecs]
+    names_main = lease_main or any(MAIN_REF.fullmatch(dest) or "*" in dest for dest in dests)
+    if (forced or deleting) and (wide or names_main or ":" in refspecs):
+        raise block(SPECULATIVE.format(word=word, subcommand=subcommand, what="force-push or delete main/master"))
+
+
 def check_commit(action: dict, added_before: list[str]) -> None:
     if action.get("unreadable"):
-        raise block(GIT_UNREADABLE)
+        raise block(action.get("unreadable_why") or GIT_UNREADABLE)
     config_source = unread_config_source(action)
     if config_source:
         raise block(CONFIG_SOURCE.format(source=config_source, what="commit"))
@@ -373,7 +410,7 @@ def forced_by_config(action: dict, operands: list[str]) -> None:
 
 def check_push(action: dict) -> None:
     if action.get("unreadable"):
-        raise block(GIT_UNREADABLE)
+        raise block(action.get("unreadable_why") or GIT_UNREADABLE)
     args = own_args(action.get("args", []))
     for raw_config in action.get("configs", []):
         key, _value = config_pair(raw_config)

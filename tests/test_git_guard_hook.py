@@ -532,11 +532,8 @@ PR_PUBLISH_BLOCK = (
 # environment: no override there, no ready PR from the toolkit's own commands.
 PR_PUBLISH_LIMITS = (
     "watch 'gh pr ready 12'",
-    # a variable that holds more than the name, and one behind an unknown wrapper
-    "c='gh pr'; $c merge 12",
-    "c='gh pr merge'; $c 12",
-    "c='gh pr merge 12'; $c",
-    "g=gh; setsid $g pr merge 12",
+    # a variable from the environment behind an unknown wrapper (one this command sets is read:
+    # `test_variables_are_read_by_the_values_the_command_gives_them`)
     'setsid "$GH" pr merge 12',
     "tmux new-session -d 'gh pr merge 12'",
     # other places git runs a shell it was given: filters
@@ -3009,6 +3006,77 @@ class GitGuardHookTests(unittest.TestCase):
                 git_guard.evaluate(command, str(self.clean), {})
         git_guard.evaluate(f"flock /tmp/x {many} -c 'echo bye'", str(self.clean), {})
         self.assertLess(time.monotonic() - started, 10)
+
+    def test_variables_are_read_by_the_values_the_command_gives_them(self) -> None:
+        self.hook_codes(
+            (
+                # a value with several words, where a word with a space runs nothing
+                ('P="push --force origin main"; git $P', self.feature, 2),
+                ('CMD="git push --force origin main"; $CMD', self.feature, 2),
+                ('CMD="git push"; $CMD --force origin main', self.feature, 2),
+                ('CMD="git commit --no-verify -m x"; unset X; export CMD; $CMD', self.feature, 2),
+                ('for c in "git push --force origin main"; do $c; done', self.feature, 2),
+                # every value assigned anywhere counts, whatever runs last
+                ("P=push; P=status true; git $P --force origin main", self.feature, 2),
+                ("P=push; (P=status); git $P --force origin main", self.feature, 2),
+                ("P=push; false && P=status; git $P --force origin main", self.feature, 2),
+                ("F=--force; git push origin main $F", self.feature, 2),
+                ("F=--force; export F; git push origin main $F", self.feature, 2),
+                # a subcommand the guard cannot read
+                ("P=$(echo push); git $P --force origin main", self.feature, 2),
+                ("P=$1; git $P --force origin main", self.feature, 2),
+                ("S=commit; git ${{S:-push}} -n -m x", self.feature, 2),
+                ("IFS=,; P=push,--force,origin,main; git $P", self.feature, 2),
+                ("git $(echo push --force origin main)", self.feature, 2),
+                ("git ${{X:-push --force origin main}}", self.feature, 2),
+                ('A=(push --force origin main); git "${{A[@]}}"', self.feature, 2),
+                ('set -- push --force origin main; git "$@"', self.feature, 2),
+                # a command word set to a value the guard cannot read
+                ('read -r C <<< "git push"; $C --force origin main', self.feature, 2),
+                ('read -r C <<< "git push --force origin main"; $C', self.feature, 2),
+                ("printf -v C 'git push --force origin main'; $C", self.feature, 2),
+                # positional parameters split where a word with a space runs nothing
+                ("sh -c 'git $@' _ 'push --force origin main'", self.feature, 2),
+                ("f() {{ git $1; }}; f 'push --force origin main'", self.feature, 2),
+                ("f() {{ git $*; }}; f push --force origin main", self.feature, 2),
+                # gh through a variable the command sets
+                ('CMD="gh pr merge"; $CMD 12', self.feature, 2),
+                ("c='gh pr'; $c merge 12", self.feature, 2),
+                ("c='gh pr merge'; $c 12", self.feature, 2),
+                ("c='gh pr merge 12'; $c", self.feature, 2),
+                ("g=gh; setsid $g pr merge 12", self.feature, 2),
+                # ordinary commands
+                ("P=status; git $P", self.feature, 0),
+                ("git $X status", self.feature, 0),
+                ("B=feature; git push origin $B", self.feature, 0),
+                ('MSG="fix -n flag"; git commit -m "$MSG"', self.feature, 0),
+                ("P=status; export P; git $P", self.feature, 0),
+                ('c() {{ git commit -m "$*"; }}; c fix -n thing', self.feature, 0),
+                ("RM=$(which rm); $RM -rf build", self.clean, 0),
+                ("PY=$(which python3); $PY -m pytest -f tests", self.clean, 0),
+                ("PY=$(which python3); $PY -m pytest -n 4", self.clean, 0),
+                ("NPM=$(which npm); $NPM install --force", self.clean, 0),
+                ("for f in a.txt b.txt; do wc -l $f; done", self.feature, 0),
+                ("for s in status diff; do git $s; done", self.feature, 0),
+                ("PY=$(command -v python3); $PY scripts/check.py && git add -A && git commit -m x", self.feature, 0),
+                ("set -euo pipefail; git status", self.feature, 0),
+                # kept as before: a path a variable names is unknown to the staged set
+                ("F=README.md; git add $F && git commit -m x", self.feature, 2),
+            )
+        )
+
+    def test_value_readings_stay_fast_and_fail_closed_past_their_cap(self) -> None:
+        started = time.monotonic()
+        many = "; ".join(f"V{n}=x{n}" for n in range(2000)) + "; git " + " ".join(f"$V{n}" for n in range(0, 2000, 7))
+        git_guard.evaluate(many, str(self.feature), {})
+        # 33 values for one word: past the cap the command blocks
+        wide = "; ".join(f"P=v{n}" for n in range(33)) + "; git $P"
+        with self.assertRaises(git_guard.Blocked):
+            git_guard.evaluate(wide, str(self.feature), {})
+        # five variables of two values each, among the arguments: 32 readings, still read
+        five = "; ".join(f"A{n}=a{n}; A{n}=b{n}" for n in range(5)) + "; git push origin " + " ".join(f"$A{n}" for n in range(5))
+        git_guard.evaluate(five, str(self.feature), {})
+        self.assertLess(time.monotonic() - started, 15)
 
     def test_git_answers_are_kept_for_one_command_only(self) -> None:
         import guard_base

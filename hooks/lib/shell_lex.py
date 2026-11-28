@@ -83,6 +83,29 @@ def mark_fd(out: list[str]) -> str:
     return before
 
 
+HEREDOC_BODY_LIMIT = 64
+
+
+def heredoc_bodies(text: str) -> list[str]:
+    """The bodies of the here-documents in `text`, found by their delimiters, quoting aside (a wrong
+    guess only reads more text), at most `HEREDOC_BODY_LIMIT` of them."""
+    bodies: list[str] = []
+    for match in HEREDOC.finditer(text):
+        if len(bodies) >= HEREDOC_BODY_LIMIT:
+            break
+        start = text.find("\n", match.end())
+        if start < 0:
+            continue
+        strip, delimiter = match.group(1) == "-", match.group(3)
+        lines: list[str] = []
+        for line in text[start + 1 :].split("\n"):
+            if (line.strip() if strip else line) == delimiter:
+                break
+            lines.append(line)
+        bodies.append("\n".join(lines))
+    return bodies
+
+
 def split_lines(text: str) -> str:
     """Normalize a command for tokenizing.
 

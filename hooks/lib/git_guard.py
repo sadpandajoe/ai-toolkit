@@ -256,10 +256,12 @@ import sys
 
 import gh_args
 import guard_base
+import shell_lex
 import shell_tokens
+import shell_values
 import verify_record
 from guard_base import Blocked, block, is_git_executable
-from git_rules import check_commit, check_push, is_protected_path, long_option_prefix, own_args, paths_added, update_index_paths
+from git_rules import check_commit, check_push, check_speculative, is_protected_path, long_option_prefix, own_args, paths_added, update_index_paths
 from gh_text import COMMAND_SEPARATOR, push_marker, unresolved_gated, unseen_git, untrusted_pieces, untrusted_text_verbs
 from git_walk import GIT_GLOBAL_VALUE, expand_configured_alias, has_unsafe_git_substitution, parse_git_actions
 
@@ -771,24 +773,77 @@ EXPANDED_GIT = (
 )
 
 
+def gated_in_text(text: str, environ: dict[str, str]) -> str | None:
+    """What the rules for text that did not parse find gated in `text`: a gated `gh` (the user's
+    AITK_PR_READY=1 lifts only ready, merge and a non-draft open), a `gh pr create` or a `gh api`
+    PR creation, a forced or deleting `git push`, a `git commit`; None if nothing."""
+    if not shell_tokens.truthy(environ.get("AITK_PR_READY")):
+        for verb in unresolved_gated(text):
+            return f"`gh pr {verb}`"
+        if shell_tokens.mentions_api_publish(text):
+            return "a `gh api` pull request call"
+    if shell_tokens.words_in_order(text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
+        return "`gh pr create`"
+    if gh_api_text_creates(text):
+        return "a `gh api` pull request creation"
+    return unseen_git(text)
+
+
 def check_unseen_script(command: str, cwd: str, environ: dict[str, str]) -> None:
     """What a shell runs that the guard never reads as commands (`unseen_texts`, here-document
-    bodies included) is read by the rules for text that did not parse: a gated `gh` (the user's
-    AITK_PR_READY=1 lifts only ready, merge and a non-draft open), a `gh pr create` or a `gh api`
-    PR creation, a forced or deleting `git push`, a `git commit`."""
+    bodies included) is read by the rules for text that did not parse (`gated_in_text`)."""
     for text in unseen_texts(command, cwd):
-        if not shell_tokens.truthy(environ.get("AITK_PR_READY")):
-            for verb in unresolved_gated(text):
-                raise block(UNSEEN_SCRIPT.format(what=f"`gh pr {verb}`"))
-            if shell_tokens.mentions_api_publish(text):
-                raise block(UNSEEN_SCRIPT.format(what="a `gh api` pull request call"))
-        if shell_tokens.words_in_order(text, shell_tokens.WORD_GH, shell_tokens.WORD_PR, CREATE_WORD):
-            raise block(UNSEEN_SCRIPT.format(what="`gh pr create`"))
-        if gh_api_text_creates(text):
-            raise block(UNSEEN_SCRIPT.format(what="a `gh api` pull request creation"))
-        what = unseen_git(text)
+        what = gated_in_text(text, environ)
         if what:
             raise block(UNSEEN_SCRIPT.format(what=what))
+
+
+UNREAD_VALUE = (
+    "`{word}` is set in this command to a value the guard cannot read, and the text that can be its "
+    "value has {what}. Write the command literally, so the guard can check it."
+)
+
+
+def unread_value_texts(command: str) -> list[tuple[str, str]]:
+    """(word, text) for a command word `$N` that the command sets to a value the guard cannot read
+    (`read -r C <<< ...`, `printf -v C ...`): the text that can be its value, which is every segment
+    that writes N (not its uses) and every here-string and here-document body."""
+    try:
+        tokens = shell_tokens.tokenize(command)
+    except ValueError:
+        return []
+    values = shell_values.assigned_values(tokens, command)
+    names = {
+        name
+        for index, token in enumerate(tokens)
+        if (name := shell_values.plain_variable(token)) in values
+        and values[name].unknown
+        and shell_values.command_position(tokens, index)
+    }
+    if not names:
+        return []
+    texts: list[str] = []
+    for _start, segment in shell_lex.segment_spans(tokens):
+        joined = " ".join(segment)
+        if shell_values.plain_variable(segment[0]) not in names and any(
+            re.search(rf"(?<![A-Za-z0-9_$]){re.escape(name)}(?![A-Za-z0-9_])", joined) for name in names
+        ):
+            texts.append(joined)
+    texts += [tokens[index + 1] for index, token in enumerate(tokens) if token == "<<<" and index + 1 < len(tokens)]
+    texts += shell_lex.heredoc_bodies(command)
+    word = "$" + sorted(names)[0]
+    return [(word, text) for text in texts]
+
+
+def check_unread_value(command: str, environ: dict[str, str]) -> None:
+    """A command word the command sets to a value the guard cannot read is read as the text that
+    can be its value (`read -r C <<< "git push --force origin main"; $C`)."""
+    if "$" not in command:
+        return
+    for word, text in unread_value_texts(command):
+        what = gated_in_text(text, environ)
+        if what:
+            raise block(UNREAD_VALUE.format(word=word, what=what))
 
 
 def evaluate(command: str, cwd: str, environ: dict[str, str]) -> None:
@@ -827,6 +882,7 @@ def evaluate_walked(command: str, cwd: str, environ: dict[str, str]) -> None:
     check_pr_publish(command, cwd, environ)
     check_pr_verified(command, cwd, environ)
     check_unseen_script(command, cwd, environ)
+    check_unread_value(command, environ)
     check_expanded_git(command, cwd)
     check_actions(parse_git_actions(tokens, cwd))
 
@@ -845,6 +901,9 @@ def check_actions(found: list[dict]) -> None:
     switched = remote_config = False
     for action in actions:
         subcommand = action.get("subcommand")
+        if action.get("speculative"):
+            check_speculative(action)
+            continue
         args = own_args(action.get("args", []))
         if subcommand in {"add", "stage"}:
             added.extend(paths_added(action))
