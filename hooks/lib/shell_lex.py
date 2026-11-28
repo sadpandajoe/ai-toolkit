@@ -13,6 +13,7 @@ quoting (`expand_ansi_c`); one that never closes does not tokenize.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from typing import Iterator
@@ -21,6 +22,15 @@ from typing import Iterator
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")"}
 KEYWORDS = {"if", "then", "elif", "else", "do", "while", "until", "!", "{", "}"}
 SIMPLE_WRAPPERS = {"command", "exec", "nohup", "time"}
+SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
+SHELL_NAME = re.compile(r"(?:ba|z|da|k|a|mk|ya|po|c|tc|fi)?sh(?:-?[\d.]+)?")  # bash, ash, fish, mksh, bash5, bash-5.2
+
+
+def head_name(word: str) -> str:
+    """The basename of a command head, lower-cased (`GIT`, `/usr/bin/Gh` read as `git`, `gh`)."""
+    return os.path.basename(word).lower()
+
+
 # The one substitution `advance_dir` resolves instead of leaving unknown: the git top level
 # of the current directory. Exactly this text, in the `$(...)` or the backtick spelling.
 TOPLEVEL_SUBSTITUTIONS = ("$(git rev-parse --show-toplevel)", "`git rev-parse --show-toplevel`")

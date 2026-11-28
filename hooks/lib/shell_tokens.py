@@ -128,8 +128,8 @@ from shell_dirs import DirectoryModel, PIPES, hop_dir, unresolved_dir
 
 # Re-exported: the git guard's modules, hooks/pre-push-validate.sh and the tests read these names through this module.
 from shell_lex import (  # noqa: F401
-    CURRENT_BRANCH_SUBSTITUTIONS, REDIRECTIONS, REDIRECTION_FD, Tokens, WORD_GIT, command_words,
-    expand_ansi_c, may_be, quoted_substitution_separator,
+    CURRENT_BRANCH_SUBSTITUTIONS, REDIRECTIONS, REDIRECTION_FD, SHELL_NAME, SHELLS, Tokens, WORD_GIT, command_words,
+    expand_ansi_c, head_name, may_be, quoted_substitution_separator,
 )
 from shell_dirs import UNKNOWN_CD_TARGET, advance_dir  # noqa: F401
 
@@ -164,7 +164,6 @@ def deadline(seconds: float) -> Iterator[None]:
         signal.signal(signal.SIGALRM, previous)
 
 
-SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 DEPTH_LIMIT = 3
 # Characters the rescan tails of one `commands()` call may tokenize in all. A long
 # run of rescan words (`true sh sh sh ...`) otherwise costs a tail per word, each
@@ -429,11 +428,6 @@ GIT_ENTRY_POINTS = frozenset(
 )
 
 
-def head_name(word: str) -> str:
-    """The basename of a command head, lower-cased (`GIT`, `/usr/bin/Gh` read as `git`, `gh`)."""
-    return os.path.basename(word).lower()
-
-
 def is_git_word(word: str) -> bool:
     """`git`, or a dashed entry point git installs (`git-push`, `/usr/lib/git-core/git-rebase`).
 
@@ -633,7 +627,6 @@ def is_shell_command_flag(arg: str) -> bool:
 
 STDIN_SCRIPT = re.compile(r"-|/dev/stdin|/dev/fd/\d+|/proc/self/fd/\d+")
 SHELL_VALUE_OPTIONS = {"--rcfile", "--init-file"}
-SHELL_NAME = re.compile(r"(?:ba|z|da|k|a|mk|ya|po|c|tc|fi)?sh(?:-?[\d.]+)?")  # bash, ash, fish, mksh, bash5, bash-5.2
 EXEC_WRAPPERS = {
     "docker", "podman", "kubectl", "ssh", "xargs", "timeout", "nice", "nohup", "setsid", "stdbuf",
     "chroot", "flock", "watch", "unbuffer", "script", "su", "doas", "sudo", "env", "exec", "command",

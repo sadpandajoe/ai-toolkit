@@ -828,9 +828,14 @@ def evaluate_walked(command: str, cwd: str, environ: dict[str, str]) -> None:
     check_pr_verified(command, cwd, environ)
     check_unseen_script(command, cwd, environ)
     check_expanded_git(command, cwd)
+    check_actions(parse_git_actions(tokens, cwd))
 
+
+def check_actions(found: list[dict]) -> None:
+    """The git rules over one command's git actions, in order: a configured alias is expanded
+    first, then each action is checked with what the earlier ones staged, switched or configured."""
     actions: list[dict] = []
-    for action in parse_git_actions(tokens, cwd):
+    for action in found:
         if action.get("subcommand") in CHECKED_SUBCOMMANDS:
             actions.append(action)
         else:
